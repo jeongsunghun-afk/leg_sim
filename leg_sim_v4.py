@@ -1,6 +1,9 @@
 """
-leg_statics_v3.py
-v2 (3D 해석적 IK 궤적) + v1 (동역학: 피드포워드 토크 + PD 제어 + GRF 역산)
+leg_statics_v4.py
+v1 (동역학: 피드포워드 토크 + PD 제어 + GRF 역산)
+v2 (3D 해석적 IK 궤적)
+v3: Impedance Control 추가 (Cartesian 공간에서 발끝 위치/속도 오차에 비례하는 보정 토크)
+v4: 힘 피드백 보정 방향 수정 (λ_calc - λ_des → λ_des - λ_calc)
 
 [제어]
   tau_cmd = Kp(θt-θa) + Kd(θ̇t-θ̇a) + τ_ff
@@ -35,7 +38,9 @@ mpl.rcParams['axes.unicode_minus'] = False
 # 0. 파라미터
 # ══════════════════════════════════════════════════════════════
 TRAJ_MODE = 'jump'    # 'jump' | 'gait'
-DT        = 0.005     # 시간 간격 [s]
+USE_IMP   = True      # True: Impedance Control 활성화 / False: 비활성화 (비교용)
+DT        = 0.005     # 시간 간격 [s] — 하드웨어 제어 주기에 맞춰 조정
+N_STEPS   = 120       # waypoint 총 개수 (총 시간 = N_STEPS × DT)
 
 DH_PARAMS = [
     (-math.pi/2, 0.0,    0.0    ),   # Joint 1 : Hip Abduction
@@ -52,7 +57,7 @@ Q_HOME = [math.radians(a) for a in [0, -150, -90, 90, 60]]
 _A2 = DH_PARAMS[1][1]   # 0.21 m
 _A3 = DH_PARAMS[2][1]   # 0.21 m
 _A4 = DH_PARAMS[3][1]   # 0.148 m
-_D2 = DH_PARAMS[2][2]   # 0.0075 m (실제로는 DH_PARAMS[1][2])
+_D2 = DH_PARAMS[1][2]   # 0.0075 m
 
 # PD 제어 게인 (관절 1~5)
 Kp = np.array([30.0, 80.0, 80.0, 60.0, 20.0])   # [N·m/rad]
@@ -68,9 +73,16 @@ LINK_MASS = np.array([3.34, 0.8, 0.2, 0.2, 0.05]) #link1, link2, link3, link4, l
 G         = 9.81   # 중력 가속도 [m/s²]
 G_VEC     = np.array([-G, 0.0, 0.0])  # 중력 방향 (월드 기준, -X = 아래)
 
+# Impedance Control 게인 (Cartesian 공간)
+Kp_imp = np.array([800.0, 800.0, 800.0])   # [N/m]
+Kd_imp = np.array([ 40.0,  40.0,  40.0])   # [N·s/m]
+
 # GRF 설정
-F_PEAK   = 60.0    # 최대 접촉력 [N]
+F_PEAK   = 400.0    # 최대 접촉력 [N]
 MU_DAMP  = 1e-3    # 자코비안 댐핑 계수 (특이점 방지)
+
+# 힘 피드백 게인
+Kf = np.array([0.1, 0.1, 0.1])   # λ_err → λ_des 보정 게인(0.1~0.5 정도가 적당)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -221,13 +233,13 @@ print(f"  발끝 시작점:  X={toe_start[0]*1e3:.1f}mm  "
       f"Y={toe_start[1]*1e3:.1f}mm  Z={toe_start[2]*1e3:.1f}mm")
 
 if TRAJ_MODE == 'jump':
-    trajectory, phase_idx = make_jump_trajectory(toe_start, h_crouch=0.04, h_jump=0.06, n=120)
+    trajectory, phase_idx = make_jump_trajectory(toe_start, h_crouch=0.04, h_jump=0.06, n=N_STEPS)
     mode_label = '수직 점프 (준비→도약→착지)'
 else:
-    trajectory, phase_idx = make_gait_trajectory(toe_start, step_x=0.06, lift=0.04, n=120)
+    trajectory, phase_idx = make_gait_trajectory(toe_start, step_x=0.06, lift=0.04, n=N_STEPS)
     mode_label = '보행 (Stance→Swing)'
 
-theta_hist = [Q_HOME[:]]
+q_a = [Q_HOME[:]]
 current    = Q_HOME[:]
 for target in trajectory:
     phi           = current[1] + current[2] + current[3]
@@ -235,11 +247,11 @@ for target in trajectory:
     result = analytical_ik(target[0], target[1], target[2], phi, theta5_target)
     if result is not None:
         current = result
-    theta_hist.append(current[:])
+    q_a.append(current[:])
 
-theta_hist = np.array(theta_hist)   # (N, 5)
-n_frames   = len(theta_hist)
-toe_hist   = np.array([forward_kinematics(th)[4] for th in theta_hist])
+q_a = np.array(q_a)   # (N, 5)
+n_frames   = len(q_a)
+x_a   = np.array([forward_kinematics(th)[4] for th in q_a])
 print(f"IK 완료: {n_frames} 프레임  |  {mode_label}")
 
 
@@ -264,9 +276,14 @@ else:
     lam_des[:n_st, 0] = F_PEAK * np.sin(np.linspace(0, np.pi, n_st))
 
 # ── 목표각 & 속도
-theta_t  = theta_hist.copy()
+theta_t  = q_a.copy()
 dtheta_t = np.zeros_like(theta_t)
 dtheta_t[1:] = np.diff(theta_t, axis=0) / DT
+
+# ── Cartesian 참조 궤적 & 속도 (직교좌표 기준)
+x_t     = x_a.copy()                           # (n_frames, 3)  발끝 위치 참조
+x_t_dot = np.zeros_like(x_t)
+x_t_dot[1:] = np.diff(x_t, axis=0) / DT      # 발끝 속도 참조
 
 # ── 실제각 (1차 지연 추종)
 theta_a  = np.zeros_like(theta_t)
@@ -277,33 +294,79 @@ for i in range(1, n_frames):
     dtheta_a[i] = (theta_a[i] - theta_a[i-1]) / DT
 
 # ── 토크 & GRF 역산
-tau_ff   = np.zeros((n_frames, 5))
-tau_pd   = np.zeros((n_frames, 5))
-tau_cmd  = np.zeros((n_frames, 5))
-tau_grav = np.zeros((n_frames, 5))
-lam_calc = np.zeros((n_frames, 3))
+tau_ff     = np.zeros((n_frames, 5))
+tau_pd     = np.zeros((n_frames, 5))
+tau_imp    = np.zeros((n_frames, 5))
+tau_offset = np.zeros((n_frames, 5))
+tau_cmd    = np.zeros((n_frames, 5))
+tau_grav   = np.zeros((n_frames, 5))
+lam_calc   = np.zeros((n_frames, 3))
+lam_fb     = lam_des.copy()           # 힘 피드백으로 보정되는 실시간 λ
 
 for i in range(n_frames):
-    J  = compute_jacobian(theta_t[i])                      # 3×5
-    tau_grav[i] = compute_gravity_torque(theta_t[i])       # 중력 보상 (5×1)
-    # tau_ff[i]  = J.T @ lam_des[i] + tau_grav[i]          # GRF + 중력 보상
-    tau_ff[i]  = tau_grav[i] - J.T @ lam_des[i]           # GRF + 중력 보상
-    tau_pd[i]  = Kp * (theta_t[i] - theta_a[i]) + Kd * (dtheta_t[i] - dtheta_a[i])
-    tau_cmd[i] = tau_pd[i] + tau_ff[i]
-    JJT = J @ J.T + MU_DAMP * np.eye(3)
-    lam_calc[i] = np.linalg.solve(JJT, J @ tau_cmd[i])
+    J   = compute_jacobian(theta_t[i])
+    J_a = compute_jacobian(theta_a[i])
 
-print("Dynamcis_calc")
+    # WBIC (G - J^T · λ_fb)  ← 힘 피드백 보정값 사용
+    tau_grav[i] = compute_gravity_torque(theta_t[i])
+    tau_ff[i]   = tau_grav[i] - J.T @ lam_fb[i]
+
+    # Impedance Control
+    x_t_i  = x_t[i]
+    x_a_i  = forward_kinematics(theta_a[i])[-1]
+    dx_t_i = x_t_dot[i]
+    dx_a_i = J_a @ dtheta_a[i]
+    f_imp        = Kp_imp * (x_t_i - x_a_i) + Kd_imp * (dx_t_i - dx_a_i)
+    tau_imp[i]   = J.T @ f_imp if USE_IMP else np.zeros(5)
+    tau_offset[i] = tau_imp[i] + tau_ff[i]
+
+    # CSP
+    tau_pd[i]  = Kp * (theta_t[i] - theta_a[i]) + Kd * (dtheta_t[i] - dtheta_a[i])
+    tau_cmd[i] = tau_pd[i] + tau_offset[i]
+
+    # GRF 역산
+    JJT = J @ J.T + MU_DAMP * np.eye(3)
+    lam_calc[i] = np.linalg.solve(JJT, J @ (tau_grav[i] - tau_cmd[i]))
+
+    # 힘 피드백: λ_fb[i+1] = λ_fb[i] + Kf · (λ_des[i] - λ_calc[i])
+    # lam_calc ≈ lam_fb 이므로 오차 = lam_des - lam_fb → (1-Kf) 수렴 조건
+    if i + 1 < n_frames:
+        lam_fb[i+1] = lam_fb[i] + Kf * (lam_des[i] - lam_calc[i])
+
+print(f"Dynamcis_calc  [Impedance: {'ON' if USE_IMP else 'OFF'}]")
 i_pk = int(np.argmax(lam_des[:, 0]))
 print(f"\n=== peak frame (i={i_pk}, GRF Fx 최대) ===")
 print(f"link_mass  = {np.round(LINK_MASS, 3)} kg")
-print(f"tau_cmd  (th1~5)  = {np.round(tau_cmd[i_pk], 3)} N·m")
+print(f"tau_cmd  (th1~5)  = {np.round(tau_cmd[i_pk], 3)} N·m\n")
 print(f"tau_pd   (th1~5)  = {np.round(tau_pd[i_pk], 3)} N·m")
+print(f"tau_offset (th1~5) = {np.round(tau_offset[i_pk], 3)} N·m\n")
+print(f"tau_imp  (th1~5)  = {np.round(tau_imp[i_pk], 3)} N·m")
 print(f"tau_ff   (th1~5)  = {np.round(tau_ff[i_pk], 3)} N·m")
 tau_grav_pk = compute_gravity_torque(theta_t[i_pk])
-print(f"tau_grav (th1~5)  = {np.round(tau_grav_pk, 3)} N·m")
+print(f"tau_grav (th1~5)  = {np.round(tau_grav_pk, 3)} N·m\n")
 print(f"lam_des  (Fx)    = {lam_des[i_pk,0]:+.2f} N")
 print(f"lam_calc (Fx)    = {lam_calc[i_pk,0]:+.2f} N")
+max_speed = np.max(np.abs(dtheta_t), axis=0)
+print(f"\n=== max joint speed ===")
+print(f"  [rad/s] = {np.round(max_speed, 3)}")
+print(f"  [RPS]   = {np.round(max_speed / (2 * np.pi), 3)}")
+
+if TRAJ_MODE == 'jump':
+    M_body       = float(np.sum(LINK_MASS))                        # 총 링크 질량 [kg]
+    n1_p, n2_p   = phase_idx
+    impulse      = np.sum(lam_calc[n1_p:n2_p, 0]) * DT            # push-off 충격량 [N·s]
+    grav_impulse = M_body * G * (n2_p - n1_p) * DT                # 중력 충격량 [N·s]
+    net_impulse  = impulse - grav_impulse                          # 순 충격량 [N·s]
+    v_takeoff    = net_impulse / M_body                            # 이륙 속도 [m/s]
+    h_jump       = v_takeoff**2 / (2 * G) if v_takeoff > 0 else 0.0
+    print(f"\n=== jump height estimate ===")
+    print(f"  M_body        = {M_body:.3f} kg  (link mass total)")
+    print(f"  push-off T    = {(n2_p-n1_p)*DT:.3f} s  (frames {n1_p}~{n2_p})")
+    print(f"  GRF impulse   = {impulse:+.3f} N·s")
+    print(f"  grav impulse  = {grav_impulse:+.3f} N·s")
+    print(f"  net impulse   = {net_impulse:+.3f} N·s")
+    print(f"  v_takeoff     = {v_takeoff:+.3f} m/s")
+    print(f"  h_jump        = {h_jump*100:.1f} cm")
 print("─" * 55)
 
 # ══════════════════════════════════════════════════════════════
@@ -336,7 +399,7 @@ ax3d.set_xlabel('X (m)', color='white', labelpad=5)
 ax3d.set_ylabel('Y (m)', color='white', labelpad=5)
 ax3d.set_zlabel('Z (m)', color='white', labelpad=5)
 ax3d.tick_params(colors=_gray)
-ax3d.set_title(f'{mode_label}', color='white', fontsize=10)
+ax3d.set_title(f'{mode_label}  [Imp: {"ON" if USE_IMP else "OFF"}]', color='white', fontsize=10)
 # ax3d.view_init(elev=90, azim=180)    # Z축 방향에서 바라봄, X수평 Y수직
 ax3d.view_init(elev=0, azim=90)    # Z축 방향에서 바라봄, X수평 Y수직
 ax3d.xaxis.pane.fill = ax3d.yaxis.pane.fill = ax3d.zaxis.pane.fill = False
@@ -344,8 +407,8 @@ ax3d.xaxis.pane.fill = ax3d.yaxis.pane.fill = ax3d.zaxis.pane.fill = False
 # ── 관절각 그래프 (우상)
 ax_ang = fig.add_subplot(gs[0, 1])
 _style_ax(ax_ang, 'pos_cmd(th1~th4)[deg]', '프레임', '[deg]')
-ang_min = np.degrees(theta_hist[:, :4].min()) - 10
-ang_max = np.degrees(theta_hist[:, :4].max()) + 10
+ang_min = np.degrees(q_a[:, :4].min()) - 10
+ang_max = np.degrees(q_a[:, :4].max()) + 10
 ax_ang.set_xlim(0, n_frames); ax_ang.set_ylim(ang_min, ang_max)
 
 # ── 관절별 τ_cmd 그래프 (우중)
@@ -357,8 +420,8 @@ ax_tau.axhline(0, color='white', lw=0.6, ls='--', alpha=0.5)
 
 # ── τ_ff vs τ_pd 분해 그래프 (우하)
 ax_fftau = fig.add_subplot(gs[2, 1])
-fftau_range = max(np.abs(tau_ff).max(), np.abs(tau_pd).max()) * 1.3 + 0.01
-_style_ax(ax_fftau, 'tau_ff vs tau_pd(th2~th4)[N·m]', '프레임', '[N·m]')
+fftau_range = max(np.abs(tau_offset).max(), np.abs(tau_pd).max()) * 1.3 + 0.01
+_style_ax(ax_fftau, 'tau_offset vs tau_pd(th2~th4)[N·m]', '프레임', '[N·m]')
 ax_fftau.set_xlim(0, n_frames); ax_fftau.set_ylim(-fftau_range * 0.6, fftau_range)
 ax_fftau.axhline(0, color='white', lw=0.6, ls='--', alpha=0.5)
 
@@ -366,7 +429,7 @@ ax_fftau.axhline(0, color='white', lw=0.6, ls='--', alpha=0.5)
 ax_grf = fig.add_subplot(gs[3, 1])
 lam_max = np.abs(lam_des).max() * 1.2 + 1.0
 _style_ax(ax_grf, 'GRF lam_des vs lam_calc[N]', '프레임', '[N]')
-ax_grf.set_xlim(0, n_frames); ax_grf.set_ylim(-lam_max * 10, lam_max*10)
+ax_grf.set_xlim(0, n_frames); ax_grf.set_ylim(-lam_max * 3, lam_max * 3)
 ax_grf.axhline(0, color='white', lw=0.6, ls='--', alpha=0.5)
 
 # ── 링크 컬러
@@ -403,15 +466,17 @@ lines_cmd = [ax_tau.plot(_fr, tau_cmd[:, k], lw=2.0, color=_TAU5_COL[k], label=f
 ax_tau.legend(fontsize=7.5, facecolor='#1a1a2e',
               labelcolor='white', edgecolor=_gray)
 
-# τ_ff vs τ_pd 선 (θ2~θ4: 실선=τ_ff, 점선=τ_pd)
+# τ_pd / τ_imp / τ_ff 분해 (θ2~θ4) — 색상은 _TAU5_COL[j]로 tau_cmd 그래프와 통일
 _tau_joints = [1, 2, 3]   # θ2, θ3, θ4
-_tau_col3   = ['#ff6b35', '#ffcc00', '#cc88ff']
-lines_ff  = [ax_fftau.plot(_fr, tau_ff[:, j], lw=2.0, color=_tau_col3[k],
-                            label=f'tau_ff{k+2}')[0] for k, j in enumerate(_tau_joints)]
-lines_pd  = [ax_fftau.plot(_fr, tau_pd[:, j], lw=1.5, ls='--', color=_tau_col3[k], alpha=0.65,
-                            label=f'tau_pd{k+2}')[0] for k, j in enumerate(_tau_joints)]
+lines_pd  = [ax_fftau.plot(_fr, tau_pd[:,  j], lw=1.8, color=_TAU5_COL[j],
+                            label=f'tau_pd{j+1}')[0]  for j in _tau_joints]
+lines_imp = [ax_fftau.plot(_fr, tau_imp[:, j], lw=1.8, color=_TAU5_COL[j], ls='--',
+                            label=f'tau_imp{j+1}')[0] for j in _tau_joints]
+lines_ff  = [ax_fftau.plot(_fr, tau_ff[:,  j], lw=1.8, color=_TAU5_COL[j], ls=':',
+                            label=f'tau_ff{j+1}')[0]  for j in _tau_joints]
 ax_fftau.legend(fontsize=7.0, ncol=3, facecolor='#1a1a2e',
-                labelcolor='white', edgecolor=_gray)
+                labelcolor='white', edgecolor=_gray,
+                handles=[*lines_pd, *lines_imp, *lines_ff])
 
 # GRF 선
 line_ld, = ax_grf.plot(_fr, lam_des[:, 0], lw=2.2, color='#00d4ff', label='lam_des Fx')
@@ -467,7 +532,7 @@ def init_anim():
 def animate(i):
     global _frame_quivers, _grf_quiver
 
-    thetas = theta_hist[i]
+    thetas = q_a[i]
     pts    = forward_kinematics(thetas)
     Pe     = pts[4]
 

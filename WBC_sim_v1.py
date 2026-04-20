@@ -1,5 +1,5 @@
 """
-leg_sim_v5.py  —  4족 보행 Gait 시뮬레이터
+WBC_sim_v1.py  —  4족 보행 Gait 시뮬레이터
 v4 (단일 다리, 점프/보행) → v5 (4족 동시 시각화, GaitController 검증)
 
 [구조]
@@ -13,6 +13,11 @@ v4 (단일 다리, 점프/보행) → v5 (4족 동시 시각화, GaitController 
   우상: 보행 위상 다이어그램 (swing=색/stance=회색)
   우중: 발끝 Z 높이 (swing 확인)
   우하: Hip Pitch (th2) 관절각
+
+[지금 TODO로 남긴 부분]
+  phi (ankle 각도) 실제 값 조정
+  swing 착지 목표점 계산 (스트라이드 방향 × 길이)
+  MCX 전송 연결
 """
 
 import math

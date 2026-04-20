@@ -1,5 +1,5 @@
 """
-leg_sim_v5.py
+WBC_sim_v1.py
 4DOF 다리 시뮬레이터 - 자코비안 IK + 동역학 토크 + 수직 점프 궤적
 
   관심점: L3 끝점 (joints[3])

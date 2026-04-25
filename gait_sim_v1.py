@@ -1,5 +1,5 @@
 """
-WBC_sim_v1.py  —  4족 보행 Gait 시뮬레이터
+gait_sim_v1.py  —  4족 보행 Gait 시뮬레이터
 v4 (단일 다리, 점프/보행) → v5 (4족 동시 시각화, GaitController 검증)
 
 [구조]

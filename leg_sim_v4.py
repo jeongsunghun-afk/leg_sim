@@ -233,7 +233,7 @@ print(f"  발끝 시작점:  X={toe_start[0]*1e3:.1f}mm  "
       f"Y={toe_start[1]*1e3:.1f}mm  Z={toe_start[2]*1e3:.1f}mm")
 
 if TRAJ_MODE == 'jump':
-    trajectory, phase_idx = make_jump_trajectory(toe_start, h_crouch=0.04, h_jump=0.06, n=N_STEPS)
+    trajectory, phase_idx = make_jump_trajectory(toe_start, h_crouch=0.02, h_jump=0.03, n=N_STEPS)
     mode_label = '수직 점프 (준비→도약→착지)'
 else:
     trajectory, phase_idx = make_gait_trajectory(toe_start, step_x=0.06, lift=0.04, n=N_STEPS)
@@ -366,7 +366,13 @@ if TRAJ_MODE == 'jump':
     print(f"  grav impulse  = {grav_impulse:+.3f} N·s")
     print(f"  net impulse   = {net_impulse:+.3f} N·s")
     print(f"  v_takeoff     = {v_takeoff:+.3f} m/s")
-    print(f"  h_jump        = {h_jump*100:.1f} cm")
+    print(f"  h_jump        = {h_jump:.4f} m")
+max_fh_mm  = x_a[:, 0].max() * 1e3
+min_fh_mm  = x_a[:, 0].min() * 1e3
+home_x_mm  = toe_start[0] * 1e3
+print(f"\n=== max foot height ===")
+print(f"  foot X max = {max_fh_mm:.1f} mm  (Δ home: {max_fh_mm - home_x_mm:+.1f} mm)")
+print(f"  foot X min = {min_fh_mm:.1f} mm  (Δ home: {min_fh_mm - home_x_mm:+.1f} mm)")
 print("─" * 55)
 
 # ══════════════════════════════════════════════════════════════
@@ -404,12 +410,18 @@ ax3d.set_title(f'{mode_label}  [Imp: {"ON" if USE_IMP else "OFF"}]', color='whit
 ax3d.view_init(elev=0, azim=90)    # Z축 방향에서 바라봄, X수평 Y수직
 ax3d.xaxis.pane.fill = ax3d.yaxis.pane.fill = ax3d.zaxis.pane.fill = False
 
-# ── 관절각 그래프 (우상)
-ax_ang = fig.add_subplot(gs[0, 1])
-_style_ax(ax_ang, 'pos_cmd(th1~th4)[deg]', '프레임', '[deg]')
-ang_min = np.degrees(q_a[:, :4].min()) - 10
-ang_max = np.degrees(q_a[:, :4].max()) + 10
-ax_ang.set_xlim(0, n_frames); ax_ang.set_ylim(ang_min, ang_max)
+# ── 관절각 그래프 (우상) — 주석처리
+# ax_ang = fig.add_subplot(gs[0, 1])
+# _style_ax(ax_ang, 'pos_cmd(th1~th4)[deg]', '프레임', '[deg]')
+# ang_min = np.degrees(q_a[:, :4].min()) - 10
+# ang_max = np.degrees(q_a[:, :4].max()) + 10
+# ax_ang.set_xlim(0, n_frames); ax_ang.set_ylim(ang_min, ang_max)
+
+# ── 발끝 높이 그래프 (우상)
+ax_fh = fig.add_subplot(gs[0, 1])
+_fh_vals = x_a[:, 0] * 1e3   # mm
+_style_ax(ax_fh, '발끝 높이 foot X [mm]', '프레임', '[mm]')
+ax_fh.set_xlim(0, n_frames); ax_fh.set_ylim(_fh_vals.min() - 5, _fh_vals.max() + 5)
 
 # ── 관절별 τ_cmd 그래프 (우중)
 ax_tau = fig.add_subplot(gs[1, 1])
@@ -452,12 +464,18 @@ info_text  = ax3d.text2D(0.02, 0.97, "", transform=ax3d.transAxes,
 phase_text = ax3d.text2D(0.02, 1, "", transform=ax3d.transAxes,
                           color='yellow', fontsize=9, fontweight='bold', va='top')
 
-# 관절각 선 (θ1~θ4) — 전체 궤적 미리 표시
+# 관절각 선 (θ1~θ4) — 주석처리
 _fr = np.arange(n_frames)
-ang_lines = [ax_ang.plot(_fr, np.degrees(theta_t[:, k]), lw=1.8, color=_ANG_COL[k], label=f'th{k+1}')[0]
-             for k in range(4)]
-ax_ang.legend(loc='upper right', fontsize=7.5, facecolor='#1a1a2e',
-              labelcolor='white', edgecolor=_gray)
+# ang_lines = [ax_ang.plot(_fr, np.degrees(theta_t[:, k]), lw=1.8, color=_ANG_COL[k], label=f'th{k+1}')[0]
+#              for k in range(4)]
+# ax_ang.legend(loc='upper right', fontsize=7.5, facecolor='#1a1a2e',
+#               labelcolor='white', edgecolor=_gray)
+
+# 발끝 높이 선 (foot X 위치)
+line_fh, = ax_fh.plot(_fr, x_a[:, 0] * 1e3, lw=2.0, color='#00ff99', label='foot X')
+ax_fh.axhline(x_a[0, 0] * 1e3, color='white', lw=0.8, ls='--', alpha=0.5)
+ax_fh.legend(loc='upper right', fontsize=7.5, facecolor='#1a1a2e',
+             labelcolor='white', edgecolor=_gray)
 
 # τ_cmd 선 (θ1~θ5 전체)
 _TAU5_COL = ['#00d4ff', '#00ff99', '#ff6b35', '#ffcc00', '#cc88ff']
@@ -485,12 +503,12 @@ ax_grf.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white', edgecolor=_gr
 
 # 수직 커서선 (현재 프레임 위치 표시)
 _cursors = [ax.axvline(x=0, color='white', lw=1.2, ls='-', alpha=0.75)
-            for ax in [ax_ang, ax_tau, ax_fftau, ax_grf]]
+            for ax in [ax_fh, ax_tau, ax_fftau, ax_grf]]
 
 # 위상 구분선
 if phase_idx:
     for p_i, p_c in zip(phase_idx, ['orangered', 'royalblue']):
-        for ax in [ax_ang, ax_tau, ax_fftau, ax_grf]:
+        for ax in [ax_fh, ax_tau, ax_fftau, ax_grf]:
             ax.axvline(x=p_i + 1, color=p_c, lw=1.2, ls=':', alpha=0.7)
 
 # 좌표축 quiver (월드 + 발끝 프레임)

@@ -317,7 +317,7 @@ gs  = gridspec.GridSpec(3, 2, figure=fig, wspace=0.35, hspace=0.60,
 _dark = '#16213e'
 _gray = 'gray'
 
-def _style_ax(ax, title, xlabel='프레임', ylabel=''):
+def _style_ax(ax, title, xlabel='Frame', ylabel=''):
     ax.set_facecolor(_dark)
     ax.set_title(title, color='white', fontsize=9)
     ax.set_xlabel(xlabel, color='white', fontsize=8)
@@ -338,7 +338,7 @@ ax3d.set_xlabel('X (m)', color='white', labelpad=4)
 ax3d.set_ylabel('Y (m)', color='white', labelpad=4)
 ax3d.set_zlabel('Z (m)', color='white', labelpad=4)
 ax3d.tick_params(colors=_gray)
-ax3d.set_title(f'4족 {GAIT_TYPE.upper()}  |  v={V}m/s  T={T}s  D={D}',
+ax3d.set_title(f'Gait {GAIT_TYPE.upper()}  |  v={V}m/s  T={T}s  D={D}',
                color='white', fontsize=10)
 ax3d.view_init(elev=20, azim=-55)
 ax3d.xaxis.pane.fill = ax3d.yaxis.pane.fill = ax3d.zaxis.pane.fill = False
@@ -405,7 +405,7 @@ info_text = ax3d.text2D(0.02, 0.98, "", transform=ax3d.transAxes,
 
 # ── 위상 다이어그램 (우상)
 ax_phase = fig.add_subplot(gs[0, 1])
-_style_ax(ax_phase, f'보행 위상  [{GAIT_TYPE}]  (밝음=swing)', ylabel='다리')
+_style_ax(ax_phase, f'Gait Phase  [{GAIT_TYPE}]  (Bright=Swing)', ylabel='Leg')
 ax_phase.set_xlim(0, N_FRAMES)
 ax_phase.set_ylim(-0.5, 3.5)
 ax_phase.set_yticks([0, 1, 2, 3])
@@ -433,7 +433,7 @@ phase_cursor = ax_phase.axvline(x=0, color='white', lw=1.5, ls='--')
 
 # ── 발끝 Z 높이 (우중)
 ax_z = fig.add_subplot(gs[1, 1])
-_style_ax(ax_z, '발끝 Z 높이 [m]', ylabel='Z [m]')
+_style_ax(ax_z, 'Step height [m]', ylabel='Z [m]')
 ax_z.set_xlim(0, N_FRAMES)
 _fr = np.arange(N_FRAMES)
 for leg in range(4):
@@ -563,7 +563,7 @@ ani = FuncAnimation(
 )
 
 plt.suptitle(
-    f'4족 보행 시뮬레이터  |  {GAIT_TYPE.upper()}  |  '
+    f'Model predictive control  |  {GAIT_TYPE.upper()}  |  '
     f'v={V}m/s  T={T}s  D={D}  '
     f'd={STRIDE_D}m(d_min={D_MIN:.2f}m)  '
     f'T_sw={T_SW:.2f}s  step={STEP_LENGTH*1e3:.0f}mm  h={STEP_HEIGHT*1e2:.0f}cm',

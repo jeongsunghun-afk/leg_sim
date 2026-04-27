@@ -27,17 +27,17 @@ mpl.rcParams['axes.unicode_minus'] = False
 # 0. 파라미터
 # ══════════════════════════════════════════════════════════════
 GAIT_TYPE   = 'trot'
-DT          = 0.002
-N_CYCLES    = 4
+DT          = 0.002 # 시뮬레이터 제어 주기 (실제 제어 주기에 맞춰 2ms로 설정, 너무 낮으면 계산 부담 증가)
+N_CYCLES    = 4 # 시뮬레이터에서 반복할 보행 사이클 수 (궤적 계산 시간과 시각화 길이에 영향)
 
-V           = 0.5
-T           = 0.5
-#STEP_HEIGHT = 0.15
-STEP_HEIGHT = 0.2
-D           = 0.50
+V           = 1 # 목표속도
+T           = 0.5 # 사이클 주기 (높을수록 최대 속도 제약 완화, 궤적해상도 향상)
+STEP_HEIGHT = 0.15 # 낮을 수록 빠르게 움직임 (최대 속도 제약과 트레이드오프, jerk연속성 달성 가능 높음) 
+D           = 0.50 # Duty factor (0.5 이상: 대칭적, 0.5 미만: 비대칭적 → 빠르지만 최대 속도 제약과 트레이드오프)
 
 D_MIN        = V * T
-STRIDE_D     = 0.50
+STRIDE_D_MIN = D_MIN / (1.0 - D)
+STRIDE_D = STRIDE_D_MIN * 0.98  # 최소 보폭의 98%로 시작 (최적화 반복으로 최대한 근접)
 assert STRIDE_D > D_MIN, f"stride({STRIDE_D}m) ≤ d_min({D_MIN}m)"
 T_SW         = T * (1.0 - D)
 T_ST         = T * D

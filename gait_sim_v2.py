@@ -230,9 +230,17 @@ sched      = GaitScheduler()
 stance_dur = GAIT_PERIOD * (1.0 - SWING_RATIO)
 body_vel   = np.array([BODY_VX, 0.0, 0.0])
 
-# 홈 발끝: DH→sim 변환 [DH_Z, DH_Y, DH_X] = [sim_X, sim_Y, sim_Z]
+# 홈 발끝: DH→sim 변환
+# front(FR/FL): Rz(π) 적용 → [-DH_Z, -DH_Y, DH_X]
+# hind(HR/HL) : 기존     → [ DH_Z,  DH_Y, DH_X]
+def _dh_to_sim(pts_dh, is_front):
+    if is_front:
+        return np.array([-pts_dh[2], -pts_dh[1], pts_dh[0]])
+    else:
+        return np.array([ pts_dh[2],  pts_dh[1], pts_dh[0]])
+
 home_foot_per_leg = [
-    np.array(forward_kinematics(Q_HOME_PER_LEG[leg], dh=LEG_DH[leg])[-1])[[2, 1, 0]]
+    _dh_to_sim(forward_kinematics(Q_HOME_PER_LEG[leg], dh=LEG_DH[leg])[-1], leg < 2)
     for leg in range(4)
 ]
 home_foot = home_foot_per_leg[0]   # FR 기준 (지면 높이 등)
@@ -278,9 +286,11 @@ for fi in range(N_FRAMES):
         prev_swing[leg]      = is_sw
         foot_hist[fi, leg]   = LEG_HIP_OFFSETS[leg] + foot_loc
 
-        # IK: sim→DH (Px=sim_Z, Py=sim_Y, Pz=sim_X)
-        if leg < 2:   # FR, FL: 5관절 front IK (leg_IK3_FB 기준)
-            q = analytical_ik_front(foot_loc[2], foot_loc[1], foot_loc[0],
+        # IK: sim→DH 변환 후 호출
+        # front: Rz(π) 역변환 → Px=sim_Z, Py=-sim_Y, Pz=-sim_X
+        # hind : 기존          → Px=sim_Z, Py= sim_Y, Pz= sim_X
+        if leg < 2:   # FR, FL: 5관절 front IK
+            q = analytical_ik_front(foot_loc[2], -foot_loc[1], -foot_loc[0],
                                     PHI_FRONT, THETA5_FRONT)
             if q is None:
                 q = list(Q_HOME_FRONT)
@@ -344,7 +354,8 @@ xx, yy = np.meshgrid([-reach, reach], [-0.5, 0.5])
 ax3d.plot_surface(xx, yy, np.full_like(xx, gnd_z), alpha=0.12, color='#888888')
 
 _AX_COLORS = ['#ff4444', '#44ff44', '#4444ff']
-_P = np.array([[0,0,1],[0,1,0],[1,0,0]], dtype=float)
+_P       = np.array([[ 0, 0, 1],[0, 1,0],[1,0,0]], dtype=float)  # hind: DH→sim
+_P_FRONT = np.array([[ 0, 0,-1],[0,-1,0],[1,0,0]], dtype=float)  # front: Rz(π) 후 DH→sim
 
 for leg in range(4):
     h = LEG_HIP_OFFSETS[leg]
@@ -459,7 +470,7 @@ def animate(fi):
         nj     = N_JOINTS_PER_LEG[leg]
         q      = joint_hist[fi, leg, :nj]
         pts_dh = forward_kinematics(q, dh=LEG_DH[leg])
-        pts    = [np.array([p[2], p[1], p[0]]) for p in pts_dh]
+        pts    = [_dh_to_sim(p, leg < 2) for p in pts_dh]
         hip    = LEG_HIP_OFFSETS[leg]
 
         for k in range(nj):
@@ -483,12 +494,13 @@ def animate(fi):
                                   trace_buf[leg][1][-TRACE_LEN:])
         leg_traces[leg].set_3d_properties(trace_buf[leg][2][-TRACE_LEN:])
 
+        Pmat = _P_FRONT if leg < 2 else _P
         T_dh = np.eye(4)
         for j in range(nj + 1):
-            orig_sim = _P @ T_dh[:3, 3]
+            orig_sim = Pmat @ T_dh[:3, 3]
             pos = hip + orig_sim
             for ax_i in range(3):
-                dv = _P @ T_dh[:3, ax_i]
+                dv = Pmat @ T_dh[:3, ax_i]
                 if ax_i == 2:
                     dv = -dv
                 if _jf_quivers[leg][j][ax_i] is not None:

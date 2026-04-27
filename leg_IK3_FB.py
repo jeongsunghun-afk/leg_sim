@@ -18,7 +18,7 @@ mpl.rcParams['axes.unicode_minus'] = False
 # ══════════════════════════════════════════════════════════════════
 
 DH_PARAMS = [
-    (-math.pi/2, 0.0,   0.0,    ),   # Joint 1: Hip Abduction
+    (math.pi/2, 0.0,   0.0,    ),   # Joint 1: Hip Abduction
     (0.0,        0.21,  0.0075, ),   # Joint 2: Hip Pitch
     (0.0,        0.235, 0.0,    ),   # Joint 3: Knee
     (0.0,        0.1,   0.0,    ),   # Joint 4: Lower leg
@@ -28,10 +28,11 @@ DH_PARAMS = [
 _A2 = 0.21
 _A3 = 0.235
 _A4 = 0.1
+_A5 = 0.045
 _D2 = 0.0075
 
 Q_INIT = [math.radians(a) for a in [0, -90,   0,  0,  0]]
-Q_HOME = [math.radians(a) for a in [0.0, 157.5,  22.5, 30.6583, 0]]
+Q_HOME = [math.radians(a) for a in [0.0, 157.5,  22.5, 30.6583, 59.3417]]
 
 
 def get_dh_matrix(alpha, a, d, theta):
@@ -78,17 +79,16 @@ def analytical_ik(Px, Py, Pz, phi, theta5_target, elbow_up=True):
         return None                      # 도달 불가
     R = math.sqrt(D2)
 
-    # θ1
-    theta1 = math.atan2(-Px, Py) - math.atan2(R, _D2)
+    # θ1 (α=+π/2 기준)
+    theta1 = math.atan2(_D2, -R) - math.atan2(-Py, Px)
 
     # 사지 평면 좌표
     c1, s1 = math.cos(theta1), math.sin(theta1)
     x_s = c1 * Px + s1 * Py
-    Z   = -Pz
 
-    # 2-링크 목표점 (a4 제거)
-    x3 = x_s - _A4 * math.cos(phi)
-    z3 = Z   - _A4 * math.sin(phi)
+    # 2-링크 목표점 (a4,a5 제거 → joint3 위치)
+    x3 = x_s - _A4 * math.cos(phi) - _A5 * math.cos(theta5_target)
+    z3 = Pz  - _A4 * math.sin(phi) - _A5 * math.sin(theta5_target)
 
     # θ3
     cos_th3 = (x3**2 + z3**2 - _A2**2 - _A3**2) / (2.0 * _A2 * _A3)
@@ -123,7 +123,7 @@ def ik_move(thetas, delta_p):
     theta5_target = thetas[1] + thetas[2] + thetas[3] + thetas[4]
 
     result = analytical_ik(target[0], target[1], target[2],
-                           phi, theta5_target, elbow_up=True)
+                           phi, theta5_target, elbow_up=False)
     return result if result is not None else thetas[:]
 
 # ══════════════════════════════════════════════════════════════════

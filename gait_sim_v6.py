@@ -3,7 +3,7 @@ gait_sim_v6.py  —  4족 보행 Gait 시뮬레이터
 v6: v5 대비 변경사항
     · Swing: 5차 Bezier → 7차 Bezier (양끝 속도·가속도=0, C² 연속)
     · 초기 contact 위치 수정 (stance 시작 다리: home+step_length)
-    · 그래프 레이아웃 (3×3): 위상/Z높이/th4 + FR 각속도/각가속도/저크
+    · 그래프 레이아웃 (3×3): 위상/Z높이/th4 + HR 각속도/각가속도/저크
     · FR·HR 조인트 통계 로그 (각속도·각가속도 peak/rms)
     · FL↔HR 색상 교환
 """
@@ -30,23 +30,32 @@ GAIT_TYPE   = 'trot'
 DT          = 0.002 # 시뮬레이터 제어 주기 (실제 제어 주기에 맞춰 2ms로 설정, 너무 낮으면 계산 부담 증가)
 N_CYCLES    = 4 # 시뮬레이터에서 반복할 보행 사이클 수 (궤적 계산 시간과 시각화 길이에 영향)
 
-V           = 1 # 목표속도
-T           = 0.5 # 사이클 주기 (높을수록 최대 속도 제약 완화, 궤적해상도 향상)
-STEP_HEIGHT = 0.15 # 낮을 수록 빠르게 움직임 (최대 속도 제약과 트레이드오프, jerk연속성 달성 가능 높음) 
-D           = 0.50 # Duty factor (0.5 이상: 대칭적, 0.5 미만: 비대칭적 → 빠르지만 최대 속도 제약과 트레이드오프)
+V           = 0.5   # 목표 속도 [m/s]
+T           = 0.5   # 보행 사이클 주기 [s]
+D           = 0.50  # Duty factor (지지 비율, 0.5=대칭, <0.5=빠르지만 최대속도 제약 증가)
+STEP_HEIGHT = 0.15  # 스윙 최대 높이 [m]
 
-D_MIN        = V * T
-STRIDE_D_MIN = D_MIN / (1.0 - D)
-STRIDE_D = STRIDE_D_MIN * 0.98  # 최소 보폭의 98%로 시작 (최적화 반복으로 최대한 근접)
-assert STRIDE_D > D_MIN, f"stride({STRIDE_D}m) ≤ d_min({D_MIN}m)"
-T_SW         = T * (1.0 - D)
-T_ST         = T * D
-STEP_LENGTH  = STRIDE_D / 2.0 - V * T_SW
+T_SW = T * (1.0 - D)   # 스윙 지속시간 [s]
+T_ST = T * D           # 스탠스 지속시간 [s]
 
-BODY_VX      = V
-GAIT_PERIOD  = T
-SWING_RATIO  = 1.0 - D
-STRIDE_LENGTH = STRIDE_D
+# ── 보폭(STRIDE_D) ──────────────────────────────────────────────
+# 하한:   STRIDE_D_MIN = 2·V·T_SW          (STEP_LENGTH=0 경계)
+# 권장:   STRIDE_D_SYM = V·T·(2−D)         (착지·이지 ±STEP_LENGTH 대칭)
+# 상한:   ≈ 0.55m (IK 도달 한계)
+# 예) V=0.5, T=0.5, D=0.5 → MIN=0.250m, SYM=0.375m
+STRIDE_D_MIN = 2.0 * V * T_SW
+STRIDE_D_SYM = V * T * (2.0 - D)
+STRIDE_D     = STRIDE_D_SYM              # 또는 직접 설정 [m]
+assert STRIDE_D > STRIDE_D_MIN, f"STRIDE_D({STRIDE_D:.3f}m) ≤ MIN({STRIDE_D_MIN:.3f}m)"
+
+STEP_LENGTH = STRIDE_D / 2.0 - V * T_SW  # 착지 시 어깨 전방 거리 [m]
+
+# TODO: 임피던스 제어 구현 시 아래 항목 반영
+#   - STANCE_DELTA를 가상 스프링-댐퍼 모델의 평형 변위로 대체
+#   - 지면 반력(GRF) 측정값으로 Δ를 실시간 갱신 (F = K·Δ + B·Δ̇)
+#   - X 방향도 등속도(linear)로 전환하고 속도 불연속은 임피던스로 흡수
+#   - 각 다리별 접촉 감지(contact detection)와 연동하여 stance 진입 시점 보정
+STANCE_DELTA = 0.005  # 가상변위 Δ [m] — 착지 충격 흡수 및 inverted-pendulum 효과 (5mm)
 
 BODY_FWD_F =  0.250
 BODY_FWD_H = -0.250
@@ -106,7 +115,7 @@ LEG_HIP_OFFSETS = np.array([
 PHASE_OFFSETS = {
     'trot': [0.0, 0.5, 0.5, 0.0],
     'walk': [0.0, 0.5, 0.75, 0.25],
-}
+} # 다리별 위상 오프셋 (사이클 내 상대적 타이밍, 0~1 범위)
 
 # ══════════════════════════════════════════════════════════════
 # 1. 기구학
@@ -227,7 +236,7 @@ def analytical_ik_hind(Px, Py, Pz, phi, dh, theta5_target=None):
 # ══════════════════════════════════════════════════════════════
 
 class GaitScheduler:
-    def __init__(self, gait=GAIT_TYPE, period=GAIT_PERIOD, swing_ratio=SWING_RATIO):
+    def __init__(self, gait=GAIT_TYPE, period=T, swing_ratio=1.0 - D):
         self.period      = period
         self.swing_ratio = swing_ratio
         self.offsets     = PHASE_OFFSETS[gait]
@@ -267,17 +276,24 @@ def swing_foot_pos(sw_t, p_start, p_end, step_height=STEP_HEIGHT):
 
 
 def stance_foot_pos(st_t, p_contact, body_vel, stance_dur):
-    # smootherstep: 시작/끝 속도·가속도=0, 중간 최대 속도
+    # X: smootherstep — 양끝 속도·가속도=0 (C² 연속, swing Bezier와 전환점 일치)
+    # TODO: 임피던스 제어 구현 시 등속도(linear)로 전환, 불연속은 임피던스로 흡수
     s = st_t**3 * (10.0 - 15.0*st_t + 6.0*st_t**2)
-    return p_contact - body_vel * stance_dur * s
+    pos = p_contact - body_vel * stance_dur * s
+
+    # Z: sin(π·st_t) 가상변위 — 착지~이지 동안 반사인 형태로 몸 높이 변동
+    # TODO: 임피던스 제어 구현 시 GRF 피드백으로 Δ를 실시간 갱신
+    pos = pos.copy()
+    pos[2] -= STANCE_DELTA * math.sin(math.pi * st_t)
+    return pos
 
 # ══════════════════════════════════════════════════════════════
 # 3. 궤적 사전 계산
 # ══════════════════════════════════════════════════════════════
-N_FRAMES   = int(N_CYCLES * GAIT_PERIOD / DT)
+N_FRAMES   = int(N_CYCLES * T / DT)
 sched      = GaitScheduler()
-stance_dur = GAIT_PERIOD * (1.0 - SWING_RATIO)
-body_vel   = np.array([BODY_VX, 0.0, 0.0])
+stance_dur = T_ST
+body_vel   = np.array([V, 0.0, 0.0])
 
 # 홈 기준점: FR/FL은 Joint4 축, HR/HL은 말단 축
 home_foot_per_leg = [
@@ -303,8 +319,13 @@ MAX_TRAJ_OPT_ITERS = 6
 
 print("─" * 55)
 print(f"궤적 계산 중...  [{GAIT_TYPE}]  {N_CYCLES}사이클  {N_FRAMES}프레임")
-print(f"  v={V}m/s  T={T}s  D={D}  →  d_min={D_MIN:.3f}m  d={STRIDE_D}m")
-print(f"  T_sw={T_SW:.3f}s  T_st={T_ST:.3f}s  step(body)={STEP_LENGTH*1e3:.1f}mm  h={STEP_HEIGHT*1e3:.0f}mm")
+print(f"  보행속도(gait velocity)    : {V:.3f} m/s")
+print(f"  보행주기(gait cycle)    : {T:.3f} s")
+print(f"  보행높이(step height)    : {STEP_HEIGHT*1e3:.1f} mm")
+print(f"  보행길이(stride length)    : {STRIDE_D*1e3:.1f} mm")
+print(f"  swing 주기(swing timming)  : {T_SW:.3f} s")
+print(f"  stance 주기(stance timming) : {T_ST:.3f} s")
+print(f"  보폭(step length) : {STEP_LENGTH*1e3:.1f} mm (world frame)")
 print(f"  홈 기준점(FR:J4): X={home_foot[0]*1e3:.1f}mm  "
       f"Y={home_foot[1]*1e3:.1f}mm  Z={home_foot[2]*1e3:.1f}mm")
 
@@ -429,12 +450,19 @@ for leg in [0, 2]:   # FR=0, HR=2
         print(f"          acc  peak={np.max(np.abs(a)):8.3f} rad/s²  rms={np.sqrt(np.mean(a*a)):8.3f} rad/s²")
 print("─" * 55)
 
-# FR(leg=0) 각속도·각가속도·각저크
-joint_vel_FR = joint_vel_hist[:, 0, :]                        # (N_FRAMES, 5)
-joint_acc_FR = np.zeros_like(joint_vel_FR)
-joint_acc_FR[1:] = (joint_vel_FR[1:] - joint_vel_FR[:-1]) / DT
-joint_jrk_FR = np.zeros_like(joint_acc_FR)
-joint_jrk_FR[1:] = (joint_acc_FR[1:] - joint_acc_FR[:-1]) / DT
+# # FR(leg=0) 각속도·각가속도·각저크
+# joint_vel_FR = joint_vel_hist[:, 0, :]                        # (N_FRAMES, 5)
+# joint_acc_FR = np.zeros_like(joint_vel_FR)
+# joint_acc_FR[1:] = (joint_vel_FR[1:] - joint_vel_FR[:-1]) / DT
+# joint_jrk_FR = np.zeros_like(joint_acc_FR)
+# joint_jrk_FR[1:] = (joint_acc_FR[1:] - joint_acc_FR[:-1]) / DT
+
+# HR(leg=2) 각속도·각가속도·각저크
+joint_vel_HR = joint_vel_hist[:, 2, :]                        # (N_FRAMES, 5)
+joint_acc_HR = np.zeros_like(joint_vel_HR)
+joint_acc_HR[1:] = (joint_vel_HR[1:] - joint_vel_HR[:-1]) / DT
+joint_jrk_HR = np.zeros_like(joint_acc_HR)
+joint_jrk_HR[1:] = (joint_acc_HR[1:] - joint_acc_HR[:-1]) / DT
 
 # ══════════════════════════════════════════════════════════════
 # 4. 시각화 설정
@@ -507,7 +535,7 @@ for leg in range(4):
                      lw=2.5, markersize=5)[0] for _ in range(nj)]
     leg_links.append(lns)
 
-TRACE_LEN  = int(GAIT_PERIOD / DT)
+TRACE_LEN  = int(T / DT)
 leg_traces = [ax3d.plot([], [], [], '-', color=LEG_COLORS[leg],
                         lw=1.2, alpha=0.6)[0] for leg in range(4)]
 trace_buf  = [[[], [], []] for _ in range(4)]
@@ -561,45 +589,89 @@ ax_z.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
             edgecolor=_gray, ncol=5)
 z_cursor = ax_z.axvline(x=0, color='white', lw=1.5, ls='--')
 
-# ── (3,1) Lower Leg (th4)
+# # ── (3,1) FR Joint Angles (th1~th5)
+# ax_ang = fig.add_subplot(gs[2, 1])
+# _style_ax(ax_ang, 'FR Joint Angles [deg]', ylabel='[deg]')
+# ax_ang.set_xlim(0, N_FRAMES)
+# for j in range(N_JOINTS_MAX):
+#     ax_ang.plot(_fr, np.degrees(joint_hist[:, 0, j]), lw=1.6,
+#                 color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
+# ax_ang.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
+#               edgecolor=_gray, ncol=5)
+# ang_cursor = ax_ang.axvline(x=0, color='white', lw=1.5, ls='--')
+
+# ── (3,1) HR Joint Angles (th1~th5)
 ax_ang = fig.add_subplot(gs[2, 1])
-_style_ax(ax_ang, 'Lower Leg th4 [deg]', ylabel='[deg]')
+_style_ax(ax_ang, 'HR Joint Angles [deg]', ylabel='[deg]')
 ax_ang.set_xlim(0, N_FRAMES)
-for leg in range(4):
-    ax_ang.plot(_fr, np.degrees(joint_hist[:, leg, 3]), lw=1.8,
-                color=LEG_COLORS[leg], label=LEG_NAMES[leg])
+for j in range(N_JOINTS_MAX):
+    ax_ang.plot(_fr, np.degrees(joint_hist[:, 2, j]), lw=1.6,
+                color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
 ax_ang.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
-              edgecolor=_gray, ncol=4)
+              edgecolor=_gray, ncol=5)
 ang_cursor = ax_ang.axvline(x=0, color='white', lw=1.5, ls='--')
 
-# ── (1,2) FR Joint Angular Velocity (th1~th5)
+# # ── (1,2) FR Joint Angular Velocity (th1~th5)
+# ax_w = fig.add_subplot(gs[0, 2])
+# _style_ax(ax_w, 'FR Joint Angular Velocity [rad/s]', ylabel='[rad/s]')
+# ax_w.set_xlim(0, N_FRAMES)
+# for j in range(N_JOINTS_MAX):
+#     ax_w.plot(_fr, joint_vel_FR[:, j], lw=1.6,
+#               color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
+# ax_w.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
+#             edgecolor=_gray, ncol=5)
+# w_cursor = ax_w.axvline(x=0, color='white', lw=1.5, ls='--')
+
+# ── (1,2) HR Joint Angular Velocity (th1~th5)
 ax_w = fig.add_subplot(gs[0, 2])
-_style_ax(ax_w, 'FR Joint Angular Velocity [rad/s]', ylabel='[rad/s]')
+_style_ax(ax_w, 'HR Joint Angular Velocity [rad/s]', ylabel='[rad/s]')
 ax_w.set_xlim(0, N_FRAMES)
 for j in range(N_JOINTS_MAX):
-    ax_w.plot(_fr, joint_vel_FR[:, j], lw=1.6,
+    ax_w.plot(_fr, joint_vel_HR[:, j], lw=1.6,
               color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
 ax_w.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
             edgecolor=_gray, ncol=5)
 w_cursor = ax_w.axvline(x=0, color='white', lw=1.5, ls='--')
 
-# ── (2,2) FR Joint Angular Acceleration (th1~th5)
+# # ── (2,2) FR Joint Angular Acceleration (th1~th5)
+# ax_acc = fig.add_subplot(gs[1, 2])
+# _style_ax(ax_acc, 'FR Joint Angular Acceleration [rad/s²]', ylabel='[rad/s²]')
+# ax_acc.set_xlim(0, N_FRAMES)
+# for j in range(N_JOINTS_MAX):
+#     ax_acc.plot(_fr, joint_acc_FR[:, j], lw=1.6,
+#                 color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
+# ax_acc.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
+#               edgecolor=_gray, ncol=5)
+# acc_cursor = ax_acc.axvline(x=0, color='white', lw=1.5, ls='--')
+
+# ── (2,2) HR Joint Angular Acceleration (th1~th5)
 ax_acc = fig.add_subplot(gs[1, 2])
-_style_ax(ax_acc, 'FR Joint Angular Acceleration [rad/s²]', ylabel='[rad/s²]')
+_style_ax(ax_acc, 'HR Joint Angular Acceleration [rad/s²]', ylabel='[rad/s²]')
 ax_acc.set_xlim(0, N_FRAMES)
 for j in range(N_JOINTS_MAX):
-    ax_acc.plot(_fr, joint_acc_FR[:, j], lw=1.6,
+    ax_acc.plot(_fr, joint_acc_HR[:, j], lw=1.6,
                 color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
 ax_acc.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
               edgecolor=_gray, ncol=5)
 acc_cursor = ax_acc.axvline(x=0, color='white', lw=1.5, ls='--')
 
-# ── (3,2) FR Joint Jerk (th1~th5)
+# # ── (3,2) FR Joint Jerk (th1~th5)
+# ax_jrk = fig.add_subplot(gs[2, 2])
+# _style_ax(ax_jrk, 'FR Joint Jerk [rad/s³]', ylabel='[rad/s³]')
+# ax_jrk.set_xlim(0, N_FRAMES)
+# for j in range(N_JOINTS_MAX):
+#     ax_jrk.plot(_fr, joint_jrk_FR[:, j], lw=1.6,
+#                 color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
+# ax_jrk.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
+#               edgecolor=_gray, ncol=5)
+# jrk_cursor = ax_jrk.axvline(x=0, color='white', lw=1.5, ls='--')
+
+# ── (3,2) HR Joint Jerk (th1~th5)
 ax_jrk = fig.add_subplot(gs[2, 2])
-_style_ax(ax_jrk, 'FR Joint Jerk [rad/s³]', ylabel='[rad/s³]')
+_style_ax(ax_jrk, 'HR Joint Jerk [rad/s³]', ylabel='[rad/s³]')
 ax_jrk.set_xlim(0, N_FRAMES)
 for j in range(N_JOINTS_MAX):
-    ax_jrk.plot(_fr, joint_jrk_FR[:, j], lw=1.6,
+    ax_jrk.plot(_fr, joint_jrk_HR[:, j], lw=1.6,
                 color=axis_colors[j % len(axis_colors)], label=f'th{j+1}')
 ax_jrk.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white',
               edgecolor=_gray, ncol=5)
@@ -707,7 +779,7 @@ ani = FuncAnimation(
 plt.suptitle(
     f'Gait Sim v6  |  {GAIT_TYPE.upper()}  |  '
     f'v={V}m/s  T={T}s  D={D}  '
-    f'd={STRIDE_D}m(d_min={D_MIN:.2f}m)  '
+    f'd={STRIDE_D:.3f}m(d_min={STRIDE_D_MIN:.3f}m)  '
     f'T_sw={T_SW:.2f}s  step={STEP_LENGTH*1e3:.0f}mm  h={STEP_HEIGHT*1e2:.0f}cm',
     color='white', fontsize=9
 )

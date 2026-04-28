@@ -392,6 +392,15 @@ for opt_iter in range(1, MAX_TRAJ_OPT_ITERS + 1):
                                         PHI_FRONT, THETA5_FRONT)
                 if q is None:
                     q = list(Q_HOME_FRONT)
+                # 연속성 보정: ±2π 후보 중 이전 각도에 가장 가까운 값 선택
+                pq = prev_q_per_leg[leg]
+                for j in range(len(q)):
+                    best = q[j]
+                    for off in (-2.0*math.pi, 2.0*math.pi):
+                        cand = q[j] + off
+                        if abs(cand - pq[j]) < abs(best - pq[j]):
+                            best = cand
+                    q[j] = best
             else:         # HR, HL: 5관절 hind IK + Joint5 고정(60deg)
                 foot_ik_sim = foot_loc + _HIND_J4_TO_J5_SIM
                 foot_dh = _sim_to_dh(foot_ik_sim, front_leg=False)

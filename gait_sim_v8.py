@@ -674,6 +674,12 @@ joint_acc_HR[1:] = (joint_vel_HR[1:] - joint_vel_HR[:-1]) / DT
 joint_jrk_HR = np.zeros_like(joint_acc_HR)
 joint_jrk_HR[1:] = (joint_acc_HR[1:] - joint_acc_HR[:-1]) / DT
 
+joint_vel_HL = joint_vel_hist[:, 3, :]
+joint_acc_HL = np.zeros_like(joint_vel_HL)
+joint_acc_HL[1:] = (joint_vel_HL[1:] - joint_vel_HL[:-1]) / DT
+joint_jrk_HL = np.zeros_like(joint_acc_HL)
+joint_jrk_HL[1:] = (joint_acc_HL[1:] - joint_acc_HL[:-1]) / DT
+
 foot_local = foot_hist - LEG_HIP_OFFSETS[np.newaxis, :, :]
 foot_vel_t = np.gradient(foot_local, DT, axis=0)
 foot_acc_t = np.gradient(foot_vel_t,  DT, axis=0)
@@ -1056,30 +1062,29 @@ def _leg_subplots(gs_pos, title, data, ylabel):
     ax.legend(fontsize=8, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=5)
     return ax.axvline(x=0, color='white', lw=1.5, ls='--')
 
-_leg_subplots(gs2[0, 0], 'FR Joint Angles [deg]',
+_leg_subplots(gs2[0, 0], 'FR Joint Pos [deg]',
               np.degrees(joint_hist[:, 0, :5]), '[deg]')
-_leg_subplots(gs2[0, 1], 'HR Joint Angles [deg]',
-              np.degrees(joint_hist[:, 2, :5]), '[deg]')
+_leg_subplots(gs2[0, 1], 'HL Joint Pos [deg]',
+              np.degrees(joint_hist[:, 3, :5]), '[deg]')
 _leg_subplots(gs2[1, 0], 'FR Joint Angular Velocity [rad/s]', joint_vel_FR[:, :5], '[rad/s]')
-_leg_subplots(gs2[1, 1], 'HR Joint Angular Velocity [rad/s]', joint_vel_HR[:, :5], '[rad/s]')
+_leg_subplots(gs2[1, 1], 'HL Joint Angular Velocity [rad/s]', joint_vel_HL[:, :5], '[rad/s]')
 _leg_subplots(gs2[2, 0], 'FR Joint Angular Acceleration [rad/s²]', joint_acc_FR[:, :5], '[rad/s²]')
-_leg_subplots(gs2[2, 1], 'HR Joint Angular Acceleration [rad/s²]', joint_acc_HR[:, :5], '[rad/s²]')
+_leg_subplots(gs2[2, 1], 'HL Joint Angular Acceleration [rad/s²]', joint_acc_HL[:, :5], '[rad/s²]')
 _leg_subplots(gs2[3, 0], 'FR Joint Jerk [rad/s³]', joint_jrk_FR[:, :5], '[rad/s³]')
-_leg_subplots(gs2[3, 1], 'HR Joint Jerk [rad/s³]', joint_jrk_HR[:, :5], '[rad/s³]')
+_leg_subplots(gs2[3, 1], 'HL Joint Jerk [rad/s³]', joint_jrk_HL[:, :5], '[rad/s³]')
 fig2.suptitle(
-    f'FR / HR Joint Analysis  |  {GAIT_TYPE.upper()}  |  '
+    f'FR / HL Joint Analysis  |  {GAIT_TYPE.upper()}  |  '
     f'v={V}m/s  T={T}s  D={D}  step_h={STEP_HEIGHT*1e3:.0f}mm  step_l={STEP_LENGTH*1e3:.0f}mm',
     color='white', fontsize=11)
 
 # ══════════════════════════════════════════════════════════════
-# 7. Figure 3: WBC 분석 (4×2)
-#    row0: tau_cmd       row1: tau 분해(th3)
-#    row2: GRF lam_z     row3: GRF lam_x/lam_y + 마찰 추
+# 7. Figure 3: WBC 분석 (3×2) — FR/HL
+#    row0: tau_cmd   row1: GRF lam_z   row2: GRF lam_x/lam_y + 마찰 추
 # ══════════════════════════════════════════════════════════════
-fig3 = plt.figure(figsize=(12, 13))
+fig3 = plt.figure(figsize=(12, 10))
 fig3.patch.set_facecolor('#1a1a2e')
-gs3 = gridspec.GridSpec(4, 2, figure=fig3, wspace=0.38, hspace=0.58,
-                        left=0.07, right=0.97, top=0.93, bottom=0.05)
+gs3 = gridspec.GridSpec(3, 2, figure=fig3, wspace=0.38, hspace=0.60,
+                        left=0.07, right=0.97, top=0.93, bottom=0.06)
 
 def _style_ax3(ax, title, xlabel='Frame', ylabel=''):
     ax.set_facecolor('#16213e')
@@ -1093,7 +1098,7 @@ def _style_ax3(ax, title, xlabel='Frame', ylabel=''):
 
 _ax5col = ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585']
 
-for col, leg in enumerate([0, 2]):   # FR=0, HR=2
+for col, leg in enumerate([0, 3]):   # FR=0, HL=3
     nj = N_JOINTS_PER_LEG[leg]
 
     # row 0: tau_cmd
@@ -1105,19 +1110,8 @@ for col, leg in enumerate([0, 2]):   # FR=0, HR=2
     ax_tc.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_tc.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=5)
 
-    # row 1: th3 토크 분해 (HR: 무릎 90° → th3 지배적)
-    ax_td = fig3.add_subplot(gs3[1, col])
-    _style_ax3(ax_td, f'{LEG_NAMES[leg]} tau decompose th3 [N·m]', ylabel='[N·m]')
-    ax_td.set_xlim(0, N_FRAMES)
-    ax_td.plot(_fr, wbc_tau_grav[:, leg, 2], lw=1.4, color='#ffcc00', ls='--', label='tau_grav')
-    ax_td.plot(_fr, wbc_tau_ff  [:, leg, 2], lw=1.4, color='#00d4ff',           label='tau_ff')
-    ax_td.plot(_fr, wbc_tau_pd  [:, leg, 2], lw=1.4, color='#ff6b35',           label='tau_pd')
-    ax_td.plot(_fr, wbc_tau_imp [:, leg, 2], lw=1.4, color='#00ff99',           label='tau_imp')
-    ax_td.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
-    ax_td.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=2)
-
-    # row 2: GRF lam_z (lam_des vs lam_calc)
-    ax_fz = fig3.add_subplot(gs3[2, col])
+    # row 1: GRF lam_z (lam_des vs lam_calc)
+    ax_fz = fig3.add_subplot(gs3[1, col])
     _style_ax3(ax_fz, f'{LEG_NAMES[leg]} GRF lam_z [N]', ylabel='[N]')
     ax_fz.set_xlim(0, N_FRAMES)
     ax_fz.plot(_fr, wbc_lam_des [:, leg, 2], lw=1.8, color='#00d4ff', label='lam_z des')
@@ -1125,8 +1119,8 @@ for col, leg in enumerate([0, 2]):   # FR=0, HR=2
     ax_fz.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_fz.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray')
 
-    # row 3: GRF lam_x/lam_y + 마찰 추 한계 (mu * lam_z_des)
-    ax_fxy = fig3.add_subplot(gs3[3, col])
+    # row 2: GRF lam_x/lam_y + 마찰 추 한계 (mu * lam_z_des)
+    ax_fxy = fig3.add_subplot(gs3[2, col])
     _style_ax3(ax_fxy, f'{LEG_NAMES[leg]} GRF lam_x/lam_y + 마찰 추 [N]', ylabel='[N]')
     ax_fxy.set_xlim(0, N_FRAMES)
     fric_limit = MU_FRICTION * np.abs(wbc_lam_des[:, leg, 2])
@@ -1140,9 +1134,45 @@ for col, leg in enumerate([0, 2]):   # FR=0, HR=2
     ax_fxy.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=3)
 
 fig3.suptitle(
-    f'WBC Analysis  |  {GAIT_TYPE.upper()}  |  v={V}m/s  T={T}s  D={D}  '
+    f'WBC Analysis  FR/HL  |  {GAIT_TYPE.upper()}  |  v={V}m/s  T={T}s  D={D}  '
     f'{"MPC QP (N=" + str(N_MPC) + ")" if USE_MPC else "QP GRF"}  '
-    f'μ={MU_FRICTION}  BODY_MASS={BODY_MASS}kg',
+    f'mu={MU_FRICTION}  BODY_MASS={BODY_MASS}kg',
+    color='white', fontsize=10)
+
+# ══════════════════════════════════════════════════════════════
+# 8. Figure 4: tau decompose th1~th4 (4×2) — FR/HL
+# ══════════════════════════════════════════════════════════════
+fig4 = plt.figure(figsize=(12, 13))
+fig4.patch.set_facecolor('#1a1a2e')
+gs4 = gridspec.GridSpec(4, 2, figure=fig4, wspace=0.38, hspace=0.58,
+                        left=0.07, right=0.97, top=0.93, bottom=0.05)
+
+def _style_ax4(ax, title, xlabel='Frame', ylabel=''):
+    ax.set_facecolor('#16213e')
+    ax.set_title(title, color='white', fontsize=9)
+    ax.set_xlabel(xlabel, color='white', fontsize=8)
+    ax.set_ylabel(ylabel, color='white', fontsize=8)
+    ax.tick_params(colors='gray')
+    ax.grid(True, alpha=0.25, color='gray')
+    for sp in ax.spines.values():
+        sp.set_edgecolor('gray')
+
+for col, leg in enumerate([0, 3]):   # FR=0, HL=3
+    for row, ji in enumerate([0, 1, 2, 3]):   # th1, th2, th3, th4
+        ax_td = fig4.add_subplot(gs4[row, col])
+        _style_ax4(ax_td, f'{LEG_NAMES[leg]} tau decompose th{ji+1} [N·m]', ylabel='[N·m]')
+        ax_td.set_xlim(0, N_FRAMES)
+        ax_td.plot(_fr, wbc_tau_grav[:, leg, ji], lw=1.4, color='#ffcc00', ls='--', label='tau_grav')
+        ax_td.plot(_fr, wbc_tau_ff  [:, leg, ji], lw=1.4, color='#00d4ff',           label='tau_ff')
+        ax_td.plot(_fr, wbc_tau_pd  [:, leg, ji], lw=1.4, color='#ff6b35',           label='tau_pd')
+        ax_td.plot(_fr, wbc_tau_imp [:, leg, ji], lw=1.4, color='#00ff99',           label='tau_imp')
+        ax_td.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
+        ax_td.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=2)
+
+fig4.suptitle(
+    f'FR / HL tau decompose th1~th4  |  {GAIT_TYPE.upper()}  |  '
+    f'v={V}m/s  T={T}s  D={D}  '
+    f'{"MPC QP (N=" + str(N_MPC) + ")" if USE_MPC else "QP GRF"}',
     color='white', fontsize=10)
 
 plt.figure(fig.number)

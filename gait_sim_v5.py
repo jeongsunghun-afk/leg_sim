@@ -29,9 +29,9 @@ GAIT_TYPE   = 'trot'
 DT          = 0.002
 N_CYCLES    = 4
 
-V           = 0.5
+V           = 1
 T           = 0.5 
-STEP_HEIGHT = 0.2
+STEP_HEIGHT = 0.06
 D           = 0.50
 
 D_MIN        = V * T

@@ -23,7 +23,8 @@ from matplotlib.animation import FuncAnimation
 for key in mpl.rcParams:
     if key.startswith("keymap."):
         mpl.rcParams[key] = []
-mpl.rcParams['font.family'] = 'NanumGothic'
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['font.sans-serif'] = ['NanumGothic', 'DejaVu Sans', 'Arial Unicode MS']
 mpl.rcParams['axes.unicode_minus'] = False
 
 # ══════════════════════════════════════════════════════════════
@@ -1016,10 +1017,10 @@ def animate(fi):
         tc = wbc_tau_cmd[fi, leg]
         lm = wbc_lam_des[fi, leg]
         lines.append(f"{LEG_NAMES[leg]} "
-                     f"th1={d[0]:+5.1f}° th2={d[1]:+6.1f}° th3={d[2]:+6.1f}° "
-                     f"th4={d[3]:+5.1f}° th5={d[4]:+5.1f}°  "
-                     f"τ=[{tc[0]:+5.1f} {tc[1]:+5.1f} {tc[2]:+5.1f}]N·m  "
-                     f"λ=[{lm[0]:+5.1f} {lm[1]:+5.1f} {lm[2]:+5.1f}]N")
+                     f"th1={d[0]:+5.1f}d th2={d[1]:+6.1f}d th3={d[2]:+6.1f}d "
+                     f"th4={d[3]:+5.1f}d th5={d[4]:+5.1f}d  "
+                     f"tau=[{tc[0]:+5.1f} {tc[1]:+5.1f} {tc[2]:+5.1f}]Nm  "
+                     f"lam=[{lm[0]:+5.1f} {lm[1]:+5.1f} {lm[2]:+5.1f}]N")
     info_text.set_text(f"t={t:.3f}s\n{sw_str}\n\n" + "\n".join(lines))
     return []
 
@@ -1030,7 +1031,7 @@ ani = FuncAnimation(fig, animate, frames=N_FRAMES,
 # ══════════════════════════════════════════════════════════════
 # 6. Figure 2: FR / HR 조인트 분석 (4×2)
 # ══════════════════════════════════════════════════════════════
-fig2 = plt.figure(figsize=(12, 12))
+fig2 = plt.figure(figsize=(12, 13))
 fig2.patch.set_facecolor('#1a1a2e')
 gs2 = gridspec.GridSpec(4, 2, figure=fig2, wspace=0.35, hspace=0.55,
                         left=0.07, right=0.97, top=0.93, bottom=0.05)
@@ -1072,10 +1073,10 @@ fig2.suptitle(
 
 # ══════════════════════════════════════════════════════════════
 # 7. Figure 3: WBC 분석 (4×2)
-#    row0: τ_cmd    row1: τ 분해(th2)
-#    row2: GRF Fz   row3: GRF Fx/Fy + 마찰 추
+#    row0: tau_cmd       row1: tau 분해(th3)
+#    row2: GRF lam_z     row3: GRF lam_x/lam_y + 마찰 추
 # ══════════════════════════════════════════════════════════════
-fig3 = plt.figure(figsize=(12, 14))
+fig3 = plt.figure(figsize=(12, 13))
 fig3.patch.set_facecolor('#1a1a2e')
 gs3 = gridspec.GridSpec(4, 2, figure=fig3, wspace=0.38, hspace=0.58,
                         left=0.07, right=0.97, top=0.93, bottom=0.05)
@@ -1095,46 +1096,46 @@ _ax5col = ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585']
 for col, leg in enumerate([0, 2]):   # FR=0, HR=2
     nj = N_JOINTS_PER_LEG[leg]
 
-    # row 0: τ_cmd
+    # row 0: tau_cmd
     ax_tc = fig3.add_subplot(gs3[0, col])
-    _style_ax3(ax_tc, f'{LEG_NAMES[leg]} τ_cmd [N·m]', ylabel='[N·m]')
+    _style_ax3(ax_tc, f'{LEG_NAMES[leg]} tau_cmd [N·m]', ylabel='[N·m]')
     ax_tc.set_xlim(0, N_FRAMES)
     for j in range(nj):
         ax_tc.plot(_fr, wbc_tau_cmd[:, leg, j], lw=1.4, color=_ax5col[j], label=f'th{j+1}')
     ax_tc.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_tc.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=5)
 
-    # row 1: th2 토크 분해
+    # row 1: th3 토크 분해 (HR: 무릎 90° → th3 지배적)
     ax_td = fig3.add_subplot(gs3[1, col])
-    _style_ax3(ax_td, f'{LEG_NAMES[leg]} τ decompose th2 [N·m]', ylabel='[N·m]')
+    _style_ax3(ax_td, f'{LEG_NAMES[leg]} tau decompose th3 [N·m]', ylabel='[N·m]')
     ax_td.set_xlim(0, N_FRAMES)
-    ax_td.plot(_fr, wbc_tau_grav[:, leg, 1], lw=1.4, color='#ffcc00', ls='--', label='τ_grav')
-    ax_td.plot(_fr, wbc_tau_ff  [:, leg, 1], lw=1.4, color='#00d4ff',           label='τ_ff')
-    ax_td.plot(_fr, wbc_tau_pd  [:, leg, 1], lw=1.4, color='#ff6b35',           label='τ_pd')
-    ax_td.plot(_fr, wbc_tau_imp [:, leg, 1], lw=1.4, color='#00ff99',           label='τ_imp')
+    ax_td.plot(_fr, wbc_tau_grav[:, leg, 2], lw=1.4, color='#ffcc00', ls='--', label='tau_grav')
+    ax_td.plot(_fr, wbc_tau_ff  [:, leg, 2], lw=1.4, color='#00d4ff',           label='tau_ff')
+    ax_td.plot(_fr, wbc_tau_pd  [:, leg, 2], lw=1.4, color='#ff6b35',           label='tau_pd')
+    ax_td.plot(_fr, wbc_tau_imp [:, leg, 2], lw=1.4, color='#00ff99',           label='tau_imp')
     ax_td.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_td.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=2)
 
-    # row 2: GRF Fz (λ_des vs λ_calc)
+    # row 2: GRF lam_z (lam_des vs lam_calc)
     ax_fz = fig3.add_subplot(gs3[2, col])
-    _style_ax3(ax_fz, f'{LEG_NAMES[leg]} GRF Fz [N]', ylabel='[N]')
+    _style_ax3(ax_fz, f'{LEG_NAMES[leg]} GRF lam_z [N]', ylabel='[N]')
     ax_fz.set_xlim(0, N_FRAMES)
-    ax_fz.plot(_fr, wbc_lam_des [:, leg, 2], lw=1.8, color='#00d4ff', label='λz_des')
-    ax_fz.plot(_fr, wbc_lam_calc[:, leg, 2], lw=1.4, color='magenta', ls='--', label='λz_calc')
+    ax_fz.plot(_fr, wbc_lam_des [:, leg, 2], lw=1.8, color='#00d4ff', label='lam_z des')
+    ax_fz.plot(_fr, wbc_lam_calc[:, leg, 2], lw=1.4, color='magenta', ls='--', label='lam_z calc')
     ax_fz.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_fz.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray')
 
-    # row 3: GRF Fx/Fy + 마찰 추 한계 (μ·Fz_des)
+    # row 3: GRF lam_x/lam_y + 마찰 추 한계 (mu * lam_z_des)
     ax_fxy = fig3.add_subplot(gs3[3, col])
-    _style_ax3(ax_fxy, f'{LEG_NAMES[leg]} GRF Fx/Fy + 마찰 추 [N]', ylabel='[N]')
+    _style_ax3(ax_fxy, f'{LEG_NAMES[leg]} GRF lam_x/lam_y + 마찰 추 [N]', ylabel='[N]')
     ax_fxy.set_xlim(0, N_FRAMES)
     fric_limit = MU_FRICTION * np.abs(wbc_lam_des[:, leg, 2])
-    ax_fxy.plot(_fr, wbc_lam_des [:, leg, 0], lw=1.4, color='#ff6b6b', label='Fx_des')
-    ax_fxy.plot(_fr, wbc_lam_des [:, leg, 1], lw=1.4, color='#ffd166', label='Fy_des')
-    ax_fxy.plot(_fr, wbc_lam_calc[:, leg, 0], lw=1.2, color='#ff6b6b', ls='--', label='Fx_calc')
-    ax_fxy.plot(_fr, wbc_lam_calc[:, leg, 1], lw=1.2, color='#ffd166', ls='--', label='Fy_calc')
+    ax_fxy.plot(_fr, wbc_lam_des [:, leg, 0], lw=1.4, color='#ff6b6b', label='lam_x des')
+    ax_fxy.plot(_fr, wbc_lam_des [:, leg, 1], lw=1.4, color='#ffd166', label='lam_y des')
+    ax_fxy.plot(_fr, wbc_lam_calc[:, leg, 0], lw=1.2, color='#ff6b6b', ls='--', label='lam_x calc')
+    ax_fxy.plot(_fr, wbc_lam_calc[:, leg, 1], lw=1.2, color='#ffd166', ls='--', label='lam_y calc')
     ax_fxy.fill_between(_fr,  fric_limit, -fric_limit,
-                        color='white', alpha=0.07, label=f'μ·Fz (μ={MU_FRICTION})')
+                        color='white', alpha=0.07, label=f'mu*lam_z (mu={MU_FRICTION})')
     ax_fxy.axhline(0, color='white', lw=0.5, ls='--', alpha=0.4)
     ax_fxy.legend(fontsize=7, facecolor='#1a1a2e', labelcolor='white', edgecolor='gray', ncol=3)
 

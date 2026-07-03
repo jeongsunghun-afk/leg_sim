@@ -23,6 +23,7 @@ cleanup(){ kill "$GUI" "$VIEW" "$FF" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # 1) GUI + C++ 뷰어 실행 (본인 세션이라 유지됨)
+pkill -f trot_view 2>/dev/null; pkill -f teleop_gui_17dof 2>/dev/null; sleep 1   # 기존 인스턴스 정리(충돌 방지)
 rm -f /tmp/quad_cmd.json
 ( cd "$QUAD"      && DISPLAY=:0 QUAD_CMD=/tmp/quad_cmd.json "$PY" teleop_gui_17dof.py ) &
 GUI=$!

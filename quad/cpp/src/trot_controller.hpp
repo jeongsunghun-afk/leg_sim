@@ -114,7 +114,8 @@ struct TrotCtrl {
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
     double spd=std::hypot(Veff,Vyeff);
-    if(auto_whip){   // ★속도↑ → whip↑: swing_w 를 whip_hi(저속,매끈)→whip_lo(고속,슬라이더값) 선형보간
+    if(gait_type=="walk"){ q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; }  // ★walk=슬라이더값 직접(속도연동 우회 — 저속이라 auto 무의미). 슬라이더↓=whip↑ 자유조절
+    else if(auto_whip){   // ★trot: 속도↑ → whip↑. swing_w 를 whip_hi(저속,매끈)→whip_lo(고속,슬라이더값) 선형보간
       double s=tc_clip((spd-whip_v0)/(whip_v1-whip_v0),0.0,1.0);
       q.swing_w_f=whip_hi+s*(whip_lo_f-whip_hi); q.swing_w_r=whip_hi+s*(whip_lo_r-whip_hi);
     } else { q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; }   // 수동=슬라이더값 상수

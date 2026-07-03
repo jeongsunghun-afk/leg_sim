@@ -1452,7 +1452,9 @@ def mode_trot():
         S['Vys'] += float(np.clip(_vyt - S['Vys'], -ACC * dts, ACC * dts))
         S['Ws']  += float(np.clip(_wt  - S['Ws'],  -2.0 * dts, 2.0 * dts))
         V_eff, Vy_eff, W_eff = S['Vs'], S['Vys'], S['Ws']
-        if q._auto_whip:                                                        # ★속도연동 자동 whip: 고속서 swing_w 선형↓(앞 강·뒤 완만)
+        if S['gait'] == 'walk':                                                 # ★walk=슬라이더값 직접(속도연동 우회 — 저속이라 auto 무의미). 슬라이더↓=whip↑ 자유조절
+            q._swing_w_f = q._whip_lo_f; q._swing_w_r = q._whip_lo_r
+        elif q._auto_whip:                                                      # ★trot: 속도연동 자동 whip — 고속서 swing_w 선형↓(앞 강·뒤 완만)
             _s = float(np.clip((abs(V_eff) - q._whip_v0) / (q._whip_v1 - q._whip_v0), 0.0, 1.0))
             q._swing_w_f = q._whip_hi + _s * (q._whip_lo_f - q._whip_hi)
             q._swing_w_r = q._whip_hi + _s * (q._whip_lo_r - q._whip_hi)

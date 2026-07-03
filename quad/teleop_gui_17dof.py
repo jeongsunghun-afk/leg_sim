@@ -161,6 +161,22 @@ def _status():
                   % (sc.cmd['v'], sc.cmd['vy'], sc.cmd['w'], sc.cmd['mode']))
 
 
+def _whip_ui(gait):
+    """★whip 컨트롤을 gait에 연동. walk=슬라이더가 whip 직접 제어(속도연동 우회)라
+    auto_whip 체크박스 비활성. trot=속도연동 재활성. (컨트롤러도 walk서 슬라이더 직접적용)"""
+    walk = (gait == 'walk')
+    if dpg.does_item_exist('auto_whip'):
+        dpg.configure_item('auto_whip', enabled=not walk)   # walk선 auto 무효(회색)
+    if dpg.does_item_exist('swing_w_f'):
+        dpg.configure_item('swing_w_f', label=(
+            'walk: 앞다리 whip  (0.1=강한 whip / 2.0=매끈, 슬라이더 직접적용)' if walk
+            else '앞다리 whip 목표  (0.1=강한 paw-tuck / 2.0=매끈)   auto on:고속목표'))
+    if dpg.does_item_exist('swing_w_r'):
+        dpg.configure_item('swing_w_r', label=(
+            'walk: 뒷다리 whip  (0.6=완만 / 2.0=매끈, 슬라이더 직접적용)' if walk
+            else '뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)'))
+
+
 _last_left = [0.0, 0.0]                                 # 슬라이더 변경 시 live 재적용용 마지막 축
 _last_right = [0.0, 0.0]
 
@@ -324,10 +340,10 @@ with dpg.window(tag='main'):
     with dpg.group(horizontal=True):
         dpg.add_text('게이트:', color=(170, 175, 195))
         dpg.add_button(label='trot 대각', width=100,
-                       callback=lambda: (sc.SetGait('trot'), _status()))
+                       callback=lambda: (sc.SetGait('trot'), _whip_ui('trot'), _status()))
         dpg.add_button(label='walk 순차', width=100,
-                       callback=lambda: (sc.SetGait('walk'), _status()))
-        dpg.add_text('(trot=빠름 / walk=정적안정·저속)', color=(120, 125, 145))
+                       callback=lambda: (sc.SetGait('walk'), _whip_ui('walk'), _status()))
+        dpg.add_text('(trot=빠름 / walk=정적안정·저속. walk선 슬라이더가 whip 직접제어)', color=(120, 125, 145))
     with dpg.group(horizontal=True):
         dpg.add_text('보행개선:', color=(170, 175, 195))
         dpg.add_checkbox(label='터치다운 lock', tag='foot_lock', default_value=True,

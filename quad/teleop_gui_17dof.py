@@ -343,7 +343,7 @@ with dpg.window(tag='main'):
                          callback=lambda s, a: sc.SetRaibertK(a))
     dpg.add_checkbox(label='속도연동 자동 whip (on=고속서 슬라이더값까지 선형↑ paw-tuck / off=슬라이더값 상수)', tag='auto_whip', default_value=True,
                      callback=lambda s, a: (sc.SetAutoWhip(a), _status()))
-    dpg.add_slider_float(label='앞다리 whip 목표  (0.1=강한 채찍질 / 2.0=매끈)   auto on:고속목표 / off:상수', tag='swing_w_f',
+    dpg.add_slider_float(label='앞다리 whip 목표  (0.1=강한 paw-tuck / 2.0=매끈)   auto on:고속목표', tag='swing_w_f',
                          min_value=0.1, max_value=4.0, default_value=0.1,
                          callback=lambda s, a: sc.SetSwingWF(a))
     dpg.add_slider_float(label='뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)', tag='swing_w_r',

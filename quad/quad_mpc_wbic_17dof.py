@@ -228,8 +228,8 @@ class QuadSim:
                               if self.legs[i] in ('FL', 'FR') for t in range(self.leg_dof[i]))
         self._auto_whip = os.environ.get('AUTO_WHIP', '1') != '0'   # ★속도연동 자동 whip(고속 trot 채찍질)
         self._whip_v0, self._whip_v1, self._whip_hi = 0.8, 1.6, 2.0  # 속도구간·저속 swing_w
-        self._whip_lo_f = float(os.environ.get('SWING_W_F', '0.1'))  # 고속 whip 목표(앞, 슬라이더 제어)
-        self._whip_lo_r = float(os.environ.get('SWING_W_R', '0.6'))  # 고속 whip 목표(뒤)
+        self._whip_lo_f = float(os.environ.get('SWING_W_F', '0.1'))   # 앞발 paw-tuck whip(강). yaw-fight 수정 후 선회 최고(15.8°)
+        self._whip_lo_r = float(os.environ.get('SWING_W_R', '0.6'))   # 뒤 whip 목표(완만)
         # ★허리(FB_waist yaw) 관절 — 큰 몸통 DOF라 강한 전용 홀드 필요(약한 posture론 앞몸통 못잡음)
         _wj = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, 'FB_waist_joint')
         self._waist_idx = int(self.m.jnt_dofadr[_wj]) - 6 if _wj >= 0 else None   # nu-index(없으면 None=16DOF)
@@ -524,11 +524,21 @@ class QuadSim:
         # base 안정화 task (legged_control BaseAccelTask 해당): 자세(upright)+높이(z)
         #   — swing 반력에 의한 pitch/sink 억제. xy 병진은 MPC λ 에 위임(전진 보행 유지).
         Jc = np.zeros((3, nv)); mujoco.mj_jacSubtreeCom(m, d, Jc, 0)
-        oerr = np.zeros(3); mujoco.mju_quat2Vel(oerr, d.qpos[3:7], 1.0)
+        # ★자세 task 분리: roll/pitch=현재yaw 프레임서 레벨링(회전 무관 정확) + yaw축=명령헤딩(yaw_des) 약추종.
+        #   단위자세 대비면 회전할수록 yaw를 0으로 되당겨 ~120°서 붕괴(360° 회전 불가). W_YAW=0(17dof)=선회 안싸움.
+        qc = d.qpos[3:7]
+        yaw_m = math.atan2(2 * (qc[0] * qc[3] + qc[1] * qc[2]), 1 - 2 * (qc[2] * qc[2] + qc[3] * qc[3]))
+        qlev = np.array([math.cos(yaw_m / 2), 0.0, 0.0, math.sin(yaw_m / 2)])
+        oerr = np.zeros(3); mujoco.mju_subQuat(oerr, d.qpos[3:7], qlev)   # roll/pitch 오차(yaw≈0)
         a_ori = 150 * (-oerr) - 20 * qv[3:6]
         w_ori = float(os.environ.get('W_ORI', '20'))   # ★17dof 튜닝(2026-07-02): 5→20 자세추종↑ → 고속 tilt_max −37%(V1.5 5.2→3.3°). 벤치 falls=0 전속도
-        for j in range(3):
+        for j in range(2):                             # roll/pitch만(yaw는 아래 별도)
             P[3 + j, 3 + j] += w_ori; g[3 + j] -= w_ori * a_ori[j]
+        yaw_des = getattr(self, '_yaw_des', 0.0)       # 명령헤딩(mode_trot서 yaw_ref로 설정)
+        yaw_err = math.atan2(math.sin(yaw_des - yaw_m), math.cos(yaw_des - yaw_m))
+        a_yaw = 150 * yaw_err - 20 * qv[5]
+        w_yaw = float(os.environ.get('W_YAW', '0'))    # ★17dof=0(제자리 고속선회에 극도로 민감→헤딩홀드 끔, MPC가 yaw담당). 14dof는 5권장
+        P[5, 5] += w_yaw; g[5] -= w_yaw * a_yaw         # yaw 헤딩홀드(직진 드리프트 방지, 선회시 yaw_des 추종→안싸움)
         _th = self._body_terr                                 # ★틱당 1회 캐시된 4hip 평균 지형높이(mode_trot서 갱신, raycast 절약)
         _zref = self.com_ref[2] + _th                         # 몸통 높이 기준을 지형따라 부드럽게 올림(평지=+0)
         self._dbg_terr = _th; self._dbg_clr = d.subtree_com[0][2] - _th   # 진단: 지형높이·clearance(몸-지면)
@@ -1472,6 +1482,7 @@ def mode_trot():
         else:
             S['pos_hold'] = None
         S['x_ref'][2] = S['yaw_ref']; S['x_ref'][8] = W_eff                     # yaw각·yaw rate 참조
+        q._yaw_des = S['yaw_ref']                                               # ★자세 task 헤딩홀드 목표(선회시 몸통이 추종→안싸움)
         S['x_ref'][9] = vx_w; S['x_ref'][10] = vy_w                            # world vx,vy
         if q._terrain_on:                                                      # ★perceptive: MPC 높이 기준=평지값+지형(상승 GRF 계획). 정석=planner가 참조생성
             S.setdefault('z_ref0', S['x_ref'][5])                             #   arming 평지 높이 저장(최초 1회)

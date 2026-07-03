@@ -173,11 +173,12 @@ cd /home/jsh/문서/jsh/simulation/quad/cpp && ./build/quad_cpp
 # (3) 헤드리스 closed-loop (인자: mjcf, STEPS)
 # 14dof: ./build/trot_sim ../quad_real_sphere.mjcf 6000     → 3s x=0.358≈Py0.359(0.1%)·falls=0·~5배실시간
 # 17dof: env $E17 ./build/trot_sim ../quad_real_17dof_sphere.mjcf 6000   → falls=0·max_tilt~1.4°
-#   $E17 = BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 SWING_W=2.0
+#   $E17 = BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 SWING_W=2.0
+#   ★360°선회 수정(2026-07-03): WBIC 자세task가 단위자세(yaw=0) 목표라 회전시 yaw를 되당겨 ~120°붕괴 → roll/pitch만 레벨링+yaw는 MPC담당(W_YAW=0). 이제 제자리 다중회전·원주행 falls=0. 14dof는 W_YAW=5(직진 헤딩홀드)
 
 # (4) GLFW 실시간 뷰어 (키보드 ↑↓속도 ←→선회 space정지 · 마우스카메라)  ★배경실행=setsid 필수(SIGURG회피)
 export DISPLAY=:0
-setsid bash -c 'cd /home/jsh/문서/jsh/simulation/quad/cpp; env BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 SWING_W=2.0 RATE=1.0 CMDFILE=/tmp/quad_cmd.json ./build/trot_view ../quad_real_17dof_sphere.mjcf' </dev/null &
+setsid bash -c 'cd /home/jsh/문서/jsh/simulation/quad/cpp; env BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 SWING_W=2.0 RATE=1.0 CMDFILE=/tmp/quad_cmd.json ./build/trot_view ../quad_real_17dof_sphere.mjcf' </dev/null &
 
 # (5) GUI 연동(위 CMDFILE) — 터미널에서 직접(권장, 안정): 서기/눕기/walk토글/RESET · step_h·reach·앞뒤whip 슬라이더 live
 cd /home/jsh/문서/jsh/simulation/quad && DISPLAY=:0 PXI teleop_gui_17dof.py

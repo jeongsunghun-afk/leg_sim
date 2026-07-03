@@ -14,7 +14,10 @@ int main(int argc,char**argv){
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도 테스트
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
-  if(getenv("AUTO_WHIP") && strcmp(getenv("AUTO_WHIP"),"0")) ctrl.auto_whip=true;  // ★속도↑→whip↑
+  ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔
+  if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); ctrl.whip_lo_f=v; ctrl.whip_lo_r=v; }  // whip 목표(고속/수동)
+  if(getenv("SWING_W_F")) ctrl.whip_lo_f=atof(getenv("SWING_W_F"));
+  if(getenv("SWING_W_R")) ctrl.whip_lo_r=atof(getenv("SWING_W_R"));
   if(getenv("ALIP") && !strcmp(getenv("ALIP"),"0")) ctrl.ALIP=false;
   if(getenv("POS_HOLD") && !strcmp(getenv("POS_HOLD"),"0")) ctrl.POS_HOLD=false;
   mjModel*m=q.m; mjData*d=q.d; double dt=m->opt.timestep;

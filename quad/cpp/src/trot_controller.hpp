@@ -49,7 +49,7 @@ struct TrotCtrl {
   double gp_T=0.5, gp_SWF=0.5, gp_off[4]={0,0.5,0.5,0}, gp_Tsw=0.25, gp_Tst=0.25;
   // ── ★속도 트리거 자동 whip(고속 trot=동물형 채찍질) ──
   bool auto_whip=true; double whip_v0=0.8, whip_v1=1.6;    // ★기본 ON: v0~v1서 whip 선형증가(swing_w 2.0→낮게)
-  double whip_hi=2.0, whip_lo_f=0.1, whip_lo_r=0.6;        // ★최적: 저속 2.0(매끈)→고속 앞0.1(강whip)·뒤0.6(안정)
+  double whip_hi=2.0, whip_lo_f=0.1, whip_lo_r=0.6;        // ★앞발 paw-tuck whip(앞0.1강·뒤0.6). yaw-fight 수정 후 선회 최고(15.8°)+원래 의도. 슬라이더로 조절
   // 상태
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
@@ -156,6 +156,7 @@ struct TrotCtrl {
       for(int k=0;k<q.mpc.N;k++) for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg+k*q.mpc.DT,sch,sp); cs[k][i]=sch?1:0; }
       Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
     Vector3d lam_use[4]; for(int i=0;i<4;i++) lam_use[i]= st.empty()?Vector3d::Zero():lam_des[i];
+    q.yaw_des=yaw_ref;                                     // ★자세 task가 명령헤딩 추종(선회시 yaw와 안싸움)
     if(!q.wbic_track(st,swing,lam_use)) q.wbic_stance();
   }
   double tiltdeg(){ double R[9]; mju_quat2Mat(R,&q.d->qpos[3]); return std::acos(tc_clip(R[8],-1,1))*180/M_PI; }
@@ -169,6 +170,7 @@ static inline void apply_env_gains(QuadControl& q){
   if(getenv("W_AM")) q.W_AM=atof(getenv("W_AM"));
   if(getenv("KD_AM")) q.KD_AM=atof(getenv("KD_AM"));
   if(getenv("W_ORI")) q.w_ori=atof(getenv("W_ORI"));
+  if(getenv("W_YAW")) q.w_yaw=atof(getenv("W_YAW"));      // yaw 헤딩홀드 가중(17dof=0권장:선회민감, 14dof=5:직진드리프트방지)
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); q.swing_w_r=v; q.swing_w_f=v; }
   if(getenv("SWING_W_R")) q.swing_w_r=atof(getenv("SWING_W_R"));
   if(getenv("SWING_W_F")) q.swing_w_f=atof(getenv("SWING_W_F"));

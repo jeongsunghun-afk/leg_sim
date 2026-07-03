@@ -25,6 +25,8 @@ struct QuadControl {
   double base_z0=0.52, REAR_ANKLE=-0.7, FRONT_ANKLE=-0.7;  // 14dof:ours_sphere / 17dof: 0.5234,-0.5
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
   double w_ori=5.0;                                      // wbic_track 자세 task 가중(14dof=5, 17dof튜닝=20)
+  double yaw_des=0.0;                                     // ★자세 task 목표 헤딩(TrotCtrl이 yaw_ref로 설정). 선회시 몸통이 추종
+  double w_yaw=5.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). 약하게=선회 안싸움+직진 드리프트만 방지
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
@@ -197,8 +199,15 @@ struct QuadControl {
       for(int t=0;t<leg_dof[leg];t++) sw_vidx.insert(legqv[leg][t]); }
     std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
     Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];
-    double oerr[3]; mju_quat2Vel(oerr,&d->qpos[3],1.0);
-    for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
+    // ★자세 task 분리: roll/pitch=정확한 현재yaw 프레임서 레벨링(회전 무관 정확) + yaw축=명령헤딩(yaw_des) 약추종.
+    //   단위자세 대비로 하면 회전할수록 yaw를 0으로 되당겨 ~120°서 붕괴. yaw_ref 프레임서 레벨링하면 고속선회시 0.3rad 틀어져 붕괴.
+    double* qc=&d->qpos[3];
+    double yaw_m=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
+    double qlev[4]={std::cos(yaw_m/2),0,0,std::sin(yaw_m/2)};     // 현재 yaw에서 수평(정확 프레임)
+    double oerr[3]; mju_subQuat(oerr,&d->qpos[3],qlev);           // roll/pitch 오차(yaw≈0)
+    for(int j=0;j<2;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
+    double yaw_err=std::atan2(std::sin(yaw_des-yaw_m),std::cos(yaw_des-yaw_m));  // 헤딩오차(wrap안전)
+    double a_yaw=150*yaw_err-20*qv[5]; P(5,5)+=w_yaw; g[5]-=w_yaw*a_yaw;         // yaw 헤딩홀드(직진 드리프트 방지, 선회시 yaw_des 추종→안싸움)
     double zref=com_ref[2]+_body_terr; Vector3d Jcqv=Jc*qv;
     double a_z=200*(zref-d->subtree_com[2])-25*Jcqv[2];
     P.topLeftCorner(nv,nv)+=150.0*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=150.0*a_z*Jc.row(2).transpose();

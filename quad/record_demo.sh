@@ -11,7 +11,8 @@ PY=/home/jsh/miniforge3/envs/proxddp/bin/python
 QUAD=/home/jsh/문서/jsh/simulation/quad
 OUT_DIR=${OUT_DIR:-$HOME/Videos/Screencasts}
 SIZE=${SIZE:-1920x1200}                 # 전체화면 해상도 (xdpyinfo 로 확인)
-GAINS="BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0"
+GAINS="BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 GEARBOX=1 GEAR_FOOT=0.5714"
+# ★GEARBOX=1 GEAR_FOOT=0.5714 = 발목 반사관성(8:1)→현실적 발끝(이상화 발목 flail 억제). 이상화로 보려면 이 둘 제거.
 
 mkdir -p "$OUT_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)

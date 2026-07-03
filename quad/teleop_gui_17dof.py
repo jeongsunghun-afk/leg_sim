@@ -162,19 +162,27 @@ def _status():
 
 
 def _whip_ui(gait):
-    """★whip 컨트롤을 gait에 연동. walk=슬라이더가 whip 직접 제어(속도연동 우회)라
-    auto_whip 체크박스 비활성. trot=속도연동 재활성. (컨트롤러도 walk서 슬라이더 직접적용)"""
+    """★whip 컨트롤을 gait에 연동. gait 버튼 누르면 그 gait 기본 세팅으로 자동전환.
+    체크박스는 두 gait 다 활성 — trot=속도연동 자동whip on/off, walk=whip 사용 on/off(끄면 매끈)."""
     walk = (gait == 'walk')
-    if dpg.does_item_exist('auto_whip'):
-        dpg.configure_item('auto_whip', enabled=not walk)   # walk선 auto 무효(회색)
+    # ★기본: 슬라이더 앞0.1/뒤0.6(강도). 체크박스=whip on/off. trot=auto on / walk=off(저속 매끈 시작)
+    _auto = (not walk)
+    _wf, _wr = 0.1, 0.6
     if dpg.does_item_exist('swing_w_f'):
+        dpg.set_value('swing_w_f', _wf); sc.SetSwingWF(_wf)
         dpg.configure_item('swing_w_f', label=(
-            'walk: 앞다리 whip  (0.1=강한 whip / 2.0=매끈, 슬라이더 직접적용)' if walk
+            'walk 앞다리 whip 강도  (0.1=강 / 2.0=약; 체크박스 켜야 적용)' if walk
             else '앞다리 whip 목표  (0.1=강한 paw-tuck / 2.0=매끈)   auto on:고속목표'))
     if dpg.does_item_exist('swing_w_r'):
+        dpg.set_value('swing_w_r', _wr); sc.SetSwingWR(_wr)
         dpg.configure_item('swing_w_r', label=(
-            'walk: 뒷다리 whip  (0.6=완만 / 2.0=매끈, 슬라이더 직접적용)' if walk
+            'walk 뒷다리 whip 강도  (0.6=완만 / 2.0=약)' if walk
             else '뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)'))
+    if dpg.does_item_exist('auto_whip'):
+        dpg.set_value('auto_whip', _auto); sc.SetAutoWhip(_auto)
+        dpg.configure_item('auto_whip', label=(
+            'whip 사용 (walk: 체크=슬라이더 whip 적용 / 해제=매끈)' if walk
+            else '속도연동 자동 whip (on=고속서 슬라이더값까지 선형↑ / off=슬라이더 상수)'))
 
 
 _last_left = [0.0, 0.0]                                 # 슬라이더 변경 시 live 재적용용 마지막 축

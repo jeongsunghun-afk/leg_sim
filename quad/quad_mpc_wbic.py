@@ -491,11 +491,21 @@ class QuadSim:
         # base 안정화 task (legged_control BaseAccelTask 해당): 자세(upright)+높이(z)
         #   — swing 반력에 의한 pitch/sink 억제. xy 병진은 MPC λ 에 위임(전진 보행 유지).
         Jc = np.zeros((3, nv)); mujoco.mj_jacSubtreeCom(m, d, Jc, 0)
-        oerr = np.zeros(3); mujoco.mju_quat2Vel(oerr, d.qpos[3:7], 1.0)
+        # ★자세 task 분리: roll/pitch=현재yaw 프레임서 레벨링(회전 무관 정확) + yaw축=명령헤딩(yaw_des) 약추종.
+        #   단위자세 대비면 회전할수록 yaw를 0으로 되당겨 ~120°서 붕괴. W_YAW=0=선회 안싸움.
+        qc = d.qpos[3:7]
+        yaw_m = math.atan2(2 * (qc[0] * qc[3] + qc[1] * qc[2]), 1 - 2 * (qc[2] * qc[2] + qc[3] * qc[3]))
+        qlev = np.array([math.cos(yaw_m / 2), 0.0, 0.0, math.sin(yaw_m / 2)])
+        oerr = np.zeros(3); mujoco.mju_subQuat(oerr, d.qpos[3:7], qlev)   # roll/pitch 오차(yaw≈0)
         a_ori = 150 * (-oerr) - 20 * qv[3:6]
         w_ori = float(os.environ.get('W_ORI', '5.0'))
-        for j in range(3):
+        for j in range(2):                             # roll/pitch만
             P[3 + j, 3 + j] += w_ori; g[3 + j] -= w_ori * a_ori[j]
+        yaw_des = getattr(self, '_yaw_des', 0.0)
+        yaw_err = math.atan2(math.sin(yaw_des - yaw_m), math.cos(yaw_des - yaw_m))
+        a_yaw = 150 * yaw_err - 20 * qv[5]
+        w_yaw = float(os.environ.get('W_YAW', '0'))    # yaw 헤딩홀드(선회 안싸움; 0=MPC가 yaw담당)
+        P[5, 5] += w_yaw; g[5] -= w_yaw * a_yaw
         _th = self._body_terr                                 # ★틱당 1회 캐시된 4hip 평균 지형높이(mode_trot서 갱신, raycast 절약)
         _zref = self.com_ref[2] + _th                         # 몸통 높이 기준을 지형따라 부드럽게 올림(평지=+0)
         self._dbg_terr = _th; self._dbg_clr = d.subtree_com[0][2] - _th   # 진단: 지형높이·clearance(몸-지면)
@@ -1391,6 +1401,7 @@ def mode_trot():
         else:
             S['pos_hold'] = None
         S['x_ref'][2] = S['yaw_ref']; S['x_ref'][8] = W_eff                     # yaw각·yaw rate 참조
+        q._yaw_des = S['yaw_ref']                                               # ★자세 task 헤딩홀드 목표(선회시 몸통 추종→안싸움)
         S['x_ref'][9] = vx_w; S['x_ref'][10] = vy_w                            # world vx,vy
         if q._terrain_on:                                                      # ★perceptive: MPC 높이 기준=평지값+지형(상승 GRF 계획). 정석=planner가 참조생성
             S.setdefault('z_ref0', S['x_ref'][5])                             #   arming 평지 높이 저장(최초 1회)
@@ -1421,7 +1432,7 @@ def mode_trot():
         v_fb = vcom[:2].copy()               # 발배치 피드백 속도 (기본=CoM 속도)
         # ★ALIP: CoM속도 대신 각운동량 반영 속도 v_alip = vcom + [L_y,−L_x]/(m·H).
         #   centroidal 각운동량 L(다리 swing momentum 포함)을 발배치에 녹여 leg-heavy 고속 안정화.
-        if os.environ.get('ALIP', '1') != '0':       # 기본 ON (정상속도 무해·고속 도움; ALIP=0로 끔)
+        if os.environ.get('ALIP', '0') != '0':       # ★기본 OFF: euler 표준수정 후 무의미(선회 동일·push복구 미미). ALIP=1로 켬
             mujoco.mj_subtreeVel(q.m, q.d)
             L = q.d.subtree_angmom[0]                       # centroidal 각운동량 (world, 다리 포함)
             H = max(0.1, float(q.d.subtree_com[0][2]))      # CoM 높이

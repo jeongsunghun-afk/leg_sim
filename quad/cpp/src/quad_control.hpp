@@ -26,7 +26,7 @@ struct QuadControl {
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
   double w_ori=5.0;                                      // wbic_track 자세 task 가중(14dof=5, 17dof튜닝=20)
   double yaw_des=0.0;                                     // ★자세 task 목표 헤딩(TrotCtrl이 yaw_ref로 설정). 선회시 몸통이 추종
-  double w_yaw=5.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). 약하게=선회 안싸움+직진 드리프트만 방지
+  double w_yaw=0.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). euler 표준수정 후 0이 최적(14·17 공통; MPC가 yaw 담당). >0=헤딩홀드
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)

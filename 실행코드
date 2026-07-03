@@ -183,6 +183,15 @@ cd /home/jsh/문서/jsh/simulation/quad/cpp && ./build/quad_cpp
 #     ALIP 기본 off(근본수정 후 무의미 확인). MU=0.6 마찰콘(물리 geom=1.3, 튜닝시 MU=1.0)
 #   ★14dof 파리티(2026-07-03): C++은 공유헤더라 자동적용. Python 14dof(quad_mpc_wbic.py)에도 WBIC decouple+ALIP off 포팅.
 #     14dof는 W_AM=0 기본이라 euler수정만으론 주행선회 카오스 잔존 → $E14(W_AM=12 등) 게인 필요.
+#   ★허리 조향스파인(2026-07-03, 커밋 c534b3f): 허리 능동모델 ours_17dof_waist_sphere(nu=17) + WAIST_STEER(0=중립/>0=선회시 앞몸통굽힘).
+#     C++·Python 포팅완료. 선회 falls=0(허리18°@STEER0.8). 안정이득은 없음(16dof충분)-조향스파인 자연스러움용. GUI 허리조향 슬라이더.
+#   ★★액추에이터 물리(sim2real, 2026-07-03, 커밋 978b1a7·5e60a8e·949a5a6): MJCF는 이상화(armature=0)라 발목flail 과장(158rad/s).
+#     GEARBOX=1 GEAR_FOOT=0.5714  → 반사관성 dof_armature=I_rotor·N²(발목8:1) + 재기어 토크한계 tau_peak×gmul(168→96Nm, QP존중)
+#     MOTOR_CURVE=1               → 가용토크=tau_peak·max(0,1−|ω|/w_limit)=고속서↓ → 발목 과속억제(35→24rad/s, 한계25.9 내)
+#     ROTOR_I/JDAMP/JFRIC=대략값(실측시 교체). C++·Python 일치. 뷰어/record_demo는 GEARBOX 기본적용.
+#   ★관절 포화분석(plot_perfoot.py: LOG_JOINTS npz→발별 4행×2열, phase음영, 총질량37.94kg, 감속비반영 한계선):
+#     python plot_perfoot.py <npz> <out.png> <V> <mjcf>  (GEAR_FOOT=0.5714 MOTOR_CURVE=1 env로 한계선 일치)
+#     결과(GEARBOX+8:1+MOTOR_CURVE): 토크병목=thigh(95~96%,양속도) / 속도병목=calf(1.0=61%→1.8=111%오버) / 발목=해결(90%한계내) / hip=여유
 
 # (4) GLFW 실시간 뷰어 (키보드 ↑↓속도 ←→선회 space정지 · 마우스카메라)  ★배경실행=setsid 필수(SIGURG회피)
 export DISPLAY=:0

@@ -172,13 +172,17 @@ cd /home/jsh/문서/jsh/simulation/quad/cpp && ./build/quad_cpp
 
 # (3) 헤드리스 closed-loop (인자: mjcf, STEPS)
 # 14dof: ./build/trot_sim ../quad_real_sphere.mjcf 6000     → 3s x=0.358≈Py0.359(0.1%)·falls=0·~5배실시간
-# 17dof: env $E17 ./build/trot_sim ../quad_real_17dof_sphere.mjcf 6000   → falls=0·max_tilt~1.4°
-#   $E17 = BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 SWING_W=2.0
-#   ★360°선회 수정(2026-07-03): WBIC 자세task가 단위자세(yaw=0) 목표라 회전시 yaw를 되당겨 ~120°붕괴 → roll/pitch만 레벨링+yaw는 MPC담당(W_YAW=0). 이제 제자리 다중회전·원주행 falls=0. 14dof는 W_YAW=5(직진 헤딩홀드)
+# 17dof: env $E17 ./build/trot_sim ../quad_real_17dof_sphere.mjcf 6000   → 직진 falls=0·tilt~2.2° / 선회 전범위 falls=0
+#   $E17 = BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 SWING_W=2.0  # (SWING_W=2.0=무whip 벤치용, 기본 뷰어는 생략→앞0.1/뒤0.6 paw-tuck)
+#   ★선회 근본해결(2026-07-03, 커밋 3add636+1c56d2f):
+#     (a) WBIC 자세task 단위자세(yaw=0) 목표→회전시 yaw 되당겨 붕괴 → roll/pitch만 레벨링+yaw는 MPC담당(17dof W_YAW=0/14dof=5)
+#     (b) ★핵심: MPC euler-rate가 body-frame(yaw누락)인데 상태ω는 world라 불일치 → 주행선회만 yaw~110°붕괴.
+#         Di Carlo표준 Rz(yaw)ᵀ로 수정(mpc.hpp/gait_sim mpc.py) → 제자리·주행선회 전범위 rock solid(제자리0.5°·V1.5WZ0.3 5.9°, falls=0)
+#     ALIP 기본 off(근본수정 후 무의미 확인). MU=0.6 마찰콘(물리 geom=1.3, 튜닝시 MU=1.0)
 
 # (4) GLFW 실시간 뷰어 (키보드 ↑↓속도 ←→선회 space정지 · 마우스카메라)  ★배경실행=setsid 필수(SIGURG회피)
 export DISPLAY=:0
-setsid bash -c 'cd /home/jsh/문서/jsh/simulation/quad/cpp; env BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 SWING_W=2.0 RATE=1.0 CMDFILE=/tmp/quad_cmd.json ./build/trot_view ../quad_real_17dof_sphere.mjcf' </dev/null &
+setsid bash -c 'cd /home/jsh/문서/jsh/simulation/quad/cpp; env BASE_Z0=0.5234 REAR_ANKLE=-0.3 FRONT_ANKLE=-0.5 W_ORI=20 KD_AM=24 W_AM=12 W_YAW=0 RATE=1.0 CMDFILE=/tmp/quad_cmd.json ./build/trot_view ../quad_real_17dof_sphere.mjcf' </dev/null &
 
 # (5) GUI 연동(위 CMDFILE) — 터미널에서 직접(권장, 안정): 서기/눕기/walk토글/RESET · step_h·reach·앞뒤whip 슬라이더 live
 cd /home/jsh/문서/jsh/simulation/quad && DISPLAY=:0 PXI teleop_gui_17dof.py

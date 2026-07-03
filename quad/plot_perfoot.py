@@ -12,9 +12,13 @@ out = sys.argv[2] if len(sys.argv) > 2 else '/home/jsh/문서/jsh/simulation/qua
 V = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0
 mjcf = sys.argv[4] if len(sys.argv) > 4 else 'quad_real_17dof_sphere.mjcf'
 
-# 관절 한계 (02_Leg 모터): (Peak토크[Nm], 최대각속도[rad/s]). [[02leg-motor-spec]]
-TL = {'hip': 84, 'thigh': 84, 'calf': 126, 'foot': 168}
-WL = {'hip': 29.6, 'thigh': 29.6, 'calf': 19.7, 'foot': 14.8}
+# ★관절 한계 = 감속비 기반: 토크=motor_peak·N, 속도=motor_noload/N (N=기어). [[02leg-motor-spec]]
+#   nominal 7/7/10.5/14 → 토크 84/84/126/168, 속도 29.6/29.6/19.7/14.8. GEAR_FOOT 등 env로 재기어 반영.
+MOTOR_PEAK = 12.0; MOTOR_NOLOAD = 207.0            # 12Nm·207rad/s (84/7, 29.6*7)
+GEARMAP = {'hip': 7.0, 'thigh': 7.0, 'calf': 10.5, 'foot': 14.0}
+GEARN = {jt: GEARMAP[jt] * float(os.environ.get('GEAR_' + jt.upper(), '1.0')) for jt in GEARMAP}
+TL = {jt: MOTOR_PEAK * GEARN[jt] for jt in GEARMAP}       # 재기어 토크한계
+WL = {jt: MOTOR_NOLOAD / GEARN[jt] for jt in GEARMAP}     # 재기어 속도한계
 JCOL = {'hip': 'C0', 'thigh': 'C1', 'calf': 'C2', 'foot': 'C3'}
 JORDER = ['hip', 'thigh', 'calf', 'foot']
 LEGS = ['HL', 'HR', 'FL', 'FR']
@@ -64,8 +68,8 @@ for r, leg in enumerate(LEGS):
         ax_t.set_title('torque @%.1fm/s (dash=Peak)' % V)
 axes[-1, 0].set_xlabel('t [s]'); axes[-1, 1].set_xlabel('t [s]')
 mtxt = ('mass %.2f kg  |  ' % mass) if mass else ''
-fig.suptitle('02_Leg @%.1fm/s  |  %sGEARBOX foot 8:1 (reflected inertia)  |  gray=warmup  orange=accel  green=steady'
-             % (V, mtxt), fontsize=12)
+fig.suptitle('02_Leg @%.1fm/s  |  %sfoot gear %.1f:1 (limits: v=%.1f t=%.0fNm)  |  gray=warmup orange=accel green=steady'
+             % (V, mtxt, GEARN['foot'], WL['foot'], TL['foot']), fontsize=12)
 fig.tight_layout()
 fig.savefig(out, dpi=110)
 print('총질량: %s kg' % (('%.2f' % mass) if mass else '?'))

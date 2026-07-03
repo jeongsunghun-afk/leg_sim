@@ -165,9 +165,10 @@ def _whip_ui(gait):
     """★whip 컨트롤을 gait에 연동. gait 버튼 누르면 그 gait 기본 세팅으로 자동전환.
     체크박스는 두 gait 다 활성 — trot=속도연동 자동whip on/off, walk=whip 사용 on/off(끄면 매끈)."""
     walk = (gait == 'walk')
-    # ★기본: 슬라이더 앞0.1/뒤0.6(강도). 체크박스=whip on/off. trot=auto on / walk=off(저속 매끈 시작)
-    _auto = (not walk)
-    _wf, _wr = 0.1, 0.6
+    # ★기본: 체크박스 두 gait 다 ON. 슬라이더=gait 전용 최적 whip.
+    #   trot=앞0.1/뒤0.6(공격적 paw-tuck) · walk=앞1.0/뒤1.5(완만 whip, 직진4.1°·선회8.1° 최적)
+    _auto = True
+    _wf, _wr = (1.0, 1.5) if walk else (0.1, 0.6)
     if dpg.does_item_exist('swing_w_f'):
         dpg.set_value('swing_w_f', _wf); sc.SetSwingWF(_wf)
         dpg.configure_item('swing_w_f', label=(

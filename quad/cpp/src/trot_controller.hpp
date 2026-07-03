@@ -37,7 +37,7 @@ struct TrotCtrl {
   QuadControl& q;
   double V=0.30, VY=0.0, WZ=0.0;   // 명령속도(뷰어 키보드/GUI)
   double step_h=0.10, raibert_k=0.8;   // ★GUI 슬라이더(live): step height·전방 reach
-  bool ALIP=true, POS_HOLD=true;
+  bool ALIP=false, POS_HOLD=true;   // ★ALIP 기본 off: push복구 이득 미미(300N서만 22vs26°)한데 지속선회 붕괴시킴. ALIP=1로 켬
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
@@ -171,6 +171,7 @@ static inline void apply_env_gains(QuadControl& q){
   if(getenv("KD_AM")) q.KD_AM=atof(getenv("KD_AM"));
   if(getenv("W_ORI")) q.w_ori=atof(getenv("W_ORI"));
   if(getenv("W_YAW")) q.w_yaw=atof(getenv("W_YAW"));      // yaw 헤딩홀드 가중(17dof=0권장:선회민감, 14dof=5:직진드리프트방지)
+  if(getenv("MU")){ q.MU=atof(getenv("MU")); q.mpc.MU=q.MU*q.MU_MARGIN; }  // ★마찰콘 μ(물리 geom=1.3, 기존 0.6은 과보수→선회 GRF 포화)
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); q.swing_w_r=v; q.swing_w_f=v; }
   if(getenv("SWING_W_R")) q.swing_w_r=atof(getenv("SWING_W_R"));
   if(getenv("SWING_W_F")) q.swing_w_f=atof(getenv("SWING_W_F"));

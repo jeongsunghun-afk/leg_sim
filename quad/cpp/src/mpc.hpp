@@ -21,7 +21,7 @@ inline Matrix3d _euler_to_R(double r,double p,double y){
   Rx<<1,0,0, 0,cr,-sr, 0,sr,cr;
   Ry<<cp,0,sp, 0,1,0, -sp,0,cp;
   Rz<<cy,-sy,0, sy,cy,0, 0,0,1;
-  return Rx*Ry*Rz;
+  return Rz*Ry*Rx;   // ★ZYX(yaw-pitch-roll) 표준 — 상태추출·_euler_rate_T와 일치(구 Rx*Ry*Rz는 XYZ로 불일치→큰yaw서 I_world 오차)
 }
 inline Matrix3d _euler_rate_T(double r,double p){
   double cr=std::cos(r),sr=std::sin(r),cp=std::cos(p),sp=std::sin(p);
@@ -49,7 +49,10 @@ inline Matrix<double,4,3> mpc_qp_plan(const MpcCfg&c, const VectorXd&x0,
   Matrix3d I_world=R_now*c.I_BODY*R_now.transpose();
   Matrix3d I_world_inv=I_world.inverse();
   Matrix<double,13,13> Ac=Matrix<double,13,13>::Zero();
-  Ac.block<3,3>(0,6)=_euler_rate_T(roll0,pitch0);
+  // ★ZYX 표준(Di Carlo): Θ̇ = Rz(yaw)ᵀ·ω_world. 상태 x0[6:9]=world 각속도(omega_w=R·wb)라 world 변환 필요.
+  //   구 _euler_rate_T(roll,pitch)는 body-frame 변환(yaw 누락)→큰 yaw서 방향예측 오차→주행선회 붕괴.
+  { double cyw=std::cos(yaw0), syw=std::sin(yaw0); Matrix3d RzT;
+    RzT<<cyw,syw,0.0, -syw,cyw,0.0, 0.0,0.0,1.0; Ac.block<3,3>(0,6)=RzT; }
   Ac.block<3,3>(3,9)=Matrix3d::Identity();
   Ac(9,12)=0; Ac(10,12)=0; Ac(11,12)=1.0;
   Matrix<double,13,13> Ad=Matrix<double,13,13>::Identity()+c.DT*Ac;

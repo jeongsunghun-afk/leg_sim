@@ -125,14 +125,15 @@ _I_BODY = BODY_INERTIA.copy()
 # 회전 / Euler-rate transform
 # ══════════════════════════════════════════════════════════════
 def _euler_to_R(roll, pitch, yaw):
-    """XYZ Euler (intrinsic) → R = Rx(r)·Ry(p)·Rz(y)."""
+    """ZYX Euler → R = Rz(y)·Ry(p)·Rx(r). ★상태추출(atan2/asin ZYX)·world 각속도와 일치.
+    (구 Rx·Ry·Rz=XYZ는 상태추출과 불일치 → 큰 yaw+비영 roll/pitch서 I_world 오차)"""
     cr, sr = math.cos(roll), math.sin(roll)
     cp, sp = math.cos(pitch), math.sin(pitch)
     cy, sy = math.cos(yaw), math.sin(yaw)
     Rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]])
     Ry = np.array([[cp, 0, sp], [0, 1, 0], [-sp, 0, cp]])
     Rz = np.array([[cy, -sy, 0], [sy, cy, 0], [0, 0, 1]])
-    return Rx @ Ry @ Rz
+    return Rz @ Ry @ Rx
 
 
 def _euler_rate_T(roll, pitch):
@@ -154,12 +155,14 @@ def _euler_rate_T(roll, pitch):
 # ══════════════════════════════════════════════════════════════
 # LTV-MPC A/B 빌드
 # ══════════════════════════════════════════════════════════════
-def _build_Ac_at(roll, pitch):
+def _build_Ac_at(roll, pitch, yaw):
     """v11 LTV-MPC: 현재 자세에서의 연속 시간 A 행렬 (13×13).
-    Euler rate가 작은 각도 가정(I)이 아닌 T(r,p)·ω로 정확화.
+    ★ZYX 표준(Di Carlo): dΘ/dt = Rz(yaw)ᵀ·ω_world. 상태 ω가 world 각속도라 world 변환 필요.
+    (구 _euler_rate_T(roll,pitch)=body-frame 변환[yaw 누락]→큰 yaw서 방향예측 오차→주행선회 붕괴)
     """
+    cy, sy = math.cos(yaw), math.sin(yaw)
     Ac = np.zeros((13, 13), dtype=float)
-    Ac[0:3, 6:9]  = _euler_rate_T(roll, pitch)   # dΘ/dt = T·ω
+    Ac[0:3, 6:9]  = np.array([[cy, sy, 0.0], [-sy, cy, 0.0], [0.0, 0.0, 1.0]])  # Rz(yaw)ᵀ
     Ac[3:6, 9:12] = np.eye(3)                    # dp/dt = v
     Ac[9:12, 12]  = [0.0, 0.0, 1.0]              # dv/dt += g·ẑ
     return Ac
@@ -178,7 +181,7 @@ def _build_Bc_at(contact_mask_k, foot_pos_k, I_world_inv):
 
 def _build_Ac_d():
     """[legacy, hover-at-x0 호환용] 시불변 Ac_d — small-angle 가정 (T=I)."""
-    Ac = _build_Ac_at(0.0, 0.0)
+    Ac = _build_Ac_at(0.0, 0.0, 0.0)
     return np.eye(13) + DT_MPC * Ac
 
 
@@ -221,7 +224,7 @@ def mpc_qp_plan(x0, contact_schedule, foot_positions, x_ref_step=None, ltv=False
         R_now      = _euler_to_R(roll0, pitch0, yaw0)
         I_world    = R_now @ _I_BODY @ R_now.T
         I_world_inv = np.linalg.inv(I_world)
-        Ac_now     = _build_Ac_at(roll0, pitch0)
+        Ac_now     = _build_Ac_at(roll0, pitch0, yaw0)
         Ad_now     = np.eye(nx) + DT_MPC * Ac_now
         Ad_powers_now = [np.eye(nx, dtype=float)]
         for _k in range(N_MPC):

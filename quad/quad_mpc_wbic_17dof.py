@@ -1513,7 +1513,7 @@ def mode_trot():
         v_fb = vcom[:2].copy()               # 발배치 피드백 속도 (기본=CoM 속도)
         # ★ALIP: CoM속도 대신 각운동량 반영 속도 v_alip = vcom + [L_y,−L_x]/(m·H).
         #   centroidal 각운동량 L(다리 swing momentum 포함)을 발배치에 녹여 leg-heavy 고속 안정화.
-        if os.environ.get('ALIP', '1') != '0':       # 기본 ON (정상속도 무해·고속 도움; ALIP=0로 끔)
+        if os.environ.get('ALIP', '0') != '0':       # ★기본 OFF: push복구 이득 미미(250N 19 vs 18°)·고속 무해. ALIP=1로 켬
             mujoco.mj_subtreeVel(q.m, q.d)
             L = q.d.subtree_angmom[0]                       # centroidal 각운동량 (world, 다리 포함)
             H = max(0.1, float(q.d.subtree_com[0][2]))      # CoM 높이

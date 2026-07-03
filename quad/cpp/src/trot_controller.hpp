@@ -113,13 +113,15 @@ struct TrotCtrl {
     double vt=go?V:0.0, vyt=go?VY:0.0, wt=go?WZ:0.0;
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
-    double spd=std::hypot(Veff,Vyeff);
+    double spd=std::abs(Veff);   // ★전진속도만 whip 트리거(좌우이동은 whip 유발 안함). 구 hypot은 측방서도 whip 켜짐
     if(gait_type=="walk"){   // ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접적용 / off=매끈(whip_hi)
       if(auto_whip){ q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; } else { q.swing_w_f=whip_hi; q.swing_w_r=whip_hi; } }
     else if(auto_whip){   // ★trot: 속도↑ → whip↑. swing_w 를 whip_hi(저속,매끈)→whip_lo(고속,슬라이더값) 선형보간
       double s=tc_clip((spd-whip_v0)/(whip_v1-whip_v0),0.0,1.0);
       q.swing_w_f=whip_hi+s*(whip_lo_f-whip_hi); q.swing_w_r=whip_hi+s*(whip_lo_r-whip_hi);
     } else { q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; }   // 수동=슬라이더값 상수
+    double lat=tc_clip(std::abs(Vyeff)/0.35,0.0,1.0);   // ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드)
+    q.swing_w_f=q.swing_w_f+lat*(whip_hi-q.swing_w_f); q.swing_w_r=q.swing_w_r+lat*(whip_hi-q.swing_w_r);
     double yaw_m=quat_yaw();
     if(std::abs(Weff)>0.02){ yaw_ref=tc_clip(yaw_ref+Weff*dt,yaw_m-0.3,yaw_m+0.3); yaw_hold_set=false; }
     else { if(!yaw_hold_set){ yaw_hold=yaw_m; yaw_hold_set=true; } yaw_ref=yaw_hold; }

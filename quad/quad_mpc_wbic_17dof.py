@@ -1480,6 +1480,9 @@ def mode_trot():
             q._swing_w_r = q._whip_hi + _s * (q._whip_lo_r - q._whip_hi)
         else:                                                                   # 수동=슬라이더값(whip 목표) 상수
             q._swing_w_f = q._whip_lo_f; q._swing_w_r = q._whip_lo_r
+        _lat = float(np.clip(abs(Vy_eff) / 0.35, 0.0, 1.0))                     # ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드)
+        q._swing_w_f = q._swing_w_f + _lat * (q._whip_hi - q._swing_w_f)
+        q._swing_w_r = q._swing_w_r + _lat * (q._whip_hi - q._swing_w_r)
         if q._waist_idx is not None:                                            # ★허리 조향: 선회명령에 앞몸통 굽힘 연동(WAIST_STEER=0이면 중립홀드)
             q._waist_ref = float(np.clip(q._waist_steer * W_eff, -0.75, 0.75))
         # 선회: yaw각 참조 + 명령(body)→world 회전 (SRBD 상태는 world frame)

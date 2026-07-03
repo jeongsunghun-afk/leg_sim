@@ -963,7 +963,9 @@ class QuadSim:
                 m.vis.global_.offheight = max(m.vis.global_.offheight, _vh)
                 _ren = mujoco.Renderer(m, _vh, _vw)
                 _cam = mujoco.MjvCamera(); mujoco.mjv_defaultCamera(_cam)
-                _cam.distance = float(os.environ.get('VID_DIST', '2.8')); _cam.elevation = -20.0; _cam.azimuth = 130.0
+                _cam.distance = float(os.environ.get('VID_DIST', '2.8'))
+                _cam.elevation = float(os.environ.get('VID_ELEV', '-20'))   # ★-50~-70=위에서(허리 굽힘 잘보임)
+                _cam.azimuth = float(os.environ.get('VID_AZ', '130'))
                 _vevery = max(1, int(round((1.0 / 30) / m.opt.timestep)))   # 30fps 샘플링
             for s in range(nsteps):
                 if _push:                                     # 측방(y) 힘 주입 후 해제

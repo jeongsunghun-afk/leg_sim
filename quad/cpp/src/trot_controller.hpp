@@ -50,6 +50,7 @@ struct TrotCtrl {
   // ── ★속도 트리거 자동 whip(고속 trot=동물형 채찍질) ──
   bool auto_whip=true; double whip_v0=0.8, whip_v1=1.6;    // ★기본 ON: v0~v1서 whip 선형증가(swing_w 2.0→낮게)
   double whip_hi=2.0, whip_lo_f=0.1, whip_lo_r=0.6;        // ★앞발 paw-tuck whip(앞0.1강·뒤0.6). yaw-fight 수정 후 선회 최고(15.8°)+원래 의도. 슬라이더로 조절
+  double waist_steer=0.0;                                  // ★허리 조향 게인(0=중립홀드/>0=선회시 앞몸통 굽힘=조향스파인). waist_ref=clip(steer·Weff,±0.75)
   // 상태
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
@@ -113,6 +114,7 @@ struct TrotCtrl {
     double vt=go?V:0.0, vyt=go?VY:0.0, wt=go?WZ:0.0;
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
+    q.waist_ref=tc_clip(waist_steer*Weff,-0.75,0.75);   // ★허리 조향: 선회명령에 앞몸통 굽힘(steer=0이면 중립홀드)
     double spd=std::abs(Veff);   // ★전진속도만 whip 트리거(좌우이동은 whip 유발 안함). 구 hypot은 측방서도 whip 켜짐
     if(gait_type=="walk"){   // ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접적용 / off=매끈(whip_hi)
       if(auto_whip){ q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; } else { q.swing_w_f=whip_hi; q.swing_w_r=whip_hi; } }
@@ -120,7 +122,7 @@ struct TrotCtrl {
       double s=tc_clip((spd-whip_v0)/(whip_v1-whip_v0),0.0,1.0);
       q.swing_w_f=whip_hi+s*(whip_lo_f-whip_hi); q.swing_w_r=whip_hi+s*(whip_lo_r-whip_hi);
     } else { q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; }   // 수동=슬라이더값 상수
-    double lat=tc_clip(std::abs(Vyeff)/0.35,0.0,1.0);   // ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드)
+    double lat=tc_clip(std::abs(Vyeff)/0.35,0.0,1.0);   // ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드). walk 측방붕괴는 게이트 고유(whip 무관)
     q.swing_w_f=q.swing_w_f+lat*(whip_hi-q.swing_w_f); q.swing_w_r=q.swing_w_r+lat*(whip_hi-q.swing_w_r);
     double yaw_m=quat_yaw();
     if(std::abs(Weff)>0.02){ yaw_ref=tc_clip(yaw_ref+Weff*dt,yaw_m-0.3,yaw_m+0.3); yaw_hold_set=false; }
@@ -143,11 +145,14 @@ struct TrotCtrl {
       double H=std::max(0.1,d->subtree_com[2]); v_fb+=Vector2d(L[1],-L[0])/(q.mpc.TOTAL_MASS*H); }
     Vector2d rai; for(int k=0;k<2;k++) rai[k]=tc_clip(raibert_k*gp_Tst*v_des[k]+TC_KCAP*(v_fb[k]-v_des[k]),-TC_RAICLIP,TC_RAICLIP);
     Matrix2d Rw; Rw<<cy,-sy,sy,cy; double sh=step_h*(0.2+0.8*std::min(1.0,tg/TC_WARMUP));
+    double wa=(q.waist_idx>=0)?d->qpos[7+q.waist_idx]:0.0;         // ★허리각(앞몸통이 base대비 꺾인 정도)
+    double cyf=std::cos(yaw_m+wa), syf=std::sin(yaw_m+wa); Matrix2d Rwf; Rwf<<cyf,-syf,syf,cyf;  // 앞몸통 방향(base+허리 yaw)
     for(int i=0;i<4;i++){ bool sch; double s_; gait(i,tg,sch,s_); if(sch) continue;
       Vector2d hip_xy(d->xpos[q.hip_bid[i]*3],d->xpos[q.hip_bid[i]*3+1]);
       Vector2d r_xy=hip_xy-Vector2d(d->qpos[0],d->qpos[1]);        // 몸중심→hip
       Vector2d tw=Weff*gp_Tst*Vector2d(-r_xy[1],r_xy[0]);          // ★선회 접선 발배치(yaw) — 없으면 회전시 표류·붕괴
-      Vector2d pe_xy=hip_xy+Rw*hip_off[i]+rai+tw; Vector3d p_end(pe_xy[0],pe_xy[1],gz[i]);
+      bool frontleg=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");  // ★앞다리=앞몸통방향(허리반영)
+      Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw; Vector3d p_end(pe_xy[0],pe_xy[1],gz[i]);
       double dzl=p_end[2]-liftoff[i][2]; Vector3d bvel(vcom[0],vcom[1],0.0);
       Vector3d p_tgt=tc_swing_foot(s_,liftoff[i],p_end,bvel,sh,gp_Tsw,gp_Tst);
       p_tgt[2]+=dzl*(10*std::pow(s_,3)-15*std::pow(s_,4)+6*std::pow(s_,5));
@@ -176,6 +181,8 @@ static inline void apply_env_gains(QuadControl& q){
   if(getenv("W_ORI")) q.w_ori=atof(getenv("W_ORI"));
   if(getenv("W_YAW")) q.w_yaw=atof(getenv("W_YAW"));      // yaw 헤딩홀드 가중(17dof=0권장:선회민감, 14dof=5:직진드리프트방지)
   if(getenv("MU")){ q.MU=atof(getenv("MU")); q.mpc.MU=q.MU*q.MU_MARGIN; }  // ★마찰콘 μ(물리 geom=1.3, 기존 0.6은 과보수→선회 GRF 포화)
+  if(getenv("WAIST_W")) q.WAIST_W=atof(getenv("WAIST_W"));    // ★허리 홀드가중
+  if(getenv("WAIST_KP")) q.WAIST_KP=atof(getenv("WAIST_KP")); if(getenv("WAIST_KD")) q.WAIST_KD=atof(getenv("WAIST_KD"));
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); q.swing_w_r=v; q.swing_w_f=v; }
   if(getenv("SWING_W_R")) q.swing_w_r=atof(getenv("SWING_W_R"));
   if(getenv("SWING_W_F")) q.swing_w_f=atof(getenv("SWING_W_F"));

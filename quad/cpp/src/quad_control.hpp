@@ -30,6 +30,8 @@ struct QuadControl {
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
+  int waist_idx=-1;                                       // ★허리(FB_waist) nu-index(없으면 -1=16DOF). 큰 몸통DOF라 전용 강홀드
+  double waist_ref=0.0, WAIST_W=80.0, WAIST_KP=150.0, WAIST_KD=20.0;  // 요각목표(조향시 갱신)·홀드가중·PD
   VectorXd q_home; Vector3d com_ref;
   VectorXd tau_peak, qmin, qmax; std::vector<char> is_ankle;
   std::array<Vector2d,4> foot_hip_off; std::array<double,4> foot_gz0;
@@ -68,6 +70,8 @@ struct QuadControl {
     is_front.assign(nu,0);   // FL/FR 다리의 actuator = 앞다리
     for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
       for(int t=0;t<leg_dof[i];t++){ int a=legqv[i][t]-6; if(a>=0&&a<nu) is_front[a]=fr; } }
+    { int wj=mj_name2id(m,mjOBJ_JOINT,"FB_waist_joint");   // ★허리 조인트(있으면 능동 17-DOF)
+      waist_idx = (wj>=0 && m->jnt_type[wj]!=mjJNT_FREE) ? m->jnt_dofadr[wj]-6 : -1; }
     q_home.resize(nu);
   }
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }
@@ -160,8 +164,10 @@ struct QuadControl {
     P.topLeftCorner(nv,nv)+=Jc.transpose()*Jc; g.head(nv)-=Jc.transpose()*a_com;
     double oerr[3]; mju_quat2Vel(oerr,&d->qpos[3],1.0);
     for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=5.0; g[3+j]-=5.0*a; }
-    for(int j=0;j<nu;j++){ double a=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j];
-      double w=(stance_pin_ankle&&is_ankle[j])?20.0:1.0;   // ★17dof: 여유발목(4개) stance 핀→nullptr 표류 차단
+    for(int j=0;j<nu;j++){ double a, w;
+      if(j==waist_idx){ a=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w=WAIST_W; }  // ★허리 강홀드(서기서도)
+      else { a=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j];
+        w=(stance_pin_ankle&&is_ankle[j])?20.0:1.0; }   // ★17dof: 여유발목(4개) stance 핀→nullptr 표류 차단
       P(6+j,6+j)+=w; g[6+j]-=w*a; }
     P.topLeftCorner(nv,nv)+=1e-4*MatrixXd::Identity(nv,nv);
     for(int k=0;k<K;k++) P.block(nv+3*k,nv+3*k,3,3)+=1e-3*Matrix3d::Identity();
@@ -211,9 +217,12 @@ struct QuadControl {
     double zref=com_ref[2]+_body_terr; Vector3d Jcqv=Jc*qv;
     double a_z=200*(zref-d->subtree_com[2])-25*Jcqv[2];
     P.topLeftCorner(nv,nv)+=150.0*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=150.0*a_z*Jc.row(2).transpose();
-    for(int j=0;j<nu;j++){ double a_post=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j];
-      double sw=(is_front[j]?swing_w_f:swing_w_r);                              // 앞/뒤 스윙 여유도 별도
-      double w_post = (is_ankle[j])?20.0 : (sw_vidx.count(6+j)?sw:1.0);         // ↑=calf/thigh whip 억제
+    for(int j=0;j<nu;j++){
+      double a_post, w_post;
+      if(j==waist_idx){ a_post=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w_post=WAIST_W; }  // ★허리: 강한 전용홀드(요각목표=waist_ref)
+      else { a_post=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j];
+        double sw=(is_front[j]?swing_w_f:swing_w_r);                            // 앞/뒤 스윙 여유도 별도
+        w_post = (is_ankle[j])?20.0 : (sw_vidx.count(6+j)?sw:1.0); }            // ↑=calf/thigh whip 억제
       P(6+j,6+j)+=w_post; g[6+j]-=w_post*a_post; }
     P.topLeftCorner(nv,nv)+=1e-3*MatrixXd::Identity(nv,nv);
     for(int k=0;k<Kc;k++){ P.block(sl(k),sl(k),3,3)+=w_lam*Matrix3d::Identity(); g.segment(sl(k),3)-=w_lam*clam[k]; }

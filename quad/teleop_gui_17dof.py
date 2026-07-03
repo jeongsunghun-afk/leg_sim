@@ -31,7 +31,8 @@ class SportClient:
                     'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시 terrain=지형적응
                     'foot_lock': True, 'pos_hold': True,         # ★터치다운 foothold lock · 정지 위치홀드 (격리 비교용)
                     'foot_lock_s': 0.35, 'raibert_k': 0.8,
-                    'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True}  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
+                    'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
+                    'waist_steer': 0.0}                          # ★허리 조향 게인(0=중립홀드/>0=선회시 앞몸통 굽힘). 허리모델서만 효과
         self._pub()
 
     def SimRate(self, r):                           # 뷰어 배속(0.25~4, 0=최대) — live
@@ -66,6 +67,9 @@ class SportClient:
 
     def SetAutoWhip(self, on):                       # ★속도연동 자동 whip(on=고속서 자동 채찍질, off=수동 슬라이더)
         self.cmd['auto_whip'] = bool(on); self._pub()
+
+    def SetWaistSteer(self, s):                      # ★허리 조향(선회시 앞몸통 굽힘) — 허리 능동모델서만
+        self.cmd['waist_steer'] = float(s); self._pub()
 
     def BodyHeight(self, h):                        # 서기 높이[m] (★보행중 무시 — 자세모드서만)
         self.cmd['body_h'] = float(h); self._pub()
@@ -374,6 +378,9 @@ with dpg.window(tag='main'):
     dpg.add_slider_float(label='뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)', tag='swing_w_r',
                          min_value=0.1, max_value=4.0, default_value=0.6,
                          callback=lambda s, a: sc.SetSwingWR(a))
+    dpg.add_slider_float(label='허리 조향  (0=중립 / >0=선회시 앞몸통 굽힘=조향스파인. 허리모델서만)', tag='waist_steer',
+                         min_value=0.0, max_value=2.0, default_value=0.0,
+                         callback=lambda s, a: sc.SetWaistSteer(a))
     dpg.add_separator()
     dpg.add_text('속도/높이 (Walk=보행속도 게이지·live / Body=서기 높이·live / Step=발 들림)', color=(170, 175, 195))
     dpg.add_slider_float(label='Walk Speed [m/s]  (조이스틱 풀스케일 · 양 컨트롤러 공통)', tag='ws',

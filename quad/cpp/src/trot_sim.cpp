@@ -13,6 +13,7 @@ int main(int argc,char**argv){
   TrotCtrl ctrl(q);
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("TROT_VY")) ctrl.VY=atof(getenv("TROT_VY"));   // ★좌우이동(strafe) 테스트
+  if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // ★허리 조향 게인
   if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도 테스트
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
   ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔

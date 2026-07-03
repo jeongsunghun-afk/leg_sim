@@ -955,10 +955,23 @@ class QuadSim:
             _push = os.environ.get('PUSH')                    # ★외란 테스트: 지정시각에 base에 측방 임펄스
             _pf = float(os.environ.get('PUSH_F', '150')); _pt = float(os.environ.get('PUSH_T', '8'))
             _pdur = float(os.environ.get('PUSH_DUR', '0.1')); _maxtilt = 0.0
+            # ★VIDEO: 오프스크린 렌더 → mp4 (VIDEO=출력경로). MUJOCO_GL=glfw 필요.
+            _vid = os.environ.get('VIDEO'); _frames = []; _ren = None
+            if _vid:
+                _vw, _vh = int(os.environ.get('VID_W', '1280')), int(os.environ.get('VID_H', '720'))
+                m.vis.global_.offwidth = max(m.vis.global_.offwidth, _vw)   # 오프스크린 버퍼 확장(기본 640)
+                m.vis.global_.offheight = max(m.vis.global_.offheight, _vh)
+                _ren = mujoco.Renderer(m, _vh, _vw)
+                _cam = mujoco.MjvCamera(); mujoco.mjv_defaultCamera(_cam)
+                _cam.distance = float(os.environ.get('VID_DIST', '2.8')); _cam.elevation = -20.0; _cam.azimuth = 130.0
+                _vevery = max(1, int(round((1.0 / 30) / m.opt.timestep)))   # 30fps 샘플링
             for s in range(nsteps):
                 if _push:                                     # 측방(y) 힘 주입 후 해제
                     d.xfrc_applied[1, 1] = _pf if _pt <= d.time < _pt + _pdur else 0.0
                 control_fn(); mujoco.mj_step(m, d)
+                if _vid and s % _vevery == 0:                 # 로봇 추적 카메라로 프레임 캡처
+                    _cam.lookat = [d.qpos[0], d.qpos[1], 0.30]
+                    _ren.update_scene(d, _cam); _frames.append(_ren.render().copy())
                 if _push and d.time > _pt:
                     _x, _y = d.qpos[4], d.qpos[5]; _maxtilt = max(_maxtilt, np.degrees(np.arccos(max(-1, min(1, 1 - 2 * (_x*_x + _y*_y))))))
                 if _logj:
@@ -992,6 +1005,10 @@ class QuadSim:
                 np.savez(_logj, t=np.array(_Lt), dq=np.array(_Ldq), tau=np.array(_Ltau), names=np.array(_names),
                          q=np.array(_Lq), quat=np.array(_Lquat), swerr=np.array(_Lse), fho=np.array(_Lfho))
                 print('[hl] 관절로그 저장: %s (%d스텝 %d관절)' % (_logj, len(_Lt), self.nu), flush=True)
+            if _vid and _frames:
+                import imageio
+                imageio.mimsave(_vid, _frames, fps=30, quality=8, macro_block_size=8)
+                print('[hl] 영상 저장: %s (%d프레임 %.1fs)' % (_vid, len(_frames), len(_frames) / 30.0), flush=True)
             return
         with mujoco.viewer.launch_passive(m, d, key_callback=self._key_callback) as v:
             v.opt.flags[mujoco.mjtVisFlag.mjVIS_COM] = 0

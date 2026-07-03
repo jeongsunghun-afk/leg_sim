@@ -72,6 +72,19 @@ struct QuadControl {
       for(int t=0;t<leg_dof[i];t++){ int a=legqv[i][t]-6; if(a>=0&&a<nu) is_front[a]=fr; } }
     { int wj=mj_name2id(m,mjOBJ_JOINT,"FB_waist_joint");   // ★허리 조인트(있으면 능동 17-DOF)
       waist_idx = (wj>=0 && m->jnt_type[wj]!=mjJNT_FREE) ? m->jnt_dofadr[wj]-6 : -1; }
+    // ★기어박스 물리(sim2real): 반사관성 dof_armature=I_rotor·N² + 점성감쇠 + Coulomb마찰. GEARBOX=1로 켬(MJCF엔 0→발목 flail 과장)
+    if(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"),"1")){
+      double Irot=getenv("ROTOR_I")?atof(getenv("ROTOR_I")):1e-4;   // 로터관성[kg·m²] 대략(실측시 교체)
+      double jdmp=getenv("JDAMP")?atof(getenv("JDAMP")):0.1, jfrc=getenv("JFRIC")?atof(getenv("JFRIC")):0.5;
+      const char* GN[4]={"hip","thigh","calf","foot"}; const char* GE[4]={"GEAR_HIP","GEAR_THIGH","GEAR_CALF","GEAR_FOOT"};
+      double gear[4]={7.0,7.0,10.5,14.0};                            // 관절별 감속비(Python 일치)
+      for(int k=0;k<nu;k++){ int jid=m->actuator_trnid[k*2]; if(jid<0) continue;
+        const char* jn=mj_id2name(m,mjOBJ_JOINT,jid); if(!jn) continue;
+        int gi=0; for(int g=0;g<4;g++) if(std::strstr(jn,GN[g])) gi=g;
+        double gmul=getenv(GE[gi])?atof(getenv(GE[gi])):1.0; double N=gear[gi]*gmul;   // GEAR_*(예 foot 8:1=0.5714)
+        int dof=m->jnt_dofadr[jid];
+        m->dof_armature[dof]=Irot*N*N; m->dof_damping[dof]=jdmp; m->dof_frictionloss[dof]=jfrc; }
+    }
     q_home.resize(nu);
   }
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }

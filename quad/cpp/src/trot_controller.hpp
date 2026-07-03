@@ -181,6 +181,7 @@ static inline void apply_env_gains(QuadControl& q){
   if(getenv("W_ORI")) q.w_ori=atof(getenv("W_ORI"));
   if(getenv("W_YAW")) q.w_yaw=atof(getenv("W_YAW"));      // yaw 헤딩홀드 가중(17dof=0권장:선회민감, 14dof=5:직진드리프트방지)
   if(getenv("MU")){ q.MU=atof(getenv("MU")); q.mpc.MU=q.MU*q.MU_MARGIN; }  // ★마찰콘 μ(물리 geom=1.3, 기존 0.6은 과보수→선회 GRF 포화)
+  if(getenv("MOTOR_CURVE")) q.motor_curve=true;    // ★토크-속도곡선: 고속서 가용토크↓(속도한계 QP 반영)
   if(getenv("WAIST_W")) q.WAIST_W=atof(getenv("WAIST_W"));    // ★허리 홀드가중
   if(getenv("WAIST_KP")) q.WAIST_KP=atof(getenv("WAIST_KP")); if(getenv("WAIST_KD")) q.WAIST_KD=atof(getenv("WAIST_KD"));
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); q.swing_w_r=v; q.swing_w_f=v; }

@@ -33,7 +33,8 @@ struct QuadControl {
   int waist_idx=-1;                                       // ★허리(FB_waist) nu-index(없으면 -1=16DOF). 큰 몸통DOF라 전용 강홀드
   double waist_ref=0.0, WAIST_W=80.0, WAIST_KP=150.0, WAIST_KD=20.0;  // 요각목표(조향시 갱신)·홀드가중·PD
   VectorXd q_home; Vector3d com_ref;
-  VectorXd tau_peak, qmin, qmax; std::vector<char> is_ankle;
+  VectorXd tau_peak, qmin, qmax, w_limit; std::vector<char> is_ankle;   // w_limit=관절속도한계[rad/s]=207/N
+  bool motor_curve=false;                                 // ★MOTOR_CURVE: 가용토크=tau_peak·max(0,1−|ω|/w_limit) (고속서↓=실모터)
   std::array<Vector2d,4> foot_hip_off; std::array<double,4> foot_gz0;
   MpcCfg mpc; double _body_terr=0.0;
   eiquadprog::solvers::EiquadprogFast _qp_st, _qp_tr;
@@ -62,6 +63,7 @@ struct QuadControl {
     }
     // tau_peak / qmin·qmax / ankle (non-free joint 순서=actuator)
     tau_peak.resize(nu); qmin.resize(nu); qmax.resize(nu); is_ankle.assign(nu,0);
+    w_limit.setConstant(nu,1e8);   // 관절속도한계(재기어 블록서 207/N로 설정)
     int a=0; for(int j=0;j<m->njnt;j++){ if(m->jnt_type[j]==mjJNT_FREE) continue;
       double frc=m->jnt_actfrcrange[j*2+1]; tau_peak[a]=frc>0?frc:1e8;
       if(m->jnt_limited[j]){ qmin[a]=m->jnt_range[j*2]; qmax[a]=m->jnt_range[j*2+1]; } else { qmin[a]=-1e9; qmax[a]=1e9; }
@@ -84,6 +86,7 @@ struct QuadControl {
         const char* jn=mj_id2name(m,mjOBJ_JOINT,jid); if(!jn) continue;
         int gi=0; for(int g=0;g<4;g++) if(std::strstr(jn,GN[g])) gi=g;
         double gmul=getenv(GE[gi])?atof(getenv(GE[gi])):1.0;
+        w_limit[k]=207.0/(gear[gi]*gmul);                            // ★관절속도한계=motor_noload/N (MOTOR_CURVE용)
         if(gmul!=1.0 && tau_peak[k]<1e7) tau_peak[k]*=gmul;          // ★재기어 토크한계(QP 부등식이 사용)
         if(gbx){ double N=gear[gi]*gmul; int dof=m->jnt_dofadr[jid];
           m->dof_armature[dof]=Irot*N*N; m->dof_damping[dof]=jdmp; m->dof_frictionloss[dof]=jfrc; } }
@@ -201,7 +204,9 @@ struct QuadControl {
     if(st!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
     VectorXd qdd=x.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
     for(int k=0;k<K;k++) tau-=Js[k].block(0,6,3,nu).transpose()*x.segment(nv+3*k,3);
-    for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-tau_peak[i],std::min(tau_peak[i],tau[i]));
+    for(int i=0;i<nu;i++){ double lim=tau_peak[i];
+      if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);  // ★고속서 가용토크↓(실모터 토크-속도곡선)
+      d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
     return true;
   }
   // ── wbic_track (검증3과 동일: 기본경로) ──
@@ -281,7 +286,9 @@ struct QuadControl {
     if(st!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
     VectorXd qdd=x.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
     for(int k=0;k<Kc;k++) tau-=cjac[k].block(0,6,3,nu).transpose()*x.segment(sl(k),3);
-    for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-tau_peak[i],std::min(tau_peak[i],tau[i]));
+    for(int i=0;i<nu;i++){ double lim=tau_peak[i];
+      if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);  // ★고속서 가용토크↓(실모터 토크-속도곡선)
+      d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
     return true;
   }
 };

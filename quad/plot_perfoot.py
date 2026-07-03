@@ -68,8 +68,9 @@ for r, leg in enumerate(LEGS):
         ax_t.set_title('torque @%.1fm/s (dash=Peak)' % V)
 axes[-1, 0].set_xlabel('t [s]'); axes[-1, 1].set_xlabel('t [s]')
 mtxt = ('mass %.2f kg  |  ' % mass) if mass else ''
-fig.suptitle('02_Leg @%.1fm/s  |  %sfoot gear %.1f:1 (limits: v=%.1f t=%.0fNm)  |  gray=warmup orange=accel green=steady'
-             % (V, mtxt, GEARN['foot'], WL['foot'], TL['foot']), fontsize=12)
+mc = 'MOTOR_CURVE' if os.environ.get('MOTOR_CURVE') else 'no motor-curve'
+fig.suptitle('02_Leg @%.1fm/s  |  %sfoot gear %.1f:1 (limits v=%.1f t=%.0fNm, %s)  |  gray=warmup orange=accel green=steady'
+             % (V, mtxt, GEARN['foot'], WL['foot'], TL['foot'], mc), fontsize=11)
 fig.tight_layout()
 fig.savefig(out, dpi=110)
 print('총질량: %s kg' % (('%.2f' % mass) if mass else '?'))

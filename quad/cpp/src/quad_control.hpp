@@ -32,7 +32,7 @@ struct QuadControl {
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
   int waist_idx=-1;                                       // ★허리(FB_waist) nu-index(없으면 -1=16DOF). 큰 몸통DOF라 전용 강홀드
   double waist_ref=0.0, WAIST_W=80.0, WAIST_KP=150.0, WAIST_KD=20.0;  // 요각목표(조향시 갱신)·홀드가중·PD
-  VectorXd q_home; Vector3d com_ref;
+  VectorXd q_home, q_sit; Vector3d com_ref;   // q_sit=앉기 자세(뒷다리 접고 앞다리 편)
   VectorXd tau_peak, qmin, qmax, w_limit; std::vector<char> is_ankle;   // w_limit=관절속도한계[rad/s]=207/N
   bool motor_curve=false;                                 // ★MOTOR_CURVE: 가용토크=tau_peak·max(0,1−|ω|/w_limit) (고속서↓=실모터)
   std::array<Vector2d,4> foot_hip_off; std::array<double,4> foot_gz0;
@@ -127,6 +127,25 @@ struct QuadControl {
     crouch_home(base_z);
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st;
     mj_forward(m,d);
+  }
+  // ★앉기 자세 IK: 몸통 pitch↑(nose up)+낮춤 → 발 지면유지시 앞다리 펴짐·뒷다리 접힘. q_sit 저장(라이브 d 복원).
+  void sit_home(double base_z, double pitch){
+    std::vector<double> sq(nq),sv(nv); double st=d->time;
+    for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
+    for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
+    Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
+    d->qpos[2]=base_z;
+    d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=std::sin(pitch/2); d->qpos[6]=0;  // ★pitch(y축, nose up)
+    for(int i=0;i<4;i++) if(leg_dof[i]==4){ double ang=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR")?FRONT_ANKLE:REAR_ANKLE;
+      if(ang!=0.0) d->qpos[legqp[i][3]]=ang; }
+    for(int it=0;it<400;it++){ mj_kinematics(m,d); mj_comPos(m,d);   // 발 지면(z=0) IK
+      for(int i=0;i<4;i++){ Vector3d tgt(foot_xy[i][0],foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);
+        Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix3d J; for(int r=0;r<3;r++)for(int cc=0;cc<3;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
+        Vector3d dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
+        for(int cc=0;cc<3;cc++) d->qpos[legqp[i][cc]]+=dq[cc]; } }
+    mj_forward(m,d);
+    q_sit.resize(nu); for(int i=0;i<nu;i++) q_sit[i]=d->qpos[7+i];
+    for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
   }
   Matrix3d compute_Icom(){
     Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]); Matrix3d I=Matrix3d::Zero();

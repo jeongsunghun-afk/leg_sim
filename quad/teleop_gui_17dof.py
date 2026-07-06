@@ -340,6 +340,7 @@ with dpg.window(tag='main'):
     with dpg.group(horizontal=True):
         dpg.add_button(label='Ready 서기', width=120, callback=lambda: (sc.Ready(), _status()))
         dpg.add_button(label='Ground 눕기', width=120, callback=lambda: _mode_btn('stand_down'))
+        dpg.add_button(label='Sit 앉기', width=110, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
         dpg.add_button(label='Walk 보행', width=120, callback=lambda: _mode_btn('move'))
         _jb = dpg.add_button(label='Jump 점프', width=110, callback=lambda: (sc.Jump(), _status()))
         dpg.bind_item_theme(_jb, _jump_theme)

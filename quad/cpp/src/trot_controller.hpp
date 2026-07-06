@@ -42,6 +42,7 @@ struct TrotCtrl {
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
   VectorXd q_ref; bool have_qref=false;                  // fold 관절목표 slew
+  double SIT_Z=0.40, SIT_PITCH=0.55; bool have_qsit=false; // ★앉기: 몸통높이·pitch(rad, nose up). 뒷다리접고 앞다리편
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
   // ── 게이트 프리셋(trot/walk/gallop) ──
@@ -87,6 +88,14 @@ struct TrotCtrl {
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="move"){
       if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; return; }
+      if(mode=="sit"){   // ★앉기: 뒷다리 접고 앞다리 편 자세로 PD홀드(중력보상). q_sit=몸통pitch IK
+        if(!have_qsit){ q.sit_home(SIT_Z,SIT_PITCH); have_qsit=true; }
+        if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
+        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_sit[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
+        for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
+          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+        armed=false; ht_cur=qhome_h=q.base_z0; return; }
+      have_qsit=false;
       double bz=d->qpos[2];
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
       double tgt=(mode=="stand_down")?GROUND_Z:body_h;                      // 눕기=낮게 / 서기=슬라이더

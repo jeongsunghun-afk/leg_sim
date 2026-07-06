@@ -1,5 +1,5 @@
 """17-DOF(260701) URDF → MuJoCo MJCF 빌드. build_real_quad.py 파생.
-   차이: ①소스=새 패키지(02_Leg_UFDF_260701) ②base 링크명 "Base" ③FB_waist_joint→fixed(잠금)
+   차이: ①소스=02_Leg_UFDF_260703_2(260703 수정본) ②base 링크명 "Base" ③FB_waist_joint→fixed(잠금)
         ④기존 모델 안 건드리게 별도 출력(quad_real_17dof.mjcf, meshes_sim_17dof/)
    결과: 16-DOF 전(全)발목 4족 + 허리 고정. (sphere발 변형은 후처리 별도)
 """
@@ -9,9 +9,9 @@ import xml.etree.ElementTree as ET
 import mujoco
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PKG  = '/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260701'
+PKG  = '/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2'
 SRC_MESH = os.path.join(PKG, 'meshes')
-SRC_URDF = os.path.join(PKG, 'urdf', '02_Leg_UFDF_260701_3.urdf')
+SRC_URDF = os.path.join(PKG, 'urdf', '02_Leg_UFDF_260703_3.urdf')
 MESH_OUT = os.path.join(HERE, 'meshes_sim_17dof')
 _WFREE = bool(os.environ.get('WAIST_FREE'))   # ★허리 능동(17-DOF): 기본 off=fixed(16-DOF)
 MJCF_OUT = os.path.join(HERE, 'quad_real_17dof_waist.mjcf' if _WFREE else 'quad_real_17dof.mjcf')

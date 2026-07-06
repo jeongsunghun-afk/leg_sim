@@ -218,7 +218,7 @@ cd /home/jsh/문서/jsh/simulation/quad && DISPLAY=:0 PXI teleop_gui_17dof.py
 # ─── ★파일 구조 (2026-07-01 정리) ─────────────────────────────────────
 # 관리 대상 (나머지는 backup/, 필요시 꺼내씀):
 #   A  quad_mpc_wbic.py                 — 본선 Convex MPC + WBIC          [구 quad_sim.py]
-#   A' quad_mpc_wbic_17dof.py           — ★260701 신모델(16-DOF 전발목, 허리 fixed). teleop_gui_17dof.py
+#   A' quad_mpc_wbic_17dof.py           — ★260703_2 URDF(38.0kg)(16-DOF 전발목, 허리 fixed). teleop_gui_17dof.py
 #      build_real_quad_17dof.py·gen_sphere_17dof.py·quad_real_17dof(_sphere).mjcf (Peak 84/126/168)
 #   C++ quad/cpp/                        — ★A/A' 배포용 실시간 포팅. quad_control.hpp·mpc.hpp·trot_controller.hpp
 #       trot_sim(헤드리스)·trot_view(GLFW뷰어+GUI연동:서기/눕기/walk/RESET/앞뒤whip)·quad_cpp(검증). eiquadprog 1kHz. 위 "C++ 포팅" 섹션

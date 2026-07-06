@@ -38,11 +38,16 @@ struct TrotCtrl {
   double V=0.30, VY=0.0, WZ=0.0;   // 명령속도(뷰어 키보드/GUI)
   double step_h=0.10, raibert_k=0.8;   // ★GUI 슬라이더(live): step height·전방 reach
   bool ALIP=false, POS_HOLD=true;   // ★ALIP 기본 off: push복구 이득 미미(300N서만 22vs26°)한데 지속선회 붕괴시킴. ALIP=1로 켬
+  bool SPIN_HOLD=false;             // ★제자리선회(V=0,WZ≠0)서도 위치홀드 유지 → 허리조향 표류 상쇄(베이스기준 wz선회). 주행선회엔 영향無
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
   VectorXd q_ref; bool have_qref=false;                  // fold 관절목표 slew
-  double SIT_Z=0.30, SIT_PITCH=0.70; bool have_qsit=false; // ★앉기: 몸통높이·pitch(rad,nose up). 뒷다리 깊이접힘(hip→foot 0.175m)·앞다리편
+  double SIT_Z=0.30, SIT_PITCH=0.70, SIT_REAR_FOOT=-1.35, SIT_REAR_CALF=1.10, SIT_REAR_THIGH=-0.6; bool have_qsit=false; // ★앉기(엉덩이로 앉음): 몸통pitch·뒷발목(-1.35)·뒷calf(+1.10)·뒷thigh(-0.6 음수→발뜨고 엉덩이 착지). 앞다리편
+  // ★앉기→서기 스크립트 기립(앞다리 굽혀 앞발 들어 폴볼트 차단 + 뒷다리 박차 extend). 앉기에서만 발동.
+  bool was_sit=false; double sit_getup_t0=-1;
+  double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
+  double SIT_SLEW=0.6; // ★앉기 하강 슬루(rad/s, 작을수록 천천히·충격↓). 기본 JOINT_SLEW(1.5)보다 느리게→충격 완화
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
   // ── 게이트 프리셋(trot/walk/gallop) ──
@@ -87,17 +92,38 @@ struct TrotCtrl {
     double t=d->time; int nu=q.nu;
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="move"){
-      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; return; }
+      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; return; }
       if(mode=="sit"){   // ★앉기: 뒷다리 접고 앞다리 편 자세로 PD홀드(중력보상). q_sit=몸통pitch IK
-        if(!have_qsit){ q.sit_home(SIT_Z,SIT_PITCH); have_qsit=true; }
+        was_sit=true; sit_getup_t0=-1;   // 다음 서기=스크립트 기립 발동
+        if(!have_qsit){ q.sit_home(SIT_Z,SIT_PITCH,SIT_REAR_FOOT,SIT_REAR_CALF,SIT_REAR_THIGH); have_qsit=true; }
         if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
-        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_sit[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
+        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_sit[j]-q_ref[j],-SIT_SLEW*dt,SIT_SLEW*dt);   // ★느린 하강(충격↓)
         for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
           d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
         armed=false; ht_cur=qhome_h=q.base_z0; return; }
       have_qsit=false;
       double bz=d->qpos[2];
+      // ★앉기→서기 스크립트 기립: 앞다리 굽혀 앞발 들기(폴볼트 차단) + 뒷다리 박차 extend → 몸 올라오면 정상 stance로 인계
+      if(was_sit && mode=="stand_up"){
+        // 목표=수평 저crouch(발 몸밑, 저높이). 앞다리 Phase1 굽혀 발 들고(폴볼트 차단)+뒷다리 접힘 펴 발 착지 → 수평 저crouch 도달 후 정상 getup 인계
+        if(sit_getup_t0<0){ sit_getup_t0=t; for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; q.update_stand_qhome(SGU_GATHER_Z); qhome_h=SGU_GATHER_Z; ht_cur=SGU_GATHER_Z; }
+        double te=t-sit_getup_t0;
+        for(int i=0;i<4;i++){ bool fr=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");
+          double th,cf,ft,hp;
+          if(fr && te<SGU_KICK_T){ hp=0; th=SGU_FB_THIGH; cf=SGU_FB_CALF; ft=-0.70; }   // 앞다리 Phase1=굽혀 발 들기
+          else { hp=q.q_home[q.legqp[i][0]-7]; th=q.q_home[q.legqp[i][1]-7];             // 뒷다리=저crouch로 펴 발착지, 앞다리 Phase2=착지
+                 cf=q.q_home[q.legqp[i][2]-7]; ft=q.leg_dof[i]==4?q.q_home[q.legqp[i][3]-7]:0; }
+          double tar[4]={hp,th,cf,ft};
+          for(int cc=0;cc<q.leg_dof[i];cc++){ int j=q.legqp[i][cc]-7;
+            q_ref[j]+=tc_clip(tar[cc]-q_ref[j],-SGU_SLEW*dt,SGU_SLEW*dt); } }
+        for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+SGU_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
+          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+        double jerr=0; for(int j=0;j<nu;j++) jerr+=std::abs(q.q_home[j]-d->qpos[7+j]); jerr/=nu;
+        if(te>SGU_KICK_T && tiltdeg()<SGU_DONE_TILT && jerr<0.35){ was_sit=false; sit_getup_t0=-1; }  // 수평 저crouch 도달→정상 getup 인계(다음틱)
+        armed=false; return;
+      }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
+      if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)
       double tgt=(mode=="stand_down")?GROUND_Z:body_h;                      // 눕기=낮게 / 서기=슬라이더
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
@@ -138,7 +164,9 @@ struct TrotCtrl {
     else { if(!yaw_hold_set){ yaw_hold=yaw_m; yaw_hold_set=true; } yaw_ref=yaw_hold; }
     double cy=std::cos(yaw_m), sy=std::sin(yaw_m);
     double vx_w=Veff*cy-Vyeff*sy, vy_w=Veff*sy+Vyeff*cy;
-    if(POS_HOLD && std::abs(Veff)<0.03 && std::abs(Vyeff)<0.03 && std::abs(Weff)<0.05){
+    // ★위치홀드: 전진/측방명령 0이면 base 위치 앵커링. SPIN_HOLD=제자리선회(V=0,WZ≠0)서도 유지 → 허리조향 표류 상쇄(베이스 기준 wz 선회)
+    bool ph_turn = SPIN_HOLD ? true : (std::abs(Weff)<0.05);
+    if(POS_HOLD && std::abs(Veff)<0.03 && std::abs(Vyeff)<0.03 && ph_turn){
       if(!pos_hold_set){ phx=d->qpos[0]; phy=d->qpos[1]; pos_hold_set=true; }
       vx_w+=tc_clip(-0.6*(d->qpos[0]-phx),-0.15,0.15); vy_w+=tc_clip(-0.6*(d->qpos[1]-phy),-0.15,0.15);
     } else pos_hold_set=false;

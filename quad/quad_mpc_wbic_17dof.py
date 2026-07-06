@@ -240,7 +240,7 @@ class QuadSim:
         self._wbt = bool(os.environ.get('WBIC_TIMING')); self._qpt = []   # ★WBIC QP solve 시간 계측(1kHz 실현 확인용)
         # ★기어비 재배분(설계검토): GEAR_xxx<1=저기어(속도↑·토크↓), >1=고기어(토크↑·속도↓). 같은 베이스모터 토크↔속도 맞교환.
         #   보행분석: thigh=토크병목·속도여유→GEAR_THIGH>1 이득 / calf·foot=속도병목·토크여유→GEAR<1 이득
-        _gdef = {'hip': '1.0', 'thigh': '1.0', 'calf': '0.7619', 'foot': '1.0'}   # ★calf 기본 8:1(10.5→8): 뒷calf 속도병목 해소(19.7→25.9, 토크126→96). foot은 flail이라 유지
+        _gdef = {'hip': '1.0', 'thigh': '1.0', 'calf': '1.0', 'foot': '1.0'}   # ★기본=명목 하드웨어(hip/thigh7·calf10.5·foot14). calf 8:1은 성능이득0(병목=thigh토크)+토크126→96손해→명목10.5 유지(C++일치). foot만 GEAR_FOOT=0.5714로 8:1(flail 억제 정당)
         for _grp in ('hip', 'thigh', 'calf', 'foot'):
             _g = float(os.environ.get('GEAR_' + _grp.upper(), _gdef[_grp]))
             if _g != 1.0:
@@ -952,6 +952,8 @@ class QuadSim:
             falls = 0
             _logj = os.environ.get('LOG_JOINTS')             # ★관절 각속도·토크 로깅 → npz(그래프용)
             _Lt, _Ldq, _Ltau, _Lq, _Lquat, _Lse, _Lfho = [], [], [], [], [], [], []
+            _decomp = os.environ.get('LOG_DECOMP')           # ★토크 분해: 관성(Mq̈)/중력(G)/코리올리(Cq̇)/접촉(Jᵀλ)/수동
+            _Lin, _Lgr, _Lco, _Lct, _Lpa = [], [], [], [], []
             _push = os.environ.get('PUSH')                    # ★외란 테스트: 지정시각에 base에 측방 임펄스
             _pf = float(os.environ.get('PUSH_F', '150')); _pt = float(os.environ.get('PUSH_T', '8'))
             _pdur = float(os.environ.get('PUSH_DUR', '0.1')); _maxtilt = 0.0
@@ -981,6 +983,15 @@ class QuadSim:
                     _Lq.append(d.qpos[7:7+self.nu].copy()); _Lquat.append(d.qpos[3:7].copy())
                     _Lse.append([getattr(self, '_swing_err', 0.0), getattr(self, '_swing_errh', 0.0)])  # swing 추종오차(전체·수평)
                     _Lfho.append(getattr(self, '_fho', [np.nan]*4))   # foothold-hip x offset(전진+) 4발
+                    if _decomp:   # ★토크 분해(actuated DOF): τ = 관성(Mq̈)+중력(G)+코리올리(Cq̇)−접촉(Jᵀλ)−수동
+                        _Mf = np.zeros((m.nv, m.nv)); mujoco.mj_fullM(m, _Mf, d.qM)
+                        _iner = (_Mf @ d.qacc)[6:6+self.nu]
+                        _bias = d.qfrc_bias[6:6+self.nu].copy()          # C q̇ + G
+                        _qvs = d.qvel.copy(); d.qvel[:] = 0.0            # 중력만: qvel=0으로 RNE
+                        _grv = np.zeros(m.nv); mujoco.mj_rne(m, d, 0, _grv); d.qvel[:] = _qvs
+                        _g = _grv[6:6+self.nu]
+                        _Lin.append(_iner.copy()); _Lgr.append(_g.copy()); _Lco.append((_bias - _g).copy())
+                        _Lct.append(d.qfrc_constraint[6:6+self.nu].copy()); _Lpa.append(d.qfrc_passive[6:6+self.nu].copy())
                 if reset_on_fall and d.qpos[2] < 0.2:
                     falls += 1; mujoco.mj_resetData(m, d); reset_fn()
                 if _sp and s % 30 == 0: self.publish_state(_sp)   # GUI 모니터 패널
@@ -1004,8 +1015,10 @@ class QuadSim:
                   (' push후최대tilt=%.1f°' % _maxtilt) if _push else ''), flush=True)
             if _logj:
                 _names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i) or ('act%d'%i) for i in range(self.nu)]
+                _extra = dict(inertial=np.array(_Lin), gravity=np.array(_Lgr), coriolis=np.array(_Lco),
+                              contact=np.array(_Lct), passive=np.array(_Lpa)) if _decomp else {}
                 np.savez(_logj, t=np.array(_Lt), dq=np.array(_Ldq), tau=np.array(_Ltau), names=np.array(_names),
-                         q=np.array(_Lq), quat=np.array(_Lquat), swerr=np.array(_Lse), fho=np.array(_Lfho))
+                         q=np.array(_Lq), quat=np.array(_Lquat), swerr=np.array(_Lse), fho=np.array(_Lfho), **_extra)
                 print('[hl] 관절로그 저장: %s (%d스텝 %d관절)' % (_logj, len(_Lt), self.nu), flush=True)
             if _vid and _frames:
                 import imageio

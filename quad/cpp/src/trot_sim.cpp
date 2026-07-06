@@ -10,13 +10,27 @@ int main(int argc,char**argv){
   const char* path=argc>1?argv[1]:"../quad_real_sphere.mjcf";
   int STEPS = (argc>2)?atoi(argv[2]) : (getenv("STEPS")?atoi(getenv("STEPS")):3000);
   QuadControl q; q.load(path); apply_env_gains(q); q.crouch_home(); q.setup_mpc();
+  if(getenv("QHDBG")) for(int i=0;i<4;i++) std::printf("[qhome] %s hip=%.3f thigh=%.3f calf=%.3f foot=%.3f\n",
+      q.legs[i], q.q_home[q.legqp[i][0]-7], q.q_home[q.legqp[i][1]-7], q.q_home[q.legqp[i][2]-7], q.leg_dof[i]==4?q.q_home[q.legqp[i][3]-7]:0.0);
   TrotCtrl ctrl(q);
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("TROT_VY")) ctrl.VY=atof(getenv("TROT_VY"));   // ★좌우이동(strafe) 테스트
-  if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // ★허리 조향 게인
+  if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));
+  if(getenv("SPIN_HOLD")) ctrl.SPIN_HOLD=true;   // ★허리 조향 게인
   if(getenv("MODE")) ctrl.mode=getenv("MODE");                              // ★모드 테스트(sit/stand_up/stand_down/off)
   if(getenv("SIT_Z")) ctrl.SIT_Z=atof(getenv("SIT_Z"));
   if(getenv("SIT_PITCH")) ctrl.SIT_PITCH=atof(getenv("SIT_PITCH"));
+  if(getenv("SIT_REAR_FOOT")) ctrl.SIT_REAR_FOOT=atof(getenv("SIT_REAR_FOOT"));
+  if(getenv("SIT_REAR_CALF")) ctrl.SIT_REAR_CALF=atof(getenv("SIT_REAR_CALF"));
+  if(getenv("SIT_REAR_THIGH")) ctrl.SIT_REAR_THIGH=atof(getenv("SIT_REAR_THIGH"));
+  if(getenv("SIT_SLEW")) ctrl.SIT_SLEW=atof(getenv("SIT_SLEW"));
+  if(getenv("SGU_KICK_T")) ctrl.SGU_KICK_T=atof(getenv("SGU_KICK_T"));      // ★앉기→서기 스크립트 기립 튜닝
+  if(getenv("SGU_FB_THIGH")) ctrl.SGU_FB_THIGH=atof(getenv("SGU_FB_THIGH"));
+  if(getenv("SGU_FB_CALF")) ctrl.SGU_FB_CALF=atof(getenv("SGU_FB_CALF"));
+  if(getenv("SGU_SLEW")) ctrl.SGU_SLEW=atof(getenv("SGU_SLEW"));
+  if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));
+  if(getenv("SGU_GATHER_Z")) ctrl.SGU_GATHER_Z=atof(getenv("SGU_GATHER_Z"));
+  if(getenv("SGU_DONE_TILT")) ctrl.SGU_DONE_TILT=atof(getenv("SGU_DONE_TILT"));
   if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도 테스트
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
   ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔

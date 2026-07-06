@@ -128,22 +128,31 @@ struct QuadControl {
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st;
     mj_forward(m,d);
   }
-  // ★앉기 자세 IK: 몸통 pitch↑(nose up)+낮춤 → 발 지면유지시 앞다리 펴짐·뒷다리 접힘. q_sit 저장(라이브 d 복원).
-  void sit_home(double base_z, double pitch){
+  // ★앉기 자세 IK: 몸통 pitch↑(nose up)+낮춤 → 앞다리 펴짐·뒷다리 접힘. 뒷다리=calf(+최대)·foot(-최대) 고정,
+  //   IK는 앞다리 3DOF(hip/thigh/calf)+뒷다리 2DOF(hip/thigh)만으로 발 지면(z=0) 배치. q_sit 저장(라이브 d 복원).
+  void sit_home(double base_z, double pitch, double rear_foot, double rear_calf, double rear_thigh){
+    bool pin_thigh = rear_thigh > -900;   // ★rear_thigh 지정 시 뒷다리 thigh도 고정→뒷다리는 hip만 IK(발은 접힘형상대로 착지)
     std::vector<double> sq(nq),sv(nv); double st=d->time;
     for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
     for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
     Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
     d->qpos[2]=base_z;
     d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=-std::sin(pitch/2); d->qpos[6]=0;  // ★pitch(y축, nose up=앞올림 → 앞다리 펴짐·뒷다리 접힘)
-    for(int i=0;i<4;i++) if(leg_dof[i]==4){ double ang=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR")?FRONT_ANKLE:REAR_ANKLE;
-      if(ang!=0.0) d->qpos[legqp[i][3]]=ang; }
+    for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
+      if(leg_dof[i]==4) d->qpos[legqp[i][3]]=fr?FRONT_ANKLE:rear_foot;   // 앞발목=FRONT_ANKLE / 뒷발목=rear_foot(-최대접힘)
+      if(!fr){ d->qpos[legqp[i][2]]=rear_calf;                          // ★뒷다리 calf=rear_calf(+최대접힘)
+               if(pin_thigh) d->qpos[legqp[i][1]]=rear_thigh; } }       // ★뒷다리 thigh=rear_thigh(음수)
     for(int it=0;it<400;it++){ mj_kinematics(m,d); mj_comPos(m,d);   // 발 지면(z=0) IK
-      for(int i=0;i<4;i++){ Vector3d tgt(foot_xy[i][0],foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);
-        Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix3d J; for(int r=0;r<3;r++)for(int cc=0;cc<3;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
-        Vector3d dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
-        for(int cc=0;cc<3;cc++) d->qpos[legqp[i][cc]]+=dq[cc]; } }
+      for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
+        int nd=fr?3:(pin_thigh?1:2);   // 앞=hip/thigh/calf, 뒤=hip/thigh(calf고정) 또는 hip만(thigh·calf고정)
+        Vector3d tgt(foot_xy[i][0],foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);
+        Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix<double,3,Dynamic> J(3,nd);
+        for(int r=0;r<3;r++)for(int cc=0;cc<nd;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
+        VectorXd dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
+        for(int cc=0;cc<nd;cc++) d->qpos[legqp[i][cc]]+=dq[cc]; } }
     mj_forward(m,d);
+    if(getenv("SITDBG")) for(int i=0;i<4;i++) std::printf("[sitdbg] %s hip=%.3f thigh=%.3f calf=%.3f foot=%.3f footZ=%.3f\n",
+        legs[i], d->qpos[legqp[i][0]], d->qpos[legqp[i][1]], d->qpos[legqp[i][2]], leg_dof[i]==4?d->qpos[legqp[i][3]]:0.0, foot_point(i)[2]);
     q_sit.resize(nu); for(int i=0;i<nu;i++) q_sit[i]=d->qpos[7+i];
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
   }

@@ -337,19 +337,19 @@ with dpg.window(tag='main'):
             right.build()
     dpg.add_separator()
     dpg.add_text('모션', color=(170, 175, 195))
-    with dpg.group(horizontal=True):
-        dpg.add_button(label='Ready 서기', width=120, callback=lambda: (sc.Ready(), _status()))
-        dpg.add_button(label='Ground 눕기', width=120, callback=lambda: _mode_btn('stand_down'))
-        dpg.add_button(label='Sit 앉기', width=110, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
-        dpg.add_button(label='Walk 보행', width=120, callback=lambda: _mode_btn('move'))
-        _jb = dpg.add_button(label='Jump 점프', width=110, callback=lambda: (sc.Jump(), _status()))
+    with dpg.group(horizontal=True):   # ★복구 순서대로: 전원 → 눕기 → 앉기 → 서기
+        _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: (_mode_btn('off'), _status()))
+        dpg.bind_item_theme(_ob, _stop_theme)
+        dpg.add_button(label='Ground 눕기', width=110, callback=lambda: _mode_btn('stand_down'))
+        dpg.add_button(label='Sit 앉기', width=100, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
+        dpg.add_button(label='Ready 서기', width=110, callback=lambda: (sc.Ready(), _status()))
+        dpg.add_button(label='Walk 보행', width=110, callback=lambda: _mode_btn('move'))
+        _jb = dpg.add_button(label='Jump 점프', width=100, callback=lambda: (sc.Jump(), _status()))
         dpg.bind_item_theme(_jb, _jump_theme)
-        _b = dpg.add_button(label='RESET', width=90, callback=lambda: (sc.Reset(), _status()))
+        _b = dpg.add_button(label='RESET', width=80, callback=lambda: (sc.Reset(), _status()))
         dpg.bind_item_theme(_b, _stop_theme)
     with dpg.group(horizontal=True):
-        _ob = dpg.add_button(label='Off 전원(쓰러짐)', width=130, callback=lambda: (_mode_btn('off'), _status()))
-        dpg.bind_item_theme(_ob, _stop_theme)
-        dpg.add_text('recovery 순서: Off(쓰러짐) → Ground(눕혀 정리) → Ready(일어서기)', color=(150, 155, 175))
+        dpg.add_text('복구 순서: 전원(Off) → 눕기 → 앉기 → 서기  (단계적 기립이 넘어짐서 바로 서기보다 안전)', color=(150, 155, 175))
     dpg.add_separator()
     with dpg.group(horizontal=True):
         dpg.add_text('게이트:', color=(170, 175, 195))

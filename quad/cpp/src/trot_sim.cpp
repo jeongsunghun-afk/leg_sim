@@ -31,7 +31,9 @@ int main(int argc,char**argv){
 
   int falls=0; double max_tilt=0, penF=0, penR=0, pitchSum=0, tauEff=0, calfTau=0, footWmax=0; int pn=0;
   auto t0=std::chrono::high_resolution_clock::now();
+  double switchT=getenv("SWITCH_T")?atof(getenv("SWITCH_T")):-1;   // ★모드전환 테스트: t>SWITCH_T면 MODE2로(getup 검증)
   for(int step=0; step<STEPS; step++){
+    if(switchT>0 && d->time>switchT && getenv("MODE2")) ctrl.mode=getenv("MODE2");
     ctrl.control(); mj_step(m,d);
     double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
     if(td>50||d->qpos[2]<0.2) falls++;

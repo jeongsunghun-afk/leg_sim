@@ -42,7 +42,7 @@ struct TrotCtrl {
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
   VectorXd q_ref; bool have_qref=false;                  // fold 관절목표 slew
-  double SIT_Z=0.40, SIT_PITCH=0.55; bool have_qsit=false; // ★앉기: 몸통높이·pitch(rad, nose up). 뒷다리접고 앞다리편
+  double SIT_Z=0.30, SIT_PITCH=0.70; bool have_qsit=false; // ★앉기: 몸통높이·pitch(rad,nose up). 뒷다리 깊이접힘(hip→foot 0.175m)·앞다리편
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
   // ── 게이트 프리셋(trot/walk/gallop) ──

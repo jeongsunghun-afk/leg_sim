@@ -135,7 +135,7 @@ struct QuadControl {
     for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
     Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
     d->qpos[2]=base_z;
-    d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=std::sin(pitch/2); d->qpos[6]=0;  // ★pitch(y축, nose up)
+    d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=-std::sin(pitch/2); d->qpos[6]=0;  // ★pitch(y축, nose up=앞올림 → 앞다리 펴짐·뒷다리 접힘)
     for(int i=0;i<4;i++) if(leg_dof[i]==4){ double ang=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR")?FRONT_ANKLE:REAR_ANKLE;
       if(ang!=0.0) d->qpos[legqp[i][3]]=ang; }
     for(int it=0;it<400;it++){ mj_kinematics(m,d); mj_comPos(m,d);   // 발 지면(z=0) IK

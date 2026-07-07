@@ -202,11 +202,23 @@ def main():
                 dqmj[k, a] = xs[k, model.nq + 6 + p]
                 if k < NT-1: taumj[k, a] = us[k, p]
     bz = xs[:, 2]
-    sched = ['A']*NA + ['B']*(NB+1)   # 접촉 phase
+    sched = ['A']*NA + ['B']*(NB+1)   # 접촉 phase (A=앞발지지, B=4발)
+    # ── CoM 기준(WBC 추종용): MuJoCo qpos에 궤적 세팅 → subtree_com ──
+    full_qpos = np.zeros((NT, m.nq))
+    com = np.zeros((NT, 3))
+    for k in range(NT):
+        full_qpos[k, 0:3] = xs[k, 0:3]
+        qx, qy, qz, qw = xs[k, 3:7]; full_qpos[k, 3:7] = [qw, qx, qy, qz]   # xyzw→wxyz
+        full_qpos[k, 7:7+m.nu] = qmj[k]
+        d.qpos[:] = full_qpos[k]; d.qvel[:] = 0; mujoco.mj_forward(m, d)
+        com[k] = d.subtree_com[0].copy()
+    comv = np.gradient(com, dt, axis=0)
+    acom = np.gradient(comv, dt, axis=0)
     np.savez('/tmp/getup_stand.npz', xs=xs, us=us, dt=dt,
              q=qmj, dq=dqmj, tau=taumj, base_z=bz, sched=np.array(sched, dtype=object),
-             mj_names=np.array(mj_jnames))
-    print('저장: /tmp/getup_stand.npz (MuJoCo순서 q/dq/tau %d스텝)' % NT)
+             mj_names=np.array(mj_jnames), full_qpos=full_qpos,
+             com_ref=com, comv_ref=comv, acom_ref=acom)
+    print('저장: /tmp/getup_stand.npz (q/dq/tau/com_ref %d스텝, CoM %.3f→%.3f)' % (NT, com[0,2], com[-1,2]))
 
 if __name__ == '__main__':
     os.environ.setdefault('BASE_Z0', '0.5234')

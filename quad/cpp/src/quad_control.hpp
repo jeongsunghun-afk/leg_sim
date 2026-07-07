@@ -22,6 +22,7 @@ struct QuadControl {
   const char* legs[4]={"HL","HR","FL","FR"};
   // 상수
   double MU=0.6, MU_MARGIN=0.707, LAMZ_MIN=1.0;         // wbic 마찰
+  double STANCE_KD=20.0;                                 // ★stance 접촉속도 감쇠(baumgarte): cjac·q̈=−KD·(cjac·q̇) → 터치다운 잔류속도→0, 발 slip↓(뒤 7.2→5.9mm). 0=끔
   double base_z0=0.52, REAR_ANKLE=-0.7, FRONT_ANKLE=-0.7;  // 14dof:ours_sphere / 17dof: 0.5234,-0.5
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
   double w_ori=5.0;                                      // wbic_track 자세 task 가중(14dof=5, 17dof튜닝=20)
@@ -319,7 +320,8 @@ struct QuadControl {
     int neq=6+3*Kc; MatrixXd A=MatrixXd::Zero(neq,nzt); VectorXd b=VectorXd::Zero(neq);
     A.block(0,0,6,nv)=M.topRows(6); b.head(6)=-h.head(6);
     for(int k=0;k<Kc;k++) A.block(0,sl(k),6,3)=-cjac[k].leftCols(6).transpose();
-    for(int k=0;k<Kc;k++) A.block(6+3*k,0,3,nv)=cjac[k];
+    for(int k=0;k<Kc;k++){ A.block(6+3*k,0,3,nv)=cjac[k];
+      if(STANCE_KD>0) b.segment(6+3*k,3)=-STANCE_KD*(cjac[k]*qv); }   // ★stance 발 속도감쇠(터치다운 잔류속도→0, slip↓)
     VectorXd lb=VectorXd::Constant(nzt,-1e8),ub=VectorXd::Constant(nzt,1e8);
     { double tla=0.05,c2=0.5*tla*tla;
       for(int j=0;j<nu;j++){ double qj=d->qpos[7+j],dqj=qv[6+j];

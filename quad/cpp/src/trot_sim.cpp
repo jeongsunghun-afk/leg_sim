@@ -15,6 +15,7 @@ int main(int argc,char**argv){
   TrotCtrl ctrl(q);
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("BODY_H")) ctrl.body_h=atof(getenv("BODY_H"));   // ★서기 높이 테스트(슬라이더 범위 검증)
+  if(getenv("STANCE_KD")) q.STANCE_KD=atof(getenv("STANCE_KD"));   // ★stance 발 속도감쇠(slip↓)
   if(getenv("TROT_VY")) ctrl.VY=atof(getenv("TROT_VY"));   // ★좌우이동(strafe) 테스트
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));
   if(getenv("SPIN_HOLD")) ctrl.SPIN_HOLD=true;   // ★허리 조향 게인
@@ -51,12 +52,21 @@ int main(int argc,char**argv){
       q.nu,q.leg_dof[0],q.leg_dof[1],q.leg_dof[2],q.leg_dof[3],d->qpos[2],q.com_ref[0],q.com_ref[1],q.com_ref[2]);
 
   int falls=0; double max_tilt=0, penF=0, penR=0, pitchSum=0, tauEff=0, calfTau=0, footWmax=0; int pn=0;
+  // ★임시 slip 계측: 발이 접촉(dist<1mm)인 동안 anchor 대비 수평 이동 최대치 = slip. 접촉종료 시 누적.
+  double f_ax[4]={0},f_ay[4]={0},slip_sum[4]={0},slip_mx[4]={0}; bool f_con[4]={false}; int slip_n[4]={0};
+  bool SLIP=getenv("SLIPLOG")!=nullptr;
   auto t0=std::chrono::high_resolution_clock::now();
   double switchT=getenv("SWITCH_T")?atof(getenv("SWITCH_T")):-1;   // ★모드전환 테스트: t>SWITCH_T면 MODE2로(getup 검증)
   bool switched=false;
   for(int step=0; step<STEPS; step++){
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     ctrl.control(); mj_step(m,d);
+    if(SLIP){ for(int i=0;i<4;i++){ bool con=false;
+        for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.001){con=true;break;} }
+        double fx=d->geom_xpos[q.fgid[i]*3], fy=d->geom_xpos[q.fgid[i]*3+1];
+        if(con){ if(!f_con[i]){ f_ax[i]=fx; f_ay[i]=fy; slip_mx[i]=0; } slip_mx[i]=std::max(slip_mx[i],std::hypot(fx-f_ax[i],fy-f_ay[i])); }
+        else if(f_con[i]&&d->time>1.5){ slip_sum[i]+=slip_mx[i]; slip_n[i]++; }
+        f_con[i]=con; } }
     double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
     if(td>50||d->qpos[2]<0.2) falls++;
     if(d->time>1.5){ // 정착후 앞/뒤 발침투 평균(진단): 스텝별 최소침투를 누적
@@ -78,6 +88,11 @@ int main(int argc,char**argv){
   std::printf("\n=== 종료: STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f° falls=%d | ★침투평균 앞=%.1fmm 뒤=%.1fmm pitch=%.1f° | %.0f steps/s ===\n",
               STEPS,STEPS*dt,d->qpos[0],d->qpos[2],max_tilt,falls,pn?penF/pn*1000:0,pn?penR/pn*1000:0,pn?pitchSum/pn:0,STEPS/wall);
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
+  if(SLIP){ std::printf("    ★발 slip(접촉중 수평이동 평균, mm): ");
+    for(int i=0;i<4;i++) std::printf("%s=%.1f ", q.legs[i], slip_n[i]?slip_sum[i]/slip_n[i]*1000:0);
+    std::printf(" | 뒤평균=%.1f 앞평균=%.1f mm\n",
+      ((slip_n[0]?slip_sum[0]/slip_n[0]:0)+(slip_n[1]?slip_sum[1]/slip_n[1]:0))/2*1000,
+      ((slip_n[2]?slip_sum[2]/slip_n[2]:0)+(slip_n[3]?slip_sum[3]/slip_n[3]:0))/2*1000); }
   if(getenv("DUMP_QPOS")){ FILE*f=fopen(getenv("DUMP_QPOS"),"w");   // ★정착 qpos 덤프(trajopt x0/xf용)
     for(int i=0;i<m->nq;i++) fprintf(f,"%.8f ",d->qpos[i]); fclose(f);
     std::printf("[dump] qpos → %s (nq=%d)\n", getenv("DUMP_QPOS"), m->nq); }

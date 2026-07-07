@@ -728,9 +728,11 @@ class QuadSim:
         A = np.zeros((6, nz)); b = -h[0:6]; A[:, :nv] = M[0:6, :]
         for k, J in enumerate(Js):
             A[:, sl(k)] = -J[:, 0:6].T
+        _skd = float(os.environ.get('STANCE_KD', '20'))   # ★접촉 속도감쇠(baumgarte): cjac·q̈=−KD·(cjac·q̇) → 터치다운 잔류속도→0, 발 slip↓
         for J in Js:
             Ac = np.zeros((3, nz)); Ac[:, :nv] = J
-            A = np.vstack([A, Ac]); b = np.concatenate([b, np.zeros(3)])
+            _bd = (-_skd * (J @ self.d.qvel[:nv])) if _skd > 0 else np.zeros(3)
+            A = np.vstack([A, Ac]); b = np.concatenate([b, _bd])
         # 마찰추(부등식) + λz 하한
         lb = np.full(nz, -1e8); ub = np.full(nz, 1e8); Gl = []; hl = []
         for k in range(K):

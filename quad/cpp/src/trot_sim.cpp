@@ -24,6 +24,8 @@ int main(int argc,char**argv){
   if(getenv("SIT_REAR_CALF")) ctrl.SIT_REAR_CALF=atof(getenv("SIT_REAR_CALF"));
   if(getenv("SIT_REAR_THIGH")) ctrl.SIT_REAR_THIGH=atof(getenv("SIT_REAR_THIGH"));
   if(getenv("SIT_SLEW")) ctrl.SIT_SLEW=atof(getenv("SIT_SLEW"));
+  if(getenv("SIT_CPITCH")) ctrl.SIT_CPITCH=atof(getenv("SIT_CPITCH"));
+  if(getenv("SIT_REACH")) ctrl.SIT_REACH=atof(getenv("SIT_REACH"));
   if(getenv("SGU_KICK_T")) ctrl.SGU_KICK_T=atof(getenv("SGU_KICK_T"));      // ★앉기→서기 스크립트 기립 튜닝
   if(getenv("SGU_FB_THIGH")) ctrl.SGU_FB_THIGH=atof(getenv("SGU_FB_THIGH"));
   if(getenv("SGU_FB_CALF")) ctrl.SGU_FB_CALF=atof(getenv("SGU_FB_CALF"));

@@ -26,6 +26,7 @@ struct QuadControl {
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
   double w_ori=5.0;                                      // wbic_track 자세 task 가중(14dof=5, 17dof튜닝=20)
   double yaw_des=0.0;                                     // ★자세 task 목표 헤딩(TrotCtrl이 yaw_ref로 설정). 선회시 몸통이 추종
+  double sit_pitch=0.0;                                  // ★wbic_stance 자세목표 nose-up(앉기 느낌). 0=수평. CoM은 중앙유지라 안정 nose-up 가능
   double w_yaw=0.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). euler 표준수정 후 0이 최적(14·17 공통; MPC가 yaw 담당). >0=헤딩홀드
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
@@ -122,12 +123,15 @@ struct QuadControl {
   }
   // ★크라우치-앉기 자세: 검증된 crouch_home(안정 저crouch, 4발 planted)을 저높이서 계산해 q_sit에 저장.
   //   부작용(q_home·com_ref·foot_hip_off·foot_gz0)·라이브 d 모두 저장·복원 → standing 상태 안 건드림.
-  void crouch_sit_home(double base_z){
+  void crouch_sit_home(double base_z, double pitch=0.0, double front_reach=0.0){
+    // ★nose-up pitch(앉은느낌)+front_reach(앞발 전방 확장=앞다리 폄). 뒷발은 지면 유지(기립가능). 발 z=0 IK.
     std::vector<double> sq(nq),sv(nv); double st=d->time;
     for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
     for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
     Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
-    d->qpos[2]=base_z; d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;           // 수평
+    for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
+      if(fr) foot_xy[i][0]+=front_reach; }                                        // ★앞발 전방 확장(앞다리 폄 look)
+    d->qpos[2]=base_z; d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=-std::sin(pitch/2); d->qpos[6]=0;  // nose-up
     for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");  // ★안정 가지 초기값(저높이 flip 방지)
       d->qpos[legqp[i][1]]=fr?-0.20:0.68; d->qpos[legqp[i][2]]=fr?0.49:-0.88;
       if(leg_dof[i]==4) d->qpos[legqp[i][3]]=fr?FRONT_ANKLE:REAR_ANKLE; }
@@ -233,7 +237,11 @@ struct QuadControl {
     Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
     Vector3d a_com=Vector3d(120,120,200).cwiseProduct(com_ref-com)-Vector3d(20,20,25).cwiseProduct(Jc*qv);
     P.topLeftCorner(nv,nv)+=Jc.transpose()*Jc; g.head(nv)-=Jc.transpose()*a_com;
-    double oerr[3]; mju_quat2Vel(oerr,&d->qpos[3],1.0);
+    double oerr[3];
+    if(sit_pitch!=0.0){   // ★nose-up 목표(앉기): 목표quat^-1·현재quat 오차 → 그 자세로 능동제어(CoM은 중앙유지=안정)
+      double qt[4]={std::cos(sit_pitch/2),0,-std::sin(sit_pitch/2),0}, qti[4], qe[4];
+      mju_negQuat(qti,qt); mju_mulQuat(qe,qti,&d->qpos[3]); mju_quat2Vel(oerr,qe,1.0);
+    } else mju_quat2Vel(oerr,&d->qpos[3],1.0);
     for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=5.0; g[3+j]-=5.0*a; }
     for(int j=0;j<nu;j++){ double a, w;
       if(j==waist_idx){ a=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w=WAIST_W; }  // ★허리 강홀드(서기서도)

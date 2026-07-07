@@ -105,13 +105,19 @@ def action(state, actuation, foot_fid, stance, x_ref, tau_lim, dt, w_term=False,
         fc_act = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(fc.lb, fc.ub))
         fc_res = crocoddyl.ResidualModelContactFrictionCone(state, foot_fid[L], fc, nu, True)
         cost.addCost('fc_' + L, crocoddyl.CostModelResidual(state, fc_act, fc_res), 2.0)
-    if swing:      # 자유발을 목표(지면 착지점)로 유도 + z≥0 관통방지 배리어
-        for L, tgt in swing.items():
-            res = crocoddyl.ResidualModelFrameTranslation(state, foot_fid[L], tgt, nu)
-            cost.addCost('sw_'+L, crocoddyl.CostModelResidual(state, res), 20.0)
-            zb = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(
-                np.array([-1e3, -1e3, 0.0]), np.array([1e3, 1e3, 1e3])))
-            cost.addCost('cl_'+L, crocoddyl.CostModelResidual(state, zb, res), 60.0)
+    # 모든 비접촉발에 z≥0 clearance(관통방지). 스윙발은 추가로 목표(착지점) 유도.
+    zb = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(
+        np.array([-1e3, -1e3, 0.0]), np.array([1e3, 1e3, 1e3])))
+    for L in LEGS:
+        if L in stance:
+            continue
+        tgt = (swing.get(L) if swing else None)
+        ref = tgt if tgt is not None else np.zeros(3)   # clearance는 z만 봄
+        res = crocoddyl.ResidualModelFrameTranslation(state, foot_fid[L], ref, nu)
+        cost.addCost('cl_'+L, crocoddyl.CostModelResidual(state, zb, res), 400.0)
+        if tgt is not None:   # 스윙발=착지점 유도
+            res2 = crocoddyl.ResidualModelFrameTranslation(state, foot_fid[L], tgt, nu)
+            cost.addCost('sw_'+L, crocoddyl.CostModelResidual(state, res2), 20.0)
     tau_act = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(-tau_lim, tau_lim))
     cost.addCost('taulim', crocoddyl.CostModelResidual(
         state, tau_act, crocoddyl.ResidualModelControl(state, nu)), 8.0)
@@ -152,33 +158,27 @@ def main():
     #   A1) FL,FR 지지 + HL 내려심기  A2) FL,FR,HL 지지 + HR 내려심기  B) 4발 기립
     dt = 0.01; NA1 = 35; NA2 = 35; NB = 80
     front = ['FL', 'FR']
-    def xref_bz(bz):
-        x = x_stand.copy(); x[2] = bz; return x
+    N = NA1 + NA2 + NB; NA = NA1 + NA2
     z0 = x_sit[2]; zA = 0.17; zS = x_stand[2]
+    def xref(k, bz):   # x_stand 관절 목표(다리 펴 심게) + base_z 프로파일
+        x = x_stand.copy(); x[2] = bz; return x
     runs = []
     for k in range(NA1):   # A1: HL 내려심기 (FL,FR 지지)
         bz = z0 + (zA-z0)*0.5*k/NA1
-        runs.append(action(state, actuation, foot_fid, front, xref_bz(bz), tau_lim, dt, swing={'HL': foot_tgt['HL']}))
+        runs.append(action(state, actuation, foot_fid, front, xref(k, bz), tau_lim, dt, swing={'HL': foot_tgt['HL']}))
     for k in range(NA2):   # A2: HR 내려심기 (FL,FR,HL 지지=3접촉 안정)
         bz = z0 + (zA-z0)*(0.5+0.5*k/NA2)
-        runs.append(action(state, actuation, foot_fid, front+['HL'], xref_bz(bz), tau_lim, dt, swing={'HR': foot_tgt['HR']}))
+        runs.append(action(state, actuation, foot_fid, front+['HL'], xref(NA1+k, bz), tau_lim, dt, swing={'HR': foot_tgt['HR']}))
     for k in range(NB):    # B: 4발 기립
         bz = zA + (zS-zA)*k/NB
-        runs.append(action(state, actuation, foot_fid, LEGS, xref_bz(bz), tau_lim, dt))
+        runs.append(action(state, actuation, foot_fid, LEGS, xref(NA+k, bz), tau_lim, dt))
     term = action(state, actuation, foot_fid, LEGS, x_stand, tau_lim, dt, w_term=True)
-    N = NA1 + NA2 + NB; NA = NA1 + NA2
     problem = crocoddyl.ShootingProblem(x_sit, runs, term)
     solver = crocoddyl.SolverFDDP(problem)
     solver.setCallbacks([crocoddyl.CallbackVerbose()])
-    solver.th_stop = 1e-4
-    # 워밍스타트: sit→stand 상태 보간(DDP 수렴 대폭 개선)
-    xs_init = []
-    for k in range(N+1):
-        a = k/N; xk = (1-a)*x_sit + a*x_stand
-        xk[3:7] /= np.linalg.norm(xk[3:7])   # quat 정규화
-        xs_init.append(xk)
+    solver.th_stop = 1e-5
     t0 = time.time()
-    done = solver.solve(xs_init, [np.zeros(nu)]*N, 500, False, 1e-9)
+    done = solver.solve([x_sit]*(N+1), [np.zeros(nu)]*N, 800, False, 1e-9)
     xs = np.array(solver.xs); us = np.array(solver.us)
     print('\n수렴=%s iter=%d %.0fms cost=%.3f' % (done, solver.iter, (time.time()-t0)*1e3, solver.cost))
     # base z 궤적

@@ -1500,7 +1500,7 @@ def mode_trot():
         S['Ss']  += float(np.clip(_st - S['Ss'], -0.8 * dts, 0.8 * dts))    # 조향각 스무딩[rad/s]
         V_eff, Vy_eff, W_eff = S['Vs'], S['Vys'], S['Ws']
         # ★자동차식 조향(옵션2): Ackermann δ→yaw rate. 전진속도 비례(V=0=스핀불가, 차와 동일). δ cap±28°(급선회 낙상 방지). 다리선회(A)에 합산→yaw적분·MPC·허리lean 자동
-        W_eff += V_eff * float(np.tan(np.clip(S['Ss'], -0.5, 0.5))) / WHEELBASE
+        W_eff += V_eff * float(np.tan(np.clip(S['Ss'], -0.85, 0.85))) / WHEELBASE
         if S['gait'] == 'walk':                                                 # ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접 / off=매끈
             if q._auto_whip:
                 q._swing_w_f = q._whip_lo_f; q._swing_w_r = q._whip_lo_r

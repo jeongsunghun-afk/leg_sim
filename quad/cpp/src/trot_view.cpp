@@ -53,7 +53,8 @@ int main(int argc,char**argv){
   q.crouch_home(); q.setup_mpc();
   TrotCtrl ctrl(q); gC=&ctrl;
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
-  if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));
+  if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)
+  if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각
   mjModel*m=q.m; mjData*d=q.d;
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
@@ -78,12 +79,12 @@ int main(int argc,char**argv){
       if(f){ std::stringstream ss; ss<<f.rdbuf(); std::string c=ss.str();
         ctrl.V=json_get(c,"v",ctrl.V); ctrl.VY=json_get(c,"vy",ctrl.VY); ctrl.WZ=json_get(c,"w",ctrl.WZ);
         ctrl.step_h=json_get(c,"step_h",ctrl.step_h);          // step height 슬라이더
-        ctrl.raibert_k=json_get(c,"raibert_k",ctrl.raibert_k); // 전방 reach 슬라이더
+        { static double rk_seen=-999; double rk=json_get(c,"raibert_k",rk_seen); if(rk!=rk_seen){ ctrl.raibert_k=rk; rk_seen=rk; } }  // ★reach 슬라이더=엣지 override(게이트별 프리셋 walk0.5/trot0.8과 공존)
         double sw=json_get(c,"swing_w",-1); if(sw>=0){ ctrl.whip_lo_r=sw; ctrl.whip_lo_f=sw; }  // 통합(하위호환)
         double swf=json_get(c,"swing_w_f",-1); if(swf>=0) ctrl.whip_lo_f=swf;   // ★앞다리 whip 목표(고속target·auto off시 상수)
         double swr=json_get(c,"swing_w_r",-1); if(swr>=0) ctrl.whip_lo_r=swr;   // ★뒷다리 whip 목표
         ctrl.auto_whip = json_get(c,"auto_whip",ctrl.auto_whip?1:0) > 0.5;      // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
-        ctrl.waist_steer = json_get(c,"waist_steer",ctrl.waist_steer);          // ★허리 조향 게인(슬라이더)
+        ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
         ctrl.mode = json_str(c,"mode","move");                  // move/stand_up(서기)/stand_down(눕기)/off
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글
         ctrl.body_h = json_get(c,"body_h",ctrl.body_h);         // 서기 높이 슬라이더

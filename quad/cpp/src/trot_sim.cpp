@@ -35,8 +35,10 @@ int main(int argc,char**argv){
   if(getenv("SGU_DONE_TILT")) ctrl.SGU_DONE_TILT=atof(getenv("SGU_DONE_TILT"));
   if(getenv("SGU_WALKOUT_V")) ctrl.SGU_WALKOUT_V=atof(getenv("SGU_WALKOUT_V"));
   if(getenv("SGU_HANDOFF_Z")) ctrl.SGU_HANDOFF_Z=atof(getenv("SGU_HANDOFF_Z"));
-  if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도 테스트
+  if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도(직접 yaw, 제자리 스핀)
+  if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));  // ★자동차식 조향각δ(Ackermann R=축거/tanδ)
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
+  if(getenv("RAIBERT_K")) ctrl.raibert_k=atof(getenv("RAIBERT_K"));  // set_gait 프리셋 위에 강제 override
   ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); ctrl.whip_lo_f=v; ctrl.whip_lo_r=v; }  // whip 목표(고속/수동)
   if(getenv("SWING_W_F")) ctrl.whip_lo_f=atof(getenv("SWING_W_F"));

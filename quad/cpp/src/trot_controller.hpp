@@ -59,7 +59,8 @@ struct TrotCtrl {
   // ── ★속도 트리거 자동 whip(고속 trot=동물형 채찍질) ──
   bool auto_whip=true; double whip_v0=0.8, whip_v1=1.6;    // ★기본 ON: v0~v1서 whip 선형증가(swing_w 2.0→낮게)
   double whip_hi=2.0, whip_lo_f=0.1, whip_lo_r=0.6;        // ★앞발 paw-tuck whip(앞0.1강·뒤0.6). yaw-fight 수정 후 선회 최고(15.8°)+원래 의도. 슬라이더로 조절
-  double waist_steer=0.0;                                  // ★허리 조향 게인(0=중립홀드/>0=선회시 앞몸통 굽힘=조향스파인). waist_ref=clip(steer·Weff,±0.75)
+  double waist_steer=0.4, waist_cap=0.20;                  // ★허리 lean 보조 게인(선회시 앞몸통 안쪽 굽힘=차동차식). 캡±0.20rad(11°, 구0.75=43°는 낙상). 다리(MPC)가 선회수행·허리는 lean
+  double steer=0.0, Ss_steer=0.0, wheelbase=0.5;           // ★자동차식 조향각 δ[rad](GUI 허리핸들). Ackermann Weff+=V·tanδ/축거(전진해야 조향). 축거=앞뒤 힙거리
   // 상태
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
@@ -70,13 +71,16 @@ struct TrotCtrl {
   Vector3d lam_des[4]={Vector3d::Zero(),Vector3d::Zero(),Vector3d::Zero(),Vector3d::Zero()};
   double mpc_t=-1.0, Veff_dbg=0;
 
-  TrotCtrl(QuadControl& q_):q(q_){ q_ref=VectorXd::Zero(q.nu); body_h=ht_cur=qhome_h=q.base_z0; }
+  TrotCtrl(QuadControl& q_):q(q_){ q_ref=VectorXd::Zero(q.nu); body_h=ht_cur=qhome_h=q.base_z0;
+    double xf=(q.d->xpos[q.hip_bid[2]*3]+q.d->xpos[q.hip_bid[3]*3])/2;   // FL,FR 힙 x(초기 yaw0=body frame)
+    double xr=(q.d->xpos[q.hip_bid[0]*3]+q.d->xpos[q.hip_bid[1]*3])/2;   // HL,HR 힙 x
+    wheelbase=std::max(0.15, xf-xr); }                                   // ★축거 L(≈0.61m). Ackermann 조향 반경 R=L/tanδ
 
   void set_gait(const std::string& g){        // trot/walk/gallop 프리셋(GUI 토글·속도트리거)
     if(g==gait_type) return; gait_type=g;
-    if(g=="walk"){ gp_T=1.0; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; }
-    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; } // 회전형 갤럽(비행상 有)
-    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; }
+    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s
+    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; } // 회전형 갤럽(비행상 有)
+    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.8; }  // trot 고속용 reach
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }
   void gait(int i,double tg,bool&stance,double&sprog){
@@ -85,7 +89,7 @@ struct TrotCtrl {
   }
   void reset(){   // ★시뮬 리셋(RESET 버튼): 컨트롤러 상태 초기화(crouch_home 후 호출)
     armed=false; settle_until=q.d->time+TC_SETTLE; have_qref=false;
-    Vs=Vys=Ws=0; yaw_hold_set=false; mpc_t=-1.0;
+    Vs=Vys=Ws=Ss_steer=0; yaw_hold_set=false; mpc_t=-1.0;
     ht_cur=qhome_h=body_h=q.base_z0; for(int i=0;i<4;i++) have_prev[i]=false;
   }
 
@@ -163,8 +167,10 @@ struct TrotCtrl {
     double tg=t-t0; bool go=tg>TC_WARMUP;
     double vt=go?V:0.0, vyt=go?VY:0.0, wt=go?WZ:0.0;
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
+    double stt=go?steer:0.0; Ss_steer+=tc_clip(stt-Ss_steer,-0.8*dt,0.8*dt);   // 조향각 스무딩[rad/s]
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
-    q.waist_ref=tc_clip(waist_steer*Weff,-0.75,0.75);   // ★허리 조향: 선회명령에 앞몸통 굽힘(steer=0이면 중립홀드)
+    Weff += Veff*std::tan(tc_clip(Ss_steer,-0.5,0.5))/wheelbase;   // ★자동차식 조향(Ackermann): 조향각+전진→yaw rate 합산(다리선회 A에). V=0=무효(전진해야 조향=차와 동일). WZ(스핀)와 공존
+    q.waist_ref=tc_clip(waist_steer*Weff,-waist_cap,waist_cap);    // ★허리 lean(안쪽 굽힘, 안전캡). steer·WZ 둘다 0이면 중립홀드
     double spd=std::abs(Veff);   // ★전진속도만 whip 트리거(좌우이동은 whip 유발 안함). 구 hypot은 측방서도 whip 켜짐
     if(gait_type=="walk"){   // ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접적용 / off=매끈(whip_hi)
       if(auto_whip){ q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; } else { q.swing_w_f=whip_hi; q.swing_w_r=whip_hi; } }

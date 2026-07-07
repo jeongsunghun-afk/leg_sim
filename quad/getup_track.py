@@ -20,9 +20,11 @@ sub=max(1,round(dt/m.opt.timestep)); N=len(Q)
 print('추종 시작 sit z=%.3f, N=%d sub=%d front=%s'%(d.qpos[2],N,sub,front))
 qpfail=0
 for k in range(N):
-    cts = tuple(front) if sched[k]=='A' else allc
+    if sched[k]=='A1': cts=tuple(i for i,L in enumerate(q.legs) if L in ('FL','FR'))
+    elif sched[k]=='A2': cts=tuple(i for i,L in enumerate(q.legs) if L in ('FL','FR','HL'))
+    else: cts=allc
     for _ in range(sub):
-        r=q.wbic_jump(com[k],comv[k],acom[k],Qqp[k],DQqp[k],cts)
+        r=q.wbic_jump(com[k],comv[k],acom[k],Qqp[k],DQqp[k],cts, w_ori=float(os.environ.get('WORI','40')), w_j=float(os.environ.get('WJ','2')))
         if r[0] is None: qpfail+=1; d.ctrl[:]=np.clip(d.qfrc_bias[6:6+m.nu],-q._tau_peak,q._tau_peak)
         mujoco.mj_step(m,d)
     if k%20==0 or k==N-1:
@@ -30,6 +32,9 @@ for k in range(N):
         print('  k=%3d z=%.3f tilt=%4.1f x=%+.2f (QP실패%d)'%(k,d.qpos[2],tilt,d.qpos[0],qpfail))
 # 끝 홀드 0.8s = wbic_stance
 for _ in range(800):
-    q.com_ref=d.subtree_com[0].copy(); q.wbic_stance(); mujoco.mj_step(m,d)
+    cts=allc
+    r=q.wbic_jump(com[-1],comv[-1]*0,acom[-1]*0,Qqp[-1],DQqp[-1]*0,cts,w_ori=float(os.environ.get('WORI','40')))
+    if r[0] is None: d.ctrl[:]=np.clip(d.qfrc_bias[6:6+m.nu],-q._tau_peak,q._tau_peak)
+    mujoco.mj_step(m,d)
 w,x,y,z=d.qpos[3:7]; tilt=np.degrees(np.arccos(max(-1,min(1,1-2*(x*x+y*y)))))
 print('=== 종료 z=%.3f tilt=%.1f° (성공=z>0.45 tilt<15) ==='%(d.qpos[2],tilt))

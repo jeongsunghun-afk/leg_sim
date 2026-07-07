@@ -148,22 +148,25 @@ def main():
     # stand 발위치(뒷발 착지목표)
     pin.forwardKinematics(model, data, x_stand[:model.nq]); pin.updateFramePlacements(model, data)
     foot_tgt = {L: data.oMf[foot_fid[L]].translation.copy() for L in LEGS}
-    # 2단계 OCP: A) 앞발(FL/FR) 지지 + 뒷발(HL/HR) 내려 심기, B) 4발 기립
-    dt = 0.01; NA = 50; NB = 90
-    front = ['FL', 'FR']; rear = ['HL', 'HR']
-    swing_tgt = {L: foot_tgt[L] for L in rear}
-    def xref_bz(bz):   # x_stand 복사 + base_z만 프로파일로(가라앉음 방지)
+    # ★3단계 OCP(뒷발 순차착지로 항상 ≥3접촉=정적안정):
+    #   A1) FL,FR 지지 + HL 내려심기  A2) FL,FR,HL 지지 + HR 내려심기  B) 4발 기립
+    dt = 0.01; NA1 = 35; NA2 = 35; NB = 80
+    front = ['FL', 'FR']
+    def xref_bz(bz):
         x = x_stand.copy(); x[2] = bz; return x
     z0 = x_sit[2]; zA = 0.17; zS = x_stand[2]
     runs = []
-    for k in range(NA):   # Phase A: 뒷발 내려 심기, base_z는 z0→zA 유지(다리 펴서 심게)
-        bz = z0 + (zA-z0)*k/NA
-        runs.append(action(state, actuation, foot_fid, front, xref_bz(bz), tau_lim, dt, swing=swing_tgt))
-    for k in range(NB):   # Phase B: 4발 기립, base_z zA→zS 상승
+    for k in range(NA1):   # A1: HL 내려심기 (FL,FR 지지)
+        bz = z0 + (zA-z0)*0.5*k/NA1
+        runs.append(action(state, actuation, foot_fid, front, xref_bz(bz), tau_lim, dt, swing={'HL': foot_tgt['HL']}))
+    for k in range(NA2):   # A2: HR 내려심기 (FL,FR,HL 지지=3접촉 안정)
+        bz = z0 + (zA-z0)*(0.5+0.5*k/NA2)
+        runs.append(action(state, actuation, foot_fid, front+['HL'], xref_bz(bz), tau_lim, dt, swing={'HR': foot_tgt['HR']}))
+    for k in range(NB):    # B: 4발 기립
         bz = zA + (zS-zA)*k/NB
         runs.append(action(state, actuation, foot_fid, LEGS, xref_bz(bz), tau_lim, dt))
     term = action(state, actuation, foot_fid, LEGS, x_stand, tau_lim, dt, w_term=True)
-    N = NA + NB
+    N = NA1 + NA2 + NB; NA = NA1 + NA2
     problem = crocoddyl.ShootingProblem(x_sit, runs, term)
     solver = crocoddyl.SolverFDDP(problem)
     solver.setCallbacks([crocoddyl.CallbackVerbose()])
@@ -202,7 +205,7 @@ def main():
                 dqmj[k, a] = xs[k, model.nq + 6 + p]
                 if k < NT-1: taumj[k, a] = us[k, p]
     bz = xs[:, 2]
-    sched = ['A']*NA + ['B']*(NB+1)   # 접촉 phase (A=앞발지지, B=4발)
+    sched = ['A1']*NA1 + ['A2']*NA2 + ['B']*(NB+1)   # A1=FL,FR / A2=FL,FR,HL / B=4발
     # ── CoM 기준(WBC 추종용): MuJoCo qpos에 궤적 세팅 → subtree_com ──
     full_qpos = np.zeros((NT, m.nq))
     com = np.zeros((NT, 3))

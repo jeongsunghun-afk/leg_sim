@@ -1,6 +1,8 @@
 <mujoco model="02_Leg_UFDF_260703_2">
   <compiler angle="radian" meshdir="/home/jsh/문서/jsh/simulation/quad/meshes_sim_17dof/" />
   <asset>
+    <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.33 0.36 0.40" rgb2="0.42 0.45 0.50" width="512" height="512" />
+    <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="12 12" reflectance="0.12" />
     <mesh name="Base" content_type="model/stl" file="Base.STL" />
     <mesh name="HL_hip_link" content_type="model/stl" file="HL_hip_link.STL" />
     <mesh name="HL_thigh_link" content_type="model/stl" file="HL_thigh_link.STL" />
@@ -157,7 +159,7 @@
         </body>
       </body>
     </body>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.4 0.5 0.4 1" />
+    <geom name="floor" type="plane" size="5 5 0.1" material="floor_mat" />
     <light pos="0 0 3" dir="0 0 -1" />
   </worldbody>
   <option timestep="0.002" gravity="0 0 -9.81" />

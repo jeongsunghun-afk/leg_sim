@@ -385,8 +385,11 @@ class QuadSim:
             - np.array([20, 20, 25]) * (Jc @ qv)
         for r in range(3):
             P[:nv, :nv] += np.outer(Jc[r], Jc[r]); g[:nv] -= a_com[r] * Jc[r]
-        # base orientation (upright)
-        oerr = np.zeros(3); mujoco.mju_quat2Vel(oerr, d.qpos[3:7], 1.0)
+        # base orientation: ★현재 yaw 프레임서 roll/pitch만 레벨링(yaw 안 되당김). 선회 후 서기 삐뚫음/전복 방지(wbic_track과 동일)
+        _qc = d.qpos[3:7]
+        _yaw = np.arctan2(2 * (_qc[0] * _qc[3] + _qc[1] * _qc[2]), 1 - 2 * (_qc[2]**2 + _qc[3]**2))
+        _qlev = np.array([np.cos(_yaw / 2), 0.0, 0.0, np.sin(_yaw / 2)])
+        oerr = np.zeros(3); mujoco.mju_subQuat(oerr, d.qpos[3:7], _qlev)
         a_ori = 150 * (-oerr) - 20 * qv[3:6]
         for j in range(3):
             P[3 + j, 3 + j] += 5.0; g[3 + j] -= 5.0 * a_ori[j]

@@ -237,11 +237,12 @@ struct QuadControl {
     Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
     Vector3d a_com=Vector3d(120,120,200).cwiseProduct(com_ref-com)-Vector3d(20,20,25).cwiseProduct(Jc*qv);
     P.topLeftCorner(nv,nv)+=Jc.transpose()*Jc; g.head(nv)-=Jc.transpose()*a_com;
-    double oerr[3];
-    if(sit_pitch!=0.0){   // ★nose-up 목표(앉기): 목표quat^-1·현재quat 오차 → 그 자세로 능동제어(CoM은 중앙유지=안정)
-      double qt[4]={std::cos(sit_pitch/2),0,-std::sin(sit_pitch/2),0}, qti[4], qe[4];
-      mju_negQuat(qti,qt); mju_mulQuat(qe,qti,&d->qpos[3]); mju_quat2Vel(oerr,qe,1.0);
-    } else mju_quat2Vel(oerr,&d->qpos[3],1.0);
+    // ★자세 목표 = 현재 yaw 유지 + nose-up(sit_pitch). yaw를 0으로 안 되당김 → 선회 후 서기 삐뚫음/전복 방지(wbic_track과 동일 원리: 현재yaw 프레임서 roll/pitch만 레벨)
+    double* qc=&d->qpos[3];
+    double yaw_m=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
+    double qz[4]={std::cos(yaw_m/2),0,0,std::sin(yaw_m/2)}, qy[4]={std::cos(sit_pitch/2),0,-std::sin(sit_pitch/2),0}, qt[4];
+    mju_mulQuat(qt,qz,qy);   // 목표=현재yaw·nose-up(sit_pitch=0이면 순수 현재yaw 수평)
+    double oerr[3]; mju_subQuat(oerr,qc,qt);   // roll/pitch 오차(yaw≈0)
     for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=5.0; g[3+j]-=5.0*a; }
     for(int j=0;j<nu;j++){ double a, w;
       if(j==waist_idx){ a=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w=WAIST_W; }  // ★허리 강홀드(서기서도)

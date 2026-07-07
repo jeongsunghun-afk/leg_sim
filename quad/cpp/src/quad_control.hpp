@@ -80,7 +80,7 @@ struct QuadControl {
     //   GEARBOX=1: 반사관성 dof_armature=I_rotor·N² + 점성감쇠 + 마찰(MJCF엔 0→발목 flail 과장 보정).
     { const char* GN[4]={"hip","thigh","calf","foot"}; const char* GE[4]={"GEAR_HIP","GEAR_THIGH","GEAR_CALF","GEAR_FOOT"};
       double gear[4]={7.0,7.0,10.5,14.0};                            // 관절별 감속비(Python 일치)
-      bool gbx=getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"),"1");
+      bool gbx = !(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"),"0"));   // ★기본 ON(반사관성=실제 물리). GEARBOX=0으로만 끔
       double Irot=getenv("ROTOR_I")?atof(getenv("ROTOR_I")):1e-4;
       double jdmp=getenv("JDAMP")?atof(getenv("JDAMP")):0.1, jfrc=getenv("JFRIC")?atof(getenv("JFRIC")):0.5;
       for(int k=0;k<nu;k++){ int jid=m->actuator_trnid[k*2]; if(jid<0) continue;

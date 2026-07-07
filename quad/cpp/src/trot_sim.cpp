@@ -14,6 +14,7 @@ int main(int argc,char**argv){
       q.legs[i], q.q_home[q.legqp[i][0]-7], q.q_home[q.legqp[i][1]-7], q.q_home[q.legqp[i][2]-7], q.leg_dof[i]==4?q.q_home[q.legqp[i][3]-7]:0.0);
   TrotCtrl ctrl(q);
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
+  if(getenv("BODY_H")) ctrl.body_h=atof(getenv("BODY_H"));   // ★서기 높이 테스트(슬라이더 범위 검증)
   if(getenv("TROT_VY")) ctrl.VY=atof(getenv("TROT_VY"));   // ★좌우이동(strafe) 테스트
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));
   if(getenv("SPIN_HOLD")) ctrl.SPIN_HOLD=true;   // ★허리 조향 게인

@@ -29,8 +29,8 @@ class SportClient:
                     'body_h': 0.52, 'step_h': 0.10, 'euler': [0.0, 0.0, 0.0], 'gait': 'trot',
                     'vmax': VMAX, 'jump_seq': 0, 'home_seq': 0, 'reset_seq': 0,
                     'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시 terrain=지형적응
-                    'foot_lock': True, 'pos_hold': True,         # ★터치다운 foothold lock · 정지 위치홀드 (격리 비교용)
-                    'foot_lock_s': 0.35, 'raibert_k': 0.8,
+                    'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
+                    'raibert_k': 0.8,
                     'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
                     'steer': 0.0}                                # ★허리 핸들=자동차식 조향각[rad] (+좌/−우). Ackermann 반경 R=축거/tanδ, 다리선회가 실행 + 허리 안쪽 lean
         self._pub()
@@ -47,14 +47,8 @@ class SportClient:
     def SetGait(self, g):                           # 게이트 walk/trot 라이브 전환(컨트롤러가 재arm으로 위상 재앵커)
         self.cmd['gait'] = str(g); self._pub()
 
-    def SetFootLock(self, on):                       # 터치다운 foothold lock on/off (off=항상 reactive) — 격리 비교
-        self.cmd['foot_lock'] = bool(on); self._pub()
-
-    def SetPosHold(self, on):                        # 정지 위치홀드 on/off — 격리 비교
+    def SetPosHold(self, on):                        # 정지 위치홀드 on/off (드리프트 보정)
         self.cmd['pos_hold'] = bool(on); self._pub()
-
-    def SetFootLockS(self, s):                       # 터치다운 lock 시점(낮을수록 일찍 얼림=강함)
-        self.cmd['foot_lock_s'] = float(s); self._pub()
 
     def SetRaibertK(self, k):                        # 전방 reach 게인(↑=앞으로 더 시원하게 뻗음) — live
         self.cmd['raibert_k'] = float(k); self._pub()
@@ -379,15 +373,9 @@ with dpg.window(tag='main'):
         dpg.add_text('(trot=빠름 / walk=정적안정·저속. walk선 슬라이더가 whip 직접제어)', color=(120, 125, 145))
     with dpg.group(horizontal=True):
         dpg.add_text('보행개선:', color=(170, 175, 195))
-        dpg.add_checkbox(label='터치다운 lock', tag='foot_lock', default_value=True,
-                         callback=lambda s, a: (sc.SetFootLock(a), _status()))
-        dpg.add_checkbox(label='정지 위치홀드', tag='pos_hold', default_value=True,
+        dpg.add_checkbox(label='정지 위치홀드 (드리프트 보정)', tag='pos_hold', default_value=True,
                          callback=lambda s, a: (sc.SetPosHold(a), _status()))
-        dpg.add_text('(각각 끄고 비교)', color=(120, 125, 145))
-    dpg.add_slider_float(label='터치다운 lock 강도  (낮을수록 강함: 0=스윙시작부터 고정 / 1=reactive)', tag='foot_lock_s',
-                         min_value=0.0, max_value=1.0, default_value=0.35,
-                         callback=lambda s, a: sc.SetFootLockS(a))
-    dpg.add_slider_float(label='전방 reach 게인  (0.8=기본, 시원한 reach / ↑=제동↑ 느림+안정 / 1.2=과제동)', tag='raibert_k',
+    dpg.add_slider_float(label='전방 reach 게인  (walk 0.5·trot 0.8 자동 / ↑=제동↑ 느림+안정)', tag='raibert_k',
                          min_value=0.3, max_value=1.2, default_value=0.8,
                          callback=lambda s, a: sc.SetRaibertK(a))
     dpg.add_checkbox(label='속도연동 자동 whip (on=고속서 슬라이더값까지 선형↑ paw-tuck / off=슬라이더값 상수)', tag='auto_whip', default_value=True,
@@ -406,8 +394,8 @@ with dpg.window(tag='main'):
     dpg.add_slider_float(label='Walk Speed [m/s]  (조이스틱 풀스케일 · 양 컨트롤러 공통)', tag='ws',
                          min_value=0.0, max_value=2.0, default_value=VMAX,
                          callback=lambda s, a: _set_walk_speed(a))
-    dpg.add_slider_float(label='Body Height [m]  (서기만, 보행중 무시)', tag='bh',
-                         min_value=0.34, max_value=0.52, default_value=0.52,
+    dpg.add_slider_float(label='Body Height [m]  (서기만, 보행중 무시 · 0.42~0.52 안정범위)', tag='bh',
+                         min_value=0.42, max_value=0.52, default_value=0.52,
                          callback=lambda s, a: sc.BodyHeight(a))
     dpg.add_slider_float(label='Step Height [m]  (보행중 live 적용)', tag='sh',
                          min_value=0.05, max_value=0.20, default_value=0.10,

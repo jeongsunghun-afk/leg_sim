@@ -84,6 +84,7 @@ int main(int argc,char**argv){
         double swf=json_get(c,"swing_w_f",-1); if(swf>=0) ctrl.whip_lo_f=swf;   // ★앞다리 whip 목표(고속target·auto off시 상수)
         double swr=json_get(c,"swing_w_r",-1); if(swr>=0) ctrl.whip_lo_r=swr;   // ★뒷다리 whip 목표
         ctrl.auto_whip = json_get(c,"auto_whip",ctrl.auto_whip?1:0) > 0.5;      // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
+        ctrl.POS_HOLD = json_get(c,"pos_hold",ctrl.POS_HOLD?1:0) > 0.5;         // ★정지 위치홀드(드리프트 보정) 토글
         ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
         ctrl.mode = json_str(c,"mode","move");                  // move/stand_up(서기)/stand_down(눕기)/off
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글

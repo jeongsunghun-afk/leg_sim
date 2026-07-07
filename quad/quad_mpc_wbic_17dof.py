@@ -249,9 +249,9 @@ class QuadSim:
                     if _grp in _jnames[k]:
                         self._w_limit[k] /= _g; self._tau_peak[k] *= _g
         # ★기어박스 물리 모델(sim2real, MJCF엔 0 → flail 과장 보정): 반사관성 I_rotor·N² + 점성감쇠 + Coulomb마찰
-        #   GEARBOX=1로 켜고, 값은 env로 조정. 대략값 기본(실측 스펙 들어오면 교체).
+        #   ★기본 ON(반사관성=실제 하드웨어 물리, 항상 반영). GEARBOX=0으로만 끔. 값은 env로 조정(실측 스펙 들어오면 교체).
         _gearmap = {'hip': 7.0, 'thigh': 7.0, 'calf': 10.5, 'foot': 14.0}   # 관절별 감속비
-        if os.environ.get('GEARBOX') == '1':
+        if os.environ.get('GEARBOX', '1') != '0':
             _Irot = float(os.environ.get('ROTOR_I', '1e-4'))   # 모터 로터관성[kg·m²] (대략)
             _jdmp = float(os.environ.get('JDAMP', '0.1'))      # 관절 점성감쇠[N·m·s/rad] (대략)
             _jfrc = float(os.environ.get('JFRIC', '0.5'))      # 관절 Coulomb 마찰[N·m] (대략)

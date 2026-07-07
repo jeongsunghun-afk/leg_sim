@@ -119,11 +119,14 @@ sc = SportClient()
 
 
 class JoyPad:
-    """가상 조이스틱(RBQ JoystickThumbPad 참고): 드래그=축[-1,1], 놓으면 center 복귀."""
+    """가상 조이스틱(RBQ JoystickThumbPad 참고): 좌드래그=축[-1,1], 놓으면 center 복귀.
+       ★우클릭=고정(latch): 켜두면 놓아도 마지막 값 유지 → 마우스 한개로 전진 유지하며 조향 슬라이더 조작.
+         사용법: 조이스틱 위에서 우클릭(고정ON, 손잡이 초록) → 좌드래그로 속도맞춤 → 놓아도 유지. 다시 우클릭 또는 STOP(X)=해제."""
 
     def __init__(self, tag, size, on_change, x_only=False):
         self.tag = tag; self.sz = size; self.R = size * 0.5 - 16; self.c = size / 2
         self.on_change = on_change; self.x_only = x_only; self.active = False
+        self.latched = False
 
     def build(self):
         with dpg.drawlist(width=self.sz, height=self.sz, tag=self.tag):
@@ -156,8 +159,22 @@ class JoyPad:
     def release(self):
         if self.active:
             self.active = False
-            dpg.configure_item(self.tag + '_k', center=[self.c, self.c])
-            self.on_change(0.0, 0.0)
+            if not self.latched:                          # ★고정 아니면 center 복귀·0. 고정이면 현 값 유지(마우스 놔도 전진)
+                dpg.configure_item(self.tag + '_k', center=[self.c, self.c])
+                self.on_change(0.0, 0.0)
+
+    def toggle_latch(self):                               # ★우클릭: 조이스틱 위에서만 고정/해제 토글
+        if not dpg.is_item_hovered(self.tag):
+            return
+        self.latched = not self.latched
+        dpg.configure_item(self.tag + '_k', fill=(95, 210, 120) if self.latched else (238, 178, 58))
+        if not self.latched:                              # 해제 = center 복귀·정지
+            dpg.configure_item(self.tag + '_k', center=[self.c, self.c]); self.on_change(0.0, 0.0)
+
+    def clear_latch(self):                                # STOP 등 외부 정지 시 고정 해제
+        self.latched = False; self.active = False
+        dpg.configure_item(self.tag + '_k', center=[self.c, self.c], fill=(238, 178, 58))
+        self.on_change(0.0, 0.0)
 
 
 def _status():
@@ -225,7 +242,7 @@ def _key(sender, app_data):                            # 키보드 백업: 화�
     elif k == dpg.mvKey_Right: sc.Move(sc.cmd['v'], max(-sc.vmax, sc.cmd['vy'] - s), sc.cmd['w'])
     elif k == dpg.mvKey_Comma:  sc.Move(sc.cmd['v'], sc.cmd['vy'], min(sc.wmax, sc.cmd['w'] + s))
     elif k == dpg.mvKey_Period: sc.Move(sc.cmd['v'], sc.cmd['vy'], max(-sc.wmax, sc.cmd['w'] - s))
-    elif k in (dpg.mvKey_X, dpg.mvKey_Spacebar): sc.StopMove()
+    elif k in (dpg.mvKey_X, dpg.mvKey_Spacebar): sc.StopMove(); left.clear_latch(); right.clear_latch()   # STOP=고정도 해제
     elif k == dpg.mvKey_J: sc.Jump()
     else: return
     _status()
@@ -335,6 +352,8 @@ with dpg.window(tag='main'):
         with dpg.group():
             dpg.add_text('선회  (우스틱: ↔좌우)')
             right.build()
+    dpg.add_text('★우클릭=조이스틱 고정(초록). 전진 고정 후 마우스로 아래 "허리 핸들"로 조향. 재우클릭/X=해제',
+                 color=(250, 195, 75))
     dpg.add_separator()
     dpg.add_text('모션', color=(170, 175, 195))
     with dpg.group(horizontal=True):   # ★복구 순서대로: 전원 → 눕기 → 앉기 → 서기
@@ -416,9 +435,10 @@ with dpg.window(tag='main'):
 
 with dpg.handler_registry():
     dpg.add_key_press_handler(callback=_key)
-    dpg.add_mouse_down_handler(callback=lambda s, a: (left.press(), right.press()))
-    dpg.add_mouse_drag_handler(callback=lambda s, a: (left.move(), right.move()))
-    dpg.add_mouse_release_handler(callback=lambda s, a: (left.release(), right.release()))
+    dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left, callback=lambda s, a: (left.press(), right.press()))
+    dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left, callback=lambda s, a: (left.move(), right.move()))
+    dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=lambda s, a: (left.release(), right.release()))
+    dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=lambda s, a: (left.toggle_latch(), right.toggle_latch()))  # ★우클릭=고정/해제
 
 _status()
 dpg.create_viewport(title='02_Leg Teleop (RBQ style) + Monitor', width=540, height=820)

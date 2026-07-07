@@ -1075,7 +1075,8 @@ def mode_walk():
             p_tgt = swing_foot_pos(s, state['liftoff'][i], state['nominal'][i],
                                    np.zeros(3), step_height=STEP_H, tau_land=1.0)
             qt = q.ik_leg(i, p_tgt, q.d.qpos[q.legqp[i]])
-            q.d.ctrl[i * q.dof:(i + 1) * q.dof] = np.clip(
+            _act = [v - 6 for v in q.legqv[i]]   # ★다리별 액추에이터 인덱스(14dof=뒷3/앞4 비대칭 → 고정 i*dof 슬라이싱 broadcast 버그 수정)
+            q.d.ctrl[_act] = np.clip(
                 KP_SW * (qt - q.d.qpos[q.legqp[i]]) - KD_SW * q.d.qvel[q.legqv[i]], -TAU_MAX, TAU_MAX)
 
     q.run_viewer(ctrl, reset_fn=q.crouch_home)
@@ -1103,8 +1104,9 @@ def mode_trot():
     GAIT = os.environ.get('GAIT', 'trot')
     GAITS = {       # ★게이트 프리셋(gait_sim_v13 참조). 다리순서[HL,HR,FL,FR]. GUI gait 토글로 라이브 전환
         # LOCK=평지 foothold lock 시점(swing 위상). 1.0=항상 reactive(고속 강건성) / <1=late-swing commit(저속 터치다운 매끄러움)
-        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0),
-        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=1.00, SWF=0.25, STEPH=0.05, V=0.25, LOCK=0.35),
+        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.8),
+        # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭)
+        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.05, V=0.25, LOCK=0.35, RAI=0.5),
     }
     _GP = GAITS[GAIT]   # trot=대각 A(HL,FR)=0·B(HR,FL)=0.5 / walk=순차 FR0→HL.25→FL.5→HR.75(정적안정·75%stance)
     # ★라이브 게이트 holder(GUI 토글이 갱신→재arm으로 위상 재앵커, 불연속 방지). gait()가 GP를 읽음
@@ -1134,7 +1136,7 @@ def mode_trot():
     HRATE = float(os.environ.get('HEIGHT_RATE', '0.3'))    # 높이 변경 속도[m/s] (body_h·Ground 부드럽게)
     KP_SW = float(os.environ.get('TROT_KPSW', '40.0')); KD_SW = 2.0
     KCAP = float(os.environ.get('TROT_KCAP', '0.16'))   # capture 게인 ≈√(z/g) (LIPM)
-    RAIBERT_K = float(os.environ.get('RAIBERT_K', '0.8'))   # ★전방 reach 게인 기본 0.8(시원한 reach + 고속안정 1.74m/s, 중간속도 손실11%뿐). 1.2는 과제동(명령1.0→0.48). ↑=발앞→제동↑=느림+안정. GUI 슬라이더 live
+    RAIBERT_K = float(os.environ.get('RAIBERT_K', str(_GP.get('RAI', 0.8))))   # ★전방 reach 게인: 게이트별 기본(trot=0.8 고속안정1.74m/s / walk=0.5 과제동완화). env로 강제. ↑=발앞→제동↑=느림+안정. GUI 슬라이더 live
     RAI_CLIP = float(os.environ.get('RAI_CLIP', '0.25'))    # 최대 발배치[m] (reach 게인 올려도 클립 안 걸리게 여유)
     # ★평지 foothold lock = GP['LOCK'](게이트별: trot1.0=reactive고속강건 / walk0.5=저속 터치다운 매끄러움). env FOOT_LOCK_S로 강제 가능.
     USE_DETECT = os.environ.get('DETECT', '1') == '1'   # detect_contact 조기착지 보정 on/off
@@ -1177,7 +1179,7 @@ def mode_trot():
          'yaw_ref': 0.0, 'last_t': -1.0,                     # 선회 yaw각 참조(적분) · 직전 시각(reset 감지용)
          'body_h': q.base_z0, 'ht_cur': q.base_z0, 'qhome_h': q.base_z0,   # body_h슬라이더 · 보간높이 · q_home 계산높이
          'step_h': STEP_H,                                                # ★GUI step height(live 갱신)
-         'raibert_k': RAIBERT_K,                                          # ★전방 reach 게인(GUI 슬라이더 live)
+         'raibert_k': RAIBERT_K, 'rk_seen': None,                         # ★전방 reach 게인(게이트전환=프리셋 RAI / GUI슬라이더=엣지 오버라이드)
          'gait': GAIT,                                                     # ★현 게이트(GUI walk/trot 토글 live)
          'pos_hold': None,                                                 # ★정지 시 래치한 x,y(드리프트 보정 기준)
          'pos_hold_on': os.environ.get('POS_HOLD', '1') != '0',           # ★정지 위치홀드 on/off (GUI live 격리용)
@@ -1241,9 +1243,12 @@ def mode_trot():
                     GP['T'] = GAITS[_g]['T']; GP['SWF'] = GAITS[_g]['SWF']
                     GP['LOCK'] = float(_FLENV) if _FLENV else GAITS[_g]['LOCK']   # 게이트별 lock(trot=reactive/walk=commit)
                     S['foot_lock_s'] = GP['LOCK']                    # 게이트전환=프리셋 lock으로 리셋(trot 고속 reactive 보장)
+                    if not os.environ.get('RAIBERT_K'): S['raibert_k'] = GAITS[_g]['RAI']  # ★게이트전환=프리셋 reach게인(walk=0.5 안정/trot=0.8 고속). env강제면 유지
                     if S['armed']: S['armed'] = False                # 재arm=위상클럭 재앵커(현 stance서 새 게이트 리듬 재확립, 불연속 방지)
                     print('[trot] 게이트 전환 → %s (재정렬)' % _g, flush=True)
-                S['raibert_k'] = float(_c.get('raibert_k', S['raibert_k']))       # ★전방 reach 게인 슬라이더(live)
+                _rk = _c.get('raibert_k')                            # ★reach 게인 슬라이더(엣지 오버라이드 → 게이트전환 프리셋과 공존)
+                if _rk is not None and _rk != S['rk_seen']:
+                    S['raibert_k'] = float(_rk); S['rk_seen'] = _rk
                 S['pos_hold_on'] = bool(_c.get('pos_hold', S['pos_hold_on']))     # ★정지 위치홀드 토글(격리용)
                 S['foot_lock_on'] = bool(_c.get('foot_lock', S['foot_lock_on']))  # ★터치다운 lock 토글(격리용)
                 _fl = _c.get('foot_lock_s')                          # ★lock 강도 슬라이더(엣지 오버라이드 → 게이트전환 리셋과 공존)

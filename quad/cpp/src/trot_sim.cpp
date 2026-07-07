@@ -31,6 +31,8 @@ int main(int argc,char**argv){
   if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));
   if(getenv("SGU_GATHER_Z")) ctrl.SGU_GATHER_Z=atof(getenv("SGU_GATHER_Z"));
   if(getenv("SGU_DONE_TILT")) ctrl.SGU_DONE_TILT=atof(getenv("SGU_DONE_TILT"));
+  if(getenv("SGU_WALKOUT_V")) ctrl.SGU_WALKOUT_V=atof(getenv("SGU_WALKOUT_V"));
+  if(getenv("SGU_HANDOFF_Z")) ctrl.SGU_HANDOFF_Z=atof(getenv("SGU_HANDOFF_Z"));
   if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도 테스트
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
   ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔
@@ -46,8 +48,9 @@ int main(int argc,char**argv){
   int falls=0; double max_tilt=0, penF=0, penR=0, pitchSum=0, tauEff=0, calfTau=0, footWmax=0; int pn=0;
   auto t0=std::chrono::high_resolution_clock::now();
   double switchT=getenv("SWITCH_T")?atof(getenv("SWITCH_T")):-1;   // ★모드전환 테스트: t>SWITCH_T면 MODE2로(getup 검증)
+  bool switched=false;
   for(int step=0; step<STEPS; step++){
-    if(switchT>0 && d->time>switchT && getenv("MODE2")) ctrl.mode=getenv("MODE2");
+    if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     ctrl.control(); mj_step(m,d);
     double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
     if(td>50||d->qpos[2]<0.2) falls++;
@@ -70,5 +73,8 @@ int main(int argc,char**argv){
   std::printf("\n=== 종료: STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f° falls=%d | ★침투평균 앞=%.1fmm 뒤=%.1fmm pitch=%.1f° | %.0f steps/s ===\n",
               STEPS,STEPS*dt,d->qpos[0],d->qpos[2],max_tilt,falls,pn?penF/pn*1000:0,pn?penR/pn*1000:0,pn?pitchSum/pn:0,STEPS/wall);
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
+  if(getenv("DUMP_QPOS")){ FILE*f=fopen(getenv("DUMP_QPOS"),"w");   // ★정착 qpos 덤프(trajopt x0/xf용)
+    for(int i=0;i<m->nq;i++) fprintf(f,"%.8f ",d->qpos[i]); fclose(f);
+    std::printf("[dump] qpos → %s (nq=%d)\n", getenv("DUMP_QPOS"), m->nq); }
   mj_deleteData(d); mj_deleteModel(m); return 0;
 }

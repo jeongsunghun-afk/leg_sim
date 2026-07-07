@@ -43,9 +43,10 @@ struct TrotCtrl {
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
   VectorXd q_ref; bool have_qref=false;                  // fold 관절목표 slew
-  double SIT_Z=0.30, SIT_PITCH=0.70, SIT_REAR_FOOT=-1.35, SIT_REAR_CALF=1.10, SIT_REAR_THIGH=-0.6; bool have_qsit=false; // ★앉기(엉덩이로 앉음): 몸통pitch·뒷발목(-1.35)·뒷calf(+1.10)·뒷thigh(-0.6 음수→발뜨고 엉덩이 착지). 앞다리편
+  double SIT_Z=0.32, SIT_PITCH=0.70, SIT_REAR_FOOT=-1.35, SIT_REAR_CALF=1.10, SIT_REAR_THIGH=-0.6; bool have_qsit=false; // ★앉기=crouch-sit(SIT_Z 저crouch, 4발 planted, wbic_stance홀드→기립가능). SIT_PITCH등은 구 haunch-sit 잔여(미사용)
   // ★앉기→서기 스크립트 기립(앞다리 굽혀 앞발 들어 폴볼트 차단 + 뒷다리 박차 extend). 앉기에서만 발동.
   bool was_sit=false; double sit_getup_t0=-1;
+  bool from_sit=false;   // ★crouch-sit서 기립: 저crouch(≥0.29)라 저-PD 대신 wbic_stance로 매끈 기립(오버슈트 방지)
   double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
   double SGU_WALKOUT_V=0.6, SGU_HANDOFF_Z=0.34;   // ★기립 후 전진 트로트로 인계(walk-out)해 균형회복. bz>HANDOFF_Z면 move로 전환
   double SIT_SLEW=0.6; // ★앉기 하강 슬루(rad/s, 작을수록 천천히·충격↓). 기본 JOINT_SLEW(1.5)보다 느리게→충격 완화
@@ -93,15 +94,12 @@ struct TrotCtrl {
     double t=d->time; int nu=q.nu;
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="move"){
-      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; return; }
-      if(mode=="sit"){   // ★앉기: 뒷다리 접고 앞다리 편 자세로 PD홀드(중력보상). q_sit=몸통pitch IK
-        was_sit=true; sit_getup_t0=-1;   // 다음 서기=스크립트 기립 발동
-        if(!have_qsit){ q.sit_home(SIT_Z,SIT_PITCH,SIT_REAR_FOOT,SIT_REAR_CALF,SIT_REAR_THIGH); have_qsit=true; }
-        if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
-        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_sit[j]-q_ref[j],-SIT_SLEW*dt,SIT_SLEW*dt);   // ★느린 하강(충격↓)
-        for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
-          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
-        armed=false; ht_cur=qhome_h=q.base_z0; return; }
+      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; from_sit=false; return; }
+      if(mode=="sit"){   // ★앉기(크라우치-앉기): wbic_stance로 SIT_Z 저crouch 홀드(균형제어, 4발 planted, ≥0.29 가능). 기립=정상 서기
+        was_sit=false; sit_getup_t0=-1; from_sit=true;   // ★from_sit: 기립을 wbic_stance로(저-PD 오버슈트 방지)
+        ht_cur+=tc_clip(SIT_Z-ht_cur,-GETUP_RATE*dt,GETUP_RATE*dt);       // 천천히 SIT_Z로 하강(충격↓)
+        if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }  // 저crouch q_home/com_ref
+        have_qref=false; q.wbic_stance(); armed=false; return; }          // 균형제어로 안정 홀드(서기와 동일 방식, 낮게)
       have_qsit=false;
       double bz=d->qpos[2];
       // ★앉기→서기 스크립트 기립: 앞다리 굽혀 앞발 들기(폴볼트 차단) + 뒷다리 박차 extend → 몸 올라오면 정상 stance로 인계
@@ -126,6 +124,8 @@ struct TrotCtrl {
       }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
       if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)
+      if(mode=="stand_down") from_sit=false;                                 // 눕기=저-PD 필요(from_sit 해제)
+      if(mode=="stand_up" && bz>0.47) from_sit=false;                        // 서기 완료→해제
       double tgt=(mode=="stand_down")?GROUND_Z:body_h;                      // 눕기=낮게 / 서기=슬라이더
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
@@ -133,7 +133,7 @@ struct TrotCtrl {
       double jerr=0; for(int j=0;j<nu;j++) jerr+=std::abs(q.q_home[j]-d->qpos[7+j]); jerr/=nu;
       if(mode=="stand_down" && std::abs(ht_cur-GROUND_Z)<=0.02 && jerr<0.3){ // 눕기완료→damp(모터off 등가)
         for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; return; }
-      if(ht_cur<GETUP_DONE){                                                // 낮은자세=수평 PD fold(눕기/getup 공통)
+      if(ht_cur<GETUP_DONE && !from_sit){                                   // 낮은자세=수평 PD fold(눕기/getup). ★from_sit(crouch-sit≥0.29)=wbic_stance로 매끈 기립
         if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
         for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
         for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];

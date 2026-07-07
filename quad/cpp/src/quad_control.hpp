@@ -120,6 +120,27 @@ struct QuadControl {
       foot_gz0[i]=foot_point(i)[2]; }
     for(int i=0;i<nv;i++) d->qvel[i]=0; mj_forward(m,d);
   }
+  // ★크라우치-앉기 자세: 검증된 crouch_home(안정 저crouch, 4발 planted)을 저높이서 계산해 q_sit에 저장.
+  //   부작용(q_home·com_ref·foot_hip_off·foot_gz0)·라이브 d 모두 저장·복원 → standing 상태 안 건드림.
+  void crouch_sit_home(double base_z){
+    std::vector<double> sq(nq),sv(nv); double st=d->time;
+    for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
+    for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
+    Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
+    d->qpos[2]=base_z; d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;           // 수평
+    for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");  // ★안정 가지 초기값(저높이 flip 방지)
+      d->qpos[legqp[i][1]]=fr?-0.20:0.68; d->qpos[legqp[i][2]]=fr?0.49:-0.88;
+      if(leg_dof[i]==4) d->qpos[legqp[i][3]]=fr?FRONT_ANKLE:REAR_ANKLE; }
+    for(int it=0;it<400;it++){ mj_kinematics(m,d); mj_comPos(m,d);   // 발 지면(z=0) IK, 3-DOF
+      for(int i=0;i<4;i++){ Vector3d tgt(foot_xy[i][0],foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);
+        Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix3d J; for(int r=0;r<3;r++)for(int cc=0;cc<3;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
+        Vector3d dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
+        for(int cc=0;cc<3;cc++) d->qpos[legqp[i][cc]]+=dq[cc]; } }
+    mj_forward(m,d); q_sit.resize(nu); for(int i=0;i<nu;i++) q_sit[i]=d->qpos[7+i];
+    if(getenv("SITDBG")) for(int i=0;i<4;i++) std::printf("[csit] %s thigh=%.3f calf=%.3f foot=%.3f footZ=%.3f\n",
+        legs[i], q_sit[legqp[i][1]-7], q_sit[legqp[i][2]-7], leg_dof[i]==4?q_sit[legqp[i][3]-7]:0.0, foot_point(i)[2]);
+    for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
+  }
   // 가변높이 standing q_home/com_ref 재계산(IK) — 라이브 d 복원(텔레포트X). 서기높이변경·눕기용.
   void update_stand_qhome(double base_z){
     std::vector<double> sq(nq),sv(nv); double st=d->time;
@@ -130,21 +151,24 @@ struct QuadControl {
   }
   // ★앉기 자세 IK: 몸통 pitch↑(nose up)+낮춤 → 앞다리 펴짐·뒷다리 접힘. 뒷다리=calf(+최대)·foot(-최대) 고정,
   //   IK는 앞다리 3DOF(hip/thigh/calf)+뒷다리 2DOF(hip/thigh)만으로 발 지면(z=0) 배치. q_sit 저장(라이브 d 복원).
-  void sit_home(double base_z, double pitch, double rear_foot, double rear_calf, double rear_thigh){
+  void sit_home(double base_z, double pitch, double rear_foot, double rear_calf, double rear_thigh, bool crouch=false){
     bool pin_thigh = rear_thigh > -900;   // ★rear_thigh 지정 시 뒷다리 thigh도 고정→뒷다리는 hip만 IK(발은 접힘형상대로 착지)
+    // ★crouch=true(크라우치-앉기): 접힘 없이 모든 발 정상 발목각·전 다리 3-DOF IK → 4발 planted 저crouch(기립 가능). 완만 pitch로 앉은 느낌
     std::vector<double> sq(nq),sv(nv); double st=d->time;
     for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
-    for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; d->qpos[2]=0.60; mj_forward(m,d);
+    if(crouch && m->nkey>0) mj_resetDataKeyframe(m,d,0); else { for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; }  // ★crouch=keyframe(정상가지 초기값)
+    d->qpos[2]=0.60; mj_forward(m,d);
     Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
     d->qpos[2]=base_z;
+    if(crouch) pitch=0.0;   // ★crouch: 수평(nose-up은 rock-back 유발). crouch_home과 동일 안정 crouch
     d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=-std::sin(pitch/2); d->qpos[6]=0;  // ★pitch(y축, nose up=앞올림 → 앞다리 펴짐·뒷다리 접힘)
     for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
-      if(leg_dof[i]==4) d->qpos[legqp[i][3]]=fr?FRONT_ANKLE:rear_foot;   // 앞발목=FRONT_ANKLE / 뒷발목=rear_foot(-최대접힘)
-      if(!fr){ d->qpos[legqp[i][2]]=rear_calf;                          // ★뒷다리 calf=rear_calf(+최대접힘)
+      if(leg_dof[i]==4) d->qpos[legqp[i][3]]=crouch?(fr?FRONT_ANKLE:REAR_ANKLE):(fr?FRONT_ANKLE:rear_foot);   // crouch=crouch_home과 동일(뒷발=REAR_ANKLE)
+      if(!fr && !crouch){ d->qpos[legqp[i][2]]=rear_calf;                          // ★뒷다리 calf=rear_calf(+최대접힘)
                if(pin_thigh) d->qpos[legqp[i][1]]=rear_thigh; } }       // ★뒷다리 thigh=rear_thigh(음수)
     for(int it=0;it<400;it++){ mj_kinematics(m,d); mj_comPos(m,d);   // 발 지면(z=0) IK
       for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
-        int nd=fr?3:(pin_thigh?1:2);   // 앞=hip/thigh/calf, 뒤=hip/thigh(calf고정) 또는 hip만(thigh·calf고정)
+        int nd=(crouch||fr)?3:(pin_thigh?1:2);   // crouch/앞=hip/thigh/calf 3-DOF, 뒤(비crouch)=2 또는 1
         Vector3d tgt(foot_xy[i][0],foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);
         Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix<double,3,Dynamic> J(3,nd);
         for(int r=0;r<3;r++)for(int cc=0;cc<nd;cc++) J(r,cc)=Jf(r,legqv[i][cc]);

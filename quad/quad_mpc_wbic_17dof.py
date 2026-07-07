@@ -236,7 +236,8 @@ class QuadSim:
         self._waist_ref = 0.0                                    # 허리 요각 목표[rad](조향시 갱신)
         self._waist_w = float(os.environ.get('WAIST_W', '80'))   # 홀드 가중(강하게)
         self._waist_kp = float(os.environ.get('WAIST_KP', '150')); self._waist_kd = float(os.environ.get('WAIST_KD', '20'))
-        self._waist_steer = float(os.environ.get('WAIST_STEER', '0'))   # ★허리 조향 게인(0=중립홀드/>0=선회시 앞몸통 굽힘=조향스파인)
+        self._waist_steer = float(os.environ.get('WAIST_STEER', '0.4'))   # ★허리 lean 보조 게인(선회 시 앞몸통을 안쪽으로 굽힘=차동차식). 다리(MPC)가 선회 수행·허리는 lean만. 0=중립홀드
+        self._waist_steer_cap = float(os.environ.get('WAIST_STEER_CAP', '0.20'))   # ★허리 lean 최대각[rad]≈11°. 그 이상=SRBD강체가정·CoM 붕괴로 낙상(구 0.75=43° 과대)
         self._wbt = bool(os.environ.get('WBIC_TIMING')); self._qpt = []   # ★WBIC QP solve 시간 계측(1kHz 실현 확인용)
         # ★기어비 재배분(설계검토): GEAR_xxx<1=저기어(속도↑·토크↓), >1=고기어(토크↑·속도↓). 같은 베이스모터 토크↔속도 맞교환.
         #   보행분석: thigh=토크병목·속도여유→GEAR_THIGH>1 이득 / calf·foot=속도병목·토크여유→GEAR<1 이득
@@ -1212,7 +1213,11 @@ def mode_trot():
     STEP_H = float(os.environ.get('TROT_STEPH', str(_GP['STEPH'])))
     V = float(os.environ.get('TROT_V', str(_GP['V'])))     # 전진속도[m/s] 초기/기본
     VY = float(os.environ.get('TROT_VY', '0.0'))    # ★측방속도[m/s] (+좌 −우)
-    WZ = float(os.environ.get('TROT_WZ', '0.0'))    # 선회각속도[rad/s] (+좌선회)
+    WZ = float(os.environ.get('TROT_WZ', '0.0'))    # 선회각속도[rad/s] (+좌선회) — A채널(직접 yaw, 제자리 스핀 가능)
+    # ★자동차식 조향(옵션2): 조향각 δ 명령 → Ackermann WZ=V·tanδ/축거 를 다리선회(A)에 합산. V=0이면 0(전진해야 조향=차와 동일). WZ(스핀)와 공존.
+    STEER = float(os.environ.get('TROT_STEER', '0.0'))   # 자동차식 조향각[rad] (+좌). R=축거/tanδ
+    _hx = [float(q.d.xpos[q.hip_bid[i]][0]) for i in range(4)]   # HL,HR,FL,FR 힙 body-x(초기 yaw0→body frame)
+    WHEELBASE = float(os.environ.get('WHEELBASE', str(max(0.15, (_hx[2] + _hx[3]) / 2 - (_hx[0] + _hx[1]) / 2))))  # 앞-뒤 힙 거리 L[m]
     ACC = float(os.environ.get('TROT_ACC', '0.6'))  # 명령 가속도제한[m/s²]: 시작램프+GUI 급조작 완화
     WARMUP = float(os.environ.get('TROT_WARMUP', '0.6'))  # 시작 제자리trot 시간[s]: 첫 사이클 리듬확립 후 이동(시작 lurch 완화)
     CMDFILE = os.environ.get('CMDFILE')             # ★GUI 연동: JSON(/tmp/quad_cmd.json) 폴링(v/vy/w/mode/body_h)
@@ -1266,8 +1271,8 @@ def mode_trot():
          'ptgt_prev': [None, None, None, None], 'foothold': [None, None, None, None],   # foothold=지형서 스윙중 고정된 착지목표
          'lam_des': None, 'mpc_t': -1.0, 'bx': 0.0,
          'settle_until': SETTLE,
-         'Vt': V, 'Vyt': VY, 'Wt': WZ,                      # 목표명령(GUI가 갱신)
-         'Vs': 0.0, 'Vys': 0.0, 'Ws': 0.0, 'cmd_t': -1.0,   # 스무딩 적용명령(0서 시작)
+         'Vt': V, 'Vyt': VY, 'Wt': WZ, 'St': STEER,         # 목표명령(GUI가 갱신) · St=자동차식 조향각
+         'Vs': 0.0, 'Vys': 0.0, 'Ws': 0.0, 'Ss': 0.0, 'cmd_t': -1.0,   # 스무딩 적용명령(0서 시작)
          'yaw_ref': 0.0, 'last_t': -1.0,                     # 선회 yaw각 참조(적분) · 직전 시각(reset 감지용)
          'body_h': q.base_z0, 'ht_cur': q.base_z0, 'qhome_h': q.base_z0,   # body_h슬라이더 · 보간높이 · q_home 계산높이
          'step_h': STEP_H,                                                # ★GUI step height(live 갱신)
@@ -1313,7 +1318,7 @@ def mode_trot():
             q.crouch_home()                                  # 깨끗한 crouch 복원
             S['armed'] = False; S['lam_des'] = None; S['ptgt_prev'] = [None, None, None, None]
             S['t0'] = 0.0; S['settle_until'] = q.d.time + SETTLE; S['yaw_ref'] = 0.0
-            S['Vs'] = S['Vys'] = S['Ws'] = 0.0; S['cmd_t'] = -1.0   # ★cmd_t 리셋: 시간역행 후 CMDFILE 폴링 재개(안하면 GUI 먹통)
+            S['Vs'] = S['Vys'] = S['Ws'] = S['Ss'] = 0.0; S['cmd_t'] = -1.0   # ★cmd_t 리셋: 시간역행 후 CMDFILE 폴링 재개(안하면 GUI 먹통)
             S['bx'] = float(q.d.qpos[0]); S['last_t'] = q.d.time
             print('[trot] reset 감지 → crouch 복원 후 재정착(%s 모드)' % q.cmd_mode, flush=True)
             return
@@ -1324,6 +1329,7 @@ def mode_trot():
             try:
                 with open(CMDFILE) as _f: _c = json.load(_f)
                 S['Vt'] = float(_c.get('v', S['Vt'])); S['Vyt'] = float(_c.get('vy', S['Vyt'])); S['Wt'] = float(_c.get('w', S['Wt']))
+                S['St'] = float(_c.get('steer', S['St']))            # ★자동차식 조향각(GUI 핸들/슬라이더). 없으면 유지
                 q.cmd_mode = _c.get('mode', 'move')
                 S['body_h'] = float(_c.get('body_h', S['body_h']))   # 서기 높이 슬라이더
                 _ph = S['step_h']; S['step_h'] = float(_c.get('step_h', S['step_h']))   # ★step height 슬라이더(live)
@@ -1370,7 +1376,7 @@ def mode_trot():
                     mujoco.mj_resetData(q.m, q.d); q.crouch_home()   # 깨끗한 상태 + 기립자세
                     S['armed'] = False; S['lam_des'] = None; S['ptgt_prev'] = [None, None, None, None]
                     S['settle_until'] = q.d.time + SETTLE; S['yaw_ref'] = 0.0
-                    S['Vs'] = S['Vys'] = S['Ws'] = 0.0; S['bx'] = float(q.d.qpos[0]); S['last_t'] = q.d.time
+                    S['Vs'] = S['Vys'] = S['Ws'] = S['Ss'] = 0.0; S['bx'] = float(q.d.qpos[0]); S['last_t'] = q.d.time
                     print('[trot] RESET 버튼 → 시뮬 리셋', flush=True)
                 S['rseq'] = _rs
             except Exception: pass
@@ -1487,7 +1493,11 @@ def mode_trot():
         S['Vs']  += float(np.clip(_vt  - S['Vs'],  -ACC * dts, ACC * dts))
         S['Vys'] += float(np.clip(_vyt - S['Vys'], -ACC * dts, ACC * dts))
         S['Ws']  += float(np.clip(_wt  - S['Ws'],  -2.0 * dts, 2.0 * dts))
+        _st = S['St'] if (_go and not S['homing']) else 0.0
+        S['Ss']  += float(np.clip(_st - S['Ss'], -0.8 * dts, 0.8 * dts))    # 조향각 스무딩[rad/s]
         V_eff, Vy_eff, W_eff = S['Vs'], S['Vys'], S['Ws']
+        # ★자동차식 조향(옵션2): Ackermann δ→yaw rate. 전진속도 비례(V=0=스핀불가, 차와 동일). δ cap±28°(급선회 낙상 방지). 다리선회(A)에 합산→yaw적분·MPC·허리lean 자동
+        W_eff += V_eff * float(np.tan(np.clip(S['Ss'], -0.5, 0.5))) / WHEELBASE
         if S['gait'] == 'walk':                                                 # ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접 / off=매끈
             if q._auto_whip:
                 q._swing_w_f = q._whip_lo_f; q._swing_w_r = q._whip_lo_r
@@ -1502,8 +1512,8 @@ def mode_trot():
         _lat = float(np.clip(abs(Vy_eff) / 0.35, 0.0, 1.0))                     # ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드)
         q._swing_w_f = q._swing_w_f + _lat * (q._whip_hi - q._swing_w_f)
         q._swing_w_r = q._swing_w_r + _lat * (q._whip_hi - q._swing_w_r)
-        if q._waist_idx is not None:                                            # ★허리 조향: 선회명령에 앞몸통 굽힘 연동(WAIST_STEER=0이면 중립홀드)
-            q._waist_ref = float(np.clip(q._waist_steer * W_eff, -0.75, 0.75))
+        if q._waist_idx is not None:                                            # ★허리 lean 보조: 선회명령에 앞몸통 안쪽 굽힘(안전캡 이내). WAIST_STEER=0이면 중립홀드
+            q._waist_ref = float(np.clip(q._waist_steer * W_eff, -q._waist_steer_cap, q._waist_steer_cap))
         # 선회: yaw각 참조 + 명령(body)→world 회전 (SRBD 상태는 world frame)
         _qq = q.d.qpos[3:7]                                                     # quat [w,x,y,z]
         yaw_m = float(np.arctan2(2 * (_qq[0]*_qq[3] + _qq[1]*_qq[2]), 1 - 2 * (_qq[2]**2 + _qq[3]**2)))

@@ -19,15 +19,20 @@ struct QuadControl {
   int nq=0,nv=0,nu=0;
   std::vector<std::vector<int>> legqp{4},legqv{4};
   int leg_dof[4]={0}, hip_bid[4]={0}, fgid[4]={0}, fbid[4]={0}; double fr[4]={0};
+  int rear_hock_bid[4]={0};   // ★<leg>_foot_link body(발목/hock 원점) — 개-앉기서 발링크 z구속에 사용
   const char* legs[4]={"HL","HR","FL","FR"};
   // 상수
   double MU=0.6, MU_MARGIN=0.707, LAMZ_MIN=1.0;         // wbic 마찰
   double STANCE_KD=20.0;                                 // ★stance 접촉속도 감쇠(baumgarte): cjac·q̈=−KD·(cjac·q̇) → 터치다운 잔류속도→0, 발 slip↓(뒤 7.2→5.9mm). 0=끔
   double base_z0=0.52, REAR_ANKLE=-0.7, FRONT_ANKLE=-0.7;  // 14dof:ours_sphere / 17dof: 0.5234,-0.5
+  double HAUNCH_THIGH=-1.0, HAUNCH_CALF=1.2, HAUNCH_FOOT=-0.3, HAUNCH_HOCK_Z=0.019, FRONT_REACH=-0.22;  // ★엉덩이 주저앉기 뒷다리 tuck(femur 위/뒤·발 접힘)+앞발 뒤로(앞다리 곧게 수직으로 펴 상체 받침)
+  double HAUNCH_FOOT_LAND=-1.2;  // ★착지 중 뒷발 각도(더 접음=발 curl). 바닥 닿은 뒤 HAUNCH_FOOT(-0.3)로 굴려 발바닥 밀착
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
   double w_ori=5.0;                                      // wbic_track 자세 task 가중(14dof=5, 17dof튜닝=20)
   double yaw_des=0.0;                                     // ★자세 task 목표 헤딩(TrotCtrl이 yaw_ref로 설정). 선회시 몸통이 추종
   double sit_pitch=0.0;                                  // ★wbic_stance 자세목표 nose-up(앉기 느낌). 0=수평. CoM은 중앙유지라 안정 nose-up 가능
+  double posture_w=1.0;                                  // ★wbic_stance 자세task 가중 스케일(기본1). 개-앉기서 ↑=접힘(q_home) 홀드(CoM균형은 유지). 서기/보행=1
+  bool sit_hock_contact=false;                           // ★개-앉기: 뒤 접촉점을 toe sphere→hock(발목)로 전환. CoM을 hock~앞발 지지폴리곤 기준 균형→발링크 평평 유지(toe-stand 방지)
   double w_yaw=0.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). euler 표준수정 후 0이 최적(14·17 공통; MPC가 yaw 담당). >0=헤딩홀드
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
@@ -62,6 +67,7 @@ struct QuadControl {
       leg_dof[i]=(int)legqp[i].size();
       int gid=mj_name2id(m,mjOBJ_GEOM,(std::string(legs[i])+"_sphere").c_str());
       fgid[i]=gid; fbid[i]=m->geom_bodyid[gid]; fr[i]=m->geom_size[gid*3];
+      rear_hock_bid[i]=mj_name2id(m,mjOBJ_BODY,(std::string(legs[i])+"_foot_link").c_str());   // ★hock(발목 원점) body
     }
     // tau_peak / qmin·qmax / ankle (non-free joint 순서=actuator)
     tau_peak.resize(nu); qmin.resize(nu); qmax.resize(nu); is_ankle.assign(nu,0);
@@ -98,6 +104,10 @@ struct QuadControl {
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }
   Matrix<double,3,Dynamic> foot_jac(int i){ std::vector<double> jb(3*nv); Vector3d p=foot_point(i);
     mj_jac(m,d,jb.data(),nullptr,p.data(),fbid[i]);
+    Matrix<double,3,Dynamic> J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jb[r*nv+c]; return J; }
+  Vector3d hock_point(int i){ return Vector3d(d->xpos[rear_hock_bid[i]*3],d->xpos[rear_hock_bid[i]*3+1],d->xpos[rear_hock_bid[i]*3+2]); }
+  Matrix<double,3,Dynamic> hock_jac(int i){ std::vector<double> jb(3*nv); Vector3d p=hock_point(i);   // ★hock(발목원점) 야코비 — 개-앉기서 뒤 접촉=발링크(hock)
+    mj_jac(m,d,jb.data(),nullptr,p.data(),rear_hock_bid[i]);
     Matrix<double,3,Dynamic> J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jb[r*nv+c]; return J; }
 
   // crouch_home: 넓은 발위치 유지 무릎굽힘 → q_home/com_ref/standing. + foot_hip_off/foot_gz0
@@ -144,6 +154,38 @@ struct QuadControl {
     mj_forward(m,d); q_sit.resize(nu); for(int i=0;i<nu;i++) q_sit[i]=d->qpos[7+i];
     if(getenv("SITDBG")) for(int i=0;i<4;i++) std::printf("[csit] %s thigh=%.3f calf=%.3f foot=%.3f footZ=%.3f\n",
         legs[i], q_sit[legqp[i][1]-7], q_sit[legqp[i][2]-7], leg_dof[i]==4?q_sit[legqp[i][3]-7]:0.0, foot_point(i)[2]);
+    for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
+  }
+  // ★개-앉기(haunch sit): 뒷다리 접어 발 링크(hock→toe 중족골)를 바닥에 평평, 앞다리 편 자세.
+  //   뒷다리 3-DOF(thigh/calf/foot, hip=0)로 [toe_x; toe_z=0; hock_z=HAUNCH_HOCK_Z] 구속 → 발링크 양끝 지면=평평(무릎-위 가지=시드).
+  //   q_home/com_ref(지지폴리곤 중심)/foot_hip_off/foot_gz0 기록. live d 저장/복원(텔레포트X). base_z=수평(nose-up은 wbic_stance가 담당).
+  void haunch_sit_home(double base_z, double pitch=0.0){
+    std::vector<double> sq(nq),sv(nv); double st=d->time;
+    for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
+    if(m->nkey>0) mj_resetDataKeyframe(m,d,0); else { for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; }
+    d->qpos[2]=0.60; mj_forward(m,d);
+    Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);   // 명목 발 XY
+    d->qpos[2]=base_z;
+    d->qpos[3]=std::cos(pitch/2); d->qpos[4]=0; d->qpos[5]=-std::sin(pitch/2); d->qpos[6]=0;  // ★nose-up 베이스(발링크 평평은 월드프레임 z구속이라 pitch 반영). PD홀드 시 이 pitch가 재현됨
+    for(int i=0;i<4;i++){ bool fro=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
+      if(fro){ if(leg_dof[i]==4) d->qpos[legqp[i][3]]=FRONT_ANKLE; }                 // 앞다리 발목 초기값(발 지면 IK로 폄)
+      else { d->qpos[legqp[i][0]]=0.0; d->qpos[legqp[i][1]]=HAUNCH_THIGH;            // ★뒷다리 tuck(접힘) 고정: 무릎 위/뒤·종아리·발 접어 엉덩이 밑으로. IK 안 함(발 안 뻗음)
+             d->qpos[legqp[i][2]]=HAUNCH_CALF; d->qpos[legqp[i][3]]=HAUNCH_FOOT; } }
+    for(int it=0;it<400;it++){ mj_kinematics(m,d);                                    // ★앞다리(FL,FR)만 발 지면 IK로 폄(nose-up 상체 지지) — 뒷다리는 tuck 고정
+      for(int i=2;i<4;i++){
+        Vector3d tgt(foot_xy[i][0]+FRONT_REACH,foot_xy[i][1],0.0); Vector3d e=tgt-foot_point(i);  // 앞발 약간 전방(앞다리 폄)
+        Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix3d J; for(int r=0;r<3;r++)for(int cc=0;cc<3;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
+        Vector3d dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
+        for(int cc=0;cc<3;cc++) d->qpos[legqp[i][cc]]+=dq[cc]; } }
+    mj_forward(m,d);
+    for(int i=0;i<nu;i++) q_home[i]=d->qpos[7+i];
+    com_ref<<d->subtree_com[0],d->subtree_com[1],d->subtree_com[2];                  // ★com_ref=자연 CoM(엉덩이 주저앉기=rump/뒷몸통 지지, 지지폴리곤 큼)
+    Vector2d fc(com_ref[0],com_ref[1]);
+    for(int i=0;i<4;i++){ foot_hip_off[i]=foot_point(i).head(2)-Vector2d(d->xpos[hip_bid[i]*3],d->xpos[hip_bid[i]*3+1]);
+      foot_gz0[i]=foot_point(i)[2]; }
+    if(getenv("SITDBG")) for(int i=0;i<4;i++) std::printf("[haunch] %s thigh=%.3f calf=%.3f foot=%.3f hockZ=%.3f toeZ=%.3f\n",
+        legs[i], q_home[legqp[i][1]-7], q_home[legqp[i][2]-7], leg_dof[i]==4?q_home[legqp[i][3]-7]:0.0,
+        (i<2)?d->xpos[rear_hock_bid[i]*3+2]:0.0, foot_point(i)[2]);
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
   }
   // 가변높이 standing q_home/com_ref 재계산(IK) — 라이브 d 복원(텔레포트X). 서기높이변경·눕기용.
@@ -231,7 +273,7 @@ struct QuadControl {
     std::vector<double> Mb(nv*nv); mj_fullM(m,Mb.data(),d->qM);
     Map<Matrix<double,Dynamic,Dynamic,RowMajor>> M(Mb.data(),nv,nv);
     Map<VectorXd> h(d->qfrc_bias,nv); Map<VectorXd> qv(d->qvel,nv);
-    std::vector<Matrix<double,3,Dynamic>> Js(K); for(int k=0;k<K;k++) Js[k]=foot_jac(k);
+    std::vector<Matrix<double,3,Dynamic>> Js(K); for(int k=0;k<K;k++) Js[k]=(sit_hock_contact&&k<2)?hock_jac(k):foot_jac(k);  // ★개-앉기=뒤 접촉 hock(발링크 평평)
     MatrixXd P=MatrixXd::Zero(nz,nz); VectorXd g=VectorXd::Zero(nz);
     std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
     Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];
@@ -248,7 +290,7 @@ struct QuadControl {
     for(int j=0;j<nu;j++){ double a, w;
       if(j==waist_idx){ a=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w=WAIST_W; }  // ★허리 강홀드(서기서도)
       else { a=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j];
-        w=(stance_pin_ankle&&is_ankle[j])?20.0:1.0; }   // ★17dof: 여유발목(4개) stance 핀→nullptr 표류 차단
+        w=(stance_pin_ankle&&is_ankle[j])?20.0:posture_w; }   // ★17dof: 여유발목(4개) stance 핀→nullptr 표류. posture_w↑=개-앉기 접힘 홀드
       P(6+j,6+j)+=w; g[6+j]-=w*a; }
     P.topLeftCorner(nv,nv)+=1e-4*MatrixXd::Identity(nv,nv);
     for(int k=0;k<K;k++) P.block(nv+3*k,nv+3*k,3,3)+=1e-3*Matrix3d::Identity();

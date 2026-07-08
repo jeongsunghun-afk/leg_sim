@@ -55,6 +55,15 @@ int main(int argc,char**argv){
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각
+  if(getenv("HAUNCH_Z")) ctrl.HAUNCH_Z=atof(getenv("HAUNCH_Z"));            // ★개-앉기(haunch sit) 튜닝
+  if(getenv("HAUNCH_FOLD_RATE")) ctrl.HAUNCH_FOLD_RATE=atof(getenv("HAUNCH_FOLD_RATE"));
+  if(getenv("HAUNCH_UNFOLD_Z")) ctrl.HAUNCH_UNFOLD_Z=atof(getenv("HAUNCH_UNFOLD_Z"));
+  if(getenv("SIT_POSTURE_W")) ctrl.SIT_POSTURE_W=atof(getenv("SIT_POSTURE_W"));
+  if(getenv("HAUNCH_THIGH")) q.HAUNCH_THIGH=atof(getenv("HAUNCH_THIGH"));
+  if(getenv("HAUNCH_CALF")) q.HAUNCH_CALF=atof(getenv("HAUNCH_CALF"));
+  if(getenv("HAUNCH_FOOT")) q.HAUNCH_FOOT=atof(getenv("HAUNCH_FOOT"));
+  if(getenv("HAUNCH_HOCK_Z")) q.HAUNCH_HOCK_Z=atof(getenv("HAUNCH_HOCK_Z"));
+  if(getenv("SIT_CPITCH")) ctrl.SIT_CPITCH=atof(getenv("SIT_CPITCH"));      // 앉기 nose-up 목표(뷰어 튜닝)
   mjModel*m=q.m; mjData*d=q.d;
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }

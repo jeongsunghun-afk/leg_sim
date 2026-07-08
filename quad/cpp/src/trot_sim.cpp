@@ -28,6 +28,17 @@ int main(int argc,char**argv){
   if(getenv("SIT_SLEW")) ctrl.SIT_SLEW=atof(getenv("SIT_SLEW"));
   if(getenv("SIT_CPITCH")) ctrl.SIT_CPITCH=atof(getenv("SIT_CPITCH"));
   if(getenv("SIT_REACH")) ctrl.SIT_REACH=atof(getenv("SIT_REACH"));
+  if(getenv("HAUNCH_Z")) ctrl.HAUNCH_Z=atof(getenv("HAUNCH_Z"));            // ★개-앉기(haunch sit) 튜닝: 접힘높이·fold속도·언폴드완료높이
+  if(getenv("HAUNCH_FOLD_RATE")) ctrl.HAUNCH_FOLD_RATE=atof(getenv("HAUNCH_FOLD_RATE"));
+  if(getenv("HAUNCH_UNFOLD_Z")) ctrl.HAUNCH_UNFOLD_Z=atof(getenv("HAUNCH_UNFOLD_Z"));
+  if(getenv("SIT_POSTURE_W")) ctrl.SIT_POSTURE_W=atof(getenv("SIT_POSTURE_W"));  // 개-앉기 자세task 가중(접힘 홀드)
+  if(getenv("HAUNCH_PITCH")) ctrl.HAUNCH_PITCH=atof(getenv("HAUNCH_PITCH"));  // 개-앉기 nose-up(q_home 베이킹)
+  if(getenv("HAUNCH_THIGH")) q.HAUNCH_THIGH=atof(getenv("HAUNCH_THIGH"));   // 뒷다리 개-앉기 시드(무릎-위 가지)
+  if(getenv("HAUNCH_CALF")) q.HAUNCH_CALF=atof(getenv("HAUNCH_CALF"));
+  if(getenv("HAUNCH_FOOT")) q.HAUNCH_FOOT=atof(getenv("HAUNCH_FOOT"));
+  if(getenv("HAUNCH_HOCK_Z")) q.HAUNCH_HOCK_Z=atof(getenv("HAUNCH_HOCK_Z"));  // hock 지면 목표(발링크 평평)
+  if(getenv("FRONT_REACH")) q.FRONT_REACH=atof(getenv("FRONT_REACH"));       // 앞발 전방 배치(↑=앞다리 더 폄)
+  if(getenv("HAUNCH_FOOT_LAND")) q.HAUNCH_FOOT_LAND=atof(getenv("HAUNCH_FOOT_LAND"));  // 착지 중 뒷발 각도(닿은 뒤 HAUNCH_FOOT로 굴림)
   if(getenv("SGU_KICK_T")) ctrl.SGU_KICK_T=atof(getenv("SGU_KICK_T"));      // ★앉기→서기 스크립트 기립 튜닝
   if(getenv("SGU_FB_THIGH")) ctrl.SGU_FB_THIGH=atof(getenv("SGU_FB_THIGH"));
   if(getenv("SGU_FB_CALF")) ctrl.SGU_FB_CALF=atof(getenv("SGU_FB_CALF"));
@@ -99,6 +110,13 @@ int main(int argc,char**argv){
   std::printf("\n=== 종료: STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f° falls=%d | ★침투평균 앞=%.1fmm 뒤=%.1fmm pitch=%.1f° | %.0f steps/s ===\n",
               STEPS,STEPS*dt,d->qpos[0],d->qpos[2],max_tilt,falls,pn?penF/pn*1000:0,pn?penR/pn*1000:0,pn?pitchSum/pn:0,STEPS/wall);
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
+  std::printf("    ★실제 뒷다리(HL) thigh=%.3f calf=%.3f foot=%.3f | 무릎z=%.3f hockZ=%.3f toeZ=%.3f\n",
+      d->qpos[q.legqp[0][1]], d->qpos[q.legqp[0][2]], d->qpos[q.legqp[0][3]], d->xpos[mj_name2id(m,mjOBJ_BODY,"HL_calf_link")*3+2],
+      d->xpos[q.rear_hock_bid[0]*3+2], q.foot_point(0)[2]);
+  { double fz=d->xpos[q.hip_bid[2]*3+2], rz=d->xpos[q.hip_bid[0]*3+2];   // 앞힙 z vs 뒤힙 z
+    std::printf("    ★상체방향: 앞힙z=%.3f 뒤힙z=%.3f → %s\n", fz, rz, fz>rz?"앞이 위=nose-up(엉덩이 주저앉기 ✓)":"뒤가 위=nose-down(✗ 반대)");
+    std::printf("    ★앞다리(FL) thigh=%.3f calf=%.3f 무릎z=%.3f (calf≈0=곧게 폄)\n",
+      d->qpos[q.legqp[2][1]], d->qpos[q.legqp[2][2]], d->xpos[mj_name2id(m,mjOBJ_BODY,"FL_calf_link")*3+2]); }
   if(GRF && grf_n){ double fr=(grf_fz[0]+grf_fz[1])/grf_n, ff=(grf_fz[2]+grf_fz[3])/grf_n; double tot=fr+ff;
     std::printf("    ★수직GRF 평균[N]: HL=%.0f HR=%.0f FL=%.0f FR=%.0f | 뒤=%.0f(%.0f%%) 앞=%.0f(%.0f%%) 뒤:앞=%.2f\n",
       grf_fz[0]/grf_n,grf_fz[1]/grf_n,grf_fz[2]/grf_n,grf_fz[3]/grf_n, fr,tot>0?fr/tot*100:0, ff,tot>0?ff/tot*100:0, ff>0?fr/ff:0);

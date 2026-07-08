@@ -76,7 +76,7 @@ LEAN = float(os.environ.get('LEAN', 0.10))              # gather 앞숙임(rad, 
 quat_lean = np.array([np.cos(LEAN/2), 0., np.sin(LEAN/2), 0.])   # nose-down(+y)
 
 def base_prof(k):   # (bx, bz, quat)
-    if k < NG:                        # gather: 전진+낮춤+앞숙임
+    if k < NG:                        # gather: 전진+낮춤+앞숙임 (linear=검증된 작동 프로파일. smoothstep/느리게=전복, 극도로 민감)
         t = (k+1)/NG
         return lerp(base_sit[0],GX,t), lerp(base_sit[2],GZ,t), slerp(quat_sit,quat_lean,t)
     elif k < NG+NA1+NA2:              # 뒷발 순차착지(전진 자세 유지)

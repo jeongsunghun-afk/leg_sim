@@ -170,8 +170,9 @@ struct TrotCtrl {
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double stt=go?steer:0.0; Ss_steer+=tc_clip(stt-Ss_steer,-0.8*dt,0.8*dt);   // 조향각 스무딩[rad/s]
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
-    Weff += tc_clip(Veff*std::tan(tc_clip(Ss_steer,-1.2,1.2))/wheelbase, -0.9, 0.9);   // ★자동차식 조향(Ackermann). ★yaw rate 캡0.9(고속 tight조향 낙상방지=understeer): 저속=더tight(δ68°→R0.24m)·고속=자동제한. V=0=무효, WZ스핀과 공존
-    q.waist_ref=tc_clip(waist_steer*Weff,-waist_cap,waist_cap);    // ★허리 lean(안쪽 굽힘, 안전캡). steer·WZ 둘다 0이면 중립홀드
+    double steer_wz = tc_clip(Veff*std::tan(tc_clip(Ss_steer,-1.2,1.2))/wheelbase, -0.9, 0.9);  // ★자동차식 조향(Ackermann) 성분. yaw rate 캡0.9(understeer). V=0=무효, WZ스핀과 공존
+    Weff += steer_wz;
+    q.waist_ref=tc_clip(waist_steer*steer_wz,-waist_cap,waist_cap);    // ★허리 lean=조향(핸들)만 구동. 우스틱 WZ 선회는 순수 다리선회(허리 중립홀드). 핸들 0이면 허리 중립
     double spd=std::abs(Veff);   // ★전진속도만 whip 트리거(좌우이동은 whip 유발 안함). 구 hypot은 측방서도 whip 켜짐
     if(gait_type=="walk"){   // ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접적용 / off=매끈(whip_hi)
       if(auto_whip){ q.swing_w_f=whip_lo_f; q.swing_w_r=whip_lo_r; } else { q.swing_w_f=whip_hi; q.swing_w_r=whip_hi; } }

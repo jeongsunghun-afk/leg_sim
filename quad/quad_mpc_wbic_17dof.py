@@ -1506,7 +1506,8 @@ def mode_trot():
         S['Ss']  += float(np.clip(_st - S['Ss'], -0.8 * dts, 0.8 * dts))    # 조향각 스무딩[rad/s]
         V_eff, Vy_eff, W_eff = S['Vs'], S['Vys'], S['Ws']
         # ★자동차식 조향(옵션2): Ackermann δ→yaw rate. 전진속도 비례(V=0=스핀불가, 차와 동일). δ cap±28°(급선회 낙상 방지). 다리선회(A)에 합산→yaw적분·MPC·허리lean 자동
-        W_eff += float(np.clip(V_eff * np.tan(np.clip(S['Ss'], -1.2, 1.2)) / WHEELBASE, -0.9, 0.9))   # ★yaw rate 캡0.9(고속 tight조향 낙상방지=understeer): 저속=더tight(δ68°)·고속=자동제한
+        _steer_wz = float(np.clip(V_eff * np.tan(np.clip(S['Ss'], -1.2, 1.2)) / WHEELBASE, -0.9, 0.9))  # ★조향(Ackermann) 성분. yaw rate 캡0.9(understeer)
+        W_eff += _steer_wz
         if S['gait'] == 'walk':                                                 # ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접 / off=매끈
             if q._auto_whip:
                 q._swing_w_f = q._whip_lo_f; q._swing_w_r = q._whip_lo_r
@@ -1521,8 +1522,8 @@ def mode_trot():
         _lat = float(np.clip(abs(Vy_eff) / 0.35, 0.0, 1.0))                     # ★좌우이동 시 whip 억제: 측방 스윙 flail 완화(swing_w→매끈 페이드)
         q._swing_w_f = q._swing_w_f + _lat * (q._whip_hi - q._swing_w_f)
         q._swing_w_r = q._swing_w_r + _lat * (q._whip_hi - q._swing_w_r)
-        if q._waist_idx is not None:                                            # ★허리 lean 보조: 선회명령에 앞몸통 안쪽 굽힘(안전캡 이내). WAIST_STEER=0이면 중립홀드
-            q._waist_ref = float(np.clip(q._waist_steer * W_eff, -q._waist_steer_cap, q._waist_steer_cap))
+        if q._waist_idx is not None:                                            # ★허리 lean=조향(핸들)만 구동. 우스틱 WZ 선회는 순수 다리선회(허리 중립홀드). 핸들 0이면 중립
+            q._waist_ref = float(np.clip(q._waist_steer * _steer_wz, -q._waist_steer_cap, q._waist_steer_cap))
         # 선회: yaw각 참조 + 명령(body)→world 회전 (SRBD 상태는 world frame)
         _qq = q.d.qpos[3:7]                                                     # quat [w,x,y,z]
         yaw_m = float(np.arctan2(2 * (_qq[0]*_qq[3] + _qq[1]*_qq[2]), 1 - 2 * (_qq[2]**2 + _qq[3]**2)))

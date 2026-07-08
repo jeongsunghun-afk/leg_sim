@@ -118,6 +118,14 @@ mj_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range
 np.savez('/tmp/getup_stand.npz', q=traj_q, dq=traj_dq, tau=np.zeros((N-1, m.nu)),
          base_z=bz_arr, sched=np.array(sched, dtype=object), dt=dt,
          com_ref=com, comv_ref=comv, acom_ref=acom, full_qpos=full_qpos, mj_names=np.array(mj_names))
+# ★C++ 뷰어 추종용 텍스트 내보내기: N dt \n (phase 0=A1/1=A2/2=B, q[17]) × N
+_pc = {'A1':0,'A2':1,'B':2}
+with open('/tmp/getup_traj.txt','w') as f:
+    f.write('%d %g\n' % (N, dt))
+    for k in range(N):   # phase, q[17], dq[17](속도 피드포워드)
+        f.write('%d ' % _pc[sched[k]] + ' '.join('%.6f'%v for v in traj_q[k])
+                + ' ' + ' '.join('%.6f'%v for v in traj_dq[k]) + '\n')
+print('저장: /tmp/getup_traj.txt (C++ 추종용, %d프레임)' % N)
 d.qpos[:]=qst; mujoco.mj_forward(m,d); fxs=[foot_pos(L)[0] for L in LEGS]
 print('저장: /tmp/getup_stand.npz (%d스텝 G%d/A1%d/A2%d/B%d, base %.3f→%.3f)'
       % (N, NG, NA1, NA2, NB, bz_arr[0], bz_arr[-1]))

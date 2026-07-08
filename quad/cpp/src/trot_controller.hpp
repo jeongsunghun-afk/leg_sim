@@ -5,6 +5,8 @@
 #include <array>
 #include <map>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 // gait 상수(config + trot 프리셋)
 static const double GP_T=0.50, GP_SWF=0.50;
@@ -48,6 +50,16 @@ struct TrotCtrl {
   // ★개-앉기(haunch sit): 정착 후 crouch→haunch(뒷다리 접어 발링크 바닥밀착)로 fold, 기립 시 높이스케줄 언폴드. q_home/com_ref 블렌드.
   double HAUNCH_Z=0.30, HAUNCH_FOLD_RATE=0.60, HAUNCH_UNFOLD_Z=0.40, SIT_POSTURE_W=40.0, HAUNCH_PITCH=0.50, SIT_KP=90.0;   // ★엉덩이 주저앉기: base 낮춤·fold 빠르게(~1.7s)·nose-up 크게(상체 세워 앞다리 폄·엉덩이 내림). 기립불요·자세우선
   VectorXd q_crouch, q_haunch; Vector3d com_crouch=Vector3d::Zero(), com_haunch=Vector3d::Zero(); double haunch_fold=0; bool haunch_ready=false;
+  // ★기립 궤적 추종(offline gather 궤적 /tmp/getup_traj.txt): sit→gather(CoM 전진)→일어서기. phaseA(0/1)=PD추종, phaseB(2)=wbic 상승 인계.
+  std::vector<VectorXd> getup_q, getup_dqv; std::vector<int> getup_ph; double getup_dt=0.01; int getup_N=-1, getup_k=-1; double getup_kt=0, GETUP_TRAJ_KP=120.0, GETUP_TRAJ_KD=4.0;
+  void load_getup(const char* path){
+    std::ifstream f(path); if(!f){ getup_N=0; return; }
+    f>>getup_N>>getup_dt; getup_q.clear(); getup_dqv.clear(); getup_ph.clear();
+    for(int k=0;k<getup_N;k++){ int ph; f>>ph; getup_ph.push_back(ph);
+      VectorXd qv(q.nu),dv(q.nu); for(int j=0;j<q.nu;j++) f>>qv[j]; for(int j=0;j<q.nu;j++) f>>dv[j];
+      getup_q.push_back(qv); getup_dqv.push_back(dv); }
+    std::printf("[getup] 궤적 로드 N=%d dt=%.3f\n", getup_N, getup_dt);
+  }
   // ★앉기→서기 스크립트 기립(앞다리 굽혀 앞발 들어 폴볼트 차단 + 뒷다리 박차 extend). 앉기에서만 발동.
   bool was_sit=false; double sit_getup_t0=-1;
   bool from_sit=false;   // ★crouch-sit서 기립: 저crouch(≥0.29)라 저-PD 대신 wbic_stance로 매끈 기립(오버슈트 방지)
@@ -153,6 +165,18 @@ struct TrotCtrl {
         double jerr=0; for(int j=0;j<nu;j++) jerr+=std::abs(q.q_home[j]-d->qpos[7+j]); jerr/=nu;
         if(te>SGU_KICK_T && tiltdeg()<SGU_DONE_TILT && jerr<0.4){ was_sit=false; sit_getup_t0=-1; }  // 수평 저crouch 도달→정상 getup 인계
         armed=false; return;
+      }
+      // ★개-앉기 기립: offline gather 궤적(/tmp/getup_traj.txt) 추종. phaseA(gather+뒷발착지)=PD로 CoM 전진 → phaseB=정상 wbic 상승 인계.
+      if(mode=="stand_up" && haunch_ready){
+        if(getup_k<0){ load_getup("/tmp/getup_traj.txt"); getup_k=0; getup_kt=0; }
+        if(getup_N>0 && getup_ph[getup_k]<2){                                // phaseA: 궤적 프레임 PD추종(중력보상 + 속도 피드포워드)
+          for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_TRAJ_KP*(getup_q[getup_k][j]-d->qpos[7+j])+GETUP_TRAJ_KD*(getup_dqv[getup_k][j]-d->qvel[6+j]);
+            d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+          getup_kt+=dt; if(getup_kt>=getup_dt && getup_k<getup_N-1){ getup_kt=0; getup_k++; }
+          armed=false; return;
+        }
+        haunch_ready=false; haunch_fold=0; getup_k=-1;                       // phaseB 진입(또는 궤적 없음)→ 아래 정상 getup(wbic 상승)으로 인계
+        ht_cur=std::max(0.20,d->qpos[2]); qhome_h=-1; have_qref=false;
       }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
       if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)

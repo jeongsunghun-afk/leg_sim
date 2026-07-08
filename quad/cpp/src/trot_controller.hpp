@@ -169,7 +169,7 @@ struct TrotCtrl {
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double stt=go?steer:0.0; Ss_steer+=tc_clip(stt-Ss_steer,-0.8*dt,0.8*dt);   // 조향각 스무딩[rad/s]
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
-    Weff += Veff*std::tan(tc_clip(Ss_steer,-0.85,0.85))/wheelbase;   // ★자동차식 조향(Ackermann): 조향각+전진→yaw rate 합산(다리선회 A에). V=0=무효(전진해야 조향=차와 동일). WZ(스핀)와 공존. δ최대~0.8rad(46°)
+    Weff += tc_clip(Veff*std::tan(tc_clip(Ss_steer,-1.2,1.2))/wheelbase, -0.9, 0.9);   // ★자동차식 조향(Ackermann). ★yaw rate 캡0.9(고속 tight조향 낙상방지=understeer): 저속=더tight(δ68°→R0.24m)·고속=자동제한. V=0=무효, WZ스핀과 공존
     q.waist_ref=tc_clip(waist_steer*Weff,-waist_cap,waist_cap);    // ★허리 lean(안쪽 굽힘, 안전캡). steer·WZ 둘다 0이면 중립홀드
     double spd=std::abs(Veff);   // ★전진속도만 whip 트리거(좌우이동은 whip 유발 안함). 구 hypot은 측방서도 whip 켜짐
     if(gait_type=="walk"){   // ★walk: 체크박스(auto_whip)로 whip on/off. on=슬라이더 강도 직접적용 / off=매끈(whip_hi)

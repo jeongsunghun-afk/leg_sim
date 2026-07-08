@@ -386,8 +386,8 @@ with dpg.window(tag='main'):
     dpg.add_slider_float(label='뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)', tag='swing_w_r',
                          min_value=0.1, max_value=4.0, default_value=0.6,
                          callback=lambda s, a: sc.SetSwingWR(a))
-    dpg.add_slider_float(label='허리 핸들  (자동차식 조향각 ° · +좌/−우 · 반경 R=축거/tanδ · 전진해야 돎 · 많이 꺾을수록 tight)', tag='steer',
-                         min_value=-46.0, max_value=46.0, default_value=0.0, format='%.0f°',
+    dpg.add_slider_float(label='허리 핸들  (자동차식 조향각 ° · +좌/−우 · 전진해야 돎 · 저속=tight R0.24m / 고속=자동제한)', tag='steer',
+                         min_value=-68.0, max_value=68.0, default_value=0.0, format='%.0f°',
                          callback=lambda s, a: sc.SetSteer(a * math.pi / 180.0))
     dpg.add_separator()
     dpg.add_text('속도/높이 (Walk=보행속도 게이지·live / Body=서기 높이·live / Step=발 들림)', color=(170, 175, 195))

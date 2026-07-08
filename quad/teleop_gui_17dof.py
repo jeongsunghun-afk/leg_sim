@@ -32,7 +32,7 @@ class SportClient:
                     'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
                     'raibert_k': 0.5,
                     'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
-                    'steer': 0.0}                                # ★허리 핸들=자동차식 조향각[rad] (+좌/−우). Ackermann 반경 R=축거/tanδ, 다리선회가 실행 + 허리 안쪽 lean
+                    'steer': 0.0}                                # ★허리 핸들=자동차식 조향각[rad] (컨트롤러 부호 +좌/−우, GUI 슬라이더는 우스틱과 통일해 오른쪽=우선회로 반전발행). Ackermann 반경 R=축거/tanδ, 다리선회가 실행 + 허리 안쪽 lean
         self._pub()
 
     def SimRate(self, r):                           # 뷰어 배속(0.25~4, 0=최대) — live
@@ -397,9 +397,9 @@ with dpg.window(tag='main'):
     dpg.add_slider_float(label='뒷다리 whip 목표  (0.6=완만 채찍질 / 2.0=매끈)', tag='swing_w_r',
                          min_value=0.1, max_value=4.0, default_value=0.6,
                          callback=lambda s, a: sc.SetSwingWR(a))
-    dpg.add_slider_float(label='허리 핸들  (자동차식 조향각 ° · +좌/−우 · 전진해야 돎 · 저속=tight R0.24m / 고속=자동제한)', tag='steer',
+    dpg.add_slider_float(label='허리 핸들  (자동차식 조향각 ° · 우스틱과 동일: 오른쪽=우선회 · 전진해야 돎 · 저속=tight R0.24m / 고속=자동제한)', tag='steer',
                          min_value=-68.0, max_value=68.0, default_value=0.0, format='%.0f°',
-                         callback=lambda s, a: sc.SetSteer(a * math.pi / 180.0))
+                         callback=lambda s, a: sc.SetSteer(-a * math.pi / 180.0))  # ★-부호=우스틱(-ax)과 통일: 슬라이더 오른쪽(+)=우선회
     dpg.add_separator()
     dpg.add_text('속도/높이 (Walk=보행속도 게이지·live / Body=서기 높이·live / Step=발 들림)', color=(170, 175, 195))
     dpg.add_slider_float(label='Walk Speed [m/s]  (조이스틱 풀스케일 · 양 컨트롤러 공통)', tag='ws',

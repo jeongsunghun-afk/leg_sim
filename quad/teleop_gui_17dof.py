@@ -220,6 +220,15 @@ def _set_walk_speed(v):                                # 보행속도 게이지 
     _left(_last_left[0], _last_left[1])
 
 
+def _gait_preset(gait):                                # ★gait 버튼 → Walk Speed 게이지·Step Height를 그 gait 최적값으로 자동 세팅
+    vmax = {'walk': 0.6, 'trot': 1.4, 'run': 2.0}.get(gait, 1.4)   # 조이스틱 풀스케일(gait 상한)
+    sh   = {'walk': 0.05, 'trot': 0.10, 'run': 0.08}.get(gait, 0.10)  # 발 들림(고속 run=낮게)
+    if dpg.does_item_exist('ws'): dpg.set_value('ws', vmax)
+    _set_walk_speed(vmax)
+    if dpg.does_item_exist('sh'): dpg.set_value('sh', sh)
+    sc.StepHeight(sh)
+
+
 left = JoyPad('joyL', 200, _left)
 right = JoyPad('joyR', 200, _right, x_only=True)
 
@@ -367,12 +376,12 @@ with dpg.window(tag='main'):
     with dpg.group(horizontal=True):
         dpg.add_text('게이트:', color=(170, 175, 195))
         dpg.add_button(label='trot 대각', width=95,
-                       callback=lambda: (sc.SetGait('trot'), _whip_ui('trot'), _status()))
+                       callback=lambda: (sc.SetGait('trot'), _whip_ui('trot'), _gait_preset('trot'), _status()))
         dpg.add_button(label='run 고속', width=90,
-                       callback=lambda: (sc.SetGait('run'), _whip_ui('run'), _status()))
+                       callback=lambda: (sc.SetGait('run'), _whip_ui('run'), _gait_preset('run'), _status()))
         dpg.add_button(label='walk 순차', width=95,
-                       callback=lambda: (sc.SetGait('walk'), _whip_ui('walk'), _status()))
-        dpg.add_text('(trot=중속 / run=고속 T0.4·발낮음 ~2.0m/s / walk=정적안정·저속)', color=(120, 125, 145))
+                       callback=lambda: (sc.SetGait('walk'), _whip_ui('walk'), _gait_preset('walk'), _status()))
+        dpg.add_text('(버튼=속도게이지·발높이 자동세팅. trot 1.4 / run 2.0·발낮음 / walk 0.6)', color=(120, 125, 145))
     with dpg.group(horizontal=True):
         dpg.add_text('보행개선:', color=(170, 175, 195))
         dpg.add_checkbox(label='정지 위치홀드 (드리프트 보정)', tag='pos_hold', default_value=True,

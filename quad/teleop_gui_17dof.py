@@ -366,11 +366,13 @@ with dpg.window(tag='main'):
     dpg.add_separator()
     with dpg.group(horizontal=True):
         dpg.add_text('게이트:', color=(170, 175, 195))
-        dpg.add_button(label='trot 대각', width=100,
+        dpg.add_button(label='trot 대각', width=95,
                        callback=lambda: (sc.SetGait('trot'), _whip_ui('trot'), _status()))
-        dpg.add_button(label='walk 순차', width=100,
+        dpg.add_button(label='run 고속', width=90,
+                       callback=lambda: (sc.SetGait('run'), _whip_ui('run'), _status()))
+        dpg.add_button(label='walk 순차', width=95,
                        callback=lambda: (sc.SetGait('walk'), _whip_ui('walk'), _status()))
-        dpg.add_text('(trot=빠름 / walk=정적안정·저속. walk선 슬라이더가 whip 직접제어)', color=(120, 125, 145))
+        dpg.add_text('(trot=중속 / run=고속 T0.4·발낮음 ~2.0m/s / walk=정적안정·저속)', color=(120, 125, 145))
     with dpg.group(horizontal=True):
         dpg.add_text('보행개선:', color=(170, 175, 195))
         dpg.add_checkbox(label='정지 위치홀드 (드리프트 보정)', tag='pos_hold', default_value=True,

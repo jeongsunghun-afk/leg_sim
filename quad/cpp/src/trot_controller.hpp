@@ -78,9 +78,10 @@ struct TrotCtrl {
 
   void set_gait(const std::string& g){        // trot/walk/gallop 프리셋(GUI 토글·속도트리거)
     if(g==gait_type) return; gait_type=g;
-    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s
-    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; } // 회전형 갤럽(비행상 有)
-    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; }  // ★trot도 표준 중립 0.5(발 과전방배치 방지→GRF균형·뒤thigh절반, 전속도 falls=0·push복구↑)
+    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.05; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s
+    else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓
+    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; step_h=0.10; } // 회전형 갤럽(비행상 有)
+    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }
   void gait(int i,double tg,bool&stance,double&sprog){

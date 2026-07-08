@@ -78,7 +78,7 @@ int main(int argc,char**argv){
       std::ifstream f(CMDFILE);
       if(f){ std::stringstream ss; ss<<f.rdbuf(); std::string c=ss.str();
         ctrl.V=json_get(c,"v",ctrl.V); ctrl.VY=json_get(c,"vy",ctrl.VY); ctrl.WZ=json_get(c,"w",ctrl.WZ);
-        ctrl.step_h=json_get(c,"step_h",ctrl.step_h);          // step height 슬라이더
+        { static double sh_seen=-999; double sh=json_get(c,"step_h",sh_seen); if(sh!=sh_seen){ ctrl.step_h=sh; sh_seen=sh; } }  // ★step height 슬라이더=엣지 override(게이트별 프리셋 walk0.05/trot0.10/run0.08과 공존)
         { static double rk_seen=-999; double rk=json_get(c,"raibert_k",rk_seen); if(rk!=rk_seen){ ctrl.raibert_k=rk; rk_seen=rk; } }  // ★reach 슬라이더=엣지 override(게이트별 프리셋 walk0.5/trot0.8과 공존)
         double sw=json_get(c,"swing_w",-1); if(sw>=0){ ctrl.whip_lo_r=sw; ctrl.whip_lo_f=sw; }  // 통합(하위호환)
         double swf=json_get(c,"swing_w_f",-1); if(swf>=0) ctrl.whip_lo_f=swf;   // ★앞다리 whip 목표(고속target·auto off시 상수)

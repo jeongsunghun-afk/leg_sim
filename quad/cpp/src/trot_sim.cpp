@@ -40,6 +40,10 @@ int main(int argc,char**argv){
   if(getenv("TROT_WZ")) ctrl.WZ=atof(getenv("TROT_WZ"));   // ★선회 각속도(직접 yaw, 제자리 스핀)
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));  // ★자동차식 조향각δ(Ackermann R=축거/tanδ)
   if(getenv("GAIT")) ctrl.set_gait(getenv("GAIT"));        // ★게이트 테스트(trot/walk/gallop)
+  if(getenv("TROT_T")) ctrl.gp_T=atof(getenv("TROT_T"));           // ★게이트 주기 override(set_gait 뒤)
+  if(getenv("TROT_SWF")) ctrl.gp_SWF=atof(getenv("TROT_SWF"));     // ★swing 비율 override
+  if(getenv("TROT_T")||getenv("TROT_SWF")){ ctrl.gp_Tsw=ctrl.gp_T*ctrl.gp_SWF; ctrl.gp_Tst=ctrl.gp_T*(1.0-ctrl.gp_SWF); }  // T_sw/T_st 재계산
+  if(getenv("TROT_STEPH")) ctrl.step_h=atof(getenv("TROT_STEPH")); // ★발 높이 override
   if(getenv("RAIBERT_K")) ctrl.raibert_k=atof(getenv("RAIBERT_K"));  // set_gait 프리셋 위에 강제 override
   ctrl.auto_whip = !(getenv("AUTO_WHIP") && !strcmp(getenv("AUTO_WHIP"),"0"));  // 기본ON, AUTO_WHIP=0로 끔
   if(getenv("SWING_W")){ double v=atof(getenv("SWING_W")); ctrl.whip_lo_f=v; ctrl.whip_lo_r=v; }  // whip 목표(고속/수동)

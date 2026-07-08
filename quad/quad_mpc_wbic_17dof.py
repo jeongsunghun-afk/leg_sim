@@ -1203,6 +1203,8 @@ def mode_trot():
     GAITS = {       # ★게이트 프리셋(gait_sim_v13 참조). 다리순서[HL,HR,FL,FR]. GUI gait 토글로 라이브 전환
         # LOCK=평지 foothold lock 시점(swing 위상). 1.0=항상 reactive(고속 강건성) / <1=late-swing commit(저속 터치다운 매끄러움)
         'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.5),  # ★RAI=0.5 표준중립(발 과전방배치 방지→GRF균형·뒤thigh절반, push복구↑)
+        # ★고속 trot(run): 빠른 cadence T=0.4·낮은 발높이0.08 → 최고속 1.8→~2.0m/s(발목ω↓). 중속엔 trot과 동일하니 고속주행용
+        'run':  dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.40, SWF=0.50, STEPH=0.08, V=0.30, LOCK=1.0, RAI=0.5),
         # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭). 14dof(quad_mpc_wbic.py)와 동일 처방
         'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.05, V=0.25, LOCK=0.35, RAI=0.5),
     }
@@ -1280,7 +1282,7 @@ def mode_trot():
          'Vs': 0.0, 'Vys': 0.0, 'Ws': 0.0, 'Ss': 0.0, 'cmd_t': -1.0,   # 스무딩 적용명령(0서 시작)
          'yaw_ref': 0.0, 'last_t': -1.0,                     # 선회 yaw각 참조(적분) · 직전 시각(reset 감지용)
          'body_h': q.base_z0, 'ht_cur': q.base_z0, 'qhome_h': q.base_z0,   # body_h슬라이더 · 보간높이 · q_home 계산높이
-         'step_h': STEP_H,                                                # ★GUI step height(live 갱신)
+         'step_h': STEP_H, 'sh_seen': None,                               # ★GUI step height(게이트전환=프리셋 STEPH / 슬라이더=엣지 오버라이드)
          'raibert_k': RAIBERT_K, 'rk_seen': None,                         # ★전방 reach 게인(게이트전환=프리셋 RAI / GUI슬라이더=엣지 오버라이드)
          'gait': GAIT,                                                     # ★현 게이트(GUI walk/trot 토글 live)
          'pos_hold': None,                                                 # ★정지 시 래치한 x,y(드리프트 보정 기준)
@@ -1337,16 +1339,18 @@ def mode_trot():
                 S['St'] = float(_c.get('steer', S['St']))            # ★자동차식 조향각(GUI 핸들/슬라이더). 없으면 유지
                 q.cmd_mode = _c.get('mode', 'move')
                 S['body_h'] = float(_c.get('body_h', S['body_h']))   # 서기 높이 슬라이더
-                _ph = S['step_h']; S['step_h'] = float(_c.get('step_h', S['step_h']))   # ★step height 슬라이더(live)
-                if os.environ.get('SHDBG') and abs(S['step_h'] - _ph) > 1e-4:
-                    print('[step_h] %.3f → %.3f (GUI live)' % (_ph, S['step_h']), flush=True)
+                _sh = _c.get('step_h')                          # ★step height 슬라이더=엣지 override(게이트전환 프리셋과 공존)
+                if _sh is not None and _sh != S['sh_seen']:
+                    if os.environ.get('SHDBG'): print('[step_h] %.3f → %.3f (GUI live)' % (S['step_h'], _sh), flush=True)
+                    S['step_h'] = float(_sh); S['sh_seen'] = _sh
                 _g = _c.get('gait', S['gait'])                       # ★게이트 토글(walk/trot 라이브 전환)
                 if _g != S['gait'] and _g in GAITS:
                     S['gait'] = _g; GP['OFFSET'] = GAITS[_g]['OFFSET']
                     GP['T'] = GAITS[_g]['T']; GP['SWF'] = GAITS[_g]['SWF']
                     GP['LOCK'] = float(_FLENV) if _FLENV else GAITS[_g]['LOCK']   # 게이트별 lock(trot=reactive/walk=commit)
                     S['foot_lock_s'] = GP['LOCK']                    # 게이트전환=프리셋 lock으로 리셋(trot 고속 reactive 보장)
-                    if not os.environ.get('RAIBERT_K'): S['raibert_k'] = GAITS[_g]['RAI']  # ★게이트전환=프리셋 reach게인(walk=0.5 안정/trot=0.8 고속). env강제면 유지
+                    if not os.environ.get('RAIBERT_K'): S['raibert_k'] = GAITS[_g]['RAI']  # ★게이트전환=프리셋 reach게인. env강제면 유지
+                    if not os.environ.get('TROT_STEPH'): S['step_h'] = GAITS[_g]['STEPH']  # ★게이트전환=프리셋 발높이(run=0.08 낮게)
                     if S['armed']: S['armed'] = False                # 재arm=위상클럭 재앵커(현 stance서 새 게이트 리듬 재확립, 불연속 방지)
                     print('[trot] 게이트 전환 → %s (재정렬)' % _g, flush=True)
                 _rk = _c.get('raibert_k')                            # ★reach 게인 슬라이더(엣지 오버라이드 → 게이트전환 프리셋과 공존)

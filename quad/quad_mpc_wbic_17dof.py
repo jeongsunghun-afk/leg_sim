@@ -1202,7 +1202,7 @@ def mode_trot():
     GAIT = os.environ.get('GAIT', 'trot')
     GAITS = {       # ★게이트 프리셋(gait_sim_v13 참조). 다리순서[HL,HR,FL,FR]. GUI gait 토글로 라이브 전환
         # LOCK=평지 foothold lock 시점(swing 위상). 1.0=항상 reactive(고속 강건성) / <1=late-swing commit(저속 터치다운 매끄러움)
-        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.8),
+        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.5),  # ★RAI=0.5 표준중립(발 과전방배치 방지→GRF균형·뒤thigh절반, push복구↑)
         # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭). 14dof(quad_mpc_wbic.py)와 동일 처방
         'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.05, V=0.25, LOCK=0.35, RAI=0.5),
     }

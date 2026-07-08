@@ -55,7 +55,7 @@ int main(int argc,char**argv){
   // ★임시 slip 계측: 발이 접촉(dist<1mm)인 동안 anchor 대비 수평 이동 최대치 = slip. 접촉종료 시 누적.
   double f_ax[4]={0},f_ay[4]={0},slip_sum[4]={0},slip_mx[4]={0}; bool f_con[4]={false}; int slip_n[4]={0};
   bool SLIP=getenv("SLIPLOG")!=nullptr;
-  double grf_fz[4]={0}; int grf_n=0; bool GRF=getenv("GRFLOG")!=nullptr;   // ★발별 수직GRF(앞/뒤 비율)
+  double grf_fz[4]={0},grf_fx[4]={0}; int grf_n=0; bool GRF=getenv("GRFLOG")!=nullptr;   // ★발별 수직GRF(앞/뒤 비율)+부호있는 수평력(앞제동/뒤추진)
   auto t0=std::chrono::high_resolution_clock::now();
   double switchT=getenv("SWITCH_T")?atof(getenv("SWITCH_T")):-1;   // ★모드전환 테스트: t>SWITCH_T면 MODE2로(getup 검증)
   bool switched=false;
@@ -71,7 +71,8 @@ int main(int argc,char**argv){
     if(GRF && d->time>1.5){ for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci];
         double f6[6]; mj_contactForce(m,d,ci,f6); double R[9]; for(int r=0;r<9;r++) R[r]=c.frame[r];
         double fzw=R[2]*f6[0]+R[5]*f6[1]+R[8]*f6[2];   // 접촉프레임→world z성분(각 축의 z성분·힘 내적)
-        for(int fi=0;fi<4;fi++) if(c.geom1==q.fgid[fi]||c.geom2==q.fgid[fi]) grf_fz[fi]+=std::abs(fzw); }
+        double fxw=R[0]*f6[0]+R[3]*f6[1]+R[6]*f6[2];   // world x성분(부호: +전진방향)
+        for(int fi=0;fi<4;fi++) if(c.geom1==q.fgid[fi]||c.geom2==q.fgid[fi]){ grf_fz[fi]+=std::abs(fzw); grf_fx[fi]+=fxw; } }
       grf_n++; }
     double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
     if(td>50||d->qpos[2]<0.2) falls++;
@@ -96,7 +97,9 @@ int main(int argc,char**argv){
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
   if(GRF && grf_n){ double fr=(grf_fz[0]+grf_fz[1])/grf_n, ff=(grf_fz[2]+grf_fz[3])/grf_n; double tot=fr+ff;
     std::printf("    ★수직GRF 평균[N]: HL=%.0f HR=%.0f FL=%.0f FR=%.0f | 뒤=%.0f(%.0f%%) 앞=%.0f(%.0f%%) 뒤:앞=%.2f\n",
-      grf_fz[0]/grf_n,grf_fz[1]/grf_n,grf_fz[2]/grf_n,grf_fz[3]/grf_n, fr,tot>0?fr/tot*100:0, ff,tot>0?ff/tot*100:0, ff>0?fr/ff:0); }
+      grf_fz[0]/grf_n,grf_fz[1]/grf_n,grf_fz[2]/grf_n,grf_fz[3]/grf_n, fr,tot>0?fr/tot*100:0, ff,tot>0?ff/tot*100:0, ff>0?fr/ff:0);
+    double fxr=(grf_fx[0]+grf_fx[1])/grf_n, fxf=(grf_fx[2]+grf_fx[3])/grf_n;
+    std::printf("    ★수평GRF 평균[N](+전진): 뒤=%+.1f 앞=%+.1f 합=%+.1f (뒤+=추진 / 앞−=제동)\n", fxr, fxf, fxr+fxf); }
   if(SLIP){ std::printf("    ★발 slip(접촉중 수평이동 평균, mm): ");
     for(int i=0;i<4;i++) std::printf("%s=%.1f ", q.legs[i], slip_n[i]?slip_sum[i]/slip_n[i]*1000:0);
     std::printf(" | 뒤평균=%.1f 앞평균=%.1f mm\n",

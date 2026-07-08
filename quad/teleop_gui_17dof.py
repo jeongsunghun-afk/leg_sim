@@ -30,7 +30,7 @@ class SportClient:
                     'vmax': VMAX, 'jump_seq': 0, 'home_seq': 0, 'reset_seq': 0,
                     'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시 terrain=지형적응
                     'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
-                    'raibert_k': 0.8,
+                    'raibert_k': 0.5,
                     'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
                     'steer': 0.0}                                # ★허리 핸들=자동차식 조향각[rad] (+좌/−우). Ackermann 반경 R=축거/tanδ, 다리선회가 실행 + 허리 안쪽 lean
         self._pub()
@@ -375,8 +375,8 @@ with dpg.window(tag='main'):
         dpg.add_text('보행개선:', color=(170, 175, 195))
         dpg.add_checkbox(label='정지 위치홀드 (드리프트 보정)', tag='pos_hold', default_value=True,
                          callback=lambda s, a: (sc.SetPosHold(a), _status()))
-    dpg.add_slider_float(label='전방 reach 게인  (walk 0.5·trot 0.8 자동 / ↑=제동↑ 느림+안정)', tag='raibert_k',
-                         min_value=0.3, max_value=1.2, default_value=0.8,
+    dpg.add_slider_float(label='전방 reach 게인  (0.5=표준중립·GRF균형 / ↑=발 앞으로·제동↑·뒤하중↑)', tag='raibert_k',
+                         min_value=0.3, max_value=1.2, default_value=0.5,
                          callback=lambda s, a: sc.SetRaibertK(a))
     dpg.add_checkbox(label='속도연동 자동 whip (on=고속서 슬라이더값까지 선형↑ paw-tuck / off=슬라이더값 상수)', tag='auto_whip', default_value=True,
                      callback=lambda s, a: (sc.SetAutoWhip(a), _status()))

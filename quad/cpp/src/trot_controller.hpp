@@ -36,7 +36,7 @@ static inline double tc_clip(double v,double lo,double hi){ return v<lo?lo:(v>hi
 struct TrotCtrl {
   QuadControl& q;
   double V=0.30, VY=0.0, WZ=0.0;   // 명령속도(뷰어 키보드/GUI)
-  double step_h=0.10, raibert_k=0.8;   // ★GUI 슬라이더(live): step height·전방 reach
+  double step_h=0.10, raibert_k=0.5;   // ★GUI 슬라이더(live): step height·전방 reach. ★0.5=표준 Raibert 중립점(발을 앞으로 과하게 안던짐→GRF 앞/뒤 균형·뒤thigh 절반). 외란복구는 KCAP+MPC 담당
   bool ALIP=false, POS_HOLD=true;   // ★ALIP 기본 off: push복구 이득 미미(300N서만 22vs26°)한데 지속선회 붕괴시킴. ALIP=1로 켬
   bool SPIN_HOLD=false;             // ★제자리선회(V=0,WZ≠0)서도 위치홀드 유지 → 허리조향 표류 상쇄(베이스기준 wz선회). 주행선회엔 영향無
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
@@ -80,7 +80,7 @@ struct TrotCtrl {
     if(g==gait_type) return; gait_type=g;
     if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s
     else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; } // 회전형 갤럽(비행상 有)
-    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.8; }  // trot 고속용 reach
+    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; }  // ★trot도 표준 중립 0.5(발 과전방배치 방지→GRF균형·뒤thigh절반, 전속도 falls=0·push복구↑)
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }
   void gait(int i,double tg,bool&stance,double&sprog){

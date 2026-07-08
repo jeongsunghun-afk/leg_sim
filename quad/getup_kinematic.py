@@ -58,38 +58,48 @@ foot_ank_sit = {L: qs[qadr[L][3]] for L in LEGS}
 foot_ank_st = {L: qst[qadr[L][3]] for L in LEGS}
 print('sit base z=%.3f 뒷발z=%.3f / stand base z=%.3f' % (base_sit[2], foot_sit['HL'][2], base_stand[2]))
 
-# ── 궤적 스케줄 ──
-NA1, NA2, NB, dt = 40, 40, 90, 0.01
-N = NA1 + NA2 + NB; NA = NA1 + NA2
+# ── 궤적 스케줄: G(gather 앞으로 모으기) → A1(HL착지) → A2(HR착지) → B(일어서기) ──
+#   ★사용자 통찰: CoM이 뒤(엉덩이)에 있어 바로 일어서면 뒤로 넘어감 → 먼저 base를 앞으로 전진+낮춤+앞숙임해
+#     앞/뒤다리 접으며 CoM을 발 지지면 위로 가져온 뒤(gather) 일어선다(사람이 상체 숙였다 서듯).
+NG  = int(os.environ.get('NG', 45))
+NA1 = int(os.environ.get('NA1', 35))
+NA2 = int(os.environ.get('NA2', 35))
+NB  = int(os.environ.get('NB', 90))
+dt = 0.01
+N = NG + NA1 + NA2 + NB
 def lerp(a, b, t): return a + (b - a) * np.clip(t, 0, 1)
 
 quat_sit = qs[3:7].copy(); quat_id = np.array([1., 0, 0, 0])
-def base_prof(k):   # (bx, bz, quat) 프로파일 — 실제 sit자세→레벨 slerp
-    if k < NA1:      bz = lerp(base_sit[2], 0.16, k/NA1)
-    elif k < NA1+NA2: bz = lerp(0.16, 0.20, (k-NA1)/NA2)
-    else:            bz = lerp(0.20, base_stand[2], (k-NA1-NA2)/NB)
-    bx = lerp(base_sit[0], base_stand[0], (k+1)/N)
-    oq = slerp(quat_sit, quat_id, min(1.0, (k+1)/NA))   # 자세는 Phase A 동안 레벨링
-    return bx, bz, oq
+GX = float(os.environ.get('GATHER_X', base_stand[0]))   # gather 목표 base x(CoM 전진)
+GZ = float(os.environ.get('GATHER_Z', 0.20))            # gather 낮춤 높이
+LEAN = float(os.environ.get('LEAN', 0.10))              # gather 앞숙임(rad, nose-down)→CoM 전진
+quat_lean = np.array([np.cos(LEAN/2), 0., np.sin(LEAN/2), 0.])   # nose-down(+y)
+
+def base_prof(k):   # (bx, bz, quat)
+    if k < NG:                        # gather: 전진+낮춤+앞숙임
+        t = (k+1)/NG
+        return lerp(base_sit[0],GX,t), lerp(base_sit[2],GZ,t), slerp(quat_sit,quat_lean,t)
+    elif k < NG+NA1+NA2:              # 뒷발 순차착지(전진 자세 유지)
+        return GX, GZ, quat_lean
+    else:                             # 일어서기: 상승+레벨
+        t = (k-NG-NA1-NA2)/NB
+        return lerp(GX,base_stand[0],t), lerp(GZ,base_stand[2],t), slerp(quat_lean,quat_id,t)
 
 traj_q = []; sched = []
 for k in range(N):
-    ph = 'A1' if k < NA1 else ('A2' if k < NA1+NA2 else 'B')
-    tt = (k/NA1) if ph == 'A1' else ((k-NA1)/NA2 if ph == 'A2' else (k-NA1-NA2)/NB)
+    ph = 'A1' if k < NG+NA1 else ('A2' if k < NG+NA1+NA2 else 'B')
     bx, bz, oq = base_prof(k)
     set_base([bx, 0, bz], oq)
-    # 발 목표: 앞발=stand위치 고정. 뒷발=순차 착지(sit위치→stand위치, z는 위→0)
     tg = {}
     for L in LEGS:
         if L in ('FL', 'FR'):
-            tg[L] = foot_stand[L].copy()
+            tg[L] = foot_stand[L].copy()                                    # 앞발 고정(gather서 앞다리 접힘)
         elif L == 'HL':
-            s = tt if ph == 'A1' else 1.0
-            tg[L] = lerp(foot_sit[L], foot_stand[L], s)
+            s = 0.0 if k < NG else (min(1.0,(k-NG)/NA1) if k < NG+NA1 else 1.0)
+            tg[L] = lerp(foot_sit[L], foot_stand[L], s)                     # HL: A1서 착지
         else:  # HR
-            s = tt if ph == 'A2' else (0.0 if ph == 'A1' else 1.0)
-            tg[L] = lerp(foot_sit[L], foot_stand[L], s)
-    # 발목 관절 보간(IK 전에 세팅)
+            s = 0.0 if k < NG+NA1 else (min(1.0,(k-NG-NA1)/NA2) if k < NG+NA1+NA2 else 1.0)
+            tg[L] = lerp(foot_sit[L], foot_stand[L], s)                     # HR: A2서 착지
     for L in LEGS:
         d.qpos[qadr[L][3]] = lerp(foot_ank_sit[L], foot_ank_st[L], (k+1)/N)
     ik_feet(tg)
@@ -98,12 +108,7 @@ for k in range(N):
 
 traj_q = np.array(traj_q)
 traj_dq = np.gradient(traj_q, dt, axis=0)
-# CoM 기준(WBC용) + base_z
 com = np.zeros((N, 3)); bz_arr = np.zeros(N); full_qpos = np.zeros((N, m.nq))
-for k in range(N):
-    # base 재세팅(위 프로파일과 동일) + 관절
-    pass
-# com은 각 스텝의 full state로 계산: base 프로파일 재현
 for k in range(N):
     bx, bz, oq = base_prof(k)
     set_base([bx,0,bz],oq); d.qpos[7:7+m.nu]=traj_q[k]; mujoco.mj_forward(m,d)
@@ -113,5 +118,8 @@ mj_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range
 np.savez('/tmp/getup_stand.npz', q=traj_q, dq=traj_dq, tau=np.zeros((N-1, m.nu)),
          base_z=bz_arr, sched=np.array(sched, dtype=object), dt=dt,
          com_ref=com, comv_ref=comv, acom_ref=acom, full_qpos=full_qpos, mj_names=np.array(mj_names))
-print('저장: /tmp/getup_stand.npz (기구학 %d스텝, base %.3f→%.3f, CoM %.3f→%.3f)'
-      % (N, bz_arr[0], bz_arr[-1], com[0,2], com[-1,2]))
+d.qpos[:]=qst; mujoco.mj_forward(m,d); fxs=[foot_pos(L)[0] for L in LEGS]
+print('저장: /tmp/getup_stand.npz (%d스텝 G%d/A1%d/A2%d/B%d, base %.3f→%.3f)'
+      % (N, NG, NA1, NA2, NB, bz_arr[0], bz_arr[-1]))
+print('  ★CoM x: sit%+.3f → gather%+.3f → stand%+.3f  (지지발 x %.3f~%.3f, CoM이 이 안이어야 안 넘어짐)'
+      % (com[0,0], com[NG-1,0], com[-1,0], min(fxs), max(fxs)))

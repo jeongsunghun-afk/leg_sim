@@ -1,0 +1,322 @@
+<title>02_Leg 17-DOF 제어기 파라미터 레퍼런스</title>
+<style>
+  :root{
+    --bg:#eef0f4; --surface:#ffffff; --surface2:#f7f8fb; --ink:#1a1f2b;
+    --muted:#5b6575; --line:#e1e5ec; --accent:#bf6a12; --accent-soft:#f3e6d4;
+    --s:#2f6bd6; --v:#2c8a58; --a:#7a4bd0; --code:#243b53;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#12151b;--surface:#1a1e26;--surface2:#161a21;--ink:#e6eaf2;--muted:#98a2b3;
+      --line:#2a313d;--accent:#e8a752;--accent-soft:#33281a;
+      --s:#6ea6ff;--v:#5fc98c;--a:#b596f0;--code:#c3d3e6;}
+  }
+  :root[data-theme="light"]{--bg:#eef0f4;--surface:#ffffff;--surface2:#f7f8fb;--ink:#1a1f2b;--muted:#5b6575;
+    --line:#e1e5ec;--accent:#bf6a12;--accent-soft:#f3e6d4;--s:#2f6bd6;--v:#2c8a58;--a:#7a4bd0;--code:#243b53;}
+  :root[data-theme="dark"]{--bg:#12151b;--surface:#1a1e26;--surface2:#161a21;--ink:#e6eaf2;--muted:#98a2b3;
+    --line:#2a313d;--accent:#e8a752;--accent-soft:#33281a;--s:#6ea6ff;--v:#5fc98c;--a:#b596f0;--code:#c3d3e6;}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px 90px}
+
+  header.hero{padding:44px 0 22px;border-bottom:1px solid var(--line);margin-bottom:26px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 8px;letter-spacing:-.01em;text-wrap:balance;font-weight:680}
+  .sub{color:var(--muted);font-size:15px;max-width:60ch}
+  .sub code{font-family:var(--mono);font-size:.86em;color:var(--code);background:var(--surface2);
+    padding:1px 5px;border-radius:4px}
+
+  nav.toc{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 12px;margin-bottom:8px;
+    border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:7px}
+  nav.toc a{font-size:12.5px;font-family:var(--mono);color:var(--muted);text-decoration:none;
+    padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+    transition:.15s}
+  nav.toc a:hover{color:var(--accent);border-color:var(--accent)}
+
+  section{margin-top:34px;scroll-margin-top:64px}
+  h2{font-size:19px;margin:0 0 4px;letter-spacing:-.005em;display:flex;align-items:baseline;gap:10px}
+  h2 .num{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:600}
+  .note{color:var(--muted);font-size:13.5px;margin:2px 0 14px}
+  .note code,p code,td code{font-family:var(--mono);font-size:.84em;color:var(--code);
+    background:var(--surface2);padding:1px 5px;border-radius:4px;white-space:nowrap}
+
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+  thead th{position:sticky;top:0;background:var(--surface2);text-align:left;font-weight:600;
+    font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--surface2)}
+  td.p{font-family:var(--mono);color:var(--code);font-weight:600;white-space:nowrap}
+  td.val{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)}
+  td.mean{color:var(--muted);min-width:230px}
+
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    padding:1px 6px;border-radius:5px;line-height:1.5}
+  .tag.s{color:var(--s);background:color-mix(in srgb,var(--s) 15%,transparent)}
+  .tag.v{color:var(--v);background:color-mix(in srgb,var(--v) 15%,transparent)}
+  .tag.a{color:var(--a);background:color-mix(in srgb,var(--a) 15%,transparent)}
+  .tag.dash{color:var(--muted);background:var(--surface2)}
+
+  .callout{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:11px;padding:18px 20px;margin-top:12px}
+  .callout h2{margin-bottom:12px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin:14px 0 2px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:14px}
+  .knob{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+  .knob .k{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:13.5px}
+  .knob .d{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);margin:3px 0 6px}
+  .knob .m{font-size:12.5px;color:var(--muted);line-height:1.45}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:5px;
+    background:var(--accent-soft);color:var(--accent);font-weight:600}
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  .ok{color:var(--v);font-weight:600}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">02_Leg · quad_mpc_wbic_17dof · C++</div>
+  <h1>17-DOF 사족 제어기 파라미터 레퍼런스</h1>
+  <p class="sub">WBIC + Di Carlo SRBD MPC + 반응형 Raibert. 실사용값은 멤버 기본값이며 env로 오버라이드.
+  훅 위치: <span class="tag s">S</span> trot_sim · <span class="tag v">V</span> trot_view · <span class="tag a">A</span> apply_env_gains.</p>
+</header>
+
+<nav class="toc">
+  <a href="#knob">★ knob</a>
+  <a href="#posture">기립자세</a>
+  <a href="#gait">게이트</a>
+  <a href="#whip">발배치·whip</a>
+  <a href="#wbic">WBIC</a>
+  <a href="#mpc">MPC</a>
+  <a href="#gearbox">기어박스</a>
+  <a href="#perceptive">지형인지</a>
+  <a href="#steer">조향</a>
+  <a href="#waist">허리</a>
+  <a href="#sit">앉기·기립</a>
+  <a href="#run">실행·진단</a>
+  <a href="#parity">파리티</a>
+  <a href="#terrain">테스트 지형</a>
+</nav>
+
+<section id="knob">
+  <div class="callout">
+    <h2><span class="num">★</span> 자주 쓰는 튜닝 knob</h2>
+    <div class="grid">
+      <div class="knob"><div class="k">REAR_ANKLE</div><div class="d">−0.3</div><div class="m">뒷발목 각. 축별 τ·ω 최적(발목 ω 병목 155%→100%)</div></div>
+      <div class="knob"><div class="k">FRONT_ANKLE</div><div class="d">−0.7</div><div class="m">앞발목 각</div></div>
+      <div class="knob"><div class="k">base_z0 / body_h</div><div class="d">0.5234</div><div class="m">서기 몸통 높이</div></div>
+      <div class="knob"><div class="k">GAIT</div><div class="d">trot</div><div class="m">trot·walk·run·gallop 프리셋</div></div>
+      <div class="knob"><div class="k">V · VY · WZ</div><div class="d">0.3 · 0 · 0</div><div class="m">전진·측방·선회 명령</div></div>
+      <div class="knob"><div class="k">step_h</div><div class="d">0.10</div><div class="m">스텝 발 높이(프리셋 위 override)</div></div>
+      <div class="knob"><div class="k">raibert_k</div><div class="d">0.5</div><div class="m">전방 reach(0.5=표준 중립)</div></div>
+      <div class="knob"><div class="k">steer</div><div class="d">0</div><div class="m">자동차식 조향각 δ(허리 핸들)</div></div>
+      <div class="knob"><div class="k">GEARBOX</div><div class="d">ON</div><div class="m">반사관성·감쇠·마찰(발 flail 억제)</div></div>
+      <div class="knob"><div class="k">perceptive</div><div class="d">ON</div><div class="m">지형인지(mj_ray 착지·몸통높이 적응, 계단/험지)</div></div>
+    </div>
+    <div class="legend">
+      <span><span class="tag s">S</span> trot_sim.cpp</span>
+      <span><span class="tag v">V</span> trot_view.cpp</span>
+      <span><span class="tag a">A</span> apply_env_gains</span>
+      <span><span class="tag dash">—</span> env 없음(멤버/파생)</span>
+    </div>
+  </div>
+</section>
+
+<section id="posture">
+  <h2><span class="num">01</span> 기립자세 / posture</h2>
+  <p class="note"><code>crouch_home</code>(quad_control.hpp:114): z=base_z0서 발 XY 유지·무릎 굽힘 IK → q_home·com_ref·foot_hip_off·foot_gz0. 발목은 R/FRONT_ANKLE로 고정 후 hip/thigh/calf만 IK.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th><th>위치</th></tr></thead>
+    <tbody>
+      <tr><td class="p">base_z0</td><td class="val">0.52 <span class="muted">(17dof 0.5234)</span></td><td><span class="tag a">A</span> BASE_Z0</td><td class="mean">서기 몸통 높이</td><td class="val">qc:27</td></tr>
+      <tr><td class="p">REAR_ANKLE</td><td class="val">−0.3</td><td><span class="tag a">A</span> REAR_ANKLE</td><td class="mean">뒷발목 각. 스윕 최적(발목 ω 155%→100%·calf τ76%·falls0). 지정 시 FRONT도 동일화</td><td class="val">qc:27</td></tr>
+      <tr><td class="p">FRONT_ANKLE</td><td class="val">−0.7</td><td><span class="tag a">A</span> FRONT_ANKLE</td><td class="mean">앞발목 각</td><td class="val">qc:27</td></tr>
+      <tr><td class="p">body_h</td><td class="val">0.5234</td><td><span class="tag s">S</span> BODY_H · GUI</td><td class="mean">서기 높이 슬라이더(q_home 목표)</td><td class="val">tc:46</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="gait">
+  <h2><span class="num">02</span> 게이트 / gait — set_gait 프리셋</h2>
+  <p class="note">override: <code>GAIT</code>(S) · <code>TROT_T</code>/<code>TROT_SWF</code>/<code>TROT_STEPH</code>/<code>RAIBERT_K</code>(S, 프리셋 뒤 적용). TC_KCAP=0.16(Raibert 피드백)·TC_RAICLIP=0.25·TC_WARMUP=0.6·TC_ACC=0.6.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>게이트</th><th>gp_T</th><th>gp_SWF</th><th>off [HL,HR,FL,FR]</th><th>raibert_k</th><th>step_h</th></tr></thead>
+    <tbody>
+      <tr><td class="p">walk</td><td class="val">0.7</td><td class="val">0.25</td><td class="val">0.25, 0.75, 0.5, 0</td><td class="val">0.5</td><td class="val">0.10</td></tr>
+      <tr><td class="p">trot <span class="pill">기본</span></td><td class="val">0.5</td><td class="val">0.5</td><td class="val">0, 0.5, 0.5, 0</td><td class="val">0.5</td><td class="val">0.10</td></tr>
+      <tr><td class="p">run <span class="pill">고속</span></td><td class="val">0.40</td><td class="val">0.5</td><td class="val">0, 0.5, 0.5, 0</td><td class="val">0.5</td><td class="val">0.08</td></tr>
+      <tr><td class="p">gallop</td><td class="val">0.35</td><td class="val">0.55</td><td class="val">0, 0.05, 0.55, 0.5</td><td class="val">0.8</td><td class="val">0.10</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="whip">
+  <h2><span class="num">03</span> 발배치 · whip</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">auto_whip</td><td class="val">true</td><td><span class="tag s">S</span> AUTO_WHIP=0 · GUI</td><td class="mean">속도트리거 whip on/off</td></tr>
+      <tr><td class="p">whip_v0 / v1</td><td class="val">0.8 / 1.6</td><td><span class="tag dash">—</span></td><td class="mean">whip 선형증가 속도구간</td></tr>
+      <tr><td class="p">whip_hi</td><td class="val">2.0</td><td><span class="tag dash">—</span></td><td class="mean">저속(매끈) swing_w</td></tr>
+      <tr><td class="p">whip_lo_f / lo_r</td><td class="val">0.1 / 0.6</td><td><span class="tag s">S</span><span class="tag v">V</span> SWING_W_F/R</td><td class="mean">앞/뒤 고속 whip 목표(작을수록 강함)</td></tr>
+      <tr><td class="p">POS_HOLD</td><td class="val">true</td><td><span class="tag s">S</span> POS_HOLD=0 · GUI</td><td class="mean">정지 위치홀드</td></tr>
+      <tr><td class="p">ALIP</td><td class="val">false</td><td><span class="tag s">S</span> ALIP=0</td><td class="mean">각운동량 발배치 보정(무효 확인)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="wbic">
+  <h2><span class="num">04</span> WBIC 게인</h2>
+  <p class="note">하드코딩 task PD(참고): stance CoM (120,120,200)/(20,20,25) · 자세 150/20(w5) · posture 60/5. swing 2400/110(w90) · z 200/25(w150).</p>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">w_ori</td><td class="val">5.0 <span class="muted">(17dof 20)</span></td><td><span class="tag a">A</span> W_ORI</td><td class="mean">자세(roll/pitch) task 가중</td></tr>
+      <tr><td class="p">w_yaw</td><td class="val">0.0</td><td><span class="tag a">A</span> W_YAW</td><td class="mean">yaw 홀드(0=MPC 담당, 최적)</td></tr>
+      <tr><td class="p">W_AM / KD_AM</td><td class="val">0.0 / 8.0</td><td><span class="tag a">A</span> W_AM / KD_AM</td><td class="mean">각운동량 보상 가중 / 감쇠</td></tr>
+      <tr><td class="p">STANCE_KD</td><td class="val">20.0</td><td><span class="tag s">S</span> STANCE_KD</td><td class="mean">stance 접촉속도 감쇠(slip↓)</td></tr>
+      <tr><td class="p">MU</td><td class="val">0.6</td><td><span class="tag a">A</span> MU</td><td class="mean">마찰콘 μ(MPC 동시 갱신)</td></tr>
+      <tr><td class="p">motor_curve</td><td class="val">false</td><td><span class="tag a">A</span> MOTOR_CURVE</td><td class="mean">토크-속도 곡선(고속 토크↓)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="mpc">
+  <h2><span class="num">05</span> MPC <span class="muted" style="font-size:13px;font-weight:400">Di Carlo SRBD</span></h2>
+  <p class="note">N=14, dt=0.02. μ=MU·0.707. λz ∈ [1, 2·mg]. R=1e-6 (per-foot GRF).</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Q 대각 (13)</th><th colspan="4">가중값</th></tr></thead>
+    <tbody>
+      <tr><td class="p">roll, pitch, yaw</td><td class="val" colspan="4">200, 200, 100</td></tr>
+      <tr><td class="p">px, py, pz</td><td class="val" colspan="4">0, 0, 200</td></tr>
+      <tr><td class="p">ωx, ωy, ωz</td><td class="val" colspan="4">0, 0, 1</td></tr>
+      <tr><td class="p">vx, vy, vz · g</td><td class="val" colspan="4">10, 10, 1 · 0</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="gearbox">
+  <h2><span class="num">06</span> 기어박스 · 모터물리</h2>
+  <p class="note">모터 peak: hip/thigh <b>84</b> · calf <b>126</b> · foot <b>96</b>(8:1 재기어) Nm. w_limit=207/(gear·gmul).</p>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">gear[4]</td><td class="val">7, 7, 10.5, 14</td><td><span class="tag dash">—</span></td><td class="mean">hip,thigh,calf,foot 감속비 N. ★허리(FB_waist)=미매칭→gi=0=hip <b>7:1</b>(실제와 일치, 의도)</td></tr>
+      <tr><td class="p">GEARBOX</td><td class="val">ON</td><td><span class="tag s">S</span> GEARBOX=0 끔</td><td class="mean">반사관성 armature=Irot·N² + 감쇠 + 마찰</td></tr>
+      <tr><td class="p">Irot</td><td class="val">1e-4</td><td><span class="tag s">S</span> ROTOR_I</td><td class="mean">로터 관성 <span class="pill">실측 대기</span></td></tr>
+      <tr><td class="p">jdmp / jfrc</td><td class="val">0.1 / 0.5</td><td><span class="tag s">S</span> JDAMP / JFRIC</td><td class="mean">기어 점성감쇠 / 마찰 <span class="pill">실측 대기</span></td></tr>
+      <tr><td class="p">gmul</td><td class="val">1.0</td><td><span class="tag s">S</span> GEAR_HIP/…/FOOT</td><td class="mean">재기어 배율. 배포=GEAR_FOOT=0.5714(foot 14→8:1, peak 168→96·ω→25.9)</td></tr>
+      <tr><td class="p">perceptive</td><td class="val">ON</td><td><span class="tag s">S</span><span class="tag v">V</span> PERCEPTIVE=0 끔</td><td class="mean">지형인지(mj_ray 착지높이+몸통높이 적응) — 아래 §지형인지</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="perceptive">
+  <h2><span class="num">★</span> 지형인지 / perceptive</h2>
+  <p class="note">blind(평지 가정) → terrain-aware. <code>mj_ray</code> 하향캐스트로 지형표면 z 샘플(월드바디=지형/바닥만 채택, 로봇 자기충돌 회피). <b>평지=무영향</b>(회귀 falls=0 동일), 지형에서만 작동.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">perceptive</td><td class="val">true</td><td><span class="tag s">S</span><span class="tag v">V</span> PERCEPTIVE=0 끔</td><td class="mean">① 스윙 착지 z = 지형높이 &nbsp; ② 몸통 목표높이(MPC x_ref[5]) = 지형높이 + com_h0 추종</td></tr>
+      <tr><td class="p">PCV_CLR</td><td class="val">0.04</td><td><span class="tag s">S</span><span class="tag v">V</span> PCV_CLR</td><td class="mean">상향 스텝 추가 스윙 클리어런스(라이저 헛디딤 방지)</td></tr>
+      <tr><td class="p">ray_z0</td><td class="val">0.40</td><td><span class="tag dash">—</span></td><td class="mean">mj_ray 시작 z(벨리 아래·지형 위, 자기충돌 회피)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">효과 — 종합코스(마찰→험지→계단): <span class="ok">perceptive</span> 완주(x13.7 · tilt 2.9° · <span class="ok">falls 0</span>) vs <b>blind</b> 계단서 낙상(x8.8 · tilt 140° · falls 8115). 핵심=발높이만이 아니라 <b>몸통 목표높이도 지형 추종</b>(안 하면 계단서 다리압축→몸통 튐→전복).</p>
+</section>
+
+<section id="steer">
+  <h2><span class="num">07</span> 조향 / steering</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">steer (δ)</td><td class="val">0</td><td><span class="tag s">S</span><span class="tag v">V</span> TROT_STEER · GUI</td><td class="mean">자동차식 조향각. Ackermann R=축거/tanδ</td></tr>
+      <tr><td class="p">wheelbase</td><td class="val">≈0.61</td><td><span class="tag dash">—</span></td><td class="mean">축거 L(앞뒤 힙 x거리, 런타임)</td></tr>
+      <tr><td class="p">yaw-rate 캡</td><td class="val">±0.9</td><td><span class="tag dash">—</span></td><td class="mean">understeer(고속 tight turn 낙상방지)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="waist">
+  <h2><span class="num">08</span> 허리 / waist <span class="muted" style="font-size:13px;font-weight:400">17-DOF</span></h2>
+  <div class="scroll"><table>
+    <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">WAIST_W</td><td class="val">80.0</td><td><span class="tag a">A</span> WAIST_W</td><td class="mean">허리 홀드 가중(WBIC posture)</td></tr>
+      <tr><td class="p">WAIST_KP / KD</td><td class="val">150 / 20</td><td><span class="tag a">A</span> WAIST_KP/KD</td><td class="mean">허리 강홀드 PD</td></tr>
+      <tr><td class="p">waist_steer</td><td class="val">0.4</td><td><span class="tag s">S</span><span class="tag v">V</span> WAIST_STEER</td><td class="mean">허리 lean 보조 게인(핸들만 구동)</td></tr>
+      <tr><td class="p">waist_cap</td><td class="val">0.20</td><td><span class="tag dash">—</span></td><td class="mean">허리 lean 캡 ±0.20rad(≈11°)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="sit">
+  <h2><span class="num">09</span> 앉기 · 기립 / sit · getup</h2>
+  <p class="note"><b>개-앉기 시드</b>(qc:28–29): <code>HAUNCH_THIGH −1.0</code> · <code>CALF 1.2</code> · <code>FOOT −0.3</code> · <code>HOCK_Z 0.019</code> · <code>FRONT_REACH −0.22</code> · <code>FOOT_LAND −1.2</code> (S,V env).</p>
+  <p class="note"><b>스케줄</b>(tc): HAUNCH_Z 0.30 · FOLD_RATE 0.60 · UNFOLD_Z 0.40 · SIT_POSTURE_W 40 · HAUNCH_PITCH 0.50 · SIT_KP 90 · SIT_SLEW 0.6.</p>
+  <div class="callout" style="border-left-color:var(--accent)">
+    <p class="note" style="margin:0"><b>★ 앉기 → 서기 "튕김" 조절</b> — <code>GETUP_TRAJ_KP</code> <b>120</b>: 개-앉기 기립 궤적추종 강성 = 튕김 힘. <b>낮출수록 부드러움</b>(예 80). <code>GETUP_TRAJ_KD</code> <b>4</b>: 높일수록 튕김 감쇠. 크라우치-앉기 기립은 <code>SGU_KP</code> 120. 전부 env 조절(<span class="tag s">S</span><span class="tag v">V</span>).</p>
+  </div>
+  <p class="note"><b>스크립트 기립(SGU_*)</b>: KICK_T 0.5 · FB_THIGH −0.55 · FB_CALF 1.20 · SLEW 1.5 · KP 120 · GATHER_Z 0.24 · DONE_TILT 22 · WALKOUT_V 0.6 · HANDOFF_Z 0.34 (S env).</p>
+  <p class="note"><b>모드 상태</b>: GROUND_Z 0.18 · GETUP_TRIG 0.32 · GETUP_DONE 0.40 · JOINT_SLEW 1.5 · HRATE 0.3.</p>
+</section>
+
+<section id="run">
+  <h2><span class="num">10</span> 실행 / 진단 env</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>env</th><th>기본</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="p">MODE</td><td class="val">move</td><td class="mean">move / stand_up / stand_down / sit / off <span class="tag s">S</span></td></tr>
+      <tr><td class="p">MODE2 + SWITCH_T</td><td class="val">—</td><td class="mean">t&gt;SWITCH_T서 1회 모드전환(getup 검증) <span class="tag s">S</span></td></tr>
+      <tr><td class="p">STEPS</td><td class="val">3000</td><td class="mean">헤드리스 스텝 수 <span class="tag s">S</span>, argv2</td></tr>
+      <tr><td class="p">RATE · CMDFILE · STATE_PUB</td><td class="val">1.0 · — · /tmp/quad_state.json</td><td class="mean">뷰어 배속 · GUI 명령 · 상태발행 <span class="tag v">V</span></td></tr>
+      <tr><td class="p">JSTAT</td><td class="val">—</td><td class="mean">관절별 τ·ω peak/RMS(정착후) 출력 <span class="tag s">S</span></td></tr>
+      <tr><td class="p">QHDBG · SLIPLOG · GRFLOG · DUMP_QPOS</td><td class="val">—</td><td class="mean">진단 로깅 <span class="tag s">S</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="parity">
+  <h2><span class="num">★</span> Python ↔ C++ 파리티 <span class="muted" style="font-size:13px;font-weight:400">C++ 배포 기준</span></h2>
+  <p class="note"><b>C++(<code>cpp/src/</code>)가 배포 기준.</b> Python(<code>quad_mpc_wbic_17dof.py</code>)은 같은 알고리즘·같은 MJCF를 사용. C++가 17dof(허리)모델을 자동감지해 Python 튜닝값을 기본으로 채택 → 아래 항목 정합.</p>
+  <div class="callout" style="border-left-color:var(--v)">
+    <p class="note" style="margin:0"><b class="ok">동일 (검증됨)</b> — 게인(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) · REAR_ANKLE−0.3 · walk step_h 0.10 · MPC(N14·dt0.02·Q·R) · 기어박스(gear·ROTOR_I·JDAMP·JFRIC·허리 7:1) · 조향 · 허리 · whip·raibert·KCAP·POS_HOLD · <b>맵</b>(Python도 <code>MJCF</code> env로 같은 지형 씬 로드) · <b>perceptive 발 착지높이</b>(gz+지형). &nbsp;→ 종합코스 완주: Python x14.3·tilt3.2° / C++ x13.9·tilt3.7°, 둘 다 <span class="ok">falls 0</span>.</p>
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>남은 차이</th><th>Python</th><th>C++ (기준)</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr><td class="p">perceptive 몸통높이</td><td class="mean">4-hip 평균 → MPC+WBIC 양쪽 (3.2°)</td><td class="mean">base 1점+슬루 → MPC만 (3.7°)</td><td class="mean">코드베이스 디테일차. 둘 다 완주. C++서 4힙+WBIC 재현 시 6.1°로 악화</td></tr>
+      <tr><td class="p">STANCE_KD</td><td class="mean">없음(=0)</td><td class="mean">20 (slip 7.2→5.9mm)</td><td class="mean">C++만. 터치다운 baumgarte</td></tr>
+      <tr><td class="p">gallop 게이트</td><td class="mean">없음</td><td class="mean">있음(T0.35)</td><td class="mean">미사용(leg-heavy 불가)</td></tr>
+      <tr><td class="p">walk foot-lock</td><td class="mean">LOCK 0.35 late-commit</td><td class="mean">없음(매틱 reactive)</td><td class="mean">Python만. walk 둘 다 falls 0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">남은 4개는 소규모/구조적이고 둘 다 정상 동작 → 강제 byte-동일화는 더 나은 쪽을 망칠 위험이 있어 보류.</p>
+</section>
+
+<section id="terrain">
+  <h2><span class="num">12</span> 테스트 지형 씬 <span class="muted" style="font-size:13px;font-weight:400">make_terrains.py</span></h2>
+  <p class="note"><code>&lt;include&gt;</code>로 로봇 재사용 + 지형만 얹음. 로봇은 원점서 +x 전진 → 지형 진입. 실행: <code>GEAR_FOOT=0.5714 ./cpp/build/trot_view quad_terrain_stairs.mjcf</code></p>
+  <div class="scroll"><table>
+    <thead><tr><th>씬</th><th>내용</th><th>walk v0.5 결과</th></tr></thead>
+    <tbody>
+      <tr><td class="p">stairs</td><td class="mean">오름6 · 랜딩 · 내림6 계단 (rise 4cm · depth 28cm)</td><td class="mean">계단 올라탐 z0.55 · tilt 3.0° · <span class="ok">falls 0</span></td></tr>
+      <tr><td class="p">rough</td><td class="mean">불규칙 높이 블록필드 (84개, h 1~10cm)</td><td class="mean">tilt 1.4° · <span class="ok">falls 0</span></td></tr>
+      <tr><td class="p">friction</td><td class="mean">ice μ0.2 · 보통 1.3 · 고마찰 2.5 레인</td><td class="mean">ice 통과 · tilt 1.5° · <span class="ok">falls 0</span></td></tr>
+      <tr><td class="p">course</td><td class="mean">종합(마찰→험지→계단, ~12.9m 순차)</td><td class="mean">perceptive 완주 x13.7 · <span class="ok">falls 0</span> (blind는 계단서 낙상)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>
+  원본: <code>simulation/quad/PARAMS.md</code> · 소스: <code>cpp/src/</code> (quad_control.hpp=qc · trot_controller.hpp=tc) · 모델: quad_real_17dof_waist_sphere.mjcf
+</footer>
+</div>

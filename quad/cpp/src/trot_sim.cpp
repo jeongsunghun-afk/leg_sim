@@ -46,6 +46,8 @@ int main(int argc,char**argv){
   if(getenv("SGU_FB_CALF")) ctrl.SGU_FB_CALF=atof(getenv("SGU_FB_CALF"));
   if(getenv("SGU_SLEW")) ctrl.SGU_SLEW=atof(getenv("SGU_SLEW"));
   if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));
+  if(getenv("GETUP_TRAJ_KP")) ctrl.GETUP_TRAJ_KP=atof(getenv("GETUP_TRAJ_KP"));   // ★개-앉기 기립 궤적추종 강성(=튕김 힘). ↓=부드럽게
+  if(getenv("GETUP_TRAJ_KD")) ctrl.GETUP_TRAJ_KD=atof(getenv("GETUP_TRAJ_KD"));   // ↑=튕김 감쇠
   if(getenv("SGU_GATHER_Z")) ctrl.SGU_GATHER_Z=atof(getenv("SGU_GATHER_Z"));
   if(getenv("SGU_DONE_TILT")) ctrl.SGU_DONE_TILT=atof(getenv("SGU_DONE_TILT"));
   if(getenv("SGU_WALKOUT_V")) ctrl.SGU_WALKOUT_V=atof(getenv("SGU_WALKOUT_V"));

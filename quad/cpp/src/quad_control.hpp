@@ -24,7 +24,7 @@ struct QuadControl {
   // 상수
   double MU=0.6, MU_MARGIN=0.707, LAMZ_MIN=1.0;         // wbic 마찰
   double STANCE_KD=20.0;                                 // ★stance 접촉속도 감쇠(baumgarte): cjac·q̈=−KD·(cjac·q̇) → 터치다운 잔류속도→0, 발 slip↓(뒤 7.2→5.9mm). 0=끔
-  double base_z0=0.52, REAR_ANKLE=-0.7, FRONT_ANKLE=-0.7;  // 14dof:ours_sphere / 17dof: 0.5234,-0.5
+  double base_z0=0.52, REAR_ANKLE=-0.3, FRONT_ANKLE=-0.7;  // 14dof:ours_sphere / 17dof: 0.5234. ★뒷발목 -0.7→-0.3: 축별 τ·ω 스윕 최적(REAR_ANKLE 비교, walk v0.6). 발목 ω가 병목(-0.7서 모터한계 155%=flail)→ -0.3이 ω를 100%로 낮추는 최소확장(calf τ76%·falls=0). 앞발목 -0.7 유지. 14dof(3관절)=무영향
   double HAUNCH_THIGH=-1.0, HAUNCH_CALF=1.2, HAUNCH_FOOT=-0.3, HAUNCH_HOCK_Z=0.019, FRONT_REACH=-0.22;  // ★엉덩이 주저앉기 뒷다리 tuck(femur 위/뒤·발 접힘)+앞발 뒤로(앞다리 곧게 수직으로 펴 상체 받침)
   double HAUNCH_FOOT_LAND=-1.2;  // ★착지 중 뒷발 각도(더 접음=발 curl). 바닥 닿은 뒤 HAUNCH_FOOT(-0.3)로 굴려 발바닥 밀착
   double W_AM=0.0, KD_AM=8.0;                            // 각운동량 보상(14dof평지=0, 17dof튜닝=12/24)
@@ -92,7 +92,7 @@ struct QuadControl {
       double jdmp=getenv("JDAMP")?atof(getenv("JDAMP")):0.1, jfrc=getenv("JFRIC")?atof(getenv("JFRIC")):0.5;
       for(int k=0;k<nu;k++){ int jid=m->actuator_trnid[k*2]; if(jid<0) continue;
         const char* jn=mj_id2name(m,mjOBJ_JOINT,jid); if(!jn) continue;
-        int gi=0; for(int g=0;g<4;g++) if(std::strstr(jn,GN[g])) gi=g;
+        int gi=0; for(int g=0;g<4;g++) if(std::strstr(jn,GN[g])) gi=g;   // ★FB_waist는 hip/thigh/calf/foot 어디에도 안 걸려 gi=0(hip)로 fallback → 감속비 7:1. ★실제 허리 감속비=7:1(사용자확인)이라 이 fallback이 정확함(의도됨, 삭제금지). 반사관성·w_limit·tau도 hip과 동일 처리
         double gmul=getenv(GE[gi])?atof(getenv(GE[gi])):1.0;
         w_limit[k]=207.0/(gear[gi]*gmul);                            // ★관절속도한계=motor_noload/N (MOTOR_CURVE용)
         if(gmul!=1.0 && tau_peak[k]<1e7) tau_peak[k]*=gmul;          // ★재기어 토크한계(QP 부등식이 사용)

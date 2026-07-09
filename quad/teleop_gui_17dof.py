@@ -222,7 +222,7 @@ def _set_walk_speed(v):                                # 보행속도 게이지 
 
 def _gait_preset(gait):                                # ★gait 버튼 → Walk Speed 게이지·Step Height를 그 gait 최적값으로 자동 세팅
     vmax = {'walk': 0.6, 'trot': 1.4, 'run': 2.0}.get(gait, 1.4)   # 조이스틱 풀스케일(gait 상한)
-    sh   = {'walk': 0.05, 'trot': 0.10, 'run': 0.08}.get(gait, 0.10)  # 발 들림(고속 run=낮게)
+    sh   = {'walk': 0.10, 'trot': 0.10, 'run': 0.08}.get(gait, 0.10)  # 발 들림(고속 run=낮게). ★walk 0.05→0.10 복원(발 아치 자연스럽게·앞다리 뻣뻣함 해소)
     if dpg.does_item_exist('ws'): dpg.set_value('ws', vmax)
     _set_walk_speed(vmax)
     if dpg.does_item_exist('sh'): dpg.set_value('sh', sh)
@@ -339,10 +339,14 @@ with dpg.theme() as _stop_theme:
     with dpg.theme_component(dpg.mvButton):
         dpg.add_theme_color(dpg.mvThemeCol_Button, (170, 45, 45))
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (210, 65, 65))
-with dpg.theme() as _jump_theme:
+with dpg.theme() as _walk_theme:          # 보행=초록
     with dpg.theme_component(dpg.mvButton):
         dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 120, 70))
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 160, 95))
+with dpg.theme() as _jump_theme:          # 점프=파랑
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (45, 90, 170))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (65, 120, 210))
 
 with dpg.window(tag='main'):
     dpg.add_text('02_Leg Teleop   (RBQ 스타일 · SportClient)')
@@ -359,15 +363,17 @@ with dpg.window(tag='main'):
                  color=(250, 195, 75))
     dpg.add_separator()
     dpg.add_text('모션', color=(170, 175, 195))
-    with dpg.group(horizontal=True):   # ★버튼 배치: 리셋 → 전원 → 눕기 → 서기 → 보행 → 앉기 → 점프
+    with dpg.group(horizontal=True):   # ★버튼 배치: 리셋 → 전원 → 눕기 → 서기 → 앉기 → 이동(Run) → 점프
         _b = dpg.add_button(label='RESET', width=80, callback=lambda: (sc.Reset(), _status()))
         dpg.bind_item_theme(_b, _stop_theme)
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: (_mode_btn('off'), _status()))
         dpg.bind_item_theme(_ob, _stop_theme)
         dpg.add_button(label='Ground 눕기', width=110, callback=lambda: _mode_btn('stand_down'))
         dpg.add_button(label='Ready 서기', width=110, callback=lambda: (sc.Ready(), _status()))
-        dpg.add_button(label='Walk 보행', width=110, callback=lambda: _mode_btn('move'))
         dpg.add_button(label='Sit 앉기', width=100, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
+        # ★초록 '이동' 버튼 = 이동(move)모드 진입(게이트는 아래 trot/run/walk 선택). walk 게이트와 혼동 방지로 'Run 이동' 표기
+        _wb = dpg.add_button(label='Run 이동', width=110, callback=lambda: _mode_btn('move'))
+        dpg.bind_item_theme(_wb, _walk_theme)
         _jb = dpg.add_button(label='Jump 점프', width=100, callback=lambda: (sc.Jump(), _status()))
         dpg.bind_item_theme(_jb, _jump_theme)
     with dpg.group(horizontal=True):

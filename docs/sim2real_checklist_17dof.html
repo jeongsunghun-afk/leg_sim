@@ -65,7 +65,7 @@
 <tr><td class="k"><span class="wait">중간</span></td><td>RAIBERT_K·KCAP 발배치</td><td>실기 속도추정 노이즈 반영</td></tr>
 <tr><td class="k"><span class="wait">중간</span></td><td>STANCE_KD(20) 접촉감쇠</td><td>실기 접촉 컴플라이언스에 맞춤</td></tr>
 </table>
-<p class="note">되돌리기(14dof 기본): <code>W_ORI=5 W_AM=0 KD_AM=8</code>. 근본수정 완료분(자세=현재yaw 레벨링·MPC euler-rate=Rz(yaw)ᵀ·yaw=MPC전담)은 sim무관 구조라 실기서도 유지. 벤치 <code>bench_17dof.py</code>(300N push): 전속도 falls=0.</p>
+<p class="note">되돌리기(14dof 기본): <code>W_ORI=5 W_AM=0 KD_AM=8</code>. 근본수정 완료분(자세=현재yaw 레벨링·MPC euler-rate=Rz(yaw)ᵀ·yaw=MPC전담)은 sim무관 구조라 실기서도 유지. 회귀검증 <code>quad/cpp/verify.sh</code>(평지+지형): 전속도 falls=0.</p>
 </section>
 
 <!-- ══════════ C ══════════ -->

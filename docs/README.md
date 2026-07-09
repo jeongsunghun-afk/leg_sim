@@ -34,6 +34,14 @@
 `MEMORY.md`(인덱스) + biped-wbic-mpc-project(메인) · 02leg-motor-spec · joint-load-trot-walk · quad-abc-io-structure · haunch-sit-posture · getup-trajopt-wip · rbq-sdk-reference · no-unphysical-sim2real-hacks · sim2real-checklist(·17dof).
 → sim2real 체크리스트 **값·표는 위 HTML이 정본**, 메모리는 결정·통찰만(중복 슬림).
 
+## 🗺️ 로드맵 / 향후 기능
+| 문서 | 내용 | 상태 |
+|---|---|---|
+| **[RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)** | 6-DoF 머리(목) 체인 추가 → 예측형 시선 안정화·반작용 질량 협조·시선/균형 중재. 단계 **G0(23-DoF 모델)→G1(반응층 기준선)→G2(WBIC gaze task)→G3(예측 ff, lite/full)→G4(반작용 질량)→G5(중재)**. 착수순서 G0→G1→G2(기존 스택 3주 데모). | 설계완료·미착수 |
+| RPET_ALIGATOR_MPC.md | (위 문서가 참조하는 Phase 0–3 로드맵 — aligator OCP) | 참조·아직 없음 |
+
+**★ head(머리·시선) 기능을 TODO에 추가할 땐 위 [RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)를 정본으로 참조** — 모델 확장(23-DoF)·gaze 잔차(z_C×u)·WBIC task 삽입 위치·검증 지표·함정이 이미 정리됨. 기존 스택(WBIC 각운동량 task·sit_pitch 자세목표 주입)의 직접 확장이라 G2까지는 재사용률 높음.
+
 ## ✅ 유지 워크플로 (요약)
 1. 변경 → `cd quad/cpp && ./verify.sh` (회귀 PASS 확인).
 2. 파라미터/게인 바꿨으면 `--python`으로 파리티, params 문서 갱신.

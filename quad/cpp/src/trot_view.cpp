@@ -11,6 +11,8 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 // 평면 JSON에서 "key": 숫자 추출(GUI cmd 파일용, 경량)
 static double json_get(const std::string& s,const char* key,double def){
@@ -25,6 +27,34 @@ static std::string json_str(const std::string& s,const char* key,const std::stri
   if(p==std::string::npos) return def; auto q1=s.find('"',p+1);
   if(q1==std::string::npos) return def; auto q2=s.find('"',q1+1);
   if(q2==std::string::npos) return def; return s.substr(q1+1,q2-q1-1);
+}
+
+// ★상태 발행(STATE_PUB) — Python publish_state와 동일 스키마로 GUI 모니터(IMU/Actuator) 채움.
+//   비-free 관절 전체(17-DOF: HL4·HR4·waist1·FL4·FR4 — 허리 포함) q/dq/tau + base_z·rpy·gyro.
+static void publish_state(mjModel* m, mjData* d, TrotCtrl& ctrl, const std::string& path){
+  int nu=m->nu;
+  static std::vector<std::string> jn; static bool init=false;
+  if(!init){ init=true;
+    for(int j=0;j<m->njnt;j++) if(m->jnt_type[j]!=mjJNT_FREE){
+      const char* nm=mj_id2name(m,mjOBJ_JOINT,j); std::string s=nm?nm:"";
+      auto p=s.find("_joint"); if(p!=std::string::npos) s.erase(p);
+      jn.push_back(s);
+    } }
+  double R[9]; mju_quat2Mat(R,d->qpos+3);   // world←body 회전
+  double roll=atan2(R[7],R[8]), pitch=asin(std::max(-1.0,std::min(1.0,-R[6]))), yaw=atan2(R[3],R[0]);
+  double vf=d->qvel[0]*cos(yaw)+d->qvel[1]*sin(yaw);
+  static double vf_filt=0; vf_filt=0.97*vf_filt+0.03*vf;
+  std::ostringstream o; o.precision(6); o<<std::fixed;
+  o<<"{\"mode\":\""<<ctrl.mode<<"\",\"base_z\":"<<d->qpos[2]<<",\"t\":"<<d->time;
+  o<<",\"rpy\":["<<roll*57.29578<<","<<pitch*57.29578<<","<<yaw*57.29578<<"]";
+  o<<",\"gyro\":["<<d->qvel[3]<<","<<d->qvel[4]<<","<<d->qvel[5]<<"]";
+  o<<",\"names\":["; for(int i=0;i<nu;i++){ o<<(i?",":"")<<"\""<<jn[i]<<"\""; }
+  o<<"],\"q\":["; for(int i=0;i<nu;i++){ o<<(i?",":"")<<d->qpos[7+i]; }
+  o<<"],\"dq\":["; for(int i=0;i<nu;i++){ o<<(i?",":"")<<d->qvel[6+i]; }
+  o<<"],\"tau\":["; for(int i=0;i<nu;i++){ o<<(i?",":"")<<d->ctrl[i]; }
+  o<<"],\"v_cmd\":"<<ctrl.V<<",\"v_act\":"<<vf_filt<<"}";
+  std::string tmp=path+".tmp"; std::ofstream f(tmp); f<<o.str(); f.close();
+  std::rename(tmp.c_str(),path.c_str());   // 원자적 교체
 }
 
 static mjvCamera cam; static mjvOption opt; static mjvScene scn; static mjrContext con;
@@ -79,6 +109,7 @@ int main(int argc,char**argv){
 
   double RATE = getenv("RATE")?atof(getenv("RATE")):1.0;   // 재생 배속(env, 1=실시간·0.5=슬로모)
   const char* CMDFILE = getenv("CMDFILE");                 // ★GUI 연동: /tmp/quad_cmd.json 폴링(v/vy/w)
+  std::string STATE_PUB = getenv("STATE_PUB")?getenv("STATE_PUB"):"/tmp/quad_state.json";  // ★상태 발행(GUI 모니터)
   int falls=0; double max_tilt=0; long frame=0; bool fallen=false; long reset_seen=-1;
   auto wall0=std::chrono::steady_clock::now(); double sim0=d->time;
   while(!glfwWindowShouldClose(win)){
@@ -113,6 +144,8 @@ int main(int argc,char**argv){
       bool low=(td>50||d->qpos[2]<0.2); if(low && !fallen) falls++; fallen=low;
     }
     if(d->time-sim0 > wall*RATE+0.5){ wall0=std::chrono::steady_clock::now(); sim0=d->time; }  // 드리프트 리셋
+    if(!STATE_PUB.empty() && (frame%3==0)) publish_state(m,d,ctrl,STATE_PUB);   // ★GUI 모니터(IMU/Actuator 17-DOF) 발행
+
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);
     cam.lookat[0]=d->qpos[0]; cam.lookat[1]=d->qpos[1];   // 로봇 추적
     mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);

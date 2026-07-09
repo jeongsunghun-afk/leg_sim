@@ -1,0 +1,27 @@
+# 파라미터 = config(★현 env-var 난립 대체: 재현성·튜닝·sim2real 정합).
+#   컨트롤러가 로드. 값은 현 배포 기본값(메모리 haunch-sit-posture / 실행코드 기준).
+model:
+  mjcf: quad_real_17dof_waist_sphere.mjcf
+  nu: 17
+  gear: { hip: 7.0, thigh: 7.0, calf: 10.5, foot: 8.0 }   # 재기어(peak/속도한계)
+  gearbox: true                                            # 반사관성(발 flail 억제)
+
+wbic: { w_ori: 20, kd_am: 24, w_am: 12, stance_kd: 20 }
+mpc:  { N: 14, dt: 0.02 }                                  # Di Carlo SRBD
+
+gait:
+  trot: { T: 0.50, swf: 0.50, raibert: 0.5, step_h: 0.10 }
+  walk: { T: 0.70, swf: 0.25, raibert: 0.5, step_h: 0.05 }
+  run:  { T: 0.40, swf: 0.50, raibert: 0.5, step_h: 0.08 }
+
+sit:  # 엉덩이 주저앉기(haunch)
+  haunch: { z: 0.30, pitch: 0.5, thigh: -1.0, calf: 1.2, foot: -0.3, foot_land: -1.2, front_reach: -0.22 }
+  fold_rate: 0.6
+  sit_kp: 90
+
+getup:  # sit→서기(gather 궤적 추종)
+  traj: getup_traj_mppi.txt   # getup_kinematic.py / getup_mppi.py 생성
+  kp: 120
+  kd: 4
+
+steer: { waist_gain: 0.4, cap_rad: 0.20, wz_cap: 0.9 }     # 자동차식 조향(understeer)

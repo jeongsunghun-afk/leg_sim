@@ -61,7 +61,7 @@ ROBOTS = {
     'ours_17dof_waist_sphere': dict(mjcf=os.path.join(_HERE, 'quad_real_17dof_waist_sphere.mjcf'),
                        legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                        foot_geom='{L}_sphere', hip_body='{L}_hip_link',
-                       foot_kind='sphere', base_z0=0.5234, mu=0.6),
+                       foot_kind='sphere', base_z0=0.50, mu=0.6),   # ★base height 최적(축별 worst-util: 0.50=walk/trot/run Pareto-최적, 0.5234보다 발목 ω 여유↑)
 }
 _ROBOT = 'ours'
 MJCF = ROBOTS['ours']['mjcf']    # (하위호환)

@@ -67,6 +67,11 @@ int main(int argc,char**argv){
       q.nu,q.leg_dof[0],q.leg_dof[1],q.leg_dof[2],q.leg_dof[3],d->qpos[2],q.com_ref[0],q.com_ref[1],q.com_ref[2]);
 
   int falls=0; double max_tilt=0, penF=0, penR=0, pitchSum=0, tauEff=0, calfTau=0, footWmax=0; int pn=0;
+  // ★관절(축)별 τ·ω peak/RMS (정착후 t>1.5s) — 기립자세 비교용. JSTAT=1 이면 종료시 관절별 출력
+  bool JSTAT=getenv("JSTAT")!=nullptr; int _NU=q.nu;
+  std::vector<double> tpk(_NU,0), tsq(_NU,0), wpk(_NU,0), wsq(_NU,0); long jstat_n=0;
+  std::vector<std::string> jname; for(int jj=0;jj<m->njnt;jj++) if(m->jnt_type[jj]!=mjJNT_FREE){
+    const char* nm=mj_id2name(m,mjOBJ_JOINT,jj); std::string s=nm?nm:""; auto pp=s.find("_joint"); if(pp!=std::string::npos) s.erase(pp); jname.push_back(s); }
   // ★임시 slip 계측: 발이 접촉(dist<1mm)인 동안 anchor 대비 수평 이동 최대치 = slip. 접촉종료 시 누적.
   double f_ax[4]={0},f_ay[4]={0},slip_sum[4]={0},slip_mx[4]={0}; bool f_con[4]={false}; int slip_n[4]={0};
   bool SLIP=getenv("SLIPLOG")!=nullptr;
@@ -100,7 +105,9 @@ int main(int argc,char**argv){
       double R[9]; mju_quat2Mat(R,&d->qpos[3]); pitchSum+=std::asin(std::max(-1.0,std::min(1.0,-R[6])))*180/M_PI; pn++;
       for(int j=0;j<q.nu;j++) tauEff+=std::abs(d->ctrl[j]);   // 총 토크 effort(에너지 대리)
       for(int i=0;i<4;i++){ int cj=q.legqv[i][2]-6; if(cj>=0&&cj<q.nu) calfTau+=std::abs(d->ctrl[cj]); }   // calf(whip 관절) 토크
-      for(int i=0;i<4;i++) if(q.leg_dof[i]==4) footWmax=std::max(footWmax,std::abs(d->qvel[q.legqv[i][3]]));  }  // ★발목 최대각속도(반사관성 효과 확인)
+      for(int i=0;i<4;i++) if(q.leg_dof[i]==4) footWmax=std::max(footWmax,std::abs(d->qvel[q.legqv[i][3]]));
+      if(JSTAT){ for(int j=0;j<_NU;j++){ double t=d->ctrl[j], w=d->qvel[6+j];   // 관절j: 토크=ctrl[j], 각속도=qvel[6+j](1:1)
+        tpk[j]=std::max(tpk[j],std::abs(t)); tsq[j]+=t*t; wpk[j]=std::max(wpk[j],std::abs(w)); wsq[j]+=w*w; } jstat_n++; } }  // ★발목 최대각속도(반사관성 효과 확인)
     if(step%250==0){ double*qq=&d->qpos[3];
       double yaw=std::atan2(2*(qq[0]*qq[3]+qq[1]*qq[2]),1-2*(qq[2]*qq[2]+qq[3]*qq[3]))*180/M_PI;
       std::printf("[hl] s=%d t=%.2f z=%.3f x=%+.3f y=%+.3f yaw=%+.0f° tilt=%.1f falls=%d\n",
@@ -110,6 +117,10 @@ int main(int argc,char**argv){
   std::printf("\n=== 종료: STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f° falls=%d | ★침투평균 앞=%.1fmm 뒤=%.1fmm pitch=%.1f° | %.0f steps/s ===\n",
               STEPS,STEPS*dt,d->qpos[0],d->qpos[2],max_tilt,falls,pn?penF/pn*1000:0,pn?penR/pn*1000:0,pn?pitchSum/pn:0,STEPS/wall);
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
+  if(JSTAT && jstat_n>0){ std::printf("  [JSTAT] 관절별 τ·ω (정착후 %ld스텝)\n", jstat_n);
+    std::printf("    %-9s %8s %8s %8s %8s\n","joint","τpeak","τrms","ωpeak","ωrms");
+    for(int j=0;j<_NU;j++) std::printf("    %-9s %8.2f %8.2f %8.2f %8.2f\n",
+      (j<(int)jname.size()?jname[j].c_str():""), tpk[j], std::sqrt(tsq[j]/jstat_n), wpk[j], std::sqrt(wsq[j]/jstat_n)); }
   std::printf("    ★실제 뒷다리(HL) thigh=%.3f calf=%.3f foot=%.3f | 무릎z=%.3f hockZ=%.3f toeZ=%.3f\n",
       d->qpos[q.legqp[0][1]], d->qpos[q.legqp[0][2]], d->qpos[q.legqp[0][3]], d->xpos[mj_name2id(m,mjOBJ_BODY,"HL_calf_link")*3+2],
       d->xpos[q.rear_hock_bid[0]*3+2], q.foot_point(0)[2]);

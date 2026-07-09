@@ -75,7 +75,8 @@ class QuadSim:
         self.foot_kind = cfg['foot_kind']; self.base_z0 = cfg['base_z0']
         self.foot_z0 = cfg.get('foot_z0', 0.0)   # nominal 자세 발바닥 목표 z(접지=0). 과거 0.02→20mm 부양 버그
         global MU; MU = cfg['mu']
-        _xmlp = mjcf or cfg['mjcf']
+        _xmlp = mjcf or os.environ.get('MJCF') or cfg['mjcf']   # ★MJCF env=커스텀 씬 로드(C++와 동일한 지형 씬 quad_terrain_*.mjcf)
+        self._custom_mjcf = (mjcf is not None) or (os.environ.get('MJCF') is not None)  # 지형 씬이면 perception 자동 ON
         self._stair = None                        # 계단 파라미터(H,D,N,X0) — 시각화/디버그용
         self._elev = os.environ.get('ELEV') is not None  # ★elevation 쿼리 강제 ON(실 depth/험지용, STAIRS 없이도 raycast)
         # ★GUI 라이브 컨트롤(CMDFILE로 갱신): 배속·모니터표시·지형적응
@@ -109,7 +110,7 @@ class QuadSim:
             self.m = mujoco.MjModel.from_xml_path(_tmp); os.remove(_tmp)
         else:
             self.m = mujoco.MjModel.from_xml_path(_xmlp)
-        self._terrain_on = bool(self._stair) or self._elev          # ★_stair 확정 후 지형적응 기본값 설정
+        self._terrain_on = bool(self._stair) or self._elev or self._custom_mjcf   # ★_stair/ELEV/커스텀MJCF(지형씬)면 지형적응 ON(C++ perceptive와 동일)
         if _NOLIMIT:
             self.m.jnt_limited[:] = 0    # 관절 한계 해제 (테스트용)
         else:
@@ -1206,7 +1207,7 @@ def mode_trot():
         # ★고속 trot(run): 빠른 cadence T=0.4·낮은 발높이0.08 → 최고속 1.8→~2.0m/s(발목ω↓). 중속엔 trot과 동일하니 고속주행용
         'run':  dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.40, SWF=0.50, STEPH=0.08, V=0.30, LOCK=1.0, RAI=0.5),
         # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭). 14dof(quad_mpc_wbic.py)와 동일 처방
-        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.05, V=0.25, LOCK=0.35, RAI=0.5),
+        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.10, V=0.25, LOCK=0.35, RAI=0.5),
     }
     _GP = GAITS[GAIT]   # trot=대각 A(HL,FR)=0·B(HR,FL)=0.5 / walk=순차 FR0→HL.25→FL.5→HR.75(정적안정·75%stance)
     # ★라이브 게이트 holder(GUI 토글이 갱신→재arm으로 위상 재앵커, 불연속 방지). gait()가 GP를 읽음

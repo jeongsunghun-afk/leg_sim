@@ -67,18 +67,18 @@
     <geom name="r8_4" type="box" size="0.120 0.120 0.013" pos="7.380 0.040 0.013" rgba="0.47 0.42 0.37 1"/>
     <geom name="r8_5" type="box" size="0.120 0.120 0.050" pos="7.380 0.300 0.050" rgba="0.65 0.58 0.52 1"/>
     <geom name="r8_6" type="box" size="0.120 0.120 0.012" pos="7.380 0.560 0.012" rgba="0.46 0.41 0.37 1"/>
-    <geom name="sup1" type="box" size="0.140 0.700 0.020" pos="8.440 0.000 0.020" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup2" type="box" size="0.140 0.700 0.040" pos="8.720 0.000 0.040" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sup3" type="box" size="0.140 0.700 0.060" pos="9.000 0.000 0.060" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup4" type="box" size="0.140 0.700 0.080" pos="9.280 0.000 0.080" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sup5" type="box" size="0.140 0.700 0.100" pos="9.560 0.000 0.100" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup6" type="box" size="0.140 0.700 0.120" pos="9.840 0.000 0.120" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sland" type="box" size="0.600 0.700 0.120" pos="10.580 0.000 0.120" rgba="0.50 0.42 0.36 1"/>
-    <geom name="sdn1" type="box" size="0.140 0.700 0.100" pos="11.320 0.000 0.100" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sdn2" type="box" size="0.140 0.700 0.080" pos="11.600 0.000 0.080" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sdn3" type="box" size="0.140 0.700 0.060" pos="11.880 0.000 0.060" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sdn4" type="box" size="0.140 0.700 0.040" pos="12.160 0.000 0.040" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sdn5" type="box" size="0.140 0.700 0.020" pos="12.440 0.000 0.020" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sup1" type="box" size="0.140 0.700 0.025" pos="8.440 0.000 0.025" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup2" type="box" size="0.140 0.700 0.050" pos="8.720 0.000 0.050" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sup3" type="box" size="0.140 0.700 0.075" pos="9.000 0.000 0.075" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup4" type="box" size="0.140 0.700 0.100" pos="9.280 0.000 0.100" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sup5" type="box" size="0.140 0.700 0.125" pos="9.560 0.000 0.125" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup6" type="box" size="0.140 0.700 0.150" pos="9.840 0.000 0.150" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sland" type="box" size="0.600 0.700 0.150" pos="10.580 0.000 0.150" rgba="0.50 0.42 0.36 1"/>
+    <geom name="sdn1" type="box" size="0.140 0.700 0.125" pos="11.320 0.000 0.125" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sdn2" type="box" size="0.140 0.700 0.100" pos="11.600 0.000 0.100" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sdn3" type="box" size="0.140 0.700 0.075" pos="11.880 0.000 0.075" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sdn4" type="box" size="0.140 0.700 0.050" pos="12.160 0.000 0.050" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sdn5" type="box" size="0.140 0.700 0.025" pos="12.440 0.000 0.025" rgba="0.62 0.52 0.44 1"/>
     <geom name="sdn6" type="box" size="0.140 0.700 0.001" pos="12.720 0.000 0.001" rgba="0.55 0.45 0.38 1"/>
   </worldbody>
 </mujoco>

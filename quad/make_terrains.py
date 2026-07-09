@@ -14,8 +14,8 @@ def box(name, sx, sy, sz, x, y, z, rgba, fric=None):
             f'pos="{x:.3f} {y:.3f} {z:.3f}" rgba="{rgba}"{f}/>\n')
 
 # ── 지형 빌더(geom 문자열만 반환, x0=시작 x, 접두=이름 유일화) ──────────
-def g_stairs(x0, pfx="s"):
-    rise=0.04; depth=0.28; wid=1.4; N=6
+def g_stairs(x0, pfx="s", rise=0.15, depth=0.35):
+    wid=1.4; N=6   # ★계단씬 기본 15cm(가파름=점프용). course는 rise=0.05로 완만(walk 등반)
     c1="0.55 0.45 0.38 1"; c2="0.62 0.52 0.44 1"; s=""; x=x0
     for i in range(1,N+1):
         s+=box(f"{pfx}up{i}", depth/2, wid/2, i*rise/2, x+depth/2, 0, i*rise/2, c1 if i%2 else c2); x+=depth
@@ -58,7 +58,7 @@ files["quad_terrain_friction.mjcf"] = scene("terrain_friction", g_friction(1.1)[
 # 종합 코스: 마찰 → 험지 → 계단 (순차, 사이 평지 갭)
 gf,xf = g_friction(1.2)
 gr,xr = g_rough(xf+0.6, span=2.4)
-gs,xs = g_stairs(xr+0.6)
+gs,xs = g_stairs(xr+0.6, rise=0.05, depth=0.28)
 files["quad_terrain_course.mjcf"]   = scene("terrain_course", gf, gr, gs)
 
 for fn,txt in files.items():

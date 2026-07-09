@@ -48,6 +48,9 @@ int main(int argc,char**argv){
   if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));
   if(getenv("GETUP_TRAJ_KP")) ctrl.GETUP_TRAJ_KP=atof(getenv("GETUP_TRAJ_KP"));   // ★개-앉기 기립 궤적추종 강성(=튕김 힘). ↓=부드럽게
   if(getenv("GETUP_TRAJ_KD")) ctrl.GETUP_TRAJ_KD=atof(getenv("GETUP_TRAJ_KD"));   // ↑=튕김 감쇠
+  if(getenv("JUMP_KP")) ctrl.JUMP_KP=atof(getenv("JUMP_KP"));                     // ★점프 추진 강성(=점프 높이). ↓=낮게
+  if(getenv("JUMP_CROUCH_Z")) ctrl.JUMP_CROUCH_Z=atof(getenv("JUMP_CROUCH_Z"));   // 웅크림 깊이(깊을수록 스트로크↑)
+  if(getenv("JUMP_THRUST_T")) ctrl.JUMP_THRUST_T=atof(getenv("JUMP_THRUST_T"));   // 추진 최대시간(이벤트 없을 때 타임아웃)
   if(getenv("SGU_GATHER_Z")) ctrl.SGU_GATHER_Z=atof(getenv("SGU_GATHER_Z"));
   if(getenv("SGU_DONE_TILT")) ctrl.SGU_DONE_TILT=atof(getenv("SGU_DONE_TILT"));
   if(getenv("SGU_WALKOUT_V")) ctrl.SGU_WALKOUT_V=atof(getenv("SGU_WALKOUT_V"));

@@ -70,6 +70,19 @@ struct TrotCtrl {
   double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
   double SGU_WALKOUT_V=0.6, SGU_HANDOFF_Z=0.34;   // ★기립 후 전진 트로트로 인계(walk-out)해 균형회복. bz>HANDOFF_Z면 move로 전환
   double SIT_SLEW=0.6; // ★앉기 하강 슬루(rad/s, 작을수록 천천히·충격↓). 기본 JOINT_SLEW(1.5)보다 느리게→충격 완화
+  // ★★점프(J0.2 스크립트 pronk, RPET_JUMP_MPC.md): crouch(wbic)→thrust(강PD 신전)→flight(tuck)→touchdown→흡수→wbic회복. 이벤트 트리거(시간 아님).
+  int jphase=-1; double jt0=0, jzpk=0; VectorXd jqc, jqs;
+  double JUMP_CROUCH_Z=0.30, JUMP_THRUST_T=0.16, JUMP_KP=380, JUMP_KD=6;   // (구 스크립트 스냅용)
+  // ★★J2 통합: OCP 궤적(/tmp/jump_traj.txt, MuJoCo순서 phase·q·dq·tau) 재생 → thrust/flight, 착지는 wbic_stance
+  std::vector<VectorXd> jump_q, jump_dq, jump_tau; std::vector<int> jump_ph;
+  int jump_N=-1, jump_k=-1; double jump_dt=0.01, jump_kt=0, JUMP_TRAJ_KP=120, JUMP_TRAJ_KD=4;
+  void load_jump(const std::string& path){
+    std::ifstream f(path); if(!f){ jump_N=0; return; }
+    f>>jump_N>>jump_dt; jump_q.clear(); jump_dq.clear(); jump_tau.clear(); jump_ph.clear();
+    for(int k=0;k<jump_N;k++){ int ph; f>>ph; jump_ph.push_back(ph);
+      VectorXd qq(q.nu),dd(q.nu),tt(q.nu);
+      for(int j=0;j<q.nu;j++) f>>qq[j]; for(int j=0;j<q.nu;j++) f>>dd[j]; for(int j=0;j<q.nu;j++) f>>tt[j];
+      jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
   // ── 게이트 프리셋(trot/walk/gallop) ──
@@ -111,7 +124,7 @@ struct TrotCtrl {
     armed=false; settle_until=q.d->time+TC_SETTLE; have_qref=false;
     Vs=Vys=Ws=Ss_steer=0; yaw_hold_set=false; mpc_t=-1.0;
     ht_cur=qhome_h=body_h=q.base_z0; for(int i=0;i<4;i++) have_prev[i]=false;
-    haunch_ready=false; haunch_fold=0;
+    haunch_ready=false; haunch_fold=0; jphase=-1;
   }
 
   // 1틱 제어: d->ctrl 설정(mj_step은 호출자). q.d->time 기준.
@@ -121,8 +134,44 @@ struct TrotCtrl {
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="sit") q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt);   // ★nose-up 부드럽게 해제(리셋 아닌 슬루=언폴드 중 뒷다리 펴짐과 함께 nose-up 풀림)
     q.posture_w=1.0; q.sit_hock_contact=false;   // ★자세task 가중·뒤 hock접촉 기본off(서기/보행). 개-앉기 홀드서만 on
+    if(mode!="jump" && jphase>=0) jphase=-1;      // 점프 중 다른 모드로 이탈=상태 초기화(재진입 정상화)
     if(mode!="move"){
-      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; return; }
+      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; jphase=-1; return; }
+      if(mode=="jump"){   // ★★J2 통합 점프: crouch(wbic)→OCP궤적 재생(thrust/flight τ_ff+PD)→touchdown→wbic_stance 착지.
+        double bz=d->qpos[2];
+        int ncon=0; for(int ci=0;ci<d->ncon;ci++){ int g1=d->contact[ci].geom1,g2=d->contact[ci].geom2;
+          for(int fi=0;fi<4;fi++) if(g1==q.fgid[fi]||g2==q.fgid[fi]){ ncon++; break; } }
+        if(jphase<0){ jphase=0; jt0=t; jzpk=bz; ht_cur=std::max(JUMP_CROUCH_Z,bz); qhome_h=-1; jump_k=-1; }
+        if(jphase==0){   // crouch: wbic_stance로 JUMP_CROUCH_Z 정착 → OCP 궤적 로드
+          ht_cur+=tc_clip(JUMP_CROUCH_Z-ht_cur,-0.4*dt,0.4*dt);
+          if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }
+          q.wbic_stance();
+          if(bz<=JUMP_CROUCH_Z+0.015 && std::abs(d->qvel[2])<0.06 && t-jt0>0.45){
+            load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
+          armed=false; return; }
+        if(jphase==1){   // ★OCP 궤적 재생(push+flight): τ_ff + 관절 PD (없으면 구 스크립트 스냅 fallback)
+          if(jump_N>0 && jump_k<jump_N){
+            for(int j=0;j<nu;j++){ double tau=jump_tau[jump_k][j]+JUMP_TRAJ_KP*(jump_q[jump_k][j]-d->qpos[7+j])+JUMP_TRAJ_KD*(jump_dq[jump_k][j]-d->qvel[6+j]);
+              d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+            jzpk=std::max(jzpk,bz);
+            jump_kt+=dt; if(jump_kt>=jump_dt && jump_k<jump_N-1){ jump_kt=0; jump_k++; }
+            bool airborne=(jzpk>JUMP_CROUCH_Z+0.10);
+            if(jump_ph[jump_k]>=1 && airborne && ncon>=2 && bz<jzpk-0.02){ jphase=3; jt0=t; }   // touchdown → wbic 착지
+            return; }
+          if(jump_N<=0){   // 궤적 없음: 구 스크립트 스냅(fallback)
+            q.update_stand_qhome(0.52);
+            for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+JUMP_KP*(q.q_home[j]-d->qpos[7+j])-JUMP_KD*d->qvel[6+j];
+              d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+            jzpk=std::max(jzpk,bz);
+            if((ncon==0||t-jt0>JUMP_THRUST_T) && jzpk>JUMP_CROUCH_Z+0.10 && ncon>=2 && bz<jzpk-0.02){ jphase=3; jt0=t; }
+            return; }
+          jphase=3; jt0=t; return; }   // 궤적 끝 → 착지
+        // jphase==3: land — 짧은 저-PD 흡수 → wbic_stance 회복 → 서기 인계
+        if(t-jt0<0.06){ for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+45*(q.q_home[j]-d->qpos[7+j])-6*d->qvel[6+j];
+          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); } return; }
+        ht_cur=std::max(0.30,bz); qhome_h=-1; q.wbic_stance();
+        if(t-jt0>0.6){ mode="stand_up"; jphase=-1; }
+        return; }
       if(mode=="sit"){   // ★개-앉기(haunch sit): 저crouch로 하강 → 정착 후 crouch→haunch(뒷다리 접어 발링크 바닥밀착) fold + nose-up. 기립=from_sit
         was_sit=false; sit_getup_t0=-1; from_sit=true;
         double bz=d->qpos[2];

@@ -90,6 +90,9 @@ int main(int argc,char**argv){
   if(getenv("GETUP_TRAJ_KP")) ctrl.GETUP_TRAJ_KP=atof(getenv("GETUP_TRAJ_KP"));   // ★개-앉기 기립 궤적추종 강성(=앉기→서기 튕김 힘). ↓=부드럽게
   if(getenv("GETUP_TRAJ_KD")) ctrl.GETUP_TRAJ_KD=atof(getenv("GETUP_TRAJ_KD"));   // ↑=튕김 감쇠
   if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));                        // ★크라우치-앉기 기립 강성(뷰어에도 추가)
+  if(getenv("JUMP_KP")) ctrl.JUMP_KP=atof(getenv("JUMP_KP"));                     // ★점프 추진 강성(=높이). ↓=낮게
+  if(getenv("JUMP_CROUCH_Z")) ctrl.JUMP_CROUCH_Z=atof(getenv("JUMP_CROUCH_Z"));
+  if(getenv("JUMP_THRUST_T")) ctrl.JUMP_THRUST_T=atof(getenv("JUMP_THRUST_T"));
   if(getenv("HAUNCH_Z")) ctrl.HAUNCH_Z=atof(getenv("HAUNCH_Z"));            // ★개-앉기(haunch sit) 튜닝
   if(getenv("HAUNCH_FOLD_RATE")) ctrl.HAUNCH_FOLD_RATE=atof(getenv("HAUNCH_FOLD_RATE"));
   if(getenv("HAUNCH_UNFOLD_Z")) ctrl.HAUNCH_UNFOLD_Z=atof(getenv("HAUNCH_UNFOLD_Z"));
@@ -115,7 +118,7 @@ int main(int argc,char**argv){
   double RATE = getenv("RATE")?atof(getenv("RATE")):1.0;   // 재생 배속(env, 1=실시간·0.5=슬로모)
   const char* CMDFILE = getenv("CMDFILE");                 // ★GUI 연동: /tmp/quad_cmd.json 폴링(v/vy/w)
   std::string STATE_PUB = getenv("STATE_PUB")?getenv("STATE_PUB"):"/tmp/quad_state.json";  // ★상태 발행(GUI 모니터)
-  int falls=0; double max_tilt=0; long frame=0; bool fallen=false; long reset_seen=-1;
+  int falls=0; double max_tilt=0; long frame=0; bool fallen=false; long reset_seen=-1, jump_seen=-1;
   auto wall0=std::chrono::steady_clock::now(); double sim0=d->time;
   while(!glfwWindowShouldClose(win)){
     // ★GUI 명령 폴링(~20Hz): teleop_gui가 쓴 v/vy/w 반영
@@ -138,7 +141,9 @@ int main(int argc,char**argv){
         long rseq=(long)json_get(c,"reset_seq",reset_seen);     // ★RESET 버튼(상승엣지): mj_resetData+crouch_home+상태초기화
         if(reset_seen<0) reset_seen=rseq;                       //   첫폴링=동기화(시작리셋 방지)
         else if(rseq>reset_seen){ reset_seen=rseq; mj_resetData(m,d); q.crouch_home(); ctrl.reset(); falls=0; fallen=false;
-          wall0=std::chrono::steady_clock::now(); sim0=d->time; } } }
+          wall0=std::chrono::steady_clock::now(); sim0=d->time; }
+        long jseq=(long)json_get(c,"jump_seq",jump_seen);       // ★Jump 버튼(상승엣지): 스크립트 점프 발동(mode=jump)
+        if(jump_seen<0) jump_seen=jseq; else if(jseq>jump_seen){ jump_seen=jseq; ctrl.mode="jump"; } } }
     // ★벽시계 기준 실시간 페이싱: sim_time이 wall_time×RATE 따라가도록(모니터 refresh 무관)
     double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-wall0).count();
     double target=sim0+wall*RATE; int guard=0;

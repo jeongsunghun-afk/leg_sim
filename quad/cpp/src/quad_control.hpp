@@ -82,6 +82,9 @@ struct QuadControl {
       for(int t=0;t<leg_dof[i];t++){ int a=legqv[i][t]-6; if(a>=0&&a<nu) is_front[a]=fr; } }
     { int wj=mj_name2id(m,mjOBJ_JOINT,"FB_waist_joint");   // ★허리 조인트(있으면 능동 17-DOF)
       waist_idx = (wj>=0 && m->jnt_type[wj]!=mjJNT_FREE) ? m->jnt_dofadr[wj]-6 : -1; }
+    if(waist_idx>=0){   // ★17-DOF(허리모델) 자동감지 → Python 17dof 튜닝값을 기본으로(canonical 실행코드와 동일). env로 여전히 override
+      w_ori=20.0; W_AM=12.0; KD_AM=24.0; FRONT_ANKLE=-0.5;   // 14dof 기본(5/0/8/-0.7) 대신 17dof 튜닝
+      base_z0=0.5234; }
     // ★재기어(GEAR_*)+기어박스 물리(sim2real). Python line 244-263 일치.
     //   재기어: tau_peak×gmul(8:1=168→96) → ★QP가 재기어 토크한계 존중(GEARBOX 무관 항상). w_limit는 C++ 미구현.
     //   GEARBOX=1: 반사관성 dof_armature=I_rotor·N² + 점성감쇠 + 마찰(MJCF엔 0→발목 flail 과장 보정).

@@ -300,18 +300,18 @@ class IMUPanel(Panel):
 class ActuatorPanel(Panel):
     title = 'Actuators'
     def build(self):
-        with dpg.collapsing_header(label='Actuators  (14 DOF)', default_open=True):
+        with dpg.collapsing_header(label='Actuators  (17 DOF)', default_open=True):
             with dpg.table(header_row=True, row_background=True, borders_innerH=True,
                            borders_outerV=True, scrollY=True, height=270):
                 for c in ('Joint', 'q [rad]', 'dq [rad/s]', 'tau [Nm]'):
                     dpg.add_table_column(label=c)
-                for i in range(14):
+                for i in range(17):
                     with dpg.table_row():
                         for col in ('n', 'q', 'd', 't'):
                             dpg.add_text('-', tag='act_%s%d' % (col, i))
     def update(self, st):
         n = st.get('names', []); q = st.get('q', []); d = st.get('dq', []); t = st.get('tau', [])
-        for i in range(min(14, len(n))):
+        for i in range(min(17, len(n))):
             dpg.set_value('act_n%d' % i, n[i]); dpg.set_value('act_q%d' % i, '%+.2f' % q[i])
             dpg.set_value('act_d%d' % i, '%+.2f' % d[i]); dpg.set_value('act_t%d' % i, '%+.1f' % t[i])
 
@@ -359,17 +359,17 @@ with dpg.window(tag='main'):
                  color=(250, 195, 75))
     dpg.add_separator()
     dpg.add_text('모션', color=(170, 175, 195))
-    with dpg.group(horizontal=True):   # ★복구 순서대로: 전원 → 눕기 → 앉기 → 서기
+    with dpg.group(horizontal=True):   # ★버튼 배치: 리셋 → 전원 → 눕기 → 서기 → 보행 → 앉기 → 점프
+        _b = dpg.add_button(label='RESET', width=80, callback=lambda: (sc.Reset(), _status()))
+        dpg.bind_item_theme(_b, _stop_theme)
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: (_mode_btn('off'), _status()))
         dpg.bind_item_theme(_ob, _stop_theme)
         dpg.add_button(label='Ground 눕기', width=110, callback=lambda: _mode_btn('stand_down'))
-        dpg.add_button(label='Sit 앉기', width=100, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
         dpg.add_button(label='Ready 서기', width=110, callback=lambda: (sc.Ready(), _status()))
         dpg.add_button(label='Walk 보행', width=110, callback=lambda: _mode_btn('move'))
+        dpg.add_button(label='Sit 앉기', width=100, callback=lambda: _mode_btn('sit'))   # ★뒷다리 접고 앞다리 편 앉기
         _jb = dpg.add_button(label='Jump 점프', width=100, callback=lambda: (sc.Jump(), _status()))
         dpg.bind_item_theme(_jb, _jump_theme)
-        _b = dpg.add_button(label='RESET', width=80, callback=lambda: (sc.Reset(), _status()))
-        dpg.bind_item_theme(_b, _stop_theme)
     with dpg.group(horizontal=True):
         dpg.add_text('복구 순서: 전원(Off) → 눕기 → 앉기 → 서기  (단계적 기립이 넘어짐서 바로 서기보다 안전)', color=(150, 155, 175))
     dpg.add_separator()

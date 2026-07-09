@@ -117,7 +117,8 @@ N=14, dt=0.02. Q대각(roll,pitch,yaw/px,py,pz/ω/v/g)=[200,200,100, 0,0,200, 0,
 ## 앉기 · 기립 / sit · getup
 
 **개-앉기(haunch) 시드** (quad_control.hpp:28–29): HAUNCH_THIGH −1.0·CALF 1.2·FOOT −0.3·HOCK_Z 0.019·FRONT_REACH −0.22·FOOT_LAND −1.2 (모두 S,V env).
-**스케줄** (trot_controller.hpp): HAUNCH_Z 0.30·FOLD_RATE 0.60·UNFOLD_Z 0.40·SIT_POSTURE_W 40·HAUNCH_PITCH 0.50·SIT_KP 90·SIT_SLEW 0.6. 기립궤적 추종 GETUP_TRAJ_KP 120·KD 4(getup_dt 0.01).
+**스케줄** (trot_controller.hpp): HAUNCH_Z 0.30·FOLD_RATE 0.60·UNFOLD_Z 0.40·SIT_POSTURE_W 40·HAUNCH_PITCH 0.50·SIT_KP 90·SIT_SLEW 0.6.
+**★앉기→서기 튕김 조절**: `GETUP_TRAJ_KP` 120(개-앉기 기립 궤적추종 강성=튕김 힘, **↓=부드럽게**)·`GETUP_TRAJ_KD` 4(↑=튕김 감쇠)·getup_dt 0.01. 크라우치-앉기 기립은 `SGU_KP` 120. 모두 env 조절 가능(S,V).
 **스크립트 기립(SGU_*)**: KICK_T 0.5·FB_THIGH −0.55·FB_CALF 1.20·SLEW 1.5·KP 120·GATHER_Z 0.24·DONE_TILT 22·WALKOUT_V 0.6·HANDOFF_Z 0.34 (모두 S env).
 **모드 상태**: GROUND_Z 0.18·GETUP_TRIG 0.32·GETUP_DONE 0.40·JOINT_SLEW 1.5·HRATE 0.3.
 
@@ -133,6 +134,25 @@ N=14, dt=0.02. Q대각(roll,pitch,yaw/px,py,pz/ω/v/g)=[200,200,100, 0,0,200, 0,
 | QHDBG·SITDBG·SLIPLOG·GRFLOG·DUMP_QPOS | — | 진단 로깅 (S) |
 
 ---
+
+## Python ↔ C++ 파리티
+
+Python(`quad_mpc_wbic_17dof.py`)과 C++(`cpp/src/`)는 같은 알고리즘·같은 MJCF를 쓰며, 아래는 정합 상태.
+
+**동일 (검증됨)** — 게인(C++가 17dof/허리모델 자동감지 → w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234를 Python 기본과 동일 적용) · REAR_ANKLE−0.3 · walk step_h 0.10 · MPC(N14·dt0.02·Q·R) · 기어박스(gear·ROTOR_I·JDAMP·JFRIC·허리 7:1) · 조향(waist_steer0.4·cap0.20·yaw캡0.9) · 허리(WAIST 80/150/20) · whip·raibert·KCAP·POS_HOLD · **맵**(Python도 `MJCF` env로 같은 지형 씬 로드) · **perceptive 발 착지높이**(gz+지형).
+검증: 종합코스 완주 — Python x14.3·tilt3.2° / C++ x13.9·tilt3.7°, **둘 다 falls=0**. 평지도 둘 다 falls=0.
+
+**남은 차이 (둘 다 정상 동작, 강제 동일화는 위험 대비 이득 작아 보류)**
+
+| 항목 | Python | C++ | 비고 |
+|---|---|---|---|
+| perceptive 몸통높이 | 4-hip 평균 → MPC+WBIC z-task 양쪽 | base 1점+슬루 → MPC만(WBIC 미공급) | 코드베이스 디테일차. Python 3.2°/C++ 3.7° 둘 다 완주. C++서 4힙+WBIC공급 재현 시 6.1°로 악화(충실 이식 finicky) |
+| STANCE_KD(터치다운 baumgarte) | trot 경로 없음(=0) | 20 (slip 7.2→5.9mm) | C++만. trot 접촉등식 b=−KD·cjac·q̇ |
+| gallop 게이트 | 없음 | 있음(T0.35 등) | 프로젝트 방향상 미사용(leg-heavy 불가) |
+| walk foot-lock | LOCK=0.35 late-commit | 없음(매틱 reactive) | Python만. walk 둘 다 falls=0 |
+
+## 앉기→서기 튕김 조절
+`GETUP_TRAJ_KP`(개-앉기 기립 궤적추종, 기본 120 — **↓=부드럽게**)·`GETUP_TRAJ_KD`(4, ↑=감쇠)·`SGU_KP`(크라우치-앉기, 120). C++ env(S,V)로 조절, 이번에 훅 추가.
 
 ## 테스트 지형 씬 (make_terrains.py 생성)
 

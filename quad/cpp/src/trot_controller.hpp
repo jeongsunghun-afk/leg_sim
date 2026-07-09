@@ -44,6 +44,7 @@ struct TrotCtrl {
   bool perceptive=true;             // ★perceptive: 스윙 착지 XY 아래 지형높이를 mj_ray로 샘플→착지 z를 지형에 맞춤(계단/험지). off=blind(평지 가정). PERCEPTIVE=0으로 끔
   double PCV_CLR=0.04;              // ★perceptive 상향 스텝 시 추가 스윙 클리어런스(up-step 높이×비율만큼 apex↑, 라이저 헛디딤 방지)
   double com_h0=0.52;               // ★평지 위 CoM 명목높이(arming서 캡처). perceptive 몸통높이 목표=지형높이+com_h0
+  double _bterr_s=0.0;              // ★슬루된 지형높이(4hip평균을 부드럽게) → MPC x_ref[5]·WBIC z-task 양쪽 일관 공급
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
@@ -242,10 +243,12 @@ struct TrotCtrl {
       if(!pos_hold_set){ phx=d->qpos[0]; phy=d->qpos[1]; pos_hold_set=true; }
       vx_w+=tc_clip(-0.6*(d->qpos[0]-phx),-0.15,0.15); vy_w+=tc_clip(-0.6*(d->qpos[1]-phy),-0.15,0.15);
     } else pos_hold_set=false;
-    x_ref[2]=yaw_ref; x_ref[8]=Weff; x_ref[9]=vx_w; x_ref[10]=vy_w; q._body_terr=0.0;
-    // ★perceptive 몸통높이: 베이스 아래 지형높이+com_h0를 목표로 부드럽게 추종(계단서 다리압축→튐 방지). 평지=com_h0(무변화)
-    { double ztgt=com_h0; if(perceptive){ double tzb=q.terrain_z(d->qpos[0],d->qpos[1]); if(tzb>-50.0) ztgt=tzb+com_h0; }
-      x_ref[5]+=tc_clip(ztgt-x_ref[5],-0.5*dt,0.5*dt); }
+    x_ref[2]=yaw_ref; x_ref[8]=Weff; x_ref[9]=vx_w; x_ref[10]=vy_w;
+    // ★perceptive 몸통높이(Python 동일): 4-hip 평균 지형높이=_body_terr → MPC(x_ref[5])·WBIC z-task(quad_control:354) 양쪽 일관 적용. 평지=0(무변화)
+    // ★perceptive 몸통높이: base 1점 지형높이+슬루 → MPC x_ref[5]만(WBIC z-task엔 미공급=_body_terr 0).
+    //   실측(course): WBIC 공급시 tilt 3.7→4.3°·4힙평균 6.1° 로 오히려 나빠짐 → 보행중 몸통z는 MPC가 지배, WBIC 지형공급은 진동만 추가.
+    double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
+    _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
     for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg,sch,sp);
       if(sch){ st.push_back(i); have_prev[i]=false; } else { if(sp<0.03) liftoff[i]=q.foot_point(i); } }
@@ -266,7 +269,7 @@ struct TrotCtrl {
       bool frontleg=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");  // ★앞다리=앞몸통방향(허리반영)
       Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw;
       double land_z=gz[i];                                          // ★기본=평지 참조(foot_gz0)
-      if(perceptive){ double tz=q.terrain_z(pe_xy[0],pe_xy[1]); if(tz>-50.0) land_z=tz; }  // ★지형높이 샘플(미검출=폴백)
+      if(perceptive){ double tz=q.terrain_z(pe_xy[0],pe_xy[1]); if(tz>-50.0) land_z=gz[i]+tz; }  // ★착지 z=평지gz+지형높이(Python 동일). 평지 tz=0=무변화
       Vector3d p_end(pe_xy[0],pe_xy[1],land_z);
       double dzl=p_end[2]-liftoff[i][2]; Vector3d bvel(vcom[0],vcom[1],0.0);
       double sh_i=sh; if(perceptive && dzl>0.005) sh_i=sh+dzl+PCV_CLR;   // ★상향 스텝: apex를 착지높이+여유 위로(라이저 헛디딤 방지)

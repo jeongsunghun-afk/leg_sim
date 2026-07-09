@@ -19,7 +19,7 @@ LEGS = ['HL','HR','FL','FR']
 fg = {L: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, L+'_sphere') for L in LEGS}
 
 T = 160; dt = 0.01; sub = max(1, round(dt/m.opt.timestep))
-KP = 60.0; KD = 3.0
+KP = 120.0; KD = 4.0   # ★C++ 추종(GETUP_TRAJ_KP/KD)과 일치 → MPPI 결과를 C++이 그대로 재현
 
 def rollout(qref, record=False):
     """sit에서 q_ref 궤적을 PD+중력보상 추종. 비용 반환(작을수록 좋음)."""
@@ -33,16 +33,19 @@ def rollout(qref, record=False):
             d.ctrl[:] = np.clip(tau, -TAU, TAU); mujoco.mj_step(m, d)
         w,x,y,z = d.qpos[3:7]; tilt = np.degrees(np.arccos(max(-1,min(1,1-2*(x*x+y*y)))))
         maxtilt = max(maxtilt, tilt); zs.append(d.qpos[2])
-        cost += -8000.0*d.qpos[2] + 1.0*max(0.0,tilt-40)**2   # ★높이 보상(음수=높을수록↓) + tilt는 40°↑만 약하게
+        cost += -8000.0*d.qpos[2] + 60.0*max(0.0,tilt-45)**2  # ★높이 보상 + tilt 45°↑ 강한 페널티(gather bounce 완화)
         if record: log.append((d.qpos.copy(), d.qvel.copy()))
     zf = d.qpos[2]; zend = np.mean(zs[-15:])
     cost += -3e5*zend                                          # ★종료 높이 대폭 보상(기립 강제)
     if maxtilt > 110: cost += 1e5*(maxtilt-110)               # 완전전복만 페널티
     return (cost, zf, maxtilt, log) if record else cost
 
-# ── 노미널: sit→stand 관절 보간 ──
-nominal = np.array([qj_sit + (qj_stand-qj_sit)*(k/(T-1)) for k in range(T)])
-# 발목은 sit값 유지 초반→stand (보간 그대로 두되 스무딩)
+# ── 노미널: ★작동하는 kinematic gather 궤적으로 seed(핵심=gather로 CoM 전진. 단순보간은 gather없어 캡). ──
+_kt = open('/tmp/getup_traj.txt').read().split('\n')
+_hdr = _kt[0].split(); _N = int(_hdr[0])
+nominal = np.array([[float(v) for v in _kt[1+k].split()][1:1+nu] for k in range(_N)])  # q[17](phase 제외)
+T = _N; dt = float(_hdr[1]); sub = max(1, round(dt/m.opt.timestep))
+print('seed=kinematic gather 궤적 (%d프레임)' % T)
 
 # ── MPPI ──
 Nsamp = 48; ITERS = 18; sigma = 0.22; lam = 8000.0
@@ -75,3 +78,11 @@ np.savez('/tmp/getup_stand.npz', q=nominal, dq=DQ, tau=np.zeros((T-1,nu)),
          base_z=bz, sched=np.array(['B']*T, dtype=object), dt=dt,
          com_ref=com, comv_ref=comv, acom_ref=acom, full_qpos=fq, mj_names=np.array(mj_names))
 print('저장: /tmp/getup_stand.npz (MPPI %d스텝)' % T)
+# ★C++ 뷰어 추종용 txt(phase,q[17],dq[17]). MPPI는 no-FF PD로 최적화 → dq=0(C++ 속도항=순수감쇠로 일치). 끝 chunk=wbic 서기홀드.
+_sched = [0]*(T-15) + [2]*15
+with open('/tmp/getup_traj.txt','w') as f:
+    f.write('%d %g\n' % (T, dt))
+    for k in range(T):
+        f.write('%d ' % _sched[k] + ' '.join('%.6f'%v for v in nominal[k])
+                + ' ' + ' '.join('0.0' for _ in range(nu)) + '\n')
+print('저장: /tmp/getup_traj.txt (C++ 추종용, MPPI refined %d프레임)' % T)

@@ -19,6 +19,8 @@ int main(int argc,char**argv){
   if(getenv("TROT_VY")) ctrl.VY=atof(getenv("TROT_VY"));   // ★좌우이동(strafe) 테스트
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));
   if(getenv("SPIN_HOLD")) ctrl.SPIN_HOLD=true;   // ★허리 조향 게인
+  if(getenv("PERCEPTIVE")) ctrl.perceptive=atoi(getenv("PERCEPTIVE"))!=0;   // ★지형인지(mj_ray 착지높이) on/off
+  if(getenv("PCV_CLR")) ctrl.PCV_CLR=atof(getenv("PCV_CLR"));
   if(getenv("MODE")) ctrl.mode=getenv("MODE");                              // ★모드 테스트(sit/stand_up/stand_down/off)
   if(getenv("SIT_Z")) ctrl.SIT_Z=atof(getenv("SIT_Z"));
   if(getenv("SIT_PITCH")) ctrl.SIT_PITCH=atof(getenv("SIT_PITCH"));

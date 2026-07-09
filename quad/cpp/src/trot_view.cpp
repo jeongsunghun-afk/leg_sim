@@ -85,6 +85,8 @@ int main(int argc,char**argv){
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각
+  if(getenv("PERCEPTIVE")) ctrl.perceptive=atoi(getenv("PERCEPTIVE"))!=0;    // ★지형인지(mj_ray 착지높이) on/off
+  if(getenv("PCV_CLR")) ctrl.PCV_CLR=atof(getenv("PCV_CLR"));
   if(getenv("HAUNCH_Z")) ctrl.HAUNCH_Z=atof(getenv("HAUNCH_Z"));            // ★개-앉기(haunch sit) 튜닝
   if(getenv("HAUNCH_FOLD_RATE")) ctrl.HAUNCH_FOLD_RATE=atof(getenv("HAUNCH_FOLD_RATE"));
   if(getenv("HAUNCH_UNFOLD_Z")) ctrl.HAUNCH_UNFOLD_Z=atof(getenv("HAUNCH_UNFOLD_Z"));

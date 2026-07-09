@@ -18,6 +18,19 @@
 | `raibert_k` | 0.5 | RAIBERT_K / GUI | 전방 reach(0.5=표준 중립) |
 | `steer` | 0 | TROT_STEER / GUI | 자동차식 조향각 δ(허리 핸들) |
 | GEARBOX | ON | GEARBOX=0 끔 | 반사관성·감쇠·마찰(발 flail 억제) |
+| `perceptive` | ON | PERCEPTIVE=0 끔 | 지형인지(mj_ray 착지높이+몸통높이 적응, 계단/험지) |
+
+## 지형인지 / perceptive
+
+blind(평지 가정)→terrain-aware. mj_ray 하향캐스트로 지형표면 z 샘플. 평지=무영향(회귀 falls=0 동일).
+
+| 파라미터 | 기본값 | env | 의미 |
+|---|---|---|---|
+| perceptive | true | PERCEPTIVE=0 끔 | ①스윙 착지 z=지형높이 ②몸통 목표높이=지형+com_h0 추종 |
+| PCV_CLR | 0.04 | PCV_CLR | 상향 스텝 추가 스윙 클리어런스(라이저 헛디딤 방지) |
+| ray_z0 | 0.40 | — | mj_ray 시작 z(벨리 아래·지형 위, 자기충돌 회피) |
+
+효과: 종합코스(마찰→험지→계단) blind=계단서 낙상(x8.8) → perceptive=완주(x13.7·tilt2.9°·falls0).
 
 ---
 

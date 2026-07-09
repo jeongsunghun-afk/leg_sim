@@ -102,6 +102,15 @@ struct QuadControl {
     q_home.resize(nu);
   }
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }
+  // ★perceptive: (x,y) 아래 지형 표면 z를 mj_ray 하향캐스트로 샘플. 월드바디(지형/바닥, bodyid==0)만 채택.
+  //   시작 z=ray_z0(벨리 아래·지형 위)서 하향 → 로봇 자기충돌(bodyid≠0) 회피. 미검출/자기충돌=−100(폴백=평지).
+  double ray_z0=0.40;
+  double terrain_z(double x,double y){
+    mjtNum pnt[3]={x,y,ray_z0}, vec[3]={0,0,-1}, nrm[3]; int gid=-1;
+    mjtNum dist=mj_ray(m,d,pnt,vec,nullptr,1,-1,&gid,nrm);   // flg_static=1(정적 지형 포함), nrm=표면법선(미사용)
+    if(dist>=0 && gid>=0 && m->geom_bodyid[gid]==0) return ray_z0-dist;
+    return -100.0;
+  }
   Matrix<double,3,Dynamic> foot_jac(int i){ std::vector<double> jb(3*nv); Vector3d p=foot_point(i);
     mj_jac(m,d,jb.data(),nullptr,p.data(),fbid[i]);
     Matrix<double,3,Dynamic> J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jb[r*nv+c]; return J; }

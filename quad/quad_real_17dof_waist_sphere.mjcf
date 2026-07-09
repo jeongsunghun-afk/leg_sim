@@ -159,7 +159,8 @@
         </body>
       </body>
     </body>
-    <geom name="floor" type="plane" size="5 5 0.1" material="floor_mat" />
+    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" />   <!-- ★size 0 0 = 무한 평면(체커 무한 타일). texuniform=true라 world 단위로 타일 -->
+
     <light pos="0 0 3" dir="0 0 -1" />
   </worldbody>
   <option timestep="0.002" gravity="0 0 -9.81" />

@@ -1203,11 +1203,11 @@ def mode_trot():
     GAIT = os.environ.get('GAIT', 'trot')
     GAITS = {       # ★게이트 프리셋(gait_sim_v13 참조). 다리순서[HL,HR,FL,FR]. GUI gait 토글로 라이브 전환
         # LOCK=평지 foothold lock 시점(swing 위상). 1.0=항상 reactive(고속 강건성) / <1=late-swing commit(저속 터치다운 매끄러움)
-        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.5),  # ★RAI=0.5 표준중립(발 과전방배치 방지→GRF균형·뒤thigh절반, push복구↑)
+        'trot': dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.50, SWF=0.50, STEPH=0.10, V=0.30, LOCK=1.0, RAI=0.5, BZ=0.50),  # ★RAI=0.5 표준중립(발 과전방배치 방지→GRF균형·뒤thigh절반, push복구↑)
         # ★고속 trot(run): 빠른 cadence T=0.4·낮은 발높이0.08 → 최고속 1.8→~2.0m/s(발목ω↓). 중속엔 trot과 동일하니 고속주행용
-        'run':  dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.40, SWF=0.50, STEPH=0.08, V=0.30, LOCK=1.0, RAI=0.5),
+        'run':  dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.40, SWF=0.50, STEPH=0.08, V=0.30, LOCK=1.0, RAI=0.5, BZ=0.48),
         # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭). 14dof(quad_mpc_wbic.py)와 동일 처방
-        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.10, V=0.25, LOCK=0.35, RAI=0.5),
+        'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.10, V=0.25, LOCK=0.35, RAI=0.5, BZ=0.50),
     }
     _GP = GAITS[GAIT]   # trot=대각 A(HL,FR)=0·B(HR,FL)=0.5 / walk=순차 FR0→HL.25→FL.5→HR.75(정적안정·75%stance)
     # ★라이브 게이트 holder(GUI 토글이 갱신→재arm으로 위상 재앵커, 불연속 방지). gait()가 GP를 읽음
@@ -1549,12 +1549,17 @@ def mode_trot():
         S['x_ref'][2] = S['yaw_ref']; S['x_ref'][8] = W_eff                     # yaw각·yaw rate 참조
         q._yaw_des = S['yaw_ref']                                               # ★자세 task 헤딩홀드 목표(선회시 몸통이 추종→안싸움)
         S['x_ref'][9] = vx_w; S['x_ref'][10] = vy_w                            # world vx,vy
-        if q._terrain_on:                                                      # ★perceptive: MPC 높이 기준=평지값+지형(상승 GRF 계획). 정석=planner가 참조생성
-            S.setdefault('z_ref0', S['x_ref'][5])                             #   arming 평지 높이 저장(최초 1회)
-            q._body_terr = float(np.mean([q.terrain_height(q.d.xpos[q.hip_bid[i]][0], q.d.xpos[q.hip_bid[i]][1]) for i in range(4)]))  # ★틱당1회(a_z 재사용)
-            S['x_ref'][5] = S['z_ref0'] + q._body_terr
+        # ★gait별 base height(보행 중 추종, C++ 미러): BZ로 부드럽게 → update_stand_qhome로 com_ref/z_ref0 갱신(MPC·WBIC 정합)
+        _bz = GAITS.get(S['gait'], GAITS['trot']).get('BZ', 0.50); _dt = q.m.opt.timestep
+        S.setdefault('qhome_h', q.base_z0); S.setdefault('z_ref0', float(S['x_ref'][5]))
+        _hr = S['qhome_h'] + float(np.clip(_bz - S['qhome_h'], -0.25 * _dt, 0.25 * _dt))
+        if abs(_hr - S['qhome_h']) > 3e-3:
+            q.update_stand_qhome(_hr); S['qhome_h'] = _hr; S['z_ref0'] = float(q.com_ref[2])
+        if q._terrain_on:                                                      # ★perceptive: MPC 높이=평지값+지형(상승 GRF 계획)
+            q._body_terr = float(np.mean([q.terrain_height(q.d.xpos[q.hip_bid[i]][0], q.d.xpos[q.hip_bid[i]][1]) for i in range(4)]))
         else:
             q._body_terr = 0.0
+        S['x_ref'][5] = S['z_ref0'] + q._body_terr
         q.cmd_v[0] = V_eff; q.cmd_v[1] = Vy_eff; q.cmd_v[5] = W_eff             # 시각화(body명령)
         # ★ Di Carlo 식: gait 스케줄=primary, detect_contact=조기/지연 착지 보정.
         #   스케줄 stance → 힘제어. 스케줄 swing 후반(>0.7)+접촉감지 → 조기착지로 stance 승격.

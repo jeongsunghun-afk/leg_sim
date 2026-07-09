@@ -39,6 +39,7 @@ struct TrotCtrl {
   QuadControl& q;
   double V=0.30, VY=0.0, WZ=0.0;   // 명령속도(뷰어 키보드/GUI)
   double step_h=0.10, raibert_k=0.5;   // ★GUI 슬라이더(live): step height·전방 reach. ★0.5=표준 Raibert 중립점(발을 앞으로 과하게 안던짐→GRF 앞/뒤 균형·뒤thigh 절반). 외란복구는 KCAP+MPC 담당
+  double gait_base_z=0.50;   // ★gait별 최적 base height(축별 worst-util 스윕): walk/trot 0.50·run 0.48. 보행 중 추종(set_gait서 설정)
   bool ALIP=false, POS_HOLD=true;   // ★ALIP 기본 off: push복구 이득 미미(300N서만 22vs26°)한데 지속선회 붕괴시킴. ALIP=1로 켬
   bool SPIN_HOLD=false;             // ★제자리선회(V=0,WZ≠0)서도 위치홀드 유지 → 허리조향 표류 상쇄(베이스기준 wz선회). 주행선회엔 영향無
   bool perceptive=true;             // ★perceptive: 스윙 착지 XY 아래 지형높이를 mj_ray로 샘플→착지 z를 지형에 맞춤(계단/험지). off=blind(평지 가정). PERCEPTIVE=0으로 끔
@@ -110,10 +111,10 @@ struct TrotCtrl {
 
   void set_gait(const std::string& g){        // trot/walk/gallop 프리셋(GUI 토글·속도트리거)
     if(g==gait_type) return; gait_type=g;
-    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s. ★발높이 0.10 복원(9fcfe81서 0.05로 반감됐던 것=발 아치 낮아 앞다리 뻣뻣, falls=0 유지)
-    else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓
+    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s. ★발높이 0.10 복원(9fcfe81서 0.05로 반감됐던 것=발 아치 낮아 앞다리 뻣뻣, falls=0 유지)
+    else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; gait_base_z=0.48; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓. ★base_z 0.48(발목ω 여유)
     else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; step_h=0.10; } // 회전형 갤럽(비행상 有)
-    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
+    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }
   void gait(int i,double tg,bool&stance,double&sprog){
@@ -296,6 +297,9 @@ struct TrotCtrl {
     // ★perceptive 몸통높이(Python 동일): 4-hip 평균 지형높이=_body_terr → MPC(x_ref[5])·WBIC z-task(quad_control:354) 양쪽 일관 적용. 평지=0(무변화)
     // ★perceptive 몸통높이: base 1점 지형높이+슬루 → MPC x_ref[5]만(WBIC z-task엔 미공급=_body_terr 0).
     //   실측(course): WBIC 공급시 tilt 3.7→4.3°·4힙평균 6.1° 로 오히려 나빠짐 → 보행중 몸통z는 MPC가 지배, WBIC 지형공급은 진동만 추가.
+    // ★gait별 base height(보행 중 추종): gait_base_z로 부드럽게 → update_stand_qhome로 com_ref/q_home/com_h0 갱신(MPC·WBIC 정합)
+    { double hr=qhome_h; hr+=tc_clip(gait_base_z-hr,-0.25*dt,0.25*dt);
+      if(std::abs(hr-qhome_h)>3e-3){ q.update_stand_qhome(hr); qhome_h=hr; com_h0=q.com_ref[2]; } }
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;

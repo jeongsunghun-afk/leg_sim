@@ -134,7 +134,8 @@ int main(int argc,char**argv){
         ctrl.auto_whip = json_get(c,"auto_whip",ctrl.auto_whip?1:0) > 0.5;      // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
         ctrl.POS_HOLD = json_get(c,"pos_hold",ctrl.POS_HOLD?1:0) > 0.5;         // ★정지 위치홀드(드리프트 보정) 토글
         ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
-        ctrl.mode = json_str(c,"mode","move");                  // move/stand_up(서기)/stand_down(눕기)/off
+        { std::string mc=json_str(c,"mode","move");             // move/stand_up(서기)/stand_down(눕기)/off
+          if(ctrl.mode!="jump") ctrl.mode=mc; }                 // ★점프 중엔 GUI mode 무시(안 그러면 매 폴링 덮어써 점프 즉시 취소). 컨트롤러가 완료 후 stand_up 자가전환
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글
         ctrl.body_h = json_get(c,"body_h",ctrl.body_h);         // 서기 높이 슬라이더
         double rt=json_get(c,"rate",RATE); if(rt>0) RATE=rt;

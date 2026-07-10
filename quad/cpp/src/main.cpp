@@ -25,7 +25,7 @@ int main(int argc,char**argv){
   const int K=4, nz=nv+3*K;
   const double base_z0=0.52, foot_z0=0.0, REAR_ANKLE=-0.7;   // ours_sphere config
 
-  const char* path=argc>1?argv[1]:"../quad_real_sphere.mjcf";
+  const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   char err[1000]=""; mjModel* m=mj_loadXML(path,nullptr,err,1000);
   if(!m){ std::printf("load fail: %s\n",err); return 1; }
   mjData* d=mj_makeData(m);

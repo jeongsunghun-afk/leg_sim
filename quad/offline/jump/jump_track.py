@@ -16,7 +16,7 @@ full=pin.RobotWrapper.BuildFromURDF(URDF,[os.path.join(QUAD,'..')],pin.JointMode
 pm=pin.buildReducedModel(full.model,[full.model.getJointId('FB_waist_joint')],pin.neutral(full.model))
 
 # MuJoCo 17dof
-m=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'quad_real_17dof_waist_sphere.mjcf')); d=mujoco.MjData(m)
+m=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'mjcf','quad_real_17dof_waist_sphere.mjcf')); d=mujoco.MjData(m)
 fgid=[mujoco.mj_name2id(m,mujoco.mjtObj.mjOBJ_GEOM,f+'_sphere') for f in ['HL','HR','FL','FR']]
 GEARF=0.5714  # foot 8:1(배포)
 # 관절명→ pin q/v 인덱스, MuJoCo qpos/qvel/ctrl 인덱스

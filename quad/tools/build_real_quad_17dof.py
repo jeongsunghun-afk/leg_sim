@@ -15,7 +15,7 @@ SRC_MESH = os.path.join(PKG, 'meshes')
 SRC_URDF = os.path.join(PKG, 'urdf', '02_Leg_UFDF_260703_3.urdf')
 MESH_OUT = os.path.join(QUAD, 'meshes_sim_17dof')
 _WFREE = bool(os.environ.get('WAIST_FREE'))   # ★허리 능동(17-DOF): 기본 off=fixed(16-DOF)
-MJCF_OUT = os.path.join(QUAD, 'quad_real_17dof_waist.mjcf' if _WFREE else 'quad_real_17dof.mjcf')
+MJCF_OUT = os.path.join(QUAD, 'mjcf', 'quad_real_17dof_waist.mjcf' if _WFREE else 'quad_real_17dof.mjcf')
 TARGET = 60000
 FORCE = '--force' in sys.argv
 print('URDF:', os.path.basename(SRC_URDF))

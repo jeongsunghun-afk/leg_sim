@@ -78,7 +78,7 @@ static void mouse_move(GLFWwindow* w,double xp,double yp){
 static void scroll(GLFWwindow* w,double dx,double dy){ mjv_moveCamera(gC?gC->q.m:nullptr,mjMOUSE_ZOOM,0,-0.05*dy,&scn,&cam); }
 
 int main(int argc,char**argv){
-  const char* path=argc>1?argv[1]:"../quad_real_sphere.mjcf";
+  const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   QuadControl q; q.load(path); apply_env_gains(q);
   q.crouch_home(); q.setup_mpc();
   TrotCtrl ctrl(q); gC=&ctrl;

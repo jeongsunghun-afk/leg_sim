@@ -7,8 +7,8 @@
 #   ★임계값은 정상 동작 여유값(회귀=falls 발생/tilt 급증만 잡음). 물리 캡 아님.
 set -uo pipefail
 cd "$(dirname "$0")"                       # simulation/quad/cpp
-MJ=../quad_real_17dof_waist_sphere.mjcf
-COURSE=../quad_terrain_verify.mjcf         # ★회귀검증=순차 직진코스(마찰→험지→계단). 병렬 course는 GUI용(갭/스테핑=실패허용)
+MJ=../mjcf/quad_real_17dof_waist_sphere.mjcf
+COURSE=../mjcf/quad_terrain_verify.mjcf     # ★회귀검증=순차 직진코스(마찰→험지→계단). 병렬 course는 GUI용(갭/스테핑=실패허용)
 export GEAR_FOOT=0.5714                     # foot 8:1 재기어(배포 기본)
 PY=${PY:-/home/jsh/miniforge3/envs/proxddp/bin/python}
 DOPY=0; [ "${1:-}" = "--python" ] && DOPY=1

@@ -36,7 +36,7 @@ _NOLIMIT = False                 # --nolimit: 관절 한계 해제 (가동범위
 _HERE = os.path.dirname(os.path.abspath(__file__))
 QUAD = os.path.normpath(os.path.join(_HERE, '..'))   # research/ → quad/ (mjcf·메시는 quad 루트)
 ROBOTS = {
-    'ours': dict(mjcf=os.path.join(QUAD, 'quad_real.mjcf'),
+    'ours': dict(mjcf=os.path.join(QUAD, 'mjcf', 'quad_real.mjcf'),
                  legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                  foot_body='{L}_foot_contact_link', hip_body='{L}_hip_link',
                  foot_kind='mesh', base_z0=0.52, foot_z0=0.02, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
@@ -45,7 +45,7 @@ ROBOTS = {
                  foot_geom='{L}', hip_body='{L}_hip',
                  foot_kind='sphere', base_z0=0.30, foot_z0=0.02, mu=0.6),
     # 02_Leg 발을 sphere 충돌로 교체(발목 자세 무관 점접촉) — box 모서리 rocking 회피 검증용
-    'ours_sphere': dict(mjcf=os.path.join(QUAD, 'quad_real_sphere.mjcf'),
+    'ours_sphere': dict(mjcf=os.path.join(QUAD, 'mjcf', 'quad_real_sphere.mjcf'),
                         legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                         foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                         foot_kind='sphere', base_z0=0.52, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)

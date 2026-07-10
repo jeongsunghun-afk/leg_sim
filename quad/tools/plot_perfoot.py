@@ -32,7 +32,7 @@ idx = {n: i for i, n in enumerate(names)}
 mass = None
 try:
     import mujoco
-    _m = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', mjcf))   # tools/ → quad/
+    _m = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mjcf', mjcf))   # tools/ → quad/mjcf/
     mass = float(_m.body_subtreemass[0])
 except Exception as e:
     print('mass 로드 실패:', e)

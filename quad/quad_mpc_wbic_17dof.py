@@ -35,7 +35,7 @@ _NOLIMIT = False                 # --nolimit: 관절 한계 해제 (가동범위
 # 로봇 설정 — 우리 모델 / Go2 (--robot 으로 선택). 다리 인덱스 0,3 / 1,2 = 대각쌍(둘 다 동일)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ROBOTS = {
-    'ours': dict(mjcf=os.path.join(_HERE, 'quad_real.mjcf'),
+    'ours': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real.mjcf'),
                  legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                  foot_body='{L}_foot_contact_link', hip_body='{L}_hip_link',
                  foot_kind='mesh', base_z0=0.52, foot_z0=0.02, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
@@ -44,21 +44,21 @@ ROBOTS = {
                  foot_geom='{L}', hip_body='{L}_hip',
                  foot_kind='sphere', base_z0=0.30, foot_z0=0.02, mu=0.6),
     # 02_Leg 발을 sphere 충돌로 교체(발목 자세 무관 점접촉) — box 모서리 rocking 회피 검증용
-    'ours_sphere': dict(mjcf=os.path.join(_HERE, 'quad_real_sphere.mjcf'),
+    'ours_sphere': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_sphere.mjcf'),
                         legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                         foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                         foot_kind='sphere', base_z0=0.52, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
     # ★260701 17-DOF(허리 fixed=16관절 전발목 4족). build_real_quad_17dof.py 생성. 앞/뒤 thigh·calf 축부호 반대
-    'ours_17dof': dict(mjcf=os.path.join(_HERE, 'quad_real_17dof.mjcf'),
+    'ours_17dof': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_17dof.mjcf'),
                        legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                        foot_body='{L}_foot_contact_link', hip_body='{L}_hip_link',
                        foot_kind='mesh', base_z0=0.527, foot_z0=0.02, mu=0.6),
-    'ours_17dof_sphere': dict(mjcf=os.path.join(_HERE, 'quad_real_17dof_sphere.mjcf'),
+    'ours_17dof_sphere': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_17dof_sphere.mjcf'),
                        legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                        foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                        foot_kind='sphere', base_z0=0.5234, mu=0.6),
     # ★허리(FB_waist) 능동 17-DOF(nu=17). 허리=index8, 다리매핑 이름기반이라 무관. WAIST_KP로 요각제어
-    'ours_17dof_waist_sphere': dict(mjcf=os.path.join(_HERE, 'quad_real_17dof_waist_sphere.mjcf'),
+    'ours_17dof_waist_sphere': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_17dof_waist_sphere.mjcf'),
                        legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                        foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                        foot_kind='sphere', base_z0=0.50, mu=0.6),   # ★base height 최적(축별 worst-util: 0.50=walk/trot/run Pareto-최적, 0.5234보다 발목 ω 여유↑)

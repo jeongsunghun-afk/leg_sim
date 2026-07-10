@@ -6,8 +6,8 @@ import os, numpy as np, xml.etree.ElementTree as ET, mujoco
 HERE = os.path.dirname(os.path.abspath(__file__))
 QUAD = os.path.normpath(os.path.join(HERE, '..'))   # tools/ → quad/ (입출력 mjcf는 quad 루트)
 _WF = bool(os.environ.get('WAIST_FREE'))   # ★허리 능동(17-DOF) 버전
-MJCF = os.path.join(QUAD, 'quad_real_17dof_waist.mjcf' if _WF else 'quad_real_17dof.mjcf')
-OUT  = os.path.join(QUAD, 'quad_real_17dof_waist_sphere.mjcf' if _WF else 'quad_real_17dof_sphere.mjcf')
+MJCF = os.path.join(QUAD, 'mjcf', 'quad_real_17dof_waist.mjcf' if _WF else 'quad_real_17dof.mjcf')
+OUT  = os.path.join(QUAD, 'mjcf', 'quad_real_17dof_waist_sphere.mjcf' if _WF else 'quad_real_17dof_sphere.mjcf')
 LEGS = ['HL', 'HR', 'FL', 'FR']
 RAD = 0.018
 

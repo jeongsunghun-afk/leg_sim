@@ -13,7 +13,7 @@ OUT_DIR=${OUT_DIR:-$HOME/Videos/Screencasts}
 SIZE=${SIZE:-1920x1200}                 # 전체화면 해상도 (xdpyinfo 로 확인)
 GAINS="GEARBOX=1 GEAR_FOOT=0.5714"   # ★17dof 게인(W_ORI20·W_AM12·KD_AM24·발목)은 이제 자동감지 기본값 → env 불요
 # ★GEARBOX=1 GEAR_FOOT=0.5714 = 발목 반사관성(8:1)→현실적 발끝(이상화 발목 flail 억제). 이상화로 보려면 이 둘 제거.
-MAP=${MAP:-quad_terrain_course.mjcf}    # ★기본 맵=종합코스(3레인). MAP=quad_real_17dof_waist_sphere.mjcf 로 평지
+MAP=${MAP:-mjcf/quad_terrain_course.mjcf}    # ★기본 맵=종합코스(3레인, mjcf/ 폴더). MAP=mjcf/quad_real_17dof_waist_sphere.mjcf 로 평지
 
 mkdir -p "$OUT_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)

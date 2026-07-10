@@ -26,7 +26,7 @@ print(f"[OCP] reduced nq={nq} nv={nv} 다리DOF={nv-6} feet={fids}")
 
 # ── crouch/stand q0: 검증된 MuJoCo crouch 자세 → pinocchio 매핑 ──
 import mujoco
-mjm=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'quad_real_17dof_waist_sphere.mjcf')); mjd=mujoco.MjData(mjm)
+mjm=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'mjcf','quad_real_17dof_waist_sphere.mjcf')); mjd=mujoco.MjData(mjm)
 mfgid=[mujoco.mj_name2id(mjm,mujoco.mjtObj.mjOBJ_GEOM,f+'_sphere') for f in ['HL','HR','FL','FR']]
 mfr=[mjm.geom_size[g][0] for g in mfgid]
 def mj_crouch(base_z):

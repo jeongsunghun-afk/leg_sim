@@ -8,7 +8,7 @@ import os, numpy as np, mujoco
 from scipy.ndimage import gaussian_filter1d
 _HERE = os.path.dirname(os.path.abspath(__file__))
 QUAD = os.path.normpath(os.path.join(_HERE, '..', '..'))   # offline/getup/ → quad/
-MJCF = os.path.join(QUAD, 'quad_real_17dof_waist_sphere.mjcf')
+MJCF = os.path.join(QUAD, 'mjcf', 'quad_real_17dof_waist_sphere.mjcf')
 np.random.seed(0)
 
 m = mujoco.MjModel.from_xml_path(MJCF); nu = m.nu

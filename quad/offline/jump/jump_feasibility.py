@@ -6,7 +6,7 @@
 import mujoco, numpy as np, os
 
 QUAD = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))   # offline/jump/ → quad/
-MJCF = os.path.join(QUAD, 'quad_real_17dof_waist_sphere.mjcf')
+MJCF = os.path.join(QUAD, 'mjcf', 'quad_real_17dof_waist_sphere.mjcf')
 m = mujoco.MjModel.from_xml_path(MJCF); d = mujoco.MjData(m)
 g = 9.81; M = float(m.body_subtreemass[0]); mg = M*g
 

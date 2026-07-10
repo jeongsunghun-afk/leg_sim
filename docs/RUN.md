@@ -33,7 +33,7 @@ bash run_gui_py.sh        # Python 레퍼런스(연구/디버그, 느림) — �
 ```bash
 cd simulation/quad/cpp && cmake -S . -B build && cmake --build build     # 빌드
 # 헤드리스: GAIT=walk|trot|run  TROT_V  STEPS  (조향 TROT_STEER=δ · 선회 TROT_WZ)
-GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim ../quad_real_17dof_waist_sphere.mjcf
+GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim ../mjcf/quad_real_17dof_waist_sphere.mjcf   # ★모든 mjcf는 quad/mjcf/
 # 뷰어 기동은 run_gui.sh 사용(setsid+CMDFILE/STATE_PUB 자동). 맵=인자로 지정.
 ```
 

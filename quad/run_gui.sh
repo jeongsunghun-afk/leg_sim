@@ -11,15 +11,15 @@ export DISPLAY="${DISPLAY:-:0}"
 CMD=/tmp/quad_cmd.json; STATE=/tmp/quad_state.json
 
 case "${1:-course}" in
-  course)   MJCF=quad_terrain_course.mjcf ;;
-  flat)     MJCF=quad_real_17dof_waist_sphere.mjcf ;;
-  stairs)   MJCF=quad_terrain_stairs.mjcf ;;
-  rough)    MJCF=quad_terrain_rough.mjcf ;;
-  friction) MJCF=quad_terrain_friction.mjcf ;;
-  gap)      MJCF=quad_terrain_gap.mjcf ;;
-  stepping) MJCF=quad_terrain_stepping.mjcf ;;
-  soft)     MJCF=quad_terrain_soft.mjcf ;;
-  *)        MJCF="$1" ;;                                       # 임의 mjcf 경로 허용
+  course)   MJCF=mjcf/quad_terrain_course.mjcf ;;
+  flat)     MJCF=mjcf/quad_real_17dof_waist_sphere.mjcf ;;
+  stairs)   MJCF=mjcf/quad_terrain_stairs.mjcf ;;
+  rough)    MJCF=mjcf/quad_terrain_rough.mjcf ;;
+  friction) MJCF=mjcf/quad_terrain_friction.mjcf ;;
+  gap)      MJCF=mjcf/quad_terrain_gap.mjcf ;;
+  stepping) MJCF=mjcf/quad_terrain_stepping.mjcf ;;
+  soft)     MJCF=mjcf/quad_terrain_soft.mjcf ;;
+  *)        MJCF="$1" ;;                                       # 임의 mjcf 경로 허용(mjcf/ 포함해 전달)
 esac
 
 pkill -f trot_view 2>/dev/null; pkill -f teleop_gui_17dof 2>/dev/null

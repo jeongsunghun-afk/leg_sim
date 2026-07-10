@@ -7,7 +7,7 @@
 #include <chrono>
 
 int main(int argc,char**argv){
-  const char* path=argc>1?argv[1]:"../quad_real_sphere.mjcf";
+  const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   int STEPS = (argc>2)?atoi(argv[2]) : (getenv("STEPS")?atoi(getenv("STEPS")):3000);
   QuadControl q; q.load(path); apply_env_gains(q); q.crouch_home(); q.setup_mpc();
   if(getenv("QHDBG")) for(int i=0;i<4;i++) std::printf("[qhome] %s hip=%.3f thigh=%.3f calf=%.3f foot=%.3f\n",

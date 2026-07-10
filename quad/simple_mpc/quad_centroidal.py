@@ -2,7 +2,7 @@ import numpy as np
 import mujoco as _mj
 import os as _os0
 # ★점접촉 MJCF(OCP 점접촉 가정과 일치) — 메시발은 OCP와 불일치해 발산. fulldynamics와 동일.
-_GO2_MJCF=_os0.environ.get("MJCF","/home/jsh/문서/jsh/simulation/quad/quad_real_pt.mjcf")
+_GO2_MJCF=_os0.environ.get("MJCF","/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_pt.mjcf")
 _PIN2MJ=[8,9,10,11,12,13,0,1,2,3,4,5,6,7]  # pin(FL,FR,HL,HR)→mjcf(HL,HR,FL,FR)
 class MujocoRobot:
     """simple-mpc device(BulletRobot) 인터페이스를 MuJoCo로 구현. 토크는 KinodynamicsID(TSID) 출력.
@@ -197,7 +197,7 @@ problem_conf = dict(
     force_cone=_os.environ.get("FCONE","0")!="0",    # FullDynamics는 ON
     land_cstr=_os.environ.get("LAND","0")!="0",       # FullDynamics는 ON
 )
-T = 50
+T = int(_os.environ.get("HORIZON","50"))
 
 dynproblem = KinodynamicsOCP(problem_conf, model_handler)
 dynproblem.createProblem(
@@ -212,7 +212,7 @@ mpc_conf = dict(
     TOL=1e-4,
     mu_init=float(_os.environ.get("MU_INIT", "1e-8")),     # 정규화(↑=안정·보수). 02_Leg 발산 완화
     max_iters=int(_os.environ.get("MAXITER", "1")),        # RTI 반복(↑=수렴↑·느림)
-    num_threads=8,
+    num_threads=int(_os.environ.get("NTH","8")),
     swing_apex=float(_os.environ.get("APEX","0.15")),   # ★step height env(고속 gait 검토)
     T_fly=T_ss,
     T_contact=T_ds,
@@ -332,16 +332,15 @@ _CMDFILE=_os.environ.get("CMDFILE")      # GUI(teleop_gui) JSON 명령 채널 �
 _STATE_PUB=_os.environ.get("STATE_PUB")  # 상태 발행 → GUI IMU·actuator 모니터 패널
 _JN=[_mj.mj_id2name(device.m,_mj.mjtObj.mjOBJ_JOINT,_j).replace('_joint','')
      for _j in range(device.m.njnt) if device.m.jnt_type[_j]!=_mj.mjtJoint.mjJNT_FREE]
-_vt=v.copy(); _ACC=float(_os.environ.get("ACC","0.6"))   # CMDFILE 목표속도 + 가속도제한 ramp
+_DECIM=int(_os.environ.get("MPC_DECIM","1")); _pk=0   # ★비동기 재계획: DECIM틱마다만 OCP solve, 사이엔 stale plan advance(실효 throughput ×DECIM)
+_LOG=bool(_os.environ.get("LOG_TRAJ"))                # 진단 궤적 로깅(무거운 C++ getter ×10/스텝) — 기본 off=속도
 for step in range(int(_os.environ.get("STEPS","300"))):
-    if _CMDFILE and step % 5 == 0:        # GUI JSON 채널 소비(20Hz) → 목표 v/vy/w
+    if _CMDFILE and step % 5 == 0:        # GUI JSON 채널 소비(20Hz) → v/vy/w 직접 반영(OCP가 내부적으로 부드럽게 추종)
         try:
             import json as _json
             with open(_CMDFILE) as _f: _cj=_json.load(_f)
-            _vt[0]=float(_cj.get('v',_vt[0])); _vt[1]=float(_cj.get('vy',0.0)); _vt[5]=float(_cj.get('w',0.0))
+            v[0]=float(_cj.get('v',v[0])); v[1]=float(_cj.get('vy',0.0)); v[5]=float(_cj.get('w',0.0))
         except Exception: pass
-    if _CMDFILE:
-        v[:] = v + np.clip(_vt - v, -_ACC*dt_mpc, _ACC*dt_mpc)   # 가속도제한 ramp(급조작 완화)
     mpc.velocity_base = v; device.cmd_v = v
     if step % 30 == 0 or step == 299:
         _z=device.d.qpos[2]; _x=device.d.qpos[0]; _y=device.d.qpos[1]
@@ -367,63 +366,35 @@ for step in range(int(_os.environ.get("STEPS","300"))):
         if _z<0.15:
             print("[MJ] ❌ 전복 @%.2fs"%(step*0.01)); _fell=True; break
     # print("Time " + str(step))
-    start = time.time()
-    mpc.iterate(x_measured)
-    end = time.time()
-    solve_time.append(end - start)
+    if step % _DECIM == 0:                  # ★비동기 재계획: DECIM틱마다만 OCP solve
+        start = time.time(); mpc.iterate(x_measured); solve_time.append(time.time()-start); _pk = 0
+    _pkc = min(_pk, T - 2)                   # stale plan advance 인덱스(재사용)
 
-    force_FL.append(mpc.us[0][:3])
-    force_FR.append(mpc.us[0][3:6])
-    force_RL.append(mpc.us[0][6:9])
-    force_RR.append(mpc.us[0][9:12])
+    if _LOG:                                 # 진단 궤적(무거운 C++ getter ×10/스텝) — 기본 off
+        force_FL.append(mpc.us[_pkc][:3]); force_FR.append(mpc.us[_pkc][3:6])
+        force_RL.append(mpc.us[_pkc][6:9]); force_RR.append(mpc.us[_pkc][9:12])
+        _gd=mpc.getDataHandler(); _gm=mpc.getModelHandler()
+        FL_measured.append(_gd.getFootPose(_gm.getFootNb("FL_foot")).translation)
+        FR_measured.append(_gd.getFootPose(_gm.getFootNb("FR_foot")).translation)
+        RL_measured.append(_gd.getFootPose(_gm.getFootNb("HL_foot")).translation)
+        RR_measured.append(_gd.getFootPose(_gm.getFootNb("HR_foot")).translation)
+        FL_references.append(mpc.getReferencePose(_pkc,"FL_foot").translation); FR_references.append(mpc.getReferencePose(_pkc,"FR_foot").translation)
+        RL_references.append(mpc.getReferencePose(_pkc,"HL_foot").translation); RR_references.append(mpc.getReferencePose(_pkc,"HR_foot").translation)
+        com_measured.append(_gd.getData().com[0].copy()); L_measured.append(_gd.getData().hg.angular.copy())
 
-    FL_measured.append(
-        mpc.getDataHandler()
-        .getFootPose(mpc.getModelHandler().getFootNb("FL_foot"))
-        .translation
-    )
-    FR_measured.append(
-        mpc.getDataHandler()
-        .getFootPose(mpc.getModelHandler().getFootNb("FR_foot"))
-        .translation
-    )
-    RL_measured.append(
-        mpc.getDataHandler()
-        .getFootPose(mpc.getModelHandler().getFootNb("HL_foot"))
-        .translation
-    )
-    RR_measured.append(
-        mpc.getDataHandler()
-        .getFootPose(mpc.getModelHandler().getFootNb("HR_foot"))
-        .translation
-    )
-    FL_references.append(mpc.getReferencePose(0, "FL_foot").translation)
-    FR_references.append(mpc.getReferencePose(0, "FR_foot").translation)
-    RL_references.append(mpc.getReferencePose(0, "HL_foot").translation)
-    RR_references.append(mpc.getReferencePose(0, "HR_foot").translation)
-    com_measured.append(mpc.getDataHandler().getData().com[0].copy())
-    L_measured.append(mpc.getDataHandler().getData().hg.angular.copy())
+    a0 = mpc.getStateDerivative(_pkc)[nv:].copy()
+    a1 = mpc.getStateDerivative(_pkc + 1)[nv:].copy()
 
-    a0 = mpc.getStateDerivative(0)[nv:].copy()
-    a1 = mpc.getStateDerivative(1)[nv:].copy()
-
-    a0[6:] = mpc.us[0][nk * force_size :]
-    a1[6:] = mpc.us[1][nk * force_size :]
-    forces0 = mpc.us[0][: nk * force_size]
-    forces1 = mpc.us[1][: nk * force_size]
-    contact_states = mpc.ocp_handler.getContactState(0)
+    a0[6:] = mpc.us[_pkc][nk * force_size :]
+    a1[6:] = mpc.us[_pkc + 1][nk * force_size :]
+    forces0 = mpc.us[_pkc][: nk * force_size]
+    forces1 = mpc.us[_pkc + 1][: nk * force_size]
+    contact_states = mpc.ocp_handler.getContactState(_pkc)
 
     forces = [forces0, forces1]
     ddqs = [a0, a1]
-    xss = [mpc.xs[0], mpc.xs[1]]
-    uss = [mpc.us[0], mpc.us[1]]
-
-    device.moveQuadrupedFeet(
-        mpc.getReferencePose(0, "FL_foot").translation,
-        mpc.getReferencePose(0, "FR_foot").translation,
-        mpc.getReferencePose(0, "HL_foot").translation,
-        mpc.getReferencePose(0, "HR_foot").translation,
-    )
+    xss = [mpc.xs[_pkc], mpc.xs[_pkc + 1]]
+    uss = [mpc.us[_pkc], mpc.us[_pkc + 1]]
 
     for sub_step in range(N_simu):
         t = step * dt_mpc + sub_step * dt_simu
@@ -465,6 +436,7 @@ for step in range(int(_os.environ.get("STEPS","300"))):
             with open(_tmp2,'w') as _f2: _j2.dump(_st,_f2)
             _os.replace(_tmp2,_STATE_PUB)
         except Exception: pass
+    _pk += 1                                 # ★stale plan 인덱스 advance(다음 재계획까지)
 
 
 force_FL = np.array(force_FL)

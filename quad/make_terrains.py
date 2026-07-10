@@ -84,7 +84,7 @@ def g_stepping(x0, pfx="t", yc=0.0):
 def scene(name, *parts):
     return HDR.format(name=name)+"".join(parts)+FTR
 
-out=os.path.dirname(os.path.abspath(__file__))
+out=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mjcf')   # ★모든 mjcf는 quad/mjcf/에 모아 관리(로봇 mjcf와 같은 폴더 → include 상대경로 유지)
 files={}
 # 개별 씬
 files["quad_terrain_stairs.mjcf"]   = scene("terrain_stairs",   g_stairs(1.2)[0])

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <chrono>
 #include <Eigen/Dense>
 
 #include <pinocchio/multibody/joint.hpp>
@@ -170,7 +171,11 @@ int main(int argc, char** argv) {
   problem->quasiStatic(us, std::vector<VectorXd>(xs.begin(), xs.end() - 1));
 
   std::cout << "[ocp] FDDP 풀이…\n";
-  bool ok = solver.solve(xs, us, 200, false, 1e-4);
+  const int MAXIT = argc > 3 ? std::atoi(argv[3]) : 200;   // ★S2용: RTI 이터수 제어(argv[3])
+  auto _t0 = std::chrono::steady_clock::now();
+  bool ok = solver.solve(xs, us, MAXIT, false, 1e-4);
+  double _ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _t0).count();
+  std::cout << "[ocp] solve 시간 " << _ms << " ms (maxit=" << MAXIT << ")\n";
   const auto& X = solver.get_xs();
   double z0 = X[0][2], zpk = z0, zend = X.back()[2];
   for (auto& x : X) zpk = std::max(zpk, x[2]);

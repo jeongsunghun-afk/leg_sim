@@ -65,7 +65,7 @@ class SportClient:
     def SetSteer(self, s):                           # ★허리 핸들=자동차식 조향각. 다리선회(A)가 반경 실행 + 허리 안쪽 lean
         self.cmd['steer'] = float(s); self._pub()
 
-    def BodyHeight(self, h):                        # 서기 높이[m] (★보행중 무시 — 자세모드서만)
+    def BodyHeight(self, h):                        # ★몸통 높이[m] — 서기+보행 공통(보행 중에도 추종)
         self.cmd['body_h'] = float(h); self._pub()
 
     def WalkSpeed(self, v):                         # 보행속도 게이지[m/s] — 조이스틱 풀스케일 (양 컨트롤러 공통)
@@ -411,7 +411,7 @@ with dpg.window(tag='main'):
     dpg.add_slider_float(label='Walk Speed [m/s]  (조이스틱 풀스케일 · 양 컨트롤러 공통)', tag='ws',
                          min_value=0.0, max_value=2.0, default_value=VMAX,
                          callback=lambda s, a: _set_walk_speed(a))
-    dpg.add_slider_float(label='Body Height [m]  (서기만, 보행중 무시 · 0.42~0.52 안정범위)', tag='bh',
+    dpg.add_slider_float(label='Body Height [m]  (★서기+보행 공통 · 0.42~0.52 안정범위 · 보행최적 0.50)', tag='bh',
                          min_value=0.42, max_value=0.52, default_value=0.52,
                          callback=lambda s, a: sc.BodyHeight(a))
     dpg.add_slider_float(label='Step Height [m]  (보행중 live 적용)', tag='sh',

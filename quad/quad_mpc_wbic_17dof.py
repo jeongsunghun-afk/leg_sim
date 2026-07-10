@@ -588,7 +588,7 @@ class QuadSim:
             P[sl(k), sl(k)] += w_lam * np.eye(3); g[sl(k)] -= w_lam * clam[k]
         # ★각운동량 보상(leg-heavy 고속): 총 centroidal 각운동량 h_ω 를 GRF 모멘트로 감쇠.
         #   Σ rᵢ×λᵢ ≈ −Kd·h_ω  (SRBD MPC가 무시하는 다리 swing 각운동량을 WBIC가 보상 → 고속 yaw/pitch 드리프트↓)
-        _w_am = float(os.environ.get('W_AM', '12'))   # ★17dof 튜닝(2026-07-02): 5→12(각운동량 보상↑). 37.9kg 전발목 고속 yaw발산·외란tilt 억제 → push_tilt −16%. 구14dof는 0(평지)
+        _w_am = float(os.environ.get('W_AM', '0'))   # ★W_AM=0(각운동량 보상 제거, 2026-07-10): 외란복구 이득 측정상 무의미(euler-rate·raibert 근본수정 후 한계효용 소멸, 측방 push서 오히려↑)
         if _w_am > 0 and K > 0:
             mujoco.mj_subtreeVel(m, d)
             h_ang = d.subtree_angmom[0].copy()           # 총 각운동량 about CoM (world)
@@ -1549,8 +1549,8 @@ def mode_trot():
         S['x_ref'][2] = S['yaw_ref']; S['x_ref'][8] = W_eff                     # yaw각·yaw rate 참조
         q._yaw_des = S['yaw_ref']                                               # ★자세 task 헤딩홀드 목표(선회시 몸통이 추종→안싸움)
         S['x_ref'][9] = vx_w; S['x_ref'][10] = vy_w                            # world vx,vy
-        # ★gait별 base height(보행 중 추종, C++ 미러): BZ로 부드럽게 → update_stand_qhome로 com_ref/z_ref0 갱신(MPC·WBIC 정합)
-        _bz = GAITS.get(S['gait'], GAITS['trot']).get('BZ', 0.50); _dt = q.m.opt.timestep
+        # ★body_h(서기+보행 통합 높이, C++ 미러): body_h를 부드럽게 추종 → update_stand_qhome로 com_ref/z_ref0 갱신(MPC·WBIC 정합). 서기와 동일 슬라이더.
+        _bz = float(S.get('body_h', q.base_z0)); _dt = q.m.opt.timestep
         S.setdefault('qhome_h', q.base_z0); S.setdefault('z_ref0', float(S['x_ref'][5]))
         _hr = S['qhome_h'] + float(np.clip(_bz - S['qhome_h'], -0.25 * _dt, 0.25 * _dt))
         if abs(_hr - S['qhome_h']) > 3e-3:

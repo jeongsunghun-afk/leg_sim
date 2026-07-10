@@ -86,8 +86,12 @@ int main(int argc,char**argv){
   auto t0=std::chrono::high_resolution_clock::now();
   double switchT=getenv("SWITCH_T")?atof(getenv("SWITCH_T")):-1;   // ★모드전환 테스트: t>SWITCH_T면 MODE2로(getup 검증)
   bool switched=false;
+  // ★외란 PUSH(임펄스): PUSH_F[N] 을 PUSH_T[s]±PUSH_DUR 동안 base에 측방(기본 y)으로 — W_AM 등 외란복구 벤치
+  double pF=getenv("PUSH_F")?atof(getenv("PUSH_F")):0, pT=getenv("PUSH_T")?atof(getenv("PUSH_T")):3.0, pDur=getenv("PUSH_DUR")?atof(getenv("PUSH_DUR")):0.1;
+  int pAX=getenv("PUSH_AX")?atoi(getenv("PUSH_AX")):1, pbid=m->jnt_bodyid[0];   // free joint의 base body
   for(int step=0; step<STEPS; step++){
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
+    if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     ctrl.control(); mj_step(m,d);
     if(SLIP){ for(int i=0;i<4;i++){ bool con=false;
         for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.001){con=true;break;} }

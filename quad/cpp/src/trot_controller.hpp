@@ -96,6 +96,7 @@ struct TrotCtrl {
   double steer=0.0, Ss_steer=0.0, wheelbase=0.5;           // ★자동차식 조향각 δ[rad](GUI 허리핸들). Ackermann Weff+=V·tanδ/축거(전진해야 조향). 축거=앞뒤 힙거리
   // 상태
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
+  bool stop_settle=false;   // ★달리다 서기: 정지 감속·CoM 재중심 중(뒤 엉덩방아 방지)
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
   bool pos_hold_set=false; double phx=0,phy=0;
   VectorXd x_ref=VectorXd::Zero(13);
@@ -136,7 +137,12 @@ struct TrotCtrl {
     if(mode!="sit") q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt);   // ★nose-up 부드럽게 해제(리셋 아닌 슬루=언폴드 중 뒷다리 펴짐과 함께 nose-up 풀림)
     q.posture_w=1.0; q.sit_hock_contact=false;   // ★자세task 가중·뒤 hock접촉 기본off(서기/보행). 개-앉기 홀드서만 on
     if(mode!="jump" && jphase>=0) jphase=-1;      // 점프 중 다른 모드로 이탈=상태 초기화(재진입 정상화)
-    if(mode!="move"){
+    // ★달리다 서기(stand_up): 전진속도 크면 먼저 move(명령0)로 감속→발이 CoM 밑으로 재중심된 뒤 stand. (뒤 엉덩방아 방지)
+    if(mode=="stand_up" && armed){ double sp=std::hypot(d->qvel[0],d->qvel[1]);
+      if(sp>0.20) stop_settle=true; else if(sp<0.12) stop_settle=false; }
+    else stop_settle=false;
+    bool run_move=(mode=="move")||stop_settle;
+    if(!run_move){
       if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; jphase=-1; return; }
       if(mode=="jump"){   // ★★J2 통합 점프: crouch(wbic)→OCP궤적 재생(thrust/flight τ_ff+PD)→touchdown→wbic_stance 착지.
         double bz=d->qpos[2];
@@ -267,6 +273,7 @@ struct TrotCtrl {
       x_ref.setZero(); x_ref[5]=d->subtree_com[2]; x_ref[12]=-9.81; com_h0=d->subtree_com[2]; }   // com_h0=평지 위 CoM 명목높이
     double tg=t-t0; bool go=tg>TC_WARMUP;
     double vt=go?V:0.0, vyt=go?VY:0.0, wt=go?WZ:0.0;
+    if(stop_settle){ vt=vyt=wt=0.0; }   // ★정지 감속: 명령 0 → MPC/raibert가 속도 죽이며 발을 CoM 밑으로 재중심
     Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double stt=go?steer:0.0; Ss_steer+=tc_clip(stt-Ss_steer,-0.8*dt,0.8*dt);   // 조향각 스무딩[rad/s]
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
@@ -297,8 +304,8 @@ struct TrotCtrl {
     // ★perceptive 몸통높이(Python 동일): 4-hip 평균 지형높이=_body_terr → MPC(x_ref[5])·WBIC z-task(quad_control:354) 양쪽 일관 적용. 평지=0(무변화)
     // ★perceptive 몸통높이: base 1점 지형높이+슬루 → MPC x_ref[5]만(WBIC z-task엔 미공급=_body_terr 0).
     //   실측(course): WBIC 공급시 tilt 3.7→4.3°·4힙평균 6.1° 로 오히려 나빠짐 → 보행중 몸통z는 MPC가 지배, WBIC 지형공급은 진동만 추가.
-    // ★gait별 base height(보행 중 추종): gait_base_z로 부드럽게 → update_stand_qhome로 com_ref/q_home/com_h0 갱신(MPC·WBIC 정합)
-    { double hr=qhome_h; hr+=tc_clip(gait_base_z-hr,-0.25*dt,0.25*dt);
+    // ★body_h(서기+보행 통합 높이): 보행 중에도 body_h를 부드럽게 추종 → update_stand_qhome로 com_ref/q_home/com_h0 갱신(MPC·WBIC 정합). 서기와 동일 슬라이더.
+    { double hr=qhome_h; hr+=tc_clip(body_h-hr,-0.25*dt,0.25*dt);
       if(std::abs(hr-qhome_h)>3e-3){ q.update_stand_qhome(hr); qhome_h=hr; com_h0=q.com_ref[2]; } }
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;

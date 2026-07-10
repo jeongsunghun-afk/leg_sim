@@ -1,17 +1,17 @@
 <mujoco model="terrain_stepping">
   <include file="quad_real_17dof_waist_sphere.mjcf"/>
   <worldbody>
-    <geom name="t0L" type="box" size="0.130 0.130 0.065" pos="1.200 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t0R" type="box" size="0.130 0.130 0.065" pos="1.200 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t1L" type="box" size="0.130 0.130 0.065" pos="1.640 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t1R" type="box" size="0.130 0.130 0.065" pos="1.640 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t2L" type="box" size="0.130 0.130 0.065" pos="2.080 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t2R" type="box" size="0.130 0.130 0.065" pos="2.080 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t3L" type="box" size="0.130 0.130 0.065" pos="2.520 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t3R" type="box" size="0.130 0.130 0.065" pos="2.520 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t4L" type="box" size="0.130 0.130 0.065" pos="2.960 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t4R" type="box" size="0.130 0.130 0.065" pos="2.960 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t5L" type="box" size="0.130 0.130 0.065" pos="3.400 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
-    <geom name="t5R" type="box" size="0.130 0.130 0.065" pos="3.400 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t0L" type="box" group="2" size="0.130 0.130 0.065" pos="1.200 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t0R" type="box" group="2" size="0.130 0.130 0.065" pos="1.200 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t1L" type="box" group="2" size="0.130 0.130 0.065" pos="1.640 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t1R" type="box" group="2" size="0.130 0.130 0.065" pos="1.640 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t2L" type="box" group="2" size="0.130 0.130 0.065" pos="2.080 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t2R" type="box" group="2" size="0.130 0.130 0.065" pos="2.080 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t3L" type="box" group="2" size="0.130 0.130 0.065" pos="2.520 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t3R" type="box" group="2" size="0.130 0.130 0.065" pos="2.520 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t4L" type="box" group="2" size="0.130 0.130 0.065" pos="2.960 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t4R" type="box" group="2" size="0.130 0.130 0.065" pos="2.960 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t5L" type="box" group="2" size="0.130 0.130 0.065" pos="3.400 0.220 0.065" rgba="0.38 0.55 0.44 1"/>
+    <geom name="t5R" type="box" group="2" size="0.130 0.130 0.065" pos="3.400 -0.220 0.065" rgba="0.38 0.55 0.44 1"/>
   </worldbody>
 </mujoco>

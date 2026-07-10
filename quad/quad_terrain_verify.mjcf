@@ -1,81 +1,81 @@
 <mujoco model="terrain_verify">
   <include file="quad_real_17dof_waist_sphere.mjcf"/>
   <worldbody>
-    <geom name="r0_0" type="box" size="0.120 0.120 0.033" pos="1.200 -1.000 0.033" rgba="0.57 0.51 0.45 1"/>
-    <geom name="r0_1" type="box" size="0.120 0.120 0.015" pos="1.200 -0.740 0.015" rgba="0.48 0.43 0.38 1"/>
-    <geom name="r0_2" type="box" size="0.120 0.120 0.038" pos="1.200 -0.480 0.038" rgba="0.59 0.53 0.47 1"/>
-    <geom name="r0_3" type="box" size="0.120 0.120 0.026" pos="1.200 -0.220 0.026" rgba="0.53 0.48 0.42 1"/>
-    <geom name="r0_4" type="box" size="0.120 0.120 0.019" pos="1.200 0.040 0.019" rgba="0.50 0.45 0.40 1"/>
-    <geom name="r0_5" type="box" size="0.120 0.120 0.040" pos="1.200 0.300 0.040" rgba="0.60 0.54 0.48 1"/>
-    <geom name="r0_6" type="box" size="0.120 0.120 0.019" pos="1.200 0.560 0.019" rgba="0.49 0.44 0.39 1"/>
-    <geom name="r1_0" type="box" size="0.120 0.120 0.035" pos="1.460 -1.000 0.035" rgba="0.58 0.52 0.46 1"/>
-    <geom name="r1_1" type="box" size="0.120 0.120 0.011" pos="1.460 -0.740 0.011" rgba="0.46 0.41 0.37 1"/>
-    <geom name="r1_2" type="box" size="0.120 0.120 0.042" pos="1.460 -0.480 0.042" rgba="0.61 0.55 0.49 1"/>
-    <geom name="r1_3" type="box" size="0.120 0.120 0.025" pos="1.460 -0.220 0.025" rgba="0.53 0.47 0.42 1"/>
-    <geom name="r1_4" type="box" size="0.120 0.120 0.017" pos="1.460 0.040 0.017" rgba="0.48 0.44 0.39 1"/>
-    <geom name="r1_5" type="box" size="0.120 0.120 0.044" pos="1.460 0.300 0.044" rgba="0.62 0.56 0.50 1"/>
-    <geom name="r1_6" type="box" size="0.120 0.120 0.016" pos="1.460 0.560 0.016" rgba="0.48 0.43 0.38 1"/>
-    <geom name="r2_0" type="box" size="0.120 0.120 0.020" pos="1.720 -1.000 0.020" rgba="0.50 0.45 0.40 1"/>
-    <geom name="r2_1" type="box" size="0.120 0.120 0.044" pos="1.720 -0.740 0.044" rgba="0.62 0.56 0.50 1"/>
-    <geom name="r2_2" type="box" size="0.120 0.120 0.013" pos="1.720 -0.480 0.013" rgba="0.47 0.42 0.37 1"/>
-    <geom name="r2_3" type="box" size="0.120 0.120 0.030" pos="1.720 -0.220 0.030" rgba="0.55 0.49 0.44 1"/>
-    <geom name="r2_4" type="box" size="0.120 0.120 0.038" pos="1.720 0.040 0.038" rgba="0.59 0.53 0.47 1"/>
-    <geom name="r2_5" type="box" size="0.120 0.120 0.010" pos="1.720 0.300 0.010" rgba="0.45 0.41 0.36 1"/>
-    <geom name="r2_6" type="box" size="0.120 0.120 0.039" pos="1.720 0.560 0.039" rgba="0.60 0.54 0.48 1"/>
-    <geom name="r3_0" type="box" size="0.120 0.120 0.022" pos="1.980 -1.000 0.022" rgba="0.51 0.46 0.41 1"/>
-    <geom name="r3_1" type="box" size="0.120 0.120 0.039" pos="1.980 -0.740 0.039" rgba="0.60 0.54 0.48 1"/>
-    <geom name="r3_2" type="box" size="0.120 0.120 0.017" pos="1.980 -0.480 0.017" rgba="0.49 0.44 0.39 1"/>
-    <geom name="r3_3" type="box" size="0.120 0.120 0.029" pos="1.980 -0.220 0.029" rgba="0.55 0.49 0.44 1"/>
-    <geom name="r3_4" type="box" size="0.120 0.120 0.035" pos="1.980 0.040 0.035" rgba="0.58 0.52 0.46 1"/>
-    <geom name="r3_5" type="box" size="0.120 0.120 0.015" pos="1.980 0.300 0.015" rgba="0.48 0.43 0.38 1"/>
-    <geom name="r3_6" type="box" size="0.120 0.120 0.036" pos="1.980 0.560 0.036" rgba="0.58 0.52 0.46 1"/>
-    <geom name="r4_0" type="box" size="0.120 0.120 0.037" pos="2.240 -1.000 0.037" rgba="0.58 0.53 0.47 1"/>
-    <geom name="r4_1" type="box" size="0.120 0.120 0.008" pos="2.240 -0.740 0.008" rgba="0.44 0.40 0.35 1"/>
-    <geom name="r4_2" type="box" size="0.120 0.120 0.044" pos="2.240 -0.480 0.044" rgba="0.62 0.56 0.50 1"/>
-    <geom name="r4_3" type="box" size="0.120 0.120 0.025" pos="2.240 -0.220 0.025" rgba="0.52 0.47 0.42 1"/>
-    <geom name="r4_4" type="box" size="0.120 0.120 0.015" pos="2.240 0.040 0.015" rgba="0.47 0.43 0.38 1"/>
-    <geom name="r4_5" type="box" size="0.120 0.120 0.048" pos="2.240 0.300 0.048" rgba="0.64 0.57 0.51 1"/>
-    <geom name="r4_6" type="box" size="0.120 0.120 0.014" pos="2.240 0.560 0.014" rgba="0.47 0.42 0.37 1"/>
-    <geom name="r5_0" type="box" size="0.120 0.120 0.031" pos="2.500 -1.000 0.031" rgba="0.55 0.50 0.44 1"/>
-    <geom name="r5_1" type="box" size="0.120 0.120 0.021" pos="2.500 -0.740 0.021" rgba="0.50 0.45 0.40 1"/>
-    <geom name="r5_2" type="box" size="0.120 0.120 0.033" pos="2.500 -0.480 0.033" rgba="0.57 0.51 0.45 1"/>
-    <geom name="r5_3" type="box" size="0.120 0.120 0.026" pos="2.500 -0.220 0.026" rgba="0.53 0.48 0.43 1"/>
-    <geom name="r5_4" type="box" size="0.120 0.120 0.023" pos="2.500 0.040 0.023" rgba="0.51 0.46 0.41 1"/>
-    <geom name="r5_5" type="box" size="0.120 0.120 0.035" pos="2.500 0.300 0.035" rgba="0.57 0.52 0.46 1"/>
-    <geom name="r5_6" type="box" size="0.120 0.120 0.023" pos="2.500 0.560 0.023" rgba="0.51 0.46 0.41 1"/>
-    <geom name="r6_0" type="box" size="0.120 0.120 0.017" pos="2.760 -1.000 0.017" rgba="0.49 0.44 0.39 1"/>
-    <geom name="r6_1" type="box" size="0.120 0.120 0.049" pos="2.760 -0.740 0.049" rgba="0.64 0.58 0.52 1"/>
-    <geom name="r6_2" type="box" size="0.120 0.120 0.009" pos="2.760 -0.480 0.009" rgba="0.45 0.40 0.36 1"/>
-    <geom name="r6_3" type="box" size="0.120 0.120 0.031" pos="2.760 -0.220 0.031" rgba="0.55 0.50 0.44 1"/>
-    <geom name="r6_4" type="box" size="0.120 0.120 0.042" pos="2.760 0.040 0.042" rgba="0.61 0.55 0.49 1"/>
-    <geom name="r6_5" type="box" size="0.120 0.120 0.006" pos="2.760 0.300 0.006" rgba="0.43 0.39 0.34 1"/>
-    <geom name="r6_6" type="box" size="0.120 0.120 0.043" pos="2.760 0.560 0.043" rgba="0.61 0.55 0.49 1"/>
-    <geom name="r7_0" type="box" size="0.120 0.120 0.027" pos="3.020 -1.000 0.027" rgba="0.53 0.48 0.43 1"/>
-    <geom name="r7_1" type="box" size="0.120 0.120 0.029" pos="3.020 -0.740 0.029" rgba="0.54 0.49 0.44 1"/>
-    <geom name="r7_2" type="box" size="0.120 0.120 0.026" pos="3.020 -0.480 0.026" rgba="0.53 0.48 0.43 1"/>
-    <geom name="r7_3" type="box" size="0.120 0.120 0.028" pos="3.020 -0.220 0.028" rgba="0.54 0.48 0.43 1"/>
-    <geom name="r7_4" type="box" size="0.120 0.120 0.028" pos="3.020 0.040 0.028" rgba="0.54 0.49 0.43 1"/>
-    <geom name="r7_5" type="box" size="0.120 0.120 0.026" pos="3.020 0.300 0.026" rgba="0.53 0.48 0.42 1"/>
-    <geom name="r7_6" type="box" size="0.120 0.120 0.029" pos="3.020 0.560 0.029" rgba="0.54 0.49 0.43 1"/>
-    <geom name="r8_0" type="box" size="0.120 0.120 0.038" pos="3.280 -1.000 0.038" rgba="0.59 0.53 0.47 1"/>
-    <geom name="r8_1" type="box" size="0.120 0.120 0.006" pos="3.280 -0.740 0.006" rgba="0.43 0.39 0.34 1"/>
-    <geom name="r8_2" type="box" size="0.120 0.120 0.046" pos="3.280 -0.480 0.046" rgba="0.63 0.57 0.50 1"/>
-    <geom name="r8_3" type="box" size="0.120 0.120 0.024" pos="3.280 -0.220 0.024" rgba="0.52 0.47 0.42 1"/>
-    <geom name="r8_4" type="box" size="0.120 0.120 0.013" pos="3.280 0.040 0.013" rgba="0.47 0.42 0.37 1"/>
-    <geom name="r8_5" type="box" size="0.120 0.120 0.050" pos="3.280 0.300 0.050" rgba="0.65 0.58 0.52 1"/>
-    <geom name="r8_6" type="box" size="0.120 0.120 0.012" pos="3.280 0.560 0.012" rgba="0.46 0.41 0.37 1"/>
-    <geom name="sup1" type="box" size="0.140 0.700 0.025" pos="4.340 0.000 0.025" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup2" type="box" size="0.140 0.700 0.050" pos="4.620 0.000 0.050" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sup3" type="box" size="0.140 0.700 0.075" pos="4.900 0.000 0.075" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup4" type="box" size="0.140 0.700 0.100" pos="5.180 0.000 0.100" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sup5" type="box" size="0.140 0.700 0.125" pos="5.460 0.000 0.125" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sup6" type="box" size="0.140 0.700 0.150" pos="5.740 0.000 0.150" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sland" type="box" size="0.600 0.700 0.150" pos="6.480 0.000 0.150" rgba="0.50 0.42 0.36 1"/>
-    <geom name="sdn1" type="box" size="0.140 0.700 0.125" pos="7.220 0.000 0.125" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sdn2" type="box" size="0.140 0.700 0.100" pos="7.500 0.000 0.100" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sdn3" type="box" size="0.140 0.700 0.075" pos="7.780 0.000 0.075" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sdn4" type="box" size="0.140 0.700 0.050" pos="8.060 0.000 0.050" rgba="0.55 0.45 0.38 1"/>
-    <geom name="sdn5" type="box" size="0.140 0.700 0.025" pos="8.340 0.000 0.025" rgba="0.62 0.52 0.44 1"/>
-    <geom name="sdn6" type="box" size="0.140 0.700 0.001" pos="8.620 0.000 0.001" rgba="0.55 0.45 0.38 1"/>
+    <geom name="r0_0" type="box" group="2" size="0.120 0.120 0.033" pos="1.200 -1.000 0.033" rgba="0.57 0.51 0.45 1"/>
+    <geom name="r0_1" type="box" group="2" size="0.120 0.120 0.015" pos="1.200 -0.740 0.015" rgba="0.48 0.43 0.38 1"/>
+    <geom name="r0_2" type="box" group="2" size="0.120 0.120 0.038" pos="1.200 -0.480 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="r0_3" type="box" group="2" size="0.120 0.120 0.026" pos="1.200 -0.220 0.026" rgba="0.53 0.48 0.42 1"/>
+    <geom name="r0_4" type="box" group="2" size="0.120 0.120 0.019" pos="1.200 0.040 0.019" rgba="0.50 0.45 0.40 1"/>
+    <geom name="r0_5" type="box" group="2" size="0.120 0.120 0.040" pos="1.200 0.300 0.040" rgba="0.60 0.54 0.48 1"/>
+    <geom name="r0_6" type="box" group="2" size="0.120 0.120 0.019" pos="1.200 0.560 0.019" rgba="0.49 0.44 0.39 1"/>
+    <geom name="r1_0" type="box" group="2" size="0.120 0.120 0.035" pos="1.460 -1.000 0.035" rgba="0.58 0.52 0.46 1"/>
+    <geom name="r1_1" type="box" group="2" size="0.120 0.120 0.011" pos="1.460 -0.740 0.011" rgba="0.46 0.41 0.37 1"/>
+    <geom name="r1_2" type="box" group="2" size="0.120 0.120 0.042" pos="1.460 -0.480 0.042" rgba="0.61 0.55 0.49 1"/>
+    <geom name="r1_3" type="box" group="2" size="0.120 0.120 0.025" pos="1.460 -0.220 0.025" rgba="0.53 0.47 0.42 1"/>
+    <geom name="r1_4" type="box" group="2" size="0.120 0.120 0.017" pos="1.460 0.040 0.017" rgba="0.48 0.44 0.39 1"/>
+    <geom name="r1_5" type="box" group="2" size="0.120 0.120 0.044" pos="1.460 0.300 0.044" rgba="0.62 0.56 0.50 1"/>
+    <geom name="r1_6" type="box" group="2" size="0.120 0.120 0.016" pos="1.460 0.560 0.016" rgba="0.48 0.43 0.38 1"/>
+    <geom name="r2_0" type="box" group="2" size="0.120 0.120 0.020" pos="1.720 -1.000 0.020" rgba="0.50 0.45 0.40 1"/>
+    <geom name="r2_1" type="box" group="2" size="0.120 0.120 0.044" pos="1.720 -0.740 0.044" rgba="0.62 0.56 0.50 1"/>
+    <geom name="r2_2" type="box" group="2" size="0.120 0.120 0.013" pos="1.720 -0.480 0.013" rgba="0.47 0.42 0.37 1"/>
+    <geom name="r2_3" type="box" group="2" size="0.120 0.120 0.030" pos="1.720 -0.220 0.030" rgba="0.55 0.49 0.44 1"/>
+    <geom name="r2_4" type="box" group="2" size="0.120 0.120 0.038" pos="1.720 0.040 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="r2_5" type="box" group="2" size="0.120 0.120 0.010" pos="1.720 0.300 0.010" rgba="0.45 0.41 0.36 1"/>
+    <geom name="r2_6" type="box" group="2" size="0.120 0.120 0.039" pos="1.720 0.560 0.039" rgba="0.60 0.54 0.48 1"/>
+    <geom name="r3_0" type="box" group="2" size="0.120 0.120 0.022" pos="1.980 -1.000 0.022" rgba="0.51 0.46 0.41 1"/>
+    <geom name="r3_1" type="box" group="2" size="0.120 0.120 0.039" pos="1.980 -0.740 0.039" rgba="0.60 0.54 0.48 1"/>
+    <geom name="r3_2" type="box" group="2" size="0.120 0.120 0.017" pos="1.980 -0.480 0.017" rgba="0.49 0.44 0.39 1"/>
+    <geom name="r3_3" type="box" group="2" size="0.120 0.120 0.029" pos="1.980 -0.220 0.029" rgba="0.55 0.49 0.44 1"/>
+    <geom name="r3_4" type="box" group="2" size="0.120 0.120 0.035" pos="1.980 0.040 0.035" rgba="0.58 0.52 0.46 1"/>
+    <geom name="r3_5" type="box" group="2" size="0.120 0.120 0.015" pos="1.980 0.300 0.015" rgba="0.48 0.43 0.38 1"/>
+    <geom name="r3_6" type="box" group="2" size="0.120 0.120 0.036" pos="1.980 0.560 0.036" rgba="0.58 0.52 0.46 1"/>
+    <geom name="r4_0" type="box" group="2" size="0.120 0.120 0.037" pos="2.240 -1.000 0.037" rgba="0.58 0.53 0.47 1"/>
+    <geom name="r4_1" type="box" group="2" size="0.120 0.120 0.008" pos="2.240 -0.740 0.008" rgba="0.44 0.40 0.35 1"/>
+    <geom name="r4_2" type="box" group="2" size="0.120 0.120 0.044" pos="2.240 -0.480 0.044" rgba="0.62 0.56 0.50 1"/>
+    <geom name="r4_3" type="box" group="2" size="0.120 0.120 0.025" pos="2.240 -0.220 0.025" rgba="0.52 0.47 0.42 1"/>
+    <geom name="r4_4" type="box" group="2" size="0.120 0.120 0.015" pos="2.240 0.040 0.015" rgba="0.47 0.43 0.38 1"/>
+    <geom name="r4_5" type="box" group="2" size="0.120 0.120 0.048" pos="2.240 0.300 0.048" rgba="0.64 0.57 0.51 1"/>
+    <geom name="r4_6" type="box" group="2" size="0.120 0.120 0.014" pos="2.240 0.560 0.014" rgba="0.47 0.42 0.37 1"/>
+    <geom name="r5_0" type="box" group="2" size="0.120 0.120 0.031" pos="2.500 -1.000 0.031" rgba="0.55 0.50 0.44 1"/>
+    <geom name="r5_1" type="box" group="2" size="0.120 0.120 0.021" pos="2.500 -0.740 0.021" rgba="0.50 0.45 0.40 1"/>
+    <geom name="r5_2" type="box" group="2" size="0.120 0.120 0.033" pos="2.500 -0.480 0.033" rgba="0.57 0.51 0.45 1"/>
+    <geom name="r5_3" type="box" group="2" size="0.120 0.120 0.026" pos="2.500 -0.220 0.026" rgba="0.53 0.48 0.43 1"/>
+    <geom name="r5_4" type="box" group="2" size="0.120 0.120 0.023" pos="2.500 0.040 0.023" rgba="0.51 0.46 0.41 1"/>
+    <geom name="r5_5" type="box" group="2" size="0.120 0.120 0.035" pos="2.500 0.300 0.035" rgba="0.57 0.52 0.46 1"/>
+    <geom name="r5_6" type="box" group="2" size="0.120 0.120 0.023" pos="2.500 0.560 0.023" rgba="0.51 0.46 0.41 1"/>
+    <geom name="r6_0" type="box" group="2" size="0.120 0.120 0.017" pos="2.760 -1.000 0.017" rgba="0.49 0.44 0.39 1"/>
+    <geom name="r6_1" type="box" group="2" size="0.120 0.120 0.049" pos="2.760 -0.740 0.049" rgba="0.64 0.58 0.52 1"/>
+    <geom name="r6_2" type="box" group="2" size="0.120 0.120 0.009" pos="2.760 -0.480 0.009" rgba="0.45 0.40 0.36 1"/>
+    <geom name="r6_3" type="box" group="2" size="0.120 0.120 0.031" pos="2.760 -0.220 0.031" rgba="0.55 0.50 0.44 1"/>
+    <geom name="r6_4" type="box" group="2" size="0.120 0.120 0.042" pos="2.760 0.040 0.042" rgba="0.61 0.55 0.49 1"/>
+    <geom name="r6_5" type="box" group="2" size="0.120 0.120 0.006" pos="2.760 0.300 0.006" rgba="0.43 0.39 0.34 1"/>
+    <geom name="r6_6" type="box" group="2" size="0.120 0.120 0.043" pos="2.760 0.560 0.043" rgba="0.61 0.55 0.49 1"/>
+    <geom name="r7_0" type="box" group="2" size="0.120 0.120 0.027" pos="3.020 -1.000 0.027" rgba="0.53 0.48 0.43 1"/>
+    <geom name="r7_1" type="box" group="2" size="0.120 0.120 0.029" pos="3.020 -0.740 0.029" rgba="0.54 0.49 0.44 1"/>
+    <geom name="r7_2" type="box" group="2" size="0.120 0.120 0.026" pos="3.020 -0.480 0.026" rgba="0.53 0.48 0.43 1"/>
+    <geom name="r7_3" type="box" group="2" size="0.120 0.120 0.028" pos="3.020 -0.220 0.028" rgba="0.54 0.48 0.43 1"/>
+    <geom name="r7_4" type="box" group="2" size="0.120 0.120 0.028" pos="3.020 0.040 0.028" rgba="0.54 0.49 0.43 1"/>
+    <geom name="r7_5" type="box" group="2" size="0.120 0.120 0.026" pos="3.020 0.300 0.026" rgba="0.53 0.48 0.42 1"/>
+    <geom name="r7_6" type="box" group="2" size="0.120 0.120 0.029" pos="3.020 0.560 0.029" rgba="0.54 0.49 0.43 1"/>
+    <geom name="r8_0" type="box" group="2" size="0.120 0.120 0.038" pos="3.280 -1.000 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="r8_1" type="box" group="2" size="0.120 0.120 0.006" pos="3.280 -0.740 0.006" rgba="0.43 0.39 0.34 1"/>
+    <geom name="r8_2" type="box" group="2" size="0.120 0.120 0.046" pos="3.280 -0.480 0.046" rgba="0.63 0.57 0.50 1"/>
+    <geom name="r8_3" type="box" group="2" size="0.120 0.120 0.024" pos="3.280 -0.220 0.024" rgba="0.52 0.47 0.42 1"/>
+    <geom name="r8_4" type="box" group="2" size="0.120 0.120 0.013" pos="3.280 0.040 0.013" rgba="0.47 0.42 0.37 1"/>
+    <geom name="r8_5" type="box" group="2" size="0.120 0.120 0.050" pos="3.280 0.300 0.050" rgba="0.65 0.58 0.52 1"/>
+    <geom name="r8_6" type="box" group="2" size="0.120 0.120 0.012" pos="3.280 0.560 0.012" rgba="0.46 0.41 0.37 1"/>
+    <geom name="sup1" type="box" group="2" size="0.140 0.700 0.025" pos="4.340 0.000 0.025" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup2" type="box" group="2" size="0.140 0.700 0.050" pos="4.620 0.000 0.050" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sup3" type="box" group="2" size="0.140 0.700 0.075" pos="4.900 0.000 0.075" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup4" type="box" group="2" size="0.140 0.700 0.100" pos="5.180 0.000 0.100" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sup5" type="box" group="2" size="0.140 0.700 0.125" pos="5.460 0.000 0.125" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sup6" type="box" group="2" size="0.140 0.700 0.150" pos="5.740 0.000 0.150" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sland" type="box" group="2" size="0.600 0.700 0.150" pos="6.480 0.000 0.150" rgba="0.50 0.42 0.36 1"/>
+    <geom name="sdn1" type="box" group="2" size="0.140 0.700 0.125" pos="7.220 0.000 0.125" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sdn2" type="box" group="2" size="0.140 0.700 0.100" pos="7.500 0.000 0.100" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sdn3" type="box" group="2" size="0.140 0.700 0.075" pos="7.780 0.000 0.075" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sdn4" type="box" group="2" size="0.140 0.700 0.050" pos="8.060 0.000 0.050" rgba="0.55 0.45 0.38 1"/>
+    <geom name="sdn5" type="box" group="2" size="0.140 0.700 0.025" pos="8.340 0.000 0.025" rgba="0.62 0.52 0.44 1"/>
+    <geom name="sdn6" type="box" group="2" size="0.140 0.700 0.001" pos="8.620 0.000 0.001" rgba="0.55 0.45 0.38 1"/>
   </worldbody>
 </mujoco>

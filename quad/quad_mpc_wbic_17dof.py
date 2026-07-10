@@ -276,15 +276,13 @@ class QuadSim:
         ★추후: 실제 depth센서 elevation map으로 이 메서드 백엔드만 교체(인터페이스 동일)."""
         if not self._terrain_on:                     # 지형적응 off(GUI 토글)/평지: raycast 생략(성능, 평지=0)
             return 0.0
-        vec = np.array([0.0, 0.0, -1.0]); gid = np.zeros(1, np.int32); z = z_high
-        for _ in range(8):                            # 로봇 geom 맞으면 그 아래서 재캐스트 → 지형(worldbody)만
-            dist = mujoco.mj_ray(self.m, self.d, np.array([float(x), float(y), z]), vec, None, 1, -1, gid)
-            if dist < 0.0:
-                return 0.0
-            if int(self.m.geom_bodyid[gid[0]]) == 0:  # worldbody = 지형(floor/stairs)
-                return z - dist
-            z = (z - dist) - 0.01                      # 로봇이면 그 바로 아래서 재시작
-        return 0.0                                     # 8회 내 지형 못맞춤 → 평지로
+        # ★지형 geom(group2)만 마스킹 → 로봇/바닥 무시. z_high서 단일레이(재캐스트 루프는 고속 run서 실시간 붕괴).
+        vec = np.array([0.0, 0.0, -1.0]); gid = np.zeros(1, np.int32)
+        gg = np.array([0, 0, 1, 0, 0, 0], np.uint8)   # group2(지형)만 레이 대상
+        dist = mujoco.mj_ray(self.m, self.d, np.array([float(x), float(y), z_high]), vec, gg, 1, -1, gid)
+        if dist >= 0.0 and gid[0] >= 0:
+            return z_high - dist
+        return 0.0                                     # 미검출 → 평지
 
     def foot_point(self, i):
         if self.foot_kind == 'mesh':

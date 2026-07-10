@@ -105,19 +105,15 @@ struct QuadControl {
     q_home.resize(nu);
   }
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }
-  // ★perceptive: (x,y) 아래 지형 표면 z를 mj_ray 하향캐스트로 샘플(Python terrain_height와 동일).
-  //   ★시작 z=3.0(어떤 지형보다 위)서 하향 → 로봇 geom(bodyid≠0) 맞으면 그 바로 아래서 재캐스트(최대 8회) → 지형(worldbody)만 채택.
-  //   구 ray_z0=0.40은 그보다 높은 지형 미탐지→붕괴. 이 방식은 0.40 이상도 탐지. 미검출=−100(폴백=평지).
-  double ray_z0=3.0;
+  // ★perceptive: (x,y) 아래 지형 표면 z를 mj_ray 하향캐스트로 샘플. 지형 geom(group2)만 마스킹 → 로봇/바닥 무시.
+  //   ★시작 z=2.0(어떤 지형보다 위)서 단일 하향레이: group2 마스크라 로봇 자기충돌 없음 → 0.40 이상 높은 지형도 탐지(구 ray_z0=0.40은 그보다 높으면 미탐지→붕괴).
+  //   ★단일레이=고속(재캐스트 루프는 로봇 뚫느라 40ray/step → run 실시간 붕괴). 미검출=−100(폴백=평지).
+  double ray_z0=2.0;
   double terrain_z(double x,double y){
-    mjtNum vec[3]={0,0,-1}, nrm[3]; double z=ray_z0;
-    for(int it=0; it<8; it++){
-      mjtNum pnt[3]={x,y,z}; int gid=-1;
-      mjtNum dist=mj_ray(m,d,pnt,vec,nullptr,1,-1,&gid,nrm);
-      if(dist<0) return -100.0;
-      if(gid>=0 && m->geom_bodyid[gid]==0) return z-dist;   // 지형(worldbody)=채택
-      z=(z-dist)-0.01;                                       // 로봇 geom이면 그 아래서 재시작
-    }
+    mjtNum pnt[3]={x,y,ray_z0}, vec[3]={0,0,-1}, nrm[3]; int gid=-1;
+    static const mjtByte gg[6]={0,0,1,0,0,0};   // group2(지형)만 레이 대상 — 로봇(group0/1)·바닥(plane) 제외
+    mjtNum dist=mj_ray(m,d,pnt,vec,gg,1,-1,&gid,nrm);
+    if(dist>=0 && gid>=0) return ray_z0-dist;
     return -100.0;
   }
   Matrix<double,3,Dynamic> foot_jac(int i){ std::vector<double> jb(3*nv); Vector3d p=foot_point(i);

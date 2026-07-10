@@ -13,7 +13,8 @@ def box(name, sx, sy, sz, x, y, z, rgba, fric=None, prio=None, sref=None, simp=N
     p = f' priority="{prio}"' if prio is not None else ""   # ★priority 지정 시 이 geom friction이 접촉을 지배(max규칙 무시)
     r = f' solref="{sref}"' if sref else ""                 # ★solref/solimp=접촉 강성(물렁한 지형=발 침하)
     m = f' solimp="{simp}"' if simp else ""
-    return (f'    <geom name="{name}" type="box" size="{sx:.3f} {sy:.3f} {sz:.3f}" '
+    # ★group="2"=perceptive 레이캐스트 대상(로봇 group0/1과 분리 → ray가 로봇 무시하고 단일레이로 어떤 높이 지형도 탐지, 고속)
+    return (f'    <geom name="{name}" type="box" group="2" size="{sx:.3f} {sy:.3f} {sz:.3f}" '
             f'pos="{x:.3f} {y:.3f} {z:.3f}" rgba="{rgba}"{f}{p}{r}{m}/>\n')
 
 # ── 지형 빌더(geom 문자열만 반환, x0=시작 x, 접두=이름 유일화) ──────────

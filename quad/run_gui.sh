@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 02_Leg 17-DOF GUI 텔레옵 원샷 런처 (C++ 뷰어 + dearpygui GUI)
-#   사용: bash run_gui.sh [map]        map = course(기본)|flat|stairs|rough|friction
+#   사용: bash run_gui.sh [map]        map = course(기본)|flat|stairs|rough|friction|gap|stepping
 #   기본 맵 = 종합코스(마찰→험지→계단, perceptive 자동 ON)
 # ★뷰어에 CMDFILE/STATE_PUB 필수(누락 시 GUI 명령 무시하고 저절로 전진) — 이 스크립트가 항상 붙임.
 set -u
@@ -16,6 +16,8 @@ case "${1:-course}" in
   stairs)   MJCF=quad_terrain_stairs.mjcf ;;
   rough)    MJCF=quad_terrain_rough.mjcf ;;
   friction) MJCF=quad_terrain_friction.mjcf ;;
+  gap)      MJCF=quad_terrain_gap.mjcf ;;
+  stepping) MJCF=quad_terrain_stepping.mjcf ;;
   *)        MJCF="$1" ;;                                       # 임의 mjcf 경로 허용
 esac
 

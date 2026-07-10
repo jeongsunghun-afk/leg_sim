@@ -11,8 +11,9 @@ import crocoddyl
 import mujoco
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-URDF_SRC = os.path.join(_HERE, '../02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf')
-MJCF = os.path.join(_HERE, 'quad_real_17dof_waist_sphere.mjcf')
+QUAD = os.path.normpath(os.path.join(_HERE, '..', '..'))   # offline/getup/ → quad/
+URDF_SRC = os.path.join(QUAD, '../02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf')
+MJCF = os.path.join(QUAD, 'quad_real_17dof_waist_sphere.mjcf')
 LEGS = ['FL', 'FR', 'HL', 'HR']          # pinocchio 관절순서
 JT = ['hip', 'thigh', 'calf', 'foot']
 MU = 0.7

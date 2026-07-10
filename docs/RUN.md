@@ -57,6 +57,6 @@ cd simulation/quad && bash gen_jump.sh 0.6      # 전방 점프 궤적 생성(VX
 - **perceptive**: PERCEPTIVE(기본 on) 계단/험지 착지·몸통높이 적응. 평지 무영향.
 
 ## 연구용(비배포) · 14-DOF
-- 14-DOF: `env $CFG GEAR_CALF=1.0 TROT_V=1.0 PXI quad_mpc_wbic.py --robot ours_sphere --mode trot` (14dof는 calf 기본 8:1이라 GEAR_CALF=1.0로 10.5 복원). GUI=teleop_gui.py.
+- 14-DOF: `env $CFG GEAR_CALF=1.0 TROT_V=1.0 PXI research/quad_mpc_wbic.py --robot ours_sphere --mode trot` (14dof는 calf 기본 8:1이라 GEAR_CALF=1.0로 10.5 복원). GUI=research/teleop_gui.py.
 - 구조 B/C(FullDynamics·Centroidal, marginal): `simple_mpc/` (심링크). 반응형 발배치 거부라 본선 아님.
 - 파일: A=quad_mpc_wbic.py(14) · **A'=quad_mpc_wbic_17dof.py + teleop_gui_17dof.py(배포)** · cpp/(C++) · biped/(초기 phase).

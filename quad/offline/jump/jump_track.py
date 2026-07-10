@@ -4,18 +4,19 @@
 #   상: push/flight=τ_ff+관절PD / touchdown 후=저-PD 흡수 → 홀드. base_z peak·tilt·falls 측정.
 import os, numpy as np, mujoco, pinocchio as pin
 HERE=os.path.dirname(os.path.abspath(__file__))
+QUAD=os.path.normpath(os.path.join(HERE,'..','..'))   # offline/jump/ → quad/
 G=9.81
 Z=np.load('/tmp/jump_ocp.npz', allow_pickle=True)
 xs, us, sched, dt = Z['xs'], Z['us'], Z['sched'], float(Z['dt']); nq_p, nv_p = int(Z['nq']), int(Z['nv'])
 N=len(us)
 
 # pinocchio reduced 모델(허리 lock) — 매핑용 조인트 이름/인덱스
-URDF=os.path.join(HERE,'..','02_Leg_UFDF_260703_2','urdf','02_Leg_UFDF_260703_3.urdf')
-full=pin.RobotWrapper.BuildFromURDF(URDF,[os.path.join(HERE,'..')],pin.JointModelFreeFlyer())
+URDF=os.path.join(QUAD,'..','02_Leg_UFDF_260703_2','urdf','02_Leg_UFDF_260703_3.urdf')
+full=pin.RobotWrapper.BuildFromURDF(URDF,[os.path.join(QUAD,'..')],pin.JointModelFreeFlyer())
 pm=pin.buildReducedModel(full.model,[full.model.getJointId('FB_waist_joint')],pin.neutral(full.model))
 
 # MuJoCo 17dof
-m=mujoco.MjModel.from_xml_path(os.path.join(HERE,'quad_real_17dof_waist_sphere.mjcf')); d=mujoco.MjData(m)
+m=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'quad_real_17dof_waist_sphere.mjcf')); d=mujoco.MjData(m)
 fgid=[mujoco.mj_name2id(m,mujoco.mjtObj.mjOBJ_GEOM,f+'_sphere') for f in ['HL','HR','FL','FR']]
 GEARF=0.5714  # foot 8:1(배포)
 # 관절명→ pin q/v 인덱스, MuJoCo qpos/qvel/ctrl 인덱스

@@ -20,12 +20,16 @@
 |---|---|
 | `quad/quad_mpc_wbic_17dof.py` + `teleop_gui_17dof.py` | **배포 A′(Python)** |
 | `quad/cpp/` (quad_control·mpc·trot_controller·trot_sim·trot_view) | **배포 C++(1kHz)** |
+| `quad/run_gui.sh` · `run_gui_py.sh` | **원샷 런처**(뷰어+GUI, 기본=종합코스). C++ / Python |
+| `quad/gen_jump.sh` | 점프 궤적 생성(J1 OCP→J2 변환→/tmp/jump_traj.txt) |
 | `quad/cpp/verify.sh` | **하네스** — 표준 회귀 배터리(`./verify.sh [--python]`) |
 | `quad/PARAMS.md` | 파라미터 원본(md, = params.html 소스) |
-| `quad/make_terrains.py` + `quad_terrain_*.mjcf` | 테스트 지형(계단/험지/마찰/course) |
+| `quad/make_terrains.py` + `quad_terrain_*.mjcf` | 테스트 지형(3레인 course·계단·험지·마찰·gap·stepping·soft) |
 | `quad/record_demo.sh` | 데모 녹화 |
 | `.claude/skills/controller-review/SKILL.md` | **스킬** — 검수 SOP(`/controller-review`) |
-| `quad/quad_mpc_wbic.py` | 14-DOF(구 본선, 연구) |
+| `quad/offline/jump/` · `offline/getup/` | 오프라인 궤적(점프 OCP·기립 gather) 생성 파이프라인 |
+| `quad/tools/` | 모델 빌드(build_real_quad_17dof·gen_sphere_17dof·plot_perfoot) |
+| `quad/research/quad_mpc_wbic.py` + `teleop_gui.py` | 14-DOF(구 본선, 연구) |
 | `biped/` | 초기 biped phase(README·mjcf·urdf, 브랜치 biped-wbic-mpc) |
 | `simple_mpc/` | 구조 B/C(FullDynamics·Centroidal, marginal 연구) |
 | `gait_sim/` | ★구 gait_sim 연구노트(v13/v14 다수 md) — 히스토리, 아카이브 후보 |

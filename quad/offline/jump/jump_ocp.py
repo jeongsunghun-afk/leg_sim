@@ -8,8 +8,9 @@ np.set_printoptions(precision=3, suppress=True)
 G=9.81
 VX=float(os.environ.get('JUMP_VX','0.0'))   # ★전방 이륙속도(m/s). 0=수직 제자리 점프. base 위치는 비용0이라 vx만으로 탄도 전진
 HERE=os.path.dirname(os.path.abspath(__file__))
-URDF=os.path.join(HERE,'..','02_Leg_UFDF_260703_2','urdf','02_Leg_UFDF_260703_3.urdf')
-PKG=os.path.join(HERE,'..')   # simulation/ = package://02_Leg_UFDF_260703_2/ 탐색 루트
+QUAD=os.path.normpath(os.path.join(HERE,'..','..'))   # offline/jump/ → quad/
+URDF=os.path.join(QUAD,'..','02_Leg_UFDF_260703_2','urdf','02_Leg_UFDF_260703_3.urdf')
+PKG=os.path.join(QUAD,'..')   # simulation/ = package://02_Leg_UFDF_260703_2/ 탐색 루트
 
 full=pin.RobotWrapper.BuildFromURDF(URDF,[PKG],pin.JointModelFreeFlyer())
 # 허리 lock → reduced
@@ -25,7 +26,7 @@ print(f"[OCP] reduced nq={nq} nv={nv} 다리DOF={nv-6} feet={fids}")
 
 # ── crouch/stand q0: 검증된 MuJoCo crouch 자세 → pinocchio 매핑 ──
 import mujoco
-mjm=mujoco.MjModel.from_xml_path(os.path.join(HERE,'quad_real_17dof_waist_sphere.mjcf')); mjd=mujoco.MjData(mjm)
+mjm=mujoco.MjModel.from_xml_path(os.path.join(QUAD,'quad_real_17dof_waist_sphere.mjcf')); mjd=mujoco.MjData(mjm)
 mfgid=[mujoco.mj_name2id(mjm,mujoco.mjtObj.mjOBJ_GEOM,f+'_sphere') for f in ['HL','HR','FL','FR']]
 mfr=[mjm.geom_size[g][0] for g in mfgid]
 def mj_crouch(base_z):

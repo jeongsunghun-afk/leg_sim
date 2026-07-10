@@ -5,7 +5,8 @@
 #   ★go/no-go 게이트: 상한 h<0.05m면 하드웨어 선행(문서 §1.3).
 import mujoco, numpy as np, os
 
-MJCF = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quad_real_17dof_waist_sphere.mjcf')
+QUAD = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))   # offline/jump/ → quad/
+MJCF = os.path.join(QUAD, 'quad_real_17dof_waist_sphere.mjcf')
 m = mujoco.MjModel.from_xml_path(MJCF); d = mujoco.MjData(m)
 g = 9.81; M = float(m.body_subtreemass[0]); mg = M*g
 

@@ -34,17 +34,18 @@ _NOLIMIT = False                 # --nolimit: 관절 한계 해제 (가동범위
 
 # 로봇 설정 — 우리 모델 / Go2 (--robot 으로 선택). 다리 인덱스 0,3 / 1,2 = 대각쌍(둘 다 동일)
 _HERE = os.path.dirname(os.path.abspath(__file__))
+QUAD = os.path.normpath(os.path.join(_HERE, '..'))   # research/ → quad/ (mjcf·메시는 quad 루트)
 ROBOTS = {
-    'ours': dict(mjcf=os.path.join(_HERE, 'quad_real.mjcf'),
+    'ours': dict(mjcf=os.path.join(QUAD, 'quad_real.mjcf'),
                  legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                  foot_body='{L}_foot_contact_link', hip_body='{L}_hip_link',
                  foot_kind='mesh', base_z0=0.52, foot_z0=0.02, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
-    'go2':  dict(mjcf=os.path.join(_HERE, '..', 'mujoco_menagerie', 'unitree_go2', 'scene.xml'),
+    'go2':  dict(mjcf=os.path.join(QUAD, '..', 'mujoco_menagerie', 'unitree_go2', 'scene.xml'),
                  legs=['FL', 'FR', 'RL', 'RR'], dof=3,
                  foot_geom='{L}', hip_body='{L}_hip',
                  foot_kind='sphere', base_z0=0.30, foot_z0=0.02, mu=0.6),
     # 02_Leg 발을 sphere 충돌로 교체(발목 자세 무관 점접촉) — box 모서리 rocking 회피 검증용
-    'ours_sphere': dict(mjcf=os.path.join(_HERE, 'quad_real_sphere.mjcf'),
+    'ours_sphere': dict(mjcf=os.path.join(QUAD, 'quad_real_sphere.mjcf'),
                         legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                         foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                         foot_kind='sphere', base_z0=0.52, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
@@ -418,7 +419,7 @@ class QuadSim:
 
     def setup_mpc(self):
         """gait_sim 4족 SRBD MPC 를 실제 4족용으로 연결 (모듈상수 override)."""
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # research/→quad/→simulation/(gait_sim 위치)
         _argv = sys.argv; sys.argv = [_argv[0]]
         try:
             import gait_sim.controllers.mpc as MPC
@@ -1033,7 +1034,7 @@ def mode_mpc():
 def mode_walk():
     """3.b단계 — MPC+WBIC 정적 크롤 보행 (제자리). [개발중 — 뷰어 판단용]
     각 발 슬롯: 전반 CoM를 나머지3발 중심으로 이동(4발지지) → 후반 그 발 swing."""
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # research/→quad/→simulation/(gait_sim 위치)
     _a = sys.argv; sys.argv = [_a[0]]
     try:
         from gait_sim.gait import swing_foot_pos
@@ -1086,7 +1087,7 @@ def mode_trot():
     """3.b단계 — MPC+WBIC trot 보행 (제자리). [개발중 — 뷰어 판단용]
     대각쌍(HL+FR / HR+FL) 교대. baseline 방식: x_ref=속도/자세/높이 추종(위치 안박음),
     MPC_Q 자세가중치↑. 동적 게이트라 roll 균형이 난관(튜닝 필요)."""
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # research/→quad/→simulation/(gait_sim 위치)
     _a = sys.argv; sys.argv = [_a[0]]
     try:
         from gait_sim.gait import swing_foot_pos

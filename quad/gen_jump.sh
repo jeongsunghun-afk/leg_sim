@@ -7,6 +7,6 @@ set -e
 PXI=/home/jsh/miniforge3/envs/proxddp/bin/python
 cd "$(dirname "${BASH_SOURCE[0]}")"
 VX="${1:-0}"
-JUMP_VX="$VX" "$PXI" jump_ocp.py
-"$PXI" jump_track.py
+JUMP_VX="$VX" "$PXI" offline/jump/jump_ocp.py
+"$PXI" offline/jump/jump_track.py
 echo "완료: /tmp/jump_traj.txt (전방 이륙속도 VX=$VX m/s)"

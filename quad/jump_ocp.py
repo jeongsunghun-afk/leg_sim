@@ -6,6 +6,7 @@
 import os, numpy as np, pinocchio as pin, crocoddyl
 np.set_printoptions(precision=3, suppress=True)
 G=9.81
+VX=float(os.environ.get('JUMP_VX','0.0'))   # ★전방 이륙속도(m/s). 0=수직 제자리 점프. base 위치는 비용0이라 vx만으로 탄도 전진
 HERE=os.path.dirname(os.path.abspath(__file__))
 URDF=os.path.join(HERE,'..','02_Leg_UFDF_260703_2','urdf','02_Leg_UFDF_260703_3.urdf')
 PKG=os.path.join(HERE,'..')   # simulation/ = package://02_Leg_UFDF_260703_2/ 탐색 루트
@@ -77,7 +78,7 @@ def make_contacts(active):
             cm.addContact(f,c)
     return cm
 
-def costs(vz_tar=None, up=True, xreg_to=None, wpush=0.0, term=False):
+def costs(vz_tar=None, vx_tar=0.0, up=True, xreg_to=None, wpush=0.0, term=False):
     cs=crocoddyl.CostModelSum(state,nu)
     xref=np.concatenate([xreg_to if xreg_to is not None else q_stand, np.zeros(nv)])
     wx=np.array([0]*3+[300,300,300]+[1.]*(nv-6) + [1.]*3+[10,10,10]+[0.1]*(nv-6))  # base 자세 강조
@@ -87,10 +88,11 @@ def costs(vz_tar=None, up=True, xreg_to=None, wpush=0.0, term=False):
     cs.addCost('ureg',crocoddyl.CostModelResidual(state,crocoddyl.ResidualModelControl(state,nu)),1e-3)
     tb=crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(-tau_lim,tau_lim))
     cs.addCost('taulim',crocoddyl.CostModelResidual(state,tb,crocoddyl.ResidualModelControl(state,nu)),1.0)
-    if vz_tar is not None:   # ★이륙 상향속도 유도(push): base 선속도 vz만 강가중
-        vtar=np.zeros(nv); vtar[2]=vz_tar
+    if vz_tar is not None:   # ★이륙속도 유도(push): base 선속도 vz(+전방 vx) 강가중
+        vtar=np.zeros(nv); vtar[2]=vz_tar; vtar[0]=vx_tar
         wv=np.zeros(2*nv); wv[nv+2]=1.0     # state tangent(2nv) 중 base linear vz
-        cs.addCost('pushvz',crocoddyl.CostModelResidual(state,
+        if vx_tar!=0.0: wv[nv+0]=1.0        # base linear vx(전방)
+        cs.addCost('pushv',crocoddyl.CostModelResidual(state,
             crocoddyl.ActivationModelWeightedQuad(wv**2),
             crocoddyl.ResidualModelState(state,np.concatenate([q_stand,vtar]),nu)), wpush)
     return cs
@@ -102,10 +104,11 @@ def run_model(dt, contact, **kw):
 
 dt=0.01
 vz_tk=np.sqrt(2*G*0.15)   # apex 0.15m 목표
+T_fly=2*vz_tk/G; D=VX*T_fly    # ★전방 점프 비행시간·전진거리(탄도)
 n_push, n_land = 22, 40
 n_fly=max(6,int(2*vz_tk/G/dt))
 models=[]; sched=[]
-for _ in range(n_push): models.append(run_model(dt,True, vz_tar=vz_tk, wpush=4.0)); sched.append('push')
+for _ in range(n_push): models.append(run_model(dt,True, vz_tar=vz_tk, vx_tar=VX, wpush=4.0)); sched.append('push')
 for _ in range(n_fly):  models.append(run_model(dt,False, xreg_to=q_crouch)); sched.append('flight')  # tuck+자세
 for _ in range(n_land): models.append(run_model(dt,True, xreg_to=q_stand)); sched.append('land')
 terminal=run_model(dt,True, xreg_to=q_stand, term=True)
@@ -116,12 +119,14 @@ solver=crocoddyl.SolverFDDP(problem)
 # ★점프형 warm-start(문서 필수): push=crouch→stand+vz↑, flight=탄도, land=stand
 xs=[];
 for k in range(n_push):
-    a=(k+1)/n_push; q=(1-a)*q_crouch+a*q_stand; v=np.zeros(nv); v[2]=a*vz_tk
+    a=(k+1)/n_push; q=(1-a)*q_crouch+a*q_stand; v=np.zeros(nv); v[2]=a*vz_tk; v[0]=a*VX
     xs.append(np.concatenate([q,v]))
 for k in range(n_fly):
-    tt=k*dt; q=q_crouch.copy(); q[2]=q_stand[2]+vz_tk*tt-0.5*G*tt*tt; v=np.zeros(nv); v[2]=vz_tk-G*tt
+    tt=k*dt; q=q_crouch.copy(); q[2]=q_stand[2]+vz_tk*tt-0.5*G*tt*tt; q[0]=VX*tt
+    v=np.zeros(nv); v[2]=vz_tk-G*tt; v[0]=VX
     xs.append(np.concatenate([q,v]))
-for k in range(n_land+1): xs.append(np.concatenate([q_stand,np.zeros(nv)]))
+qsf=q_stand.copy(); qsf[0]=D    # 착지 후 전방 위치(base 위치비용=0이라 warm-start만)
+for k in range(n_land+1): xs.append(np.concatenate([qsf,np.zeros(nv)]))
 xs=[x0]+xs[:len(models)]                       # 길이 N+1
 us=problem.quasiStatic(xs[:-1])
 print("[OCP] FDDP 풀이…")

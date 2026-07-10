@@ -48,6 +48,13 @@ cd simulation/quad/cpp && ./verify.sh            # 표준 회귀 배터리(평�
 bash simulation/quad/record_demo.sh              # GUI+뷰어 NVENC 녹화(사용자 터미널서, 상세=RECORDING.md)
 ```
 
+## 점프 (offline OCP 궤적 추종)
+```bash
+cd simulation/quad && bash gen_jump.sh 0.6      # 전방 점프 궤적 생성(VX=이륙속도, 0=수직 제자리)
+#   J1 OCP(crocoddyl)→J2 변환→/tmp/jump_traj.txt. C++ 점프모드가 crouch→재생(thrust/flight)→wbic 착지.
+#   ★/tmp 휘발성 → 점프 안 될 때 재생성. VX=0.6→~0.14m 전방, apex 0.28m, falls=0.
+```
+
 ## 게이트·모드 요약
 - **gait**: walk(순차 3~4발지지·정적안정·~0.6) / trot(대각 2지지·~1.4) / run(고속trot T0.40·~2.0).
 - **선회 2채널**: TROT_WZ=yaw-rate 직접(제자리 스핀) / TROT_STEER=자동차식 δ(Ackermann, 전진해야 조향·허리 lean). yaw-rate 캡 0.9(understeer).

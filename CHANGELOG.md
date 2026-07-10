@@ -13,6 +13,11 @@
 - **S2 (완료)**: 실시간 판단. 점프=1회 기동이라 crouch 구간(450ms) 안에 solve만 끝나면 됨. iter 스윕: iter1=76ms·apex0.31(유효점프), iter5~8=~150ms·apex0.282(완전수렴) — **전부 crouch 예산 내 → 점프 live-solve 실시간 충족**. (RTI/호라이즌다이어트는 연속제어=보행용, 1회 점프엔 불요). argv[3]=maxit·chrono 계측.
 - **S3 (다음)**: 배포 통합 — 점프모드가 jump-press 시 C++ live-solve(현재상태서, crouch 중) → 신선 궤적 실행. q0=배포는 컨트롤러 라이브 크라우치상태(quad_control crouch_home) 사용(Python dump 불요). traj export 또는 직접 실행.
 
+### B/C C++ 포팅 판단 (데이터 측정, 2026-07-10)
+사용자 질문: A(MPC+WBIC)가 C++로 대배수 빨라졌듯 B/C·시뮬도 C++면 빨라져 고속보행 되나?
+- **측정(B centroidal, pixi env)**: `mpc.iterate` OCP solve = **40ms 평균(warmup포함)·steady~20ms = 25Hz 상한**, per-step cycle ~24ms → **solve(C++ aligator)가 지배, glue 수 ms**.
+- **결론: 아니오.** A는 계산이 **Python**이라 C++화로 대배수. B/C는 무거운 계산(OCP solve)이 **이미 C++**이고 그게 병목(40ms) → 드라이버 C++화는 glue(수ms)만 제거, 25→~30Hz. 시뮬(MuJoCo)도 이미 C. **고속보행 한계=언어 아닌 OCP수렴(§9 모델계층화)**, 고속은 A(C++·~2m/s)가 담당. B/C 가치=저속 정밀 접촉기동.
+
 ---
 
 ## v15.0 — 17-DOF 배포 완성 baseline (2026-07-10)

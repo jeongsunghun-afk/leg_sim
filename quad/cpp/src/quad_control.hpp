@@ -125,17 +125,15 @@ struct QuadControl {
     Matrix<double,3,Dynamic> J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jb[r*nv+c]; return J; }
 
   // crouch_home: 넓은 발위치 유지 무릎굽힘 → q_home/com_ref/standing. + foot_hip_off/foot_gz0
-  void crouch_home(double bz=-1, bool warm=false){   // ★warm=이전 q_home서 시작(리셋X)=적은반복 수렴(높이 미세변경용, 렉 방지)
+  void crouch_home(double bz=-1){
     double base_z = (bz>0? bz : base_z0), foot_z0=0.0;
     if(m->nkey>0) mj_resetDataKeyframe(m,d,0); else { for(int i=0;i<nq;i++) d->qpos[i]=0; d->qpos[3]=1; }
     d->qpos[2]=0.60; mj_forward(m,d);
     Vector2d foot_xy[4]; for(int i=0;i<4;i++) foot_xy[i]=foot_point(i).head(2);
     d->qpos[2]=base_z;
-    if(warm){ for(int i=0;i<nu;i++) d->qpos[7+i]=q_home[i]; }   // ★warm-start: 이전 해(발목 포함) — 미세 높이변경은 거의 수렴상태
-    else for(int i=0;i<4;i++) if(leg_dof[i]==4){ double ang=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR")?FRONT_ANKLE:REAR_ANKLE;
+    for(int i=0;i<4;i++) if(leg_dof[i]==4){ double ang=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR")?FRONT_ANKLE:REAR_ANKLE;
       if(ang!=0.0) d->qpos[legqp[i][3]]=ang; }
-    const int NIT = warm ? 40 : 300;   // warm=near-converged라 40회면 충분(300→40=7.5배 저렴, 스파이크↓)
-    for(int it=0;it<NIT;it++){ mj_kinematics(m,d); mj_comPos(m,d);
+    for(int it=0;it<300;it++){ mj_kinematics(m,d); mj_comPos(m,d);
       for(int i=0;i<4;i++){ Vector3d tgt(foot_xy[i][0],foot_xy[i][1],foot_z0); Vector3d e=tgt-foot_point(i);
         Matrix<double,3,Dynamic> Jf=foot_jac(i); Matrix3d J; for(int r=0;r<3;r++)for(int cc=0;cc<3;cc++) J(r,cc)=Jf(r,legqv[i][cc]);
         Vector3d dq=0.5*(J.transpose()*(J*J.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e));
@@ -208,7 +206,7 @@ struct QuadControl {
   void update_stand_qhome(double base_z){
     std::vector<double> sq(nq),sv(nv); double st=d->time;
     for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
-    crouch_home(base_z, true);   // ★warm-start(이전 q_home서)=적은반복 → 높이램프/점프standup 렉 제거
+    crouch_home(base_z);
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st;
     mj_forward(m,d);
   }

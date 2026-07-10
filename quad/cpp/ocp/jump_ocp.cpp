@@ -9,6 +9,7 @@
 #include <chrono>
 #include <Eigen/Dense>
 
+#include <mujoco/mujoco.h>
 #include <pinocchio/multibody/joint.hpp>
 #include <pinocchio/parsers/urdf.hpp>
 #include <pinocchio/algorithm/model.hpp>
@@ -55,14 +56,66 @@ int main(int argc, char** argv) {
   std::vector<pinocchio::FrameIndex> fids;
   for (auto& f : FEET) fids.push_back(model->getFrameId(f));
 
-  // ── q_crouch·q_stand 로드(/tmp/ocp_q0.txt) ──
-  std::ifstream qf("/tmp/ocp_q0.txt");
-  if (!qf) { std::cerr << "q0 파일 없음 → DUMP_Q0=/tmp/ocp_q0.txt python jump_ocp.py 먼저 실행\n"; return 2; }
-  int fnq, fnv; qf >> fnq >> fnv;
-  VectorXd q_crouch(nq), q_stand(nq);
-  for (int i = 0; i < nq; i++) qf >> q_crouch[i];
-  for (int i = 0; i < nq; i++) qf >> q_stand[i];
+  // ── q_crouch·q_stand: MuJoCo crouch IK(mj_crouch) → pinocchio 매핑(mj2pin). Python 원본 직역(self-contained) ──
+  const std::string MJCF = "/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
+  char merr[1000];
+  mjModel* mjm = mj_loadXML(MJCF.c_str(), nullptr, merr, 1000);
+  if (!mjm) { std::cerr << "mjcf 로드실패: " << merr << "\n"; return 2; }
+  mjData* mjd = mj_makeData(mjm);
+  const char* LEGS[4] = {"HL", "HR", "FL", "FR"};
+  const char* JN[4] = {"hip", "thigh", "calf", "foot"};
+  int mfgid[4]; double mfr[4];
+  for (int i = 0; i < 4; i++) {
+    mfgid[i] = mj_name2id(mjm, mjOBJ_GEOM, (std::string(LEGS[i]) + "_sphere").c_str());
+    mfr[i] = mjm->geom_size[3 * mfgid[i]];
+  }
+  auto mj_crouch = [&](double base_z) -> VectorXd {
+    if (mjm->nkey > 0) mj_resetDataKeyframe(mjm, mjd, 0);
+    else { for (int i = 0; i < mjm->nq; i++) mjd->qpos[i] = 0; mjd->qpos[3] = 1; }
+    mjd->qpos[2] = 0.55; mj_forward(mjm, mjd);
+    double fxy[4][2];
+    for (int i = 0; i < 4; i++) { fxy[i][0] = mjd->geom_xpos[3 * mfgid[i]]; fxy[i][1] = mjd->geom_xpos[3 * mfgid[i] + 1]; }
+    mjd->qpos[2] = base_z;
+    std::vector<double> jp(3 * mjm->nv);
+    for (int it = 0; it < 300; it++) {
+      mj_kinematics(mjm, mjd);
+      for (int i = 0; i < 4; i++) {
+        Eigen::Vector3d e(fxy[i][0] - mjd->geom_xpos[3 * mfgid[i]],
+                          fxy[i][1] - mjd->geom_xpos[3 * mfgid[i] + 1],
+                          0.0 - (mjd->geom_xpos[3 * mfgid[i] + 2] - mfr[i]));
+        mjtNum pnt[3] = {mjd->geom_xpos[3 * mfgid[i]], mjd->geom_xpos[3 * mfgid[i] + 1], mjd->geom_xpos[3 * mfgid[i] + 2]};
+        mj_jac(mjm, mjd, jp.data(), nullptr, pnt, mjm->geom_bodyid[mfgid[i]]);
+        int cols[4], qa[4];
+        for (int k = 0; k < 4; k++) {
+          int jid = mj_name2id(mjm, mjOBJ_JOINT, (std::string(LEGS[i]) + "_" + JN[k] + "_joint").c_str());
+          cols[k] = mjm->jnt_dofadr[jid]; qa[k] = mjm->jnt_qposadr[jid];
+        }
+        Eigen::Matrix<double, 3, 4> Jl;
+        for (int r = 0; r < 3; r++) for (int k = 0; k < 4; k++) Jl(r, k) = jp[r * mjm->nv + cols[k]];
+        Eigen::Vector4d dq = 0.5 * Jl.transpose() *
+            (Jl * Jl.transpose() + 1e-4 * Eigen::Matrix3d::Identity()).ldlt().solve(e);
+        for (int k = 0; k < 4; k++) mjd->qpos[qa[k]] += dq[k];
+      }
+    }
+    mj_forward(mjm, mjd);
+    VectorXd out(mjm->nq); for (int i = 0; i < mjm->nq; i++) out[i] = mjd->qpos[i];
+    return out;
+  };
+  auto mj2pin = [&](const VectorXd& qpos) -> VectorXd {
+    VectorXd q = pinocchio::neutral(*model);
+    q[0] = qpos[0]; q[1] = qpos[1]; q[2] = qpos[2];
+    q[3] = qpos[4]; q[4] = qpos[5]; q[5] = qpos[6]; q[6] = qpos[3];  // wxyz→xyzw
+    for (pinocchio::JointIndex jid = 1; jid < (pinocchio::JointIndex)model->njoints; ++jid) {
+      int mjid = mj_name2id(mjm, mjOBJ_JOINT, model->names[jid].c_str());
+      if (mjid >= 0) q[model->idx_qs[jid]] = qpos[mjm->jnt_qposadr[mjid]];
+    }
+    return q;
+  };
+  VectorXd q_crouch = mj2pin(mj_crouch(0.30));
+  VectorXd q_stand  = mj2pin(mj_crouch(0.50));
+  mj_deleteData(mjd); mj_deleteModel(mjm);
   VectorXd x0(nq + nv); x0 << q_crouch, VectorXd::Zero(nv);
+  std::cout << "[ocp] q0(C++ mj_crouch): crouch z=" << q_crouch[2] << " stand z=" << q_stand[2] << "\n";
 
   // ── state·actuation ──
   auto state = std::make_shared<cr::StateMultibody>(model);

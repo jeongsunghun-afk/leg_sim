@@ -11,7 +11,8 @@
 - **S0 (완료)**: crocoddyl C++ 빌드 통합 de-risk. `cpp/ocp/build_check.cpp` + CMake `ocp_check` 타겟(crocoddyl 3.2.1=std::shared_ptr, `-lcrocoddyl -lpinocchio_default`). 컴파일·링크·solve 확인.
 - **S1 (완료)**: 점프 OCP C++ 포팅(`cpp/ocp/jump_ocp.cpp`). crocoddyl 전체(contact·cost·FDDP·warm-start) → **iter54·cost1.28·apex0.282m Python 완전일치**. (q_crouch/q_stand는 mj_crouch IK 산물 → 임시로 Python DUMP_Q0 로드, IK 포팅은 후속)
 - **S2 (완료)**: 실시간 판단. 점프=1회 기동이라 crouch 구간(450ms) 안에 solve만 끝나면 됨. iter 스윕: iter1=76ms·apex0.31(유효점프), iter5~8=~150ms·apex0.282(완전수렴) — **전부 crouch 예산 내 → 점프 live-solve 실시간 충족**. (RTI/호라이즌다이어트는 연속제어=보행용, 1회 점프엔 불요). argv[3]=maxit·chrono 계측.
-- **S3 (다음)**: 배포 통합 — 점프모드가 jump-press 시 C++ live-solve(현재상태서, crouch 중) → 신선 궤적 실행. q0=배포는 컨트롤러 라이브 크라우치상태(quad_control crouch_home) 사용(Python dump 불요). traj export 또는 직접 실행.
+- **S3-a (완료)**: C++ OCP self-contained화. mj_crouch(MuJoCo IK)+mj2pin을 C++ 포팅 → Python DUMP_Q0 제거, 순수 C++로 crouch/stand 계산+OCP solve. 결과 iter54·cost1.284·apex0.282m 여전히 완전 일치. jump_ocp 타겟에 MuJoCo 링크.
+- **S3-b (다음)**: 배포 통합 — jump_ocp를 호출가능 함수로 리팩터→trot_view에 crocoddyl 링크→점프모드가 jump-press 시 live-solve(crouch중)→신선 궤적 실행. 또는 on-demand 생성(별도 solve→/tmp→기존 replay).
 
 ### B/C C++ 포팅 판단 (데이터 측정, 2026-07-10)
 사용자 질문: A(MPC+WBIC)가 C++로 대배수 빨라졌듯 B/C·시뮬도 C++면 빨라져 고속보행 되나?

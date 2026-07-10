@@ -49,10 +49,7 @@ ROBOTS = {
                         foot_geom='{L}_sphere', hip_body='{L}_hip_link',
                         foot_kind='sphere', base_z0=0.52, mu=0.6),   # _9 고정앞발목: 0.52서 무한안정(0.42=앞피칭 전복)
     # ★260701 17-DOF(허리 fixed=16관절 전발목 4족). build_real_quad_17dof.py 생성. 앞/뒤 thigh·calf 축부호 반대
-    'ours_17dof': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_17dof.mjcf'),
-                       legs=['HL', 'HR', 'FL', 'FR'], dof=4,
-                       foot_body='{L}_foot_contact_link', hip_body='{L}_hip_link',
-                       foot_kind='mesh', base_z0=0.527, foot_z0=0.02, mu=0.6),
+    # (box발 'ours_17dof'=quad_real_17dof.mjcf 제거: sphere로 대체됨. 필요시 tools/build_real_quad_17dof→gen_sphere로 재생성)
     'ours_17dof_sphere': dict(mjcf=os.path.join(_HERE, 'mjcf', 'quad_real_17dof_sphere.mjcf'),
                        legs=['HL', 'HR', 'FL', 'FR'], dof=4,
                        foot_geom='{L}_sphere', hip_body='{L}_hip_link',

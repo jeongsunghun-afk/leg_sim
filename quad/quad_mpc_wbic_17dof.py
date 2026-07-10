@@ -322,7 +322,7 @@ class QuadSim:
             qj = qj + J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(3), e)
         return qj
 
-    def crouch_home(self, base_z=None):
+    def crouch_home(self, base_z=None, warm=False):   # ★warm=이전 q_home서 시작(리셋X)=적은반복 수렴(높이 미세변경 렉 방지)
         """q=0(또는 keyframe) 넓은 발 위치 유지한 채 base 낮춰 무릎굽힘 → q_home/com_ref."""
         d, m = self.d, self.m
         base_z = base_z if base_z is not None else float(os.environ.get('BASE_Z0', self.base_z0))
@@ -337,12 +337,15 @@ class QuadSim:
         #   → 같은 발 궤적, 더 웅크린 자세(발목 꺾고 thigh 펴짐). 4-DoF 여유(redundancy) 해소.
         _ra = float(os.environ.get('REAR_ANKLE', '-0.3'))   # ★뒷발목(2026-07-02 튜닝): -0.5→-0.3 뒷다리 신전(thigh -0.35→-0.18, 앞다리에 근접)+비대칭 완화로 tilt_max V1.0 2.0→1.0. sphere발이라 접촉無영향
         _fa = float(os.environ.get('FRONT_ANKLE', '-0.5'))  # ★앞발목 기본 -0.5(뒷발과 별도). 앞다리 축부호 반대라 -0.5=앞발 자세. 비대칭(앞-0.5/뒤-0.3)이 대칭보다 tilt 낮음
-        for i in range(4):
-            if self.leg_dof[i] == 4:
-                _ang = _fa if self.legs[i] in ('FL', 'FR') else _ra
-                if _ang != 0.0:
-                    d.qpos[self.legqp[i][3]] = _ang
-        for _ in range(300):
+        if warm:
+            d.qpos[7:7 + self.nu] = self.q_home   # ★warm-start: 이전 해(발목 포함) — 미세 높이변경은 거의 수렴상태
+        else:
+            for i in range(4):
+                if self.leg_dof[i] == 4:
+                    _ang = _fa if self.legs[i] in ('FL', 'FR') else _ra
+                    if _ang != 0.0:
+                        d.qpos[self.legqp[i][3]] = _ang
+        for _ in range(40 if warm else 300):   # warm=near-converged라 40회면 충분(300→40=7.5배 저렴, 스파이크↓)
             mujoco.mj_kinematics(m, d); mujoco.mj_comPos(m, d)
             for i in range(4):
                 tgt = np.array([foot_xy[i][0], foot_xy[i][1], self.foot_z0])
@@ -364,7 +367,7 @@ class QuadSim:
         """target base_z용 q_home/com_ref 재계산(IK) — 라이브 d는 복원(텔레포트X).
         WBIC posture+CoM task가 새 q_home으로 부드럽게 구동 → 서기 높이변경/눕기."""
         _q = self.d.qpos.copy(); _v = self.d.qvel.copy(); _t = self.d.time
-        self.crouch_home(base_z)                       # q_home/com_ref 갱신(d 텔레포트됨)
+        self.crouch_home(base_z, warm=True)            # ★warm-start=적은반복 → 높이램프/점프standup 렉 제거
         self.d.qpos[:] = _q; self.d.qvel[:] = _v; self.d.time = _t   # 라이브 d 복원
         mujoco.mj_forward(self.m, self.d)
 

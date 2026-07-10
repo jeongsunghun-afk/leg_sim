@@ -54,6 +54,8 @@ struct TrotCtrl {
   double SIT_CPITCH=1.0, SIT_REACH=0.08;   // ★앉기 nose-up 목표(~25° 앞올림=앉은자세, wbic_stance 능동제어→안정+기립가능). SIT_REACH 미사용(잔여)
   // ★개-앉기(haunch sit): 정착 후 crouch→haunch(뒷다리 접어 발링크 바닥밀착)로 fold, 기립 시 높이스케줄 언폴드. q_home/com_ref 블렌드.
   double HAUNCH_Z=0.30, HAUNCH_FOLD_RATE=0.35, HAUNCH_UNFOLD_Z=0.40, SIT_POSTURE_W=40.0, HAUNCH_PITCH=0.50, SIT_KP=90.0;   // ★엉덩이 주저앉기: base 낮춤·fold 완만(0.60→0.35=~2.9s, 서기→앉기 급강하 완화)·nose-up 크게. 기립불요·자세우선
+  double SIT_BELOW_SPEED=2.5;   // ★눕기(from_below)→앉기 fold 배수: 엉덩이 이미 낮아 엉덩방아 위험 없음→빠르게(위→앉기 완만착지는 미적용). ~2.9s→~1.2s
+  double FRONT_PULL_SPEED=2.2;  // ★앞다리 끌어당김 배수(앞다리는 뒤 엉덩이 착지 tail과 무관하게 더 빨리 접힘): 앞은 haunch_fold*이 배수로 조기 완료, 뒤(엉덩방아)는 원래 pace 유지
   VectorXd q_crouch, q_haunch; Vector3d com_crouch=Vector3d::Zero(), com_haunch=Vector3d::Zero(); double haunch_fold=0; bool haunch_ready=false;
   // ★기립 궤적 추종(offline gather 궤적 /tmp/getup_traj.txt): sit→gather(CoM 전진)→일어서기. phaseA(0/1)=PD추종, phaseB(2)=wbic 상승 인계.
   std::vector<VectorXd> getup_q, getup_dqv; std::vector<int> getup_ph; double getup_dt=0.01; int getup_N=-1, getup_k=-1; double getup_kt=0, GETUP_TRAJ_KP=80.0, GETUP_TRAJ_KD=6.0;   // ★앉기→서기 튕김 힘 완화(120→80)+감쇠↑(4→6): 기립 중 최대tilt 70°→49°(더 약하고 안전하게). 기립 완료는 유지(z≈0.49)
@@ -67,6 +69,7 @@ struct TrotCtrl {
   }
   // ★앉기→서기 스크립트 기립(앞다리 굽혀 앞발 들어 폴볼트 차단 + 뒷다리 박차 extend). 앉기에서만 발동.
   bool was_sit=false; double sit_getup_t0=-1;
+  bool sit_init=false, sit_from_below=false;   // ★sit 진입 방향 1회 latch: 눕기 등 아래서 진입 시 0.32 crouch 오버슈트 없이 현재 자세서 곧바로 haunch로 morph
   bool from_sit=false;   // ★crouch-sit서 기립: 저crouch(≥0.29)라 저-PD 대신 wbic_stance로 매끈 기립(오버슈트 방지)
   double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
   double SGU_WALKOUT_V=0.6, SGU_HANDOFF_Z=0.34;   // ★기립 후 전진 트로트로 인계(walk-out)해 균형회복. bz>HANDOFF_Z면 move로 전환
@@ -86,7 +89,7 @@ struct TrotCtrl {
       jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
-  double GROUND_LIE_Z=0.22, GROUND_REAR_FOOT=-0.58, GROUND_FRONT_FOOT=-0.5, GROUND_FRONT_THIGH=0.0, GROUND_FRONT_CALF=0.0;   // ★눕기(ground) 저자세: base 낮춤 + 앞뒤 발목/앞다리 fold(GUI 실시간 슬라이더로 CoM균형·수평·무슬라이드 조각). PD-fold 홀드
+  double GROUND_LIE_Z=0.226, GROUND_REAR_FOOT=-1.15, GROUND_FRONT_FOOT=-0.5, GROUND_FRONT_THIGH=-0.24, GROUND_FRONT_CALF=-0.4;   // ★눕기(ground) 저자세: base 낮춤 + 앞뒤 발목/앞다리 fold(GUI 실시간 슬라이더로 CoM균형·수평·무슬라이드 조각). PD-fold 홀드. ★기본값=뷰어 라이브튜닝서 확정(base_z≈0.166 깊은 belly-lie)
   // ── 게이트 프리셋(trot/walk/gallop) ──
   std::string gait_type="trot";
   double gp_T=0.5, gp_SWF=0.5, gp_off[4]={0,0.5,0.5,0}, gp_Tsw=0.25, gp_Tst=0.25;
@@ -139,6 +142,7 @@ struct TrotCtrl {
     double t=d->time; int nu=q.nu;
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="sit") q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt);   // ★nose-up 부드럽게 해제(리셋 아닌 슬루=언폴드 중 뒷다리 펴짐과 함께 nose-up 풀림)
+    if(mode!="sit") sit_init=false;                                          // ★sit 이탈=진입방향 latch 리셋(다음 진입서 재판정)
     q.posture_w=1.0; q.sit_hock_contact=false;   // ★자세task 가중·뒤 hock접촉 기본off(서기/보행). 개-앉기 홀드서만 on
     if(mode!="jump" && jphase>=0) jphase=-1;      // 점프 중 다른 모드로 이탈=상태 초기화(재진입 정상화)
     // ★달리다 서기(stand_up): 전진속도 크면 먼저 move(명령0)로 감속→발이 CoM 밑으로 재중심된 뒤 stand. (뒤 엉덩방아 방지)
@@ -201,15 +205,27 @@ struct TrotCtrl {
       if(mode=="sit"){   // ★개-앉기(haunch sit): 저crouch로 하강 → 정착 후 crouch→haunch(뒷다리 접어 발링크 바닥밀착) fold + nose-up. 기립=from_sit
         was_sit=false; sit_getup_t0=-1; from_sit=true;
         double bz=d->qpos[2];
-        if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);   // 쓰러짐/눕기서 낮음→동기화
-        ht_cur+=tc_clip(SIT_Z-ht_cur,-GETUP_RATE*dt,GETUP_RATE*dt);        // 천천히 SIT_Z로
-        if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }  // crouch 원본(blend용)
-        bool settled=(std::abs(ht_cur-SIT_Z)<0.03 && bz>0.29);            // SIT_Z 정착 후에만 fold+nose-up
-        if(settled && !haunch_ready){ q.haunch_sit_home(HAUNCH_Z,HAUNCH_PITCH); q_haunch=q.q_home; com_haunch=q.com_ref; haunch_ready=true; }  // ★haunch 1회 계산(nose-up 베이킹→PD홀드가 재현)
+        if(!sit_init){ sit_from_below=(bz<SIT_Z-0.02); sit_init=true; }     // ★진입방향 1회 판정: 눕기 등 SIT_Z(0.32)보다 낮게 진입=from_below
+        if(sit_from_below){   // ★아래(눕기)서 진입: 0.32 crouch로 안 올림. 현재 자세를 blend 시작점으로 캡처 + haunch 즉시 계산 → settled 대기 없이 직행 morph(base는 다리 접힘 기하로 ~0.25까지만 자연 상승, "일어섰다 다시앉기" 오버슈트 제거)
+          if(!haunch_ready){
+            for(int j=0;j<nu;j++) q_crouch[j]=d->qpos[7+j];                 // 시작점=현재 눕기 자세
+            com_crouch=Vector3d(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
+            q.haunch_sit_home(HAUNCH_Z,HAUNCH_PITCH); q_haunch=q.q_home; com_haunch=q.com_ref; haunch_ready=true;
+            ht_cur=std::max(bz,0.15); qhome_h=-1;                           // ht_cur=현재높이 동기(위로 램프 안 함)
+          }
+        } else {              // ★위(서기)서 진입: 기존 로직 — 0.32로 하강 후 fold
+          if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz); // 쓰러짐서 낮음→동기화
+          ht_cur+=tc_clip(SIT_Z-ht_cur,-GETUP_RATE*dt,GETUP_RATE*dt);      // 천천히 SIT_Z로
+          if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }  // crouch 원본(blend용)
+          bool settled=(std::abs(ht_cur-SIT_Z)<0.03 && bz>0.29);          // SIT_Z 정착 후에만 fold+nose-up
+          if(settled && !haunch_ready){ q.haunch_sit_home(HAUNCH_Z,HAUNCH_PITCH); q_haunch=q.q_home; com_haunch=q.com_ref; haunch_ready=true; }  // ★haunch 1회 계산(nose-up 베이킹→PD홀드가 재현)
+        }
         double tf=haunch_ready?1.0:0.0;                                    // ★접힘 시작 후 계속 유지(자세 홀드). settled는 최초 트리거만 담당(앉으면 bz<0.29로 settled 풀려 되펴지던 버그 수정)
         double frate=HAUNCH_FOLD_RATE*std::max(0.18,1.0-haunch_fold);       // ★ease-out: fold 끝(→1)에서 느려져 엉덩이 살포시 착지(엉덩방아 완화). 시작은 빠름
+        if(sit_from_below) frate=HAUNCH_FOLD_RATE*SIT_BELOW_SPEED*std::max(0.5,1.0-haunch_fold);  // ★눕기서 진입=엉덩이 이미 낮음→빠른 fold + 얕은 ease-out(tail 완만 불필요, 기어가는 꼬리 제거)
         haunch_fold+=tc_clip(tf-haunch_fold,-frate*dt,frate*dt);
-        if(haunch_ready){ for(int j=0;j<nu;j++) q.q_home[j]=(1-haunch_fold)*q_crouch[j]+haunch_fold*q_haunch[j];
+        if(haunch_ready){ double ff=std::min(1.0,haunch_fold*FRONT_PULL_SPEED); int jfront=q.legqp[2][0]-7;  // ★앞다리(FL_hip 이후 관절)=더 빠른 fold로 조기 끌어당김. 뒤(엉덩방아)는 haunch_fold 원래 pace
+          for(int j=0;j<nu;j++){ double f=(j>=jfront)?ff:haunch_fold; q.q_home[j]=(1-f)*q_crouch[j]+f*q_haunch[j]; }
                           q.com_ref=(1-haunch_fold)*com_crouch+haunch_fold*com_haunch; }
         if(haunch_ready){ double froll=tc_clip((haunch_fold-0.65)/0.35,0.0,1.0);   // ★뒷발 굴려 착지: 착지중(fold<0.65)=LAND각(발 안 부딪힘) → 바닥 닿은 뒤(fold→1)=CONTACT각(발바닥 밀착)
           double footang=(1.0-froll)*q.HAUNCH_FOOT_LAND+froll*q.HAUNCH_FOOT;
@@ -265,7 +281,7 @@ struct TrotCtrl {
       double tgt=(mode=="stand_down")?GROUND_LIE_Z:body_h;                  // ★눕기=저자세(0.22) leg-fold / 서기=슬라이더
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
-      if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }
+      if(std::abs(ht_cur-qhome_h)>6e-3 || mode=="stand_down"){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }  // ★눕기=매틱 재계산(LUT, 저비용): 아래 앞다리 오프셋을 깨끗한 base q_home에 얹어 += 누적/슬라이더 무반응 방지(height 고정 시 재계산 스킵되던 버그)
       if(mode=="stand_down") for(int i=0;i<4;i++) if(q.leg_dof[i]==4){   // ★앞뒤 발목 접기 + 앞다리 fold(GUI 슬라이더로 CoM균형·수평·무슬라이드 조각)
         q.q_home[q.legqp[i][3]-7]=(i<2)?GROUND_REAR_FOOT:GROUND_FRONT_FOOT;   // 발목: 뒤/앞
         if(i>=2){ q.q_home[q.legqp[i][1]-7]+=GROUND_FRONT_THIGH; q.q_home[q.legqp[i][2]-7]+=GROUND_FRONT_CALF; } }  // 앞다리 thigh/calf 오프셋(접기)

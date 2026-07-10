@@ -104,7 +104,7 @@
           <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="FL_hip_link" />
           <body name="FL_thigh_link" pos="0 0.115 0">
             <inertial pos="-0.053568 0.00079281 -0.078186" quat="0.674558 0.212019 0.212132 0.674552" mass="3.1" diaginertia="0.005605 0.00436143 0.00134767" />
-            <joint name="FL_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.443 1.047" actuatorfrcrange="-84 84" />
+            <joint name="FL_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.705 1.309" actuatorfrcrange="-84 84" />   <!-- ★앞 thigh limit 양방향 +15°(0.262rad) 확장(원본 -2.443~1.047): 눕기 저자세서 앞다리 세움 여유. 실기 스펙 여유 확인 필요 -->
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="FL_thigh_link" />
             <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="FL_thigh_link" />
             <body name="FL_calf_link" pos="-0.13192 -0.275 -0.1884">
@@ -134,7 +134,7 @@
           <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="FR_hip_link" />
           <body name="FR_thigh_link" pos="0 -0.115 0">
             <inertial pos="-0.055149 -0.00079282 -0.077079" quat="0.674237 0.213238 0.213149 0.674167" mass="3.1" diaginertia="0.005605 0.00436141 0.00134769" />
-            <joint name="FR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.443 1.047" actuatorfrcrange="-84 84" />
+            <joint name="FR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.705 1.309" actuatorfrcrange="-84 84" />   <!-- ★앞 thigh limit 양방향 +15°(0.262rad) 확장(원본 -2.443~1.047): 눕기 저자세서 앞다리 세움 여유. 실기 스펙 여유 확인 필요 -->
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="FR_thigh_link" />
             <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="FR_thigh_link" />
             <body name="FR_calf_link" pos="-0.13192 0 -0.1884">

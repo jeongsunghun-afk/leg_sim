@@ -85,7 +85,7 @@
     <div class="arrow">↓</div>
     <div class="stage mpc"><span class="rate">50 Hz</span><span class="n">⑤</span><span class="t">MPC — mpc_qp_plan</span><div class="d">접촉스케줄 cs[N=14][4] 롤아웃 → condensed QP → <b>lam_des[4]</b> (발별 GRF, world)</div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">lam 홀드 (갱신 사이)</span></div>
-    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">⑥</span><span class="t">WBIC — wbic_track</span><div class="d">(stance, swing목표, lam) → q̈, λ<sub>c</sub> → τ = M<sub>6:</sub>q̈ + h<sub>6:</sub> − Jᵀλ<sub>c</sub> → <b>d->ctrl[17]</b> &nbsp;(실패 시 wbic_stance)</div></div>
+    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">⑥</span><span class="t">WBIC — wbic_track</span><div class="d">(stance, swing목표, lam) → q<sup>¨</sup>, λ<sub>c</sub> → τ = M<sub>6:</sub>q<sup>¨</sup> + h<sub>6:</sub> − J<sup>T</sup>λ<sub>c</sub> → <b>d->ctrl[17]</b> &nbsp;(실패 시 wbic_stance)</div></div>
     <div class="arrow">↓</div>
     <div class="stage"><span class="n">step</span><span class="t">mj_step</span><div class="d">토크 적용 → 다음 상태</div></div>
   </div>
@@ -98,17 +98,17 @@
     <p>단일강체(SRBD) 선형·볼록·시변(LTV). 현재 자세 <var>R</var>로 매 호출 선형화. 상태를 소거한 <b>condensed QP</b>(결정변수=GRF만).</p>
 
     <h3>상태 & 결정변수</h3>
-    <div class="eq"><span class="lbl">x ∈ ℝ¹³ = </span>[ roll, pitch, yaw,&nbsp; p<sub>x</sub>,p<sub>y</sub>,p<sub>z</sub>,&nbsp; ω<sub>x</sub>,ω<sub>y</sub>,ω<sub>z</sub>,&nbsp; v<sub>x</sub>,v<sub>y</sub>,v<sub>z</sub>,&nbsp; g ]&nbsp;&nbsp;<span class="lbl">(ω=world, g=−9.81 증강)</span></div>
-    <div class="eq"><span class="lbl">U = </span>[ λ<sub>0</sub> … λ<sub>N−1</sub> ] ∈ ℝ<sup>N·12</sup>&nbsp;&nbsp;<span class="lbl">각 스텝 λ = 4발 × 3(world GRF), N=14 → </span>168차원<span class="lbl">. QP는 첫 스텝만 사용</span></div>
+    <div class="eq"><span class="lbl">x ∈ R¹³ = </span>[ roll, pitch, yaw,&nbsp; p<sub>x</sub>,p<sub>y</sub>,p<sub>z</sub>,&nbsp; ω<sub>x</sub>,ω<sub>y</sub>,ω<sub>z</sub>,&nbsp; v<sub>x</sub>,v<sub>y</sub>,v<sub>z</sub>,&nbsp; g ]&nbsp;&nbsp;<span class="lbl">(ω=world, g=−9.81 증강)</span></div>
+    <div class="eq"><span class="lbl">U = </span>[ λ<sub>0</sub> … λ<sub>N−1</sub> ] ∈ R<sup>N·12</sup>&nbsp;&nbsp;<span class="lbl">각 스텝 λ = 4발 × 3(world GRF), N=14 → </span>168차원<span class="lbl">. QP는 첫 스텝만 사용</span></div>
 
     <h3>연속 동역학 (CoM 기준)</h3>
-    <div class="eq">Θ̇ = R<sub>z</sub>(yaw)ᵀ·ω&nbsp;&nbsp;&nbsp; ṗ = v&nbsp;&nbsp;&nbsp; ω̇ = I<sub>w</sub><sup>−1</sup> Σ<sub>i</sub> r<sub>i</sub>×λ<sub>i</sub>&nbsp;&nbsp;&nbsp; v̇ = (1/m) Σ<sub>i</sub> λ<sub>i</sub> + g</div>
-    <p class="dim">I<sub>w</sub> = R·I<sub>body</sub>·Rᵀ (현재자세 회전) · r<sub>i</sub> = 발<sub>i</sub> − CoM · 이산화 x<sub>k+1</sub>=A<sub>d</sub>x<sub>k</sub>+B<sub>d,k</sub>u<sub>k</sub> (A<sub>d</sub>=I+DT·A<sub>c</sub>, <b>접촉 발만</b> B에 기여). condensed: X = A<sub>q</sub>x<sub>0</sub> + B<sub>q</sub>U.</p>
+    <div class="eq">Θ<sup>˙</sup> = R<sub>z</sub>(yaw)<sup>T</sup>·ω&nbsp;&nbsp;&nbsp; p<sup>˙</sup> = v&nbsp;&nbsp;&nbsp; ω<sup>˙</sup> = I<sub>w</sub><sup>−1</sup> Σ<sub>i</sub> r<sub>i</sub>×λ<sub>i</sub>&nbsp;&nbsp;&nbsp; v<sup>˙</sup> = (1/m) Σ<sub>i</sub> λ<sub>i</sub> + g</div>
+    <p class="dim">I<sub>w</sub> = R·I<sub>body</sub>·R<sup>T</sup> (현재자세 회전) · r<sub>i</sub> = 발<sub>i</sub> − CoM · 이산화 x<sub>k+1</sub>=A<sub>d</sub>x<sub>k</sub>+B<sub>d,k</sub>u<sub>k</sub> (A<sub>d</sub>=I+DT·A<sub>c</sub>, <b>접촉 발만</b> B에 기여). condensed: X = A<sub>q</sub>x<sub>0</sub> + B<sub>q</sub>U.</p>
 
     <h3>비용</h3>
-    <div class="eq">min<sub>U</sub> &nbsp;Σ<sub>k</sub> (x<sub>k</sub>−x<sub>ref</sub>)ᵀ Q (x<sub>k</sub>−x<sub>ref</sub>) &nbsp;+&nbsp; u<sub>k</sub>ᵀ R u<sub>k</sub></div>
+    <div class="eq">min<sub>U</sub> &nbsp;Σ<sub>k</sub> (x<sub>k</sub>−x<sub>ref</sub>)<sup>T</sup> Q (x<sub>k</sub>−x<sub>ref</sub>) &nbsp;+&nbsp; u<sub>k</sub><sup>T</sup> R u<sub>k</sub></div>
     <div class="eq">Q = diag( <b>200,200,100</b>, &nbsp;0,0,<b>200</b>, &nbsp;0,0,1, &nbsp;10,10,1, &nbsp;0 )&nbsp;&nbsp;<span class="lbl">R = 10<sup>−6</sup></span></div>
-    <p class="dim">자세(roll/pitch/yaw)·높이 z·ω<sub>z</sub>·수평속도 중시. xy 위치·수직속도=free(0). H=2(B<sub>q</sub>ᵀQ̄B<sub>q</sub>)+2R̄, diag+=1e−8(PD 보장).</p>
+    <p class="dim">자세(roll/pitch/yaw)·높이 z·ω<sub>z</sub>·수평속도 중시. xy 위치·수직속도=free(0). H=2(B<sub>q</sub><sup>T</sup>Q̄B<sub>q</sub>)+2R̄, diag+=1e−8(PD 보장).</p>
 
     <h3>제약</h3>
     <ul>
@@ -124,18 +124,18 @@
   <h2><span class="chip wbic">WBIC</span> 3 · 솔버가 푸는 문제 — 단일 전신 QP</h2>
   <div class="card wbic">
     <h3>결정변수</h3>
-    <div class="eq"><span class="lbl">z ∈ ℝ<sup>nv+3K<sub>c</sub></sup> = </span>[ q̈ (23), &nbsp;λ<sub>c</sub> (3×K<sub>c</sub>) ]&nbsp;&nbsp;<span class="lbl">q̈=부동베이스6+관절17 가속 · K<sub>c</sub>=stance 발 수 · λ<sub>c</sub>=접촉력</span></div>
+    <div class="eq"><span class="lbl">z ∈ R<sup>nv+3K<sub>c</sub></sup> = </span>[ q<sup>¨</sup> (23), &nbsp;λ<sub>c</sub> (3×K<sub>c</sub>) ]&nbsp;&nbsp;<span class="lbl">q<sup>¨</sup>=부동베이스6+관절17 가속 · K<sub>c</sub>=stance 발 수 · λ<sub>c</sub>=접촉력</span></div>
 
-    <h3>비용 = 가중 task 최소자승 &nbsp;<span class="dim">‖J q̈ − a<sub>des</sub>‖²<sub>w</sub></span></h3>
+    <h3>비용 = 가중 task 최소자승 &nbsp;<span class="dim">‖J q<sup>¨</sup> − a<sub>des</sub>‖²<sub>w</sub></span></h3>
     <div class="scroll"><table>
       <thead><tr><th>task</th><th>목표 가속 a<sub>des</sub></th><th>가중 w</th></tr></thead>
       <tbody>
-        <tr><td class="p">스윙발 추종</td><td class="d">2400(p<sub>tgt</sub>−p) + 110(v<sub>tgt</sub>−ṗ)</td><td class="d">90</td></tr>
+        <tr><td class="p">스윙발 추종</td><td class="d">2400(p<sub>tgt</sub>−p) + 110(v<sub>tgt</sub>−p<sup>˙</sup>)</td><td class="d">90</td></tr>
         <tr><td class="p">자세 roll/pitch</td><td class="d">150(−o<sub>err</sub>) − 20ω &nbsp;<span class="dim">(현재 yaw 프레임 레벨링)</span></td><td class="d">w_ori = <b>20</b></td></tr>
         <tr><td class="p">자세 yaw 헤딩</td><td class="d">150·yaw<sub>err</sub> − 20ω<sub>z</sub></td><td class="d">w_yaw = <b>0</b></td></tr>
         <tr><td class="p">CoM 높이 z</td><td class="d">200(z<sub>ref</sub>−z) − 25ż</td><td class="d">150</td></tr>
-        <tr><td class="p">관절 posture</td><td class="d">60(q<sub>home</sub>−q) − 5q̇</td><td class="d">1 / swing_w / 발목 20</td></tr>
-        <tr><td class="p">허리 홀드</td><td class="d">150(waist<sub>ref</sub>−q) − 20q̇</td><td class="d">WAIST_W = 80</td></tr>
+        <tr><td class="p">관절 posture</td><td class="d">60(q<sub>home</sub>−q) − 5q<sup>˙</sup></td><td class="d">1 / swing_w / 발목 20</td></tr>
+        <tr><td class="p">허리 홀드</td><td class="d">150(waist<sub>ref</sub>−q) − 20q<sup>˙</sup></td><td class="d">WAIST_W = 80</td></tr>
         <tr><td class="p">GRF 추종</td><td class="d">λ<sub>c</sub> ≈ λ<sub>MPC</sub></td><td class="d">w_lam = 10</td></tr>
         <tr><td class="p">각운동량 (옵션)</td><td class="d">Σ r×λ ≈ −24·h<sub>ω</sub></td><td class="d">W_AM = <b>12</b></td></tr>
       </tbody>
@@ -143,13 +143,13 @@
 
     <h3>제약</h3>
     <ul>
-      <li><b>부동베이스 동역학</b> (등식 6): M<sub>0:6</sub> q̈ + h<sub>0:6</sub> = Σ J<sub>c,0:6</sub>ᵀ λ<sub>c</sub></li>
-      <li><b>접촉 비가속/감쇠</b> (등식 3K<sub>c</sub>): J<sub>c</sub> q̈ = −STANCE_KD·(J<sub>c</sub> q̇)&nbsp;&nbsp;<span class="dim">(STANCE_KD=20, 터치다운 잔류속도→0=slip↓)</span></li>
+      <li><b>부동베이스 동역학</b> (등식 6): M<sub>0:6</sub> q<sup>¨</sup> + h<sub>0:6</sub> = Σ J<sub>c,0:6</sub><sup>T</sup> λ<sub>c</sub></li>
+      <li><b>접촉 비가속/감쇠</b> (등식 3K<sub>c</sub>): J<sub>c</sub> q<sup>¨</sup> = −STANCE_KD·(J<sub>c</sub> q<sup>˙</sup>)&nbsp;&nbsp;<span class="dim">(STANCE_KD=20, 터치다운 잔류속도→0=slip↓)</span></li>
       <li><b>마찰추</b> (부등식 4K<sub>c</sub>): |λ<sub>x</sub>|,|λ<sub>y</sub>| ≤ μλ<sub>z</sub> · λ<sub>z</sub> ≥ 1</li>
-      <li><b>토크 한계</b> (부등식 2·nu): −τ<sub>peak</sub> ≤ M<sub>6:</sub>q̈ + h<sub>6:</sub> − J<sub>c,6:</sub>ᵀλ ≤ τ<sub>peak</sub></li>
+      <li><b>토크 한계</b> (부등식 2·nu): −τ<sub>peak</sub> ≤ M<sub>6:</sub>q<sup>¨</sup> + h<sub>6:</sub> − J<sub>c,6:</sub><sup>T</sup>λ ≤ τ<sub>peak</sub></li>
       <li><b>관절 위치 한계</b>: 가속 상·하한 (look-ahead 0.05 s)</li>
     </ul>
-    <div class="eq"><span class="lbl">출력 τ = </span>M<sub>6:</sub> q̈ + h<sub>6:</sub> − Σ J<sub>c,6:</sub>ᵀ λ<sub>c</sub>&nbsp;&nbsp;<span class="lbl">→ clip(τ_peak) → d->ctrl[17]</span></div>
+    <div class="eq"><span class="lbl">출력 τ = </span>M<sub>6:</sub> q<sup>¨</sup> + h<sub>6:</sub> − Σ J<sub>c,6:</sub><sup>T</sup> λ<sub>c</sub>&nbsp;&nbsp;<span class="lbl">→ clip(τ_peak) → d->ctrl[17]</span></div>
   </div>
 </section>
 

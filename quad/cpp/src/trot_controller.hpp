@@ -53,7 +53,7 @@ struct TrotCtrl {
   double SIT_Z=0.32, SIT_PITCH=0.70, SIT_REAR_FOOT=-1.35, SIT_REAR_CALF=1.10, SIT_REAR_THIGH=-0.6; bool have_qsit=false; // ★앉기=crouch-sit(SIT_Z 저crouch, 4발 planted→기립가능). SIT_PITCH등은 구 haunch-sit 잔여
   double SIT_CPITCH=1.0, SIT_REACH=0.08;   // ★앉기 nose-up 목표(~25° 앞올림=앉은자세, wbic_stance 능동제어→안정+기립가능). SIT_REACH 미사용(잔여)
   // ★개-앉기(haunch sit): 정착 후 crouch→haunch(뒷다리 접어 발링크 바닥밀착)로 fold, 기립 시 높이스케줄 언폴드. q_home/com_ref 블렌드.
-  double HAUNCH_Z=0.30, HAUNCH_FOLD_RATE=0.60, HAUNCH_UNFOLD_Z=0.40, SIT_POSTURE_W=40.0, HAUNCH_PITCH=0.50, SIT_KP=90.0;   // ★엉덩이 주저앉기: base 낮춤·fold 빠르게(~1.7s)·nose-up 크게(상체 세워 앞다리 폄·엉덩이 내림). 기립불요·자세우선
+  double HAUNCH_Z=0.30, HAUNCH_FOLD_RATE=0.35, HAUNCH_UNFOLD_Z=0.40, SIT_POSTURE_W=40.0, HAUNCH_PITCH=0.50, SIT_KP=90.0;   // ★엉덩이 주저앉기: base 낮춤·fold 완만(0.60→0.35=~2.9s, 서기→앉기 급강하 완화)·nose-up 크게. 기립불요·자세우선
   VectorXd q_crouch, q_haunch; Vector3d com_crouch=Vector3d::Zero(), com_haunch=Vector3d::Zero(); double haunch_fold=0; bool haunch_ready=false;
   // ★기립 궤적 추종(offline gather 궤적 /tmp/getup_traj.txt): sit→gather(CoM 전진)→일어서기. phaseA(0/1)=PD추종, phaseB(2)=wbic 상승 인계.
   std::vector<VectorXd> getup_q, getup_dqv; std::vector<int> getup_ph; double getup_dt=0.01; int getup_N=-1, getup_k=-1; double getup_kt=0, GETUP_TRAJ_KP=80.0, GETUP_TRAJ_KD=6.0;   // ★앉기→서기 튕김 힘 완화(120→80)+감쇠↑(4→6): 기립 중 최대tilt 70°→49°(더 약하고 안전하게). 기립 완료는 유지(z≈0.49)
@@ -98,6 +98,7 @@ struct TrotCtrl {
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
   bool stop_settle=false;   // ★달리다 서기: 정지 감속·CoM 재중심 중(뒤 엉덩방아 방지)
   double stand_ax=0, stand_ay=0; bool stand_set=false;   // ★서기 위치 앵커(현재 위치서 서기 — 홈으로 빨려감 방지)
+  bool off_settled=false;   // ★전원차단(off): 바닥까지 완만 하강 완료 여부(선 채로 툭 damp=낙하 방지)
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
   bool pos_hold_set=false; double phx=0,phy=0;
   VectorXd x_ref=VectorXd::Zero(13);
@@ -143,9 +144,24 @@ struct TrotCtrl {
     if(mode=="stand_up" && armed){ double sp=std::hypot(d->qvel[0],d->qvel[1]);
       if(sp>0.20) stop_settle=true; else if(sp<0.12) stop_settle=false; }
     else stop_settle=false;
+    if(mode!="off") off_settled=false;   // ★off 벗어나면 리셋(다음 off서 다시 완만 하강)
     bool run_move=(mode=="move")||stop_settle;
     if(!run_move){
-      if(mode=="off"){ for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); armed=false; have_qref=false; was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; jphase=-1; return; }
+      if(mode=="off"){   // ★전원차단: 선 채로 툭 damp(낙하) 대신 바닥(GROUND_Z)까지 완만 PD 하강 후 damp (실로봇=눕고 전원끔)
+        double bzo=d->qpos[2];
+        was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; jphase=-1; armed=false;
+        if(off_settled || bzo<=GROUND_Z+0.04){   // 바닥 근처 → damp(전원차단 등가)
+          off_settled=true; have_qref=false;
+          for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); return; }
+        // 아직 높음 → GROUND_Z까지 완만 하강(PD fold): 서 있으면 눕히고, 눕는 중이면 계속
+        if(ht_cur>bzo+0.06 || ht_cur<0.06) ht_cur=bzo;   // 진입 시 현재높이 동기화
+        ht_cur+=tc_clip(GROUND_Z-ht_cur,-GETUP_RATE*dt,GETUP_RATE*dt);
+        if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }
+        if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
+        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
+        for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
+          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+        return; }
       if(mode=="jump"){   // ★★J2 통합 점프: crouch(wbic)→OCP궤적 재생(thrust/flight τ_ff+PD)→touchdown→wbic_stance 착지.
         double bz=d->qpos[2];
         int ncon=0; for(int ci=0;ci<d->ncon;ci++){ int g1=d->contact[ci].geom1,g2=d->contact[ci].geom2;

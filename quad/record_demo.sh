@@ -21,8 +21,7 @@ SIZE=${SIZE:-1920x1080}
 
 mkdir -p "$OUT_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)
-MKV="$OUT_DIR/quad_$STAMP.mkv"          # 녹화 원본(크래시 안전)
-MP4="$OUT_DIR/quad_$STAMP.mp4"          # 배포용
+MP4="$OUT_DIR/quad_$STAMP.mp4"          # ★mp4 직접 녹화(fragmented=도중 종료돼도 안 깨짐)
 
 FF=""
 cleanup(){
@@ -44,17 +43,20 @@ echo "   녹화 종료 = 이 터미널에서 [Enter]"
 echo "============================================================"
 sleep 3
 
-# 2) NVENC 화면 녹화 (전체화면). mkv = 도중 종료돼도 안 깨짐
+# 2) NVENC 화면 녹화 → mp4 직접 (fragmented mp4 = 도중 종료돼도 안 깨짐, remux 불필요)
 ffmpeg -y -f x11grab -framerate 30 -video_size "$SIZE" -i :0.0 \
-       -c:v h264_nvenc -preset p5 -cq 20 -pix_fmt yuv420p "$MKV" </dev/null &
+       -c:v h264_nvenc -preset p5 -cq 20 -pix_fmt yuv420p \
+       -movflags +frag_keyframe+empty_moov "$MP4" </dev/null &
 FF=$!
 
-read -r _         # Enter 누르면 아래로
+# ★붙여넣기 등으로 큐에 남은 입력 비우기 → Enter를 "실제 키입력"으로만 받음
+#   (여러 명령을 한번에 붙이면 read가 다음 명령을 Enter로 오인해 조기종료·재실행하던 문제 방지)
+while read -r -t 0.05 _; do :; done 2>/dev/null
+echo "   ▶ 녹화 중… 종료하려면 [Enter]"
+read -r _ </dev/tty         # 터미널서 Enter 누르면 아래로
 kill -INT "$FF" 2>/dev/null; wait "$FF" 2>/dev/null || true
 FF=""
 
-# 3) mkv → mp4 remux (재인코딩 없음, 빠름·무손실)
-ffmpeg -y -i "$MKV" -c copy "$MP4" </dev/null && rm -f "$MKV"
 echo ""
 echo "✅ 저장 완료: $MP4"
 echo "배속 예) ffmpeg -i \"$MP4\" -filter:v \"setpts=0.5*PTS\" \"${MP4%.mp4}_2x.mp4\""

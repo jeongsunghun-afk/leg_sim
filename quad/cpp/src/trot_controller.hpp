@@ -274,7 +274,8 @@ struct TrotCtrl {
     double tg=t-t0; bool go=tg>TC_WARMUP;
     double vt=go?V:0.0, vyt=go?VY:0.0, wt=go?WZ:0.0;
     if(stop_settle){ vt=vyt=wt=0.0; }   // ★정지 감속: 명령 0 → MPC/raibert가 속도 죽이며 발을 CoM 밑으로 재중심
-    Vs+=tc_clip(vt-Vs,-TC_ACC*dt,TC_ACC*dt); Vys+=tc_clip(vyt-Vys,-TC_ACC*dt,TC_ACC*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
+    double acc=stop_settle?1.6:TC_ACC;   // ★달리다 서기: 감속을 빠르게(1.6 m/s²)해 코스팅 단축(구 TC_ACC 0.6=3m 코스팅→불안)
+    Vs+=tc_clip(vt-Vs,-acc*dt,acc*dt); Vys+=tc_clip(vyt-Vys,-acc*dt,acc*dt); Ws+=tc_clip(wt-Ws,-2.0*dt,2.0*dt);
     double stt=go?steer:0.0; Ss_steer+=tc_clip(stt-Ss_steer,-0.8*dt,0.8*dt);   // 조향각 스무딩[rad/s]
     double Veff=Vs,Vyeff=Vys,Weff=Ws; Veff_dbg=Veff;
     double steer_wz = tc_clip(Veff*std::tan(tc_clip(Ss_steer,-1.2,1.2))/wheelbase, -0.9, 0.9);  // ★자동차식 조향(Ackermann) 성분. yaw rate 캡0.9(understeer). V=0=무효, WZ스핀과 공존
@@ -305,8 +306,8 @@ struct TrotCtrl {
     // ★perceptive 몸통높이: base 1점 지형높이+슬루 → MPC x_ref[5]만(WBIC z-task엔 미공급=_body_terr 0).
     //   실측(course): WBIC 공급시 tilt 3.7→4.3°·4힙평균 6.1° 로 오히려 나빠짐 → 보행중 몸통z는 MPC가 지배, WBIC 지형공급은 진동만 추가.
     // ★body_h(서기+보행 통합 높이): 보행 중에도 body_h를 부드럽게 추종 → update_stand_qhome로 com_ref/q_home/com_h0 갱신(MPC·WBIC 정합). 서기와 동일 슬라이더.
-    { double hr=qhome_h; hr+=tc_clip(body_h-hr,-0.25*dt,0.25*dt);
-      if(std::abs(hr-qhome_h)>3e-3){ q.update_stand_qhome(hr); qhome_h=hr; com_h0=q.com_ref[2]; } }
+    //   ★★버그수정: body_h와 현 높이 차이로 게이팅(구 hr-qhome_h는 1틱램프량이라 3e-3 못 넘어 영영 미호출). 램프 중 매틱 update.
+    if(std::abs(body_h-qhome_h)>2e-3){ qhome_h+=tc_clip(body_h-qhome_h,-0.3*dt,0.3*dt); q.update_stand_qhome(qhome_h); com_h0=q.com_ref[2]; }
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;

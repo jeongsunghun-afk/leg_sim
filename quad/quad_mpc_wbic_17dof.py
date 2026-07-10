@@ -1282,7 +1282,7 @@ def mode_trot():
          'Vt': V, 'Vyt': VY, 'Wt': WZ, 'St': STEER,         # 목표명령(GUI가 갱신) · St=자동차식 조향각
          'Vs': 0.0, 'Vys': 0.0, 'Ws': 0.0, 'Ss': 0.0, 'cmd_t': -1.0,   # 스무딩 적용명령(0서 시작)
          'yaw_ref': 0.0, 'last_t': -1.0,                     # 선회 yaw각 참조(적분) · 직전 시각(reset 감지용)
-         'body_h': q.base_z0, 'ht_cur': q.base_z0, 'qhome_h': q.base_z0,   # body_h슬라이더 · 보간높이 · q_home 계산높이
+         'body_h': float(os.environ.get('BODY_H', q.base_z0)), 'ht_cur': q.base_z0, 'qhome_h': q.base_z0,   # body_h슬라이더(BODY_H env) · 보간높이 · q_home 계산높이
          'step_h': STEP_H, 'sh_seen': None,                               # ★GUI step height(게이트전환=프리셋 STEPH / 슬라이더=엣지 오버라이드)
          'raibert_k': RAIBERT_K, 'rk_seen': None,                         # ★전방 reach 게인(게이트전환=프리셋 RAI / GUI슬라이더=엣지 오버라이드)
          'gait': GAIT,                                                     # ★현 게이트(GUI walk/trot 토글 live)
@@ -1552,9 +1552,9 @@ def mode_trot():
         # ★body_h(서기+보행 통합 높이, C++ 미러): body_h를 부드럽게 추종 → update_stand_qhome로 com_ref/z_ref0 갱신(MPC·WBIC 정합). 서기와 동일 슬라이더.
         _bz = float(S.get('body_h', q.base_z0)); _dt = q.m.opt.timestep
         S.setdefault('qhome_h', q.base_z0); S.setdefault('z_ref0', float(S['x_ref'][5]))
-        _hr = S['qhome_h'] + float(np.clip(_bz - S['qhome_h'], -0.25 * _dt, 0.25 * _dt))
-        if abs(_hr - S['qhome_h']) > 3e-3:
-            q.update_stand_qhome(_hr); S['qhome_h'] = _hr; S['z_ref0'] = float(q.com_ref[2])
+        if abs(_bz - S['qhome_h']) > 2e-3:   # ★버그수정(C++ 미러): body_h와 현높이 차로 게이팅(구 1틱램프-qhome_h는 3e-3 못넘어 미호출)
+            S['qhome_h'] += float(np.clip(_bz - S['qhome_h'], -0.3 * _dt, 0.3 * _dt))
+            q.update_stand_qhome(S['qhome_h']); S['z_ref0'] = float(q.com_ref[2])
         if q._terrain_on:                                                      # ★perceptive: MPC 높이=평지값+지형(상승 GRF 계획)
             q._body_terr = float(np.mean([q.terrain_height(q.d.xpos[q.hip_bid[i]][0], q.d.xpos[q.hip_bid[i]][1]) for i in range(4)]))
         else:

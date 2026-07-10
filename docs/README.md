@@ -41,6 +41,7 @@
 ## 🗺️ 로드맵 / 향후 기능
 | 문서 | 내용 | 상태 |
 |---|---|---|
+| **[MPC_RL_하이브리드_전략_리포트.md](MPC_RL_하이브리드_전략_리포트.md)** | MPC/RL 하이브리드 5패턴(A=MPC교사·B=계층·C=주입·D=안전필터·E=샘플링prior) + R.pet 로드맵(H0~H3) + **§9 crocoddyl/aligator 실시간화**(RTI·호라이즌다이어트·모델계층화) + 6-DoF머리. ★**다음단계=crocoddyl C++ 실시간 OCP**의 전략 근거. | 전략·설계 |
 | **[RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)** | 6-DoF 머리(목) 체인 추가 → 예측형 시선 안정화·반작용 질량 협조·시선/균형 중재. 단계 **G0(23-DoF 모델)→G1(반응층 기준선)→G2(WBIC gaze task)→G3(예측 ff, lite/full)→G4(반작용 질량)→G5(중재)**. 착수순서 G0→G1→G2(기존 스택 3주 데모). | 설계완료·미착수 |
 | RPET_ALIGATOR_MPC.md | (위 문서가 참조하는 Phase 0–3 로드맵 — aligator OCP) | 참조·아직 없음 |
 

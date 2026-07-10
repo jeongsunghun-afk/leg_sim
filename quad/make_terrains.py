@@ -93,15 +93,13 @@ files["quad_terrain_friction.mjcf"] = scene("terrain_friction", g_friction(1.1)[
 files["quad_terrain_gap.mjcf"]      = scene("terrain_gap",      g_gap(1.2)[0])
 files["quad_terrain_stepping.mjcf"] = scene("terrain_stepping", g_stepping(1.2)[0])
 files["quad_terrain_soft.mjcf"]     = scene("terrain_soft",     g_soft(1.2)[0])
-# 종합 코스: 저강성·마찰·험지·갭·스테핑·계단을 y축 병렬 레인(각 x0=1.2서 시작) → 조향해 골라 진입(뒤까지 안 걸어도 됨)
-X0=1.2; LY=2.6   # 레인 y간격(폭 겹침 없이)
-gd,xd = g_soft(X0,                 yc=-3*LY)   # 저강성(매트리스), 마찰 옆
-gf,xf = g_friction(X0,             yc=-2*LY)
-gr,xr = g_rough(X0, span=2.4,      yc=-1*LY)
-gg,xg = g_gap(X0,                  yc= 0*LY)
-gt,xt = g_stepping(X0,             yc=+1*LY)
-gs,xs = g_stairs(X0, rise=0.05, depth=0.28, yc=+2*LY)
-files["quad_terrain_course.mjcf"]   = scene("terrain_course", gd, gf, gr, gg, gt, gs)
+# 종합 코스: 3 병렬 레인(좌우 이동 최소화)·각 레인은 난이도순 직렬(x로 이어붙임)
+#   레인1(y=-LY): 마찰 → 소프트바닥 / 레인2(y=0): 험지 → 계단 / 레인3(y=+LY): 갭 → 스테핑스톤
+X0=1.2; LY=2.4   # 레인 y간격(3개, 폭 겹침 없이)
+c1a,c1x = g_friction(X0,               yc=-LY);  c1b,_ = g_soft(c1x+0.6,               yc=-LY)   # 레인1: 마찰→소프트
+c2a,c2x = g_rough(X0, span=2.4,        yc= 0.0); c2b,_ = g_stairs(c2x+0.6, rise=0.05, depth=0.28, yc=0.0)  # 레인2: 험지→계단
+c3a,c3x = g_gap(X0,                    yc=+LY);  c3b,_ = g_stepping(c3x+0.6,           yc=+LY)   # 레인3: 갭→스테핑
+files["quad_terrain_course.mjcf"]   = scene("terrain_course", c1a,c1b, c2a,c2b, c3a,c3b)
 # 회귀검증 전용: 순차 직진 주파 코스(험지→계단=perceptive 높이적응 테스트). 마찰(얼음)·gap·stepping은
 #   별도 어려운 축(실패허용)이라 제외 — no-regression 기준선은 컨트롤러가 안정 주파하는 높이지형으로.
 vr,vxr = g_rough(1.2, span=2.4)
@@ -111,4 +109,4 @@ files["quad_terrain_verify.mjcf"]   = scene("terrain_verify", vr, vs)
 for fn,txt in files.items():
     p=os.path.join(out,fn); open(p,"w").write(txt)
     print(f"생성: {fn} ({txt.count('<geom')} geoms)")
-print(f"★ course 병렬 레인(y): 저강성 {-3*LY:+.1f} · 마찰 {-2*LY:+.1f} · 험지 {-1*LY:+.1f} · 갭 0.0 · 스테핑 {+1*LY:+.1f} · 계단 {+2*LY:+.1f} (모두 x={X0}서 시작, 조향 진입)")
+print(f"★ course 3레인(각 직렬): 레인1 y={-LY:+.1f}(마찰→소프트, x끝 {c1x+0.6:.1f}+) · 레인2 y=0.0(험지→계단) · 레인3 y={+LY:+.1f}(갭→스테핑) — 좌우 ±{LY:.1f}m")

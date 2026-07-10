@@ -221,8 +221,8 @@ def _set_walk_speed(v):                                # 보행속도 게이지 
 
 
 def _gait_preset(gait):                                # ★gait 버튼 → Walk Speed 게이지·Step Height를 그 gait 최적값으로 자동 세팅
-    vmax = {'walk': 0.6, 'trot': 1.4, 'run': 2.0}.get(gait, 1.4)   # 조이스틱 풀스케일(gait 상한)
-    sh   = {'walk': 0.10, 'trot': 0.10, 'run': 0.08}.get(gait, 0.10)  # 발 들림(고속 run=낮게). ★walk 0.05→0.10 복원(발 아치 자연스럽게·앞다리 뻣뻣함 해소)
+    vmax = {'walk': 0.6, 'trot': 1.4, 'run': 2.0, 'stairs': 0.3}.get(gait, 1.4)   # 조이스틱 풀스케일(gait 상한). ★계단=느리게 0.3
+    sh   = {'walk': 0.10, 'trot': 0.10, 'run': 0.08, 'stairs': 0.18}.get(gait, 0.10)  # 발 들림(고속 run=낮게·계단=높게 0.18 라이저 클리어). ★walk 0.05→0.10 복원(발 아치 자연스럽게·앞다리 뻣뻣함 해소)
     if dpg.does_item_exist('ws'): dpg.set_value('ws', vmax)
     _set_walk_speed(vmax)
     if dpg.does_item_exist('sh'): dpg.set_value('sh', sh)
@@ -387,6 +387,8 @@ with dpg.window(tag='main'):
                        callback=lambda: (sc.SetGait('run'), _whip_ui('run'), _gait_preset('run'), _status()))
         dpg.add_button(label='walk 순차', width=95,
                        callback=lambda: (sc.SetGait('walk'), _whip_ui('walk'), _gait_preset('walk'), _status()))
+        dpg.add_button(label='stairs 계단', width=95,       # ★계단 등반: 느림0.3·높은발0.18·정밀배치. 완만한 계단용
+                       callback=lambda: (sc.SetGait('stairs'), _whip_ui('walk'), _gait_preset('stairs'), _status()))
         dpg.add_text('(버튼=속도게이지·발높이 자동세팅. trot 1.4 / run 2.0·발낮음 / walk 0.6)', color=(120, 125, 145))
     with dpg.group(horizontal=True):
         dpg.add_text('보행개선:', color=(170, 175, 195))

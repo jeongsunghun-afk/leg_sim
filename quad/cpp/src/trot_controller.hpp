@@ -113,10 +113,11 @@ struct TrotCtrl {
 
   void set_gait(const std::string& g){        // trot/walk/gallop 프리셋(GUI 토글·속도트리거)
     if(g==gait_type) return; gait_type=g;
-    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s. ★발높이 0.10 복원(9fcfe81서 0.05로 반감됐던 것=발 아치 낮아 앞다리 뻣뻣, falls=0 유지)
-    else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; gait_base_z=0.48; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓. ★base_z 0.48(발목ω 여유)
-    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; step_h=0.10; } // 회전형 갤럽(비행상 有)
-    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
+    if(g=="walk"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; PCV_CLR=0.04; }  // ★walk 안정화(T1.0→0.7·RAI0.8→0.5): reach↓ stumble/bounce방지, 상한~0.6m/s. ★발높이 0.10 복원(9fcfe81서 0.05로 반감됐던 것=발 아치 낮아 앞다리 뻣뻣, falls=0 유지)
+    else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; gait_base_z=0.48; PCV_CLR=0.04; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓. ★base_z 0.48(발목ω 여유)
+    else if(g=="stairs"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.4; step_h=0.18; gait_base_z=0.50; PCV_CLR=0.08; }  // ★계단 등반: walk 시퀀셜(정적안정)+높은 발높이0.18(라이저 클리어)+낮은 reach0.4(정밀 발배치)+2배 up-step 클리어런스. 느린속도(GUI 0.3)와 조합. 완만한 계단(≤0.10) 확실·가파른(0.15+)은 marginal
+    else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; step_h=0.10; PCV_CLR=0.04; } // 회전형 갤럽(비행상 有)
+    else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; PCV_CLR=0.04; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }
   void gait(int i,double tg,bool&stance,double&sprog){

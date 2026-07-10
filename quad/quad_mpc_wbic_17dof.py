@@ -1208,6 +1208,8 @@ def mode_trot():
         'run':  dict(OFFSET={0: 0.0, 1: 0.5, 2: 0.5, 3: 0.0}, T=0.40, SWF=0.50, STEPH=0.08, V=0.30, LOCK=1.0, RAI=0.5, BZ=0.48),
         # ★walk 안정화(전방보행 상한 ~0.6m/s): T=0.7(1.0→단축, reach↓ stumble방지) + RAI=0.5(0.8 trot과제동→walk 완화). 측방앵커 불필요(선회 무간섭). 14dof(quad_mpc_wbic.py)와 동일 처방
         'walk': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.10, V=0.25, LOCK=0.35, RAI=0.5, BZ=0.50),
+        # ★계단 등반: walk 시퀀셜(정적안정)+높은 발높이0.18(라이저 클리어)+낮은 reach0.4(정밀 발배치)+느린속도0.30. 완만한 계단(≤0.10) 확실·가파른(0.15+)은 marginal(반응형 한계)
+        'stairs': dict(OFFSET={0: 0.25, 1: 0.75, 2: 0.50, 3: 0.0}, T=0.70, SWF=0.25, STEPH=0.18, V=0.30, LOCK=0.35, RAI=0.4, BZ=0.50),
     }
     _GP = GAITS[GAIT]   # trot=대각 A(HL,FR)=0·B(HR,FL)=0.5 / walk=순차 FR0→HL.25→FL.5→HR.75(정적안정·75%stance)
     # ★라이브 게이트 holder(GUI 토글이 갱신→재arm으로 위상 재앵커, 불연속 방지). gait()가 GP를 읽음

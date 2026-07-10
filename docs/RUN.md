@@ -16,26 +16,30 @@ CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1 GEAR_FOOT=0.5714"
 - GEARBOX=반사관성(발 flail 억제·필수). ROTOR_I=1e-4·JDAMP=0.1·JFRIC=0.5 = ★대략값, 실측 대기(sim2real 체크리스트).
 - **★17dof 게인은 C++가 허리모델 자동감지로 기본 적용**(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) → env 불요. Python도 동일 기본.
 
-## Python 배포 (GUI 텔레옵)
+## GUI 텔레옵 원샷 (권장) — C++ 뷰어 + GUI
 ```bash
-# 터미널1 (GUI)      cd simulation/quad && DISPLAY=:0 PXI teleop_gui_17dof.py
-# 터미널2 (컨트롤러)  cd simulation/quad && env $CFG CMDFILE=/tmp/quad_cmd.json STATE_PUB=/tmp/quad_state.json \
-                     PXI quad_mpc_wbic_17dof.py --robot ours_17dof_waist_sphere --mode trot
+cd simulation/quad && bash run_gui.sh            # 기본 맵=종합코스(course)
+#   맵 선택: bash run_gui.sh flat|stairs|rough|friction  (또는 임의 mjcf 경로)
 ```
+- `run_gui.sh`가 C++ 뷰어(1kHz)+GUI를 **CMDFILE/STATE_PUB 붙여** 띄움. ★이 env 누락 시 뷰어가 GUI 명령을 무시하고 저절로 전진 → 반드시 스크립트로 실행.
 - 버튼: 전원(off)→눕기→앉기(haunch)→서기→보행. gait walk/trot/run 토글(속도·발높이 자동세팅).
 - 조작(마우스1): 좌스틱 위 우클릭=고정(전진 유지)→"허리 핸들"로 조향(±68°, 오른쪽=우선회). 재우클릭/X=해제.
-- 지형 씬: `MJCF=quad_terrain_course.mjcf`(또는 stairs/rough/friction) 추가 → perceptive 자동 ON.
+- perceptive 자동 ON(지형 씬). 평지만 원하면 `run_gui.sh flat`.
 
-## C++ 배포 (1kHz 실시간, cpp/)
+## 수동 실행 (참고 · Python 컨트롤러 또는 개별 기동)
+```bash
+# Python 컨트롤러(연구/디버그)  cd simulation/quad
+DISPLAY=:0 PXI teleop_gui_17dof.py &                                     # GUI
+env $CFG CMDFILE=/tmp/quad_cmd.json STATE_PUB=/tmp/quad_state.json \
+  PXI quad_mpc_wbic_17dof.py --robot ours_17dof_waist_sphere --mode trot  # 컨트롤러
+```
+
+## C++ 헤드리스 / 빌드
 ```bash
 cd simulation/quad/cpp && cmake -S . -B build && cmake --build build     # 빌드
 # 헤드리스: GAIT=walk|trot|run  TROT_V  STEPS  (조향 TROT_STEER=δ · 선회 TROT_WZ)
 GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim ../quad_real_17dof_waist_sphere.mjcf
-# GLFW 뷰어 (★setsid 필수=SIGURG 회피 · 게인 자동감지라 env 최소)
-export DISPLAY=:0
-setsid bash -c 'cd simulation/quad/cpp; env GEAR_FOOT=0.5714 RATE=1.0 CMDFILE=/tmp/quad_cmd.json STATE_PUB=/tmp/quad_state.json \
-  ./build/trot_view ../quad_real_17dof_waist_sphere.mjcf' </dev/null &
-# 지형: 마지막 인자를 ../quad_terrain_course.mjcf 등으로 교체
+# 뷰어 기동은 run_gui.sh 사용(setsid+CMDFILE/STATE_PUB 자동). 맵=인자로 지정.
 ```
 
 ## 회귀검증 / 데모

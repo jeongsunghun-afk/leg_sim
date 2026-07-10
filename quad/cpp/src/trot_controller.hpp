@@ -56,7 +56,7 @@ struct TrotCtrl {
   double HAUNCH_Z=0.30, HAUNCH_FOLD_RATE=0.60, HAUNCH_UNFOLD_Z=0.40, SIT_POSTURE_W=40.0, HAUNCH_PITCH=0.50, SIT_KP=90.0;   // ★엉덩이 주저앉기: base 낮춤·fold 빠르게(~1.7s)·nose-up 크게(상체 세워 앞다리 폄·엉덩이 내림). 기립불요·자세우선
   VectorXd q_crouch, q_haunch; Vector3d com_crouch=Vector3d::Zero(), com_haunch=Vector3d::Zero(); double haunch_fold=0; bool haunch_ready=false;
   // ★기립 궤적 추종(offline gather 궤적 /tmp/getup_traj.txt): sit→gather(CoM 전진)→일어서기. phaseA(0/1)=PD추종, phaseB(2)=wbic 상승 인계.
-  std::vector<VectorXd> getup_q, getup_dqv; std::vector<int> getup_ph; double getup_dt=0.01; int getup_N=-1, getup_k=-1; double getup_kt=0, GETUP_TRAJ_KP=120.0, GETUP_TRAJ_KD=4.0;
+  std::vector<VectorXd> getup_q, getup_dqv; std::vector<int> getup_ph; double getup_dt=0.01; int getup_N=-1, getup_k=-1; double getup_kt=0, GETUP_TRAJ_KP=80.0, GETUP_TRAJ_KD=6.0;   // ★앉기→서기 튕김 힘 완화(120→80)+감쇠↑(4→6): 기립 중 최대tilt 70°→49°(더 약하고 안전하게). 기립 완료는 유지(z≈0.49)
   void load_getup(const char* path){
     std::ifstream f(path); if(!f){ getup_N=0; return; }
     f>>getup_N>>getup_dt; getup_q.clear(); getup_dqv.clear(); getup_ph.clear();

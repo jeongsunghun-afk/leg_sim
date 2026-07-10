@@ -26,7 +26,7 @@ class SportClient:
         self.path = path
         self.vmax = VMAX; self.wmax = WMAX          # 조이스틱 풀스케일(보행속도 게이지로 live 조절)
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'mode': 'stand_up',   # 시작=Ready(서기). Walk 눌러야 보행
-                    'body_h': 0.50, 'step_h': 0.10, 'euler': [0.0, 0.0, 0.0], 'gait': 'trot',   # ★초기 서기 높이=0.50(base_z0, Ready·slider와 일치)
+                    'body_h': 0.52, 'step_h': 0.10, 'euler': [0.0, 0.0, 0.0], 'gait': 'trot',   # ★초기 서기 높이=0.52(Ready·slider와 일치, 보행은 gait 버튼서 0.50)
                     'vmax': VMAX, 'jump_seq': 0, 'home_seq': 0, 'reset_seq': 0,
                     'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시 terrain=지형적응
                     'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
@@ -233,7 +233,7 @@ def _gait_preset(gait):                                # ★gait 버튼 → Walk
 
 
 def _ready_preset():                                   # ★Ready(서기) → base height 슬라이더를 기본 서기 높이로 연동
-    bz = 0.50                                          # 배포 서기 명목높이(base_z0 · walk/stand 최적)
+    bz = 0.52                                          # 서기 명목높이 0.52(더 곧게 선 자세). 보행 최적(0.50)은 gait 버튼서 적용
     if dpg.does_item_exist('bh'): dpg.set_value('bh', bz)
     sc.BodyHeight(bz)
 
@@ -423,7 +423,7 @@ with dpg.window(tag='main'):
                          min_value=0.0, max_value=2.0, default_value=VMAX,
                          callback=lambda s, a: _set_walk_speed(a))
     dpg.add_slider_float(label='Body Height [m]  (★서기+보행 공통 · 0.42~0.52 안정범위 · 보행최적 0.50)', tag='bh',
-                         min_value=0.42, max_value=0.52, default_value=0.50,
+                         min_value=0.42, max_value=0.52, default_value=0.52,
                          callback=lambda s, a: sc.BodyHeight(a))
     dpg.add_slider_float(label='Step Height [m]  (보행중 live 적용)', tag='sh',
                          min_value=0.05, max_value=0.20, default_value=0.10,

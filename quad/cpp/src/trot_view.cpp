@@ -83,6 +83,7 @@ int main(int argc,char**argv){
   q.crouch_home(); q.setup_mpc();
   TrotCtrl ctrl(q); gC=&ctrl;
   ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(점프 순간 파일 I/O 히치=렉 제거). 없으면 jump_N=0(fallback)
+  ctrl.mode = getenv("MODE") ? getenv("MODE") : "stand_up";   // ★뷰어는 Ready(서기)로 시작 — GUI 초기값(stand_up)과 일치(시작 보행→멈춤 방지). 헤드리스 trot_sim은 기본 move 유지
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각

@@ -117,8 +117,11 @@ N=14, dt=0.02. Q대각(roll,pitch,yaw/px,py,pz/ω/v/g)=[200,200,100, 0,0,200, 0,
 ## 앉기 · 기립 / sit · getup
 
 **개-앉기(haunch) 시드** (quad_control.hpp:28–29): HAUNCH_THIGH −1.0·CALF 1.2·FOOT −0.3·HOCK_Z 0.019·FRONT_REACH −0.22·FOOT_LAND −1.2 (모두 S,V env).
-**스케줄** (trot_controller.hpp): HAUNCH_Z 0.30·FOLD_RATE 0.60·UNFOLD_Z 0.40·SIT_POSTURE_W 40·HAUNCH_PITCH 0.50·SIT_KP 90·SIT_SLEW 0.6.
-**★앉기→서기 튕김 조절**: `GETUP_TRAJ_KP` 120(개-앉기 기립 궤적추종 강성=튕김 힘, **↓=부드럽게**)·`GETUP_TRAJ_KD` 4(↑=튕김 감쇠)·getup_dt 0.01. 크라우치-앉기 기립은 `SGU_KP` 120. 모두 env 조절 가능(S,V).
+**스케줄** (trot_controller.hpp): HAUNCH_Z 0.30·FOLD_RATE 0.35(ease-out ~2.9s)·UNFOLD_Z 0.40·SIT_POSTURE_W 40·HAUNCH_PITCH 0.50·SIT_KP 90·SIT_SLEW 0.6.
+**★sit 진입 방향 구분** (2026-07-10): `sit_from_below` 1회 latch — **위(서기, bz≥SIT_Z−0.02)** 진입=기존 0.32 crouch 하강 후 fold / **아래(눕기)** 진입=0.32 오버슈트 없이 현재 자세서 곧바로 haunch로 morph(base는 다리기하로 ~0.25만 자연상승). "일어섰다 다시앉기" 제거.
+**★sit fold 속도 배수**: `SIT_BELOW_SPEED` 2.5(눕기→앉기, 엉덩방아 위험無→빠른 fold+얕은 tail)·`FRONT_PULL_SPEED` 2.2(서기→앉기 **앞다리만** 조기 끌어당김=haunch_fold×배수, 뒤 엉덩이 착지 pace는 유지). 둘 다 코드상수(env無).
+**★눕기(ground/stand_down) 저자세 조각** (GUI 실시간 슬라이더+env): GROUND_LIE_Z 0.226·GROUND_REAR_FOOT −1.15·GROUND_FRONT_FOOT −0.5·GROUND_FRONT_THIGH −0.24·GROUND_FRONT_CALF −0.4 (기본값=뷰어 라이브튜닝 확정, base_z≈0.166 belly-lie). env=GROUND_LIE_Z/GROUND_REAR_FOOT/GROUND_FRONT_THIGH/GROUND_FRONT_CALF, GUI cmd=g_lie_z/g_rear_foot/g_front_thigh/g_front_calf. ★PD-fold 안정 바닥 z≈0.166(더 낮추면 뒤 붕괴, 동적궤적 필요=[[haunch-sit-posture]]).
+**★앉기→서기 튕김 조절**: `GETUP_TRAJ_KP` 80(개-앉기 기립 궤적추종 강성=튕김 힘, **↓=부드럽게**)·`GETUP_TRAJ_KD` 6(↑=튕김 감쇠)·getup_dt 0.01. 크라우치-앉기 기립은 `SGU_KP` 120. 모두 env 조절 가능(S,V).
 **스크립트 기립(SGU_*)**: KICK_T 0.5·FB_THIGH −0.55·FB_CALF 1.20·SLEW 1.5·KP 120·GATHER_Z 0.24·DONE_TILT 22·WALKOUT_V 0.6·HANDOFF_Z 0.34 (모두 S env).
 **모드 상태**: GROUND_Z 0.18·GETUP_TRIG 0.32·GETUP_DONE 0.40·JOINT_SLEW 1.5·HRATE 0.3.
 

@@ -36,7 +36,7 @@
 <body>
 
 <h1>sim2real 체크리스트 — 17-DOF · quad_mpc_wbic_17dof · 37.94kg</h1>
-<p class="sub">전(全)4다리 4-DOF(앞발목도 관절) · 허리 FB_waist(7:1 조향 능동) · sphere발 · perceptive(지형인지) · 2026-07-09</p>
+<p class="sub">전(全)4다리 4-DOF(앞발목도 관절) · 허리 FB_waist(7:1 조향 능동) · sphere발 · perceptive(지형인지) · 2026-07-10</p>
 <p class="legend">상태: <span class="ok">✅ 적용됨</span> · <span class="wait">⌛ 실측/작업 대기</span> &nbsp;|&nbsp; <span class="star">★</span>=변경/주의 · <code>파란 글꼴</code>=env/위치 &nbsp;|&nbsp; 파라미터 값 전체·게이트 프리셋·튕김조절 = <b>params 아티팩트</b>(중복 제거, 여기는 sim2real 갭만)</p>
 
 <!-- ══════════ A ══════════ -->
@@ -50,6 +50,7 @@
 <tr><td class="k">기어 Coulomb 마찰</td><td>JFRIC=0.5 <span class="hot">(대략!)</span></td><td><span class="star">★</span>실측/벤치</td><td><code>JFRIC</code></td><td class="wait">⌛ 실측대기</td></tr>
 <tr><td class="k">기어 점성 감쇠</td><td>JDAMP=0.1 <span class="hot">(대략!)</span></td><td><span class="star">★</span>실측/벤치</td><td><code>JDAMP</code></td><td class="wait">⌛ 실측대기</td></tr>
 <tr><td class="k">감속비 (hip/thigh/calf/foot)</td><td><b>7 / 7 / 10.5 / 8</b> <span class="star">★</span>(foot 14→8, calf 10.5 유지) · 허리 7</td><td>확정+재선정</td><td><code>GEAR_FOOT=0.5714</code></td><td class="ok">✅</td></tr>
+<tr><td class="k"><span class="star">★</span>앞 thigh 관절 limit</td><td>FL/FR thigh <b>−2.705~1.309</b> rad <span class="star">★</span>(원본 −2.443~1.047서 <b>양방향 +15°</b>/0.262 확장)</td><td><span class="star">★</span>눕기 저자세서 앞다리 세움 여유 확보용. 실기 앞 thigh에 +15° 가동여유 있는지 확인 → 없으면 원복</td><td>MJCF <code>joint range</code></td><td class="wait">⌛ 실측대기</td></tr>
 </table>
 <p class="note">MJCF는 이상화(armature=0)라 발목 flail 과장(V1.8 158rad/s). <code>GEARBOX=1</code>=반사관성 <span class="m">I_rotor·N²</span> + 재기어 토크한계 <span class="m">tau_peak×gmul</span>(foot 168→96Nm, QP 존중) + <code>MOTOR_CURVE=1</code>(고속 가용토크↓) → 발목 158→24rad/s(한계 내). 실측 스펙 오면 env만 교체.</p>
 </section>

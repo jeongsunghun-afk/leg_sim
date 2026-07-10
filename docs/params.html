@@ -263,9 +263,17 @@
 <section id="sit">
   <h2><span class="num">09</span> 앉기 · 기립 / sit · getup</h2>
   <p class="note"><b>개-앉기 시드</b>(qc:28–29): <code>HAUNCH_THIGH −1.0</code> · <code>CALF 1.2</code> · <code>FOOT −0.3</code> · <code>HOCK_Z 0.019</code> · <code>FRONT_REACH −0.22</code> · <code>FOOT_LAND −1.2</code> (S,V env).</p>
-  <p class="note"><b>스케줄</b>(tc): HAUNCH_Z 0.30 · FOLD_RATE 0.60 · UNFOLD_Z 0.40 · SIT_POSTURE_W 40 · HAUNCH_PITCH 0.50 · SIT_KP 90 · SIT_SLEW 0.6.</p>
+  <p class="note"><b>스케줄</b>(tc): HAUNCH_Z 0.30 · <code>FOLD_RATE 0.35</code>(ease-out ~2.9s) · UNFOLD_Z 0.40 · SIT_POSTURE_W 40 · HAUNCH_PITCH 0.50 · SIT_KP 90 · SIT_SLEW 0.6.</p>
+  <div class="callout">
+    <p class="note" style="margin:0 0 6px"><b>★ sit 진입 방향 구분</b> (2026-07-10) — <code>sit_from_below</code> 1회 latch로 판정. <b>위(서기, bz≥SIT_Z−0.02)</b> 진입 = 기존 0.32 crouch 하강 후 fold. <b>아래(눕기)</b> 진입 = 0.32 오버슈트 없이 현재 자세서 곧바로 haunch로 morph(base는 다리기하로 ~0.25만 자연 상승) → "일어섰다 다시앉기" 제거. 두 경로 모두 최종 z≈0.251로 수렴.</p>
+    <p class="note" style="margin:0"><b>★ sit fold 속도 배수</b> — <code>SIT_BELOW_SPEED 2.5</code>(눕기→앉기: 엉덩방아 위험無 → 빠른 fold + 얕은 tail, ~2.9s→~1.2s) · <code>FRONT_PULL_SPEED 2.2</code>(서기→앉기 <b>앞다리만</b> 조기 끌어당김 = haunch_fold×배수, 뒤 엉덩이 착지 pace는 유지). 둘 다 코드상수(env無).</p>
+  </div>
   <div class="callout" style="border-left-color:var(--accent)">
     <p class="note" style="margin:0"><b>★ 앉기 → 서기 "튕김" 조절</b> — <code>GETUP_TRAJ_KP</code> <b>80</b>(구 120): 개-앉기 기립 궤적추종 강성 = 튕김 힘. <b>낮출수록 부드러움</b>(120→80서 기립중 최대tilt 70°→49°). <code>GETUP_TRAJ_KD</code> <b>6</b>(구 4): 높일수록 튕김 감쇠. 크라우치-앉기 기립은 <code>SGU_KP</code> 120. 전부 env 조절(<span class="tag s">S</span><span class="tag v">V</span>).</p>
+  </div>
+  <div class="callout">
+    <p class="note" style="margin:0 0 6px"><b>★ 눕기(ground / stand_down) 저자세 조각</b> — GUI 실시간 슬라이더 4 + env. <code>GROUND_LIE_Z 0.226</code> · <code>GROUND_REAR_FOOT −1.15</code> · <code>GROUND_FRONT_FOOT −0.5</code> · <code>GROUND_FRONT_THIGH −0.24</code> · <code>GROUND_FRONT_CALF −0.4</code> (기본값 = 뷰어 라이브튜닝 확정, base_z≈0.166 belly-lie). GUI cmd = g_lie_z/g_rear_foot/g_front_thigh/g_front_calf, env = 동일 대문자.</p>
+    <p class="note" style="margin:0">★ PD-fold 눕기 <b>안정 바닥 z≈0.166</b>(뒷발목 −0.58~−1.15). 더 낮추면 뒤 엉덩이가 지지면 뒤로 넘어가 붕괴 → 더 낮은 눕기는 동적 settle 궤적 필요(별도 과제). 앞thigh는 음수(낮춤)로 CoM 수평화.</p>
   </div>
   <p class="note"><b>스크립트 기립(SGU_*)</b>: KICK_T 0.5 · FB_THIGH −0.55 · FB_CALF 1.20 · SLEW 1.5 · KP 120 · GATHER_Z 0.24 · DONE_TILT 22 · WALKOUT_V 0.6 · HANDOFF_Z 0.34 (S env).</p>
   <p class="note"><b>모드 상태</b>: GROUND_Z 0.18 · GETUP_TRIG 0.32 · GETUP_DONE 0.40 · JOINT_SLEW 1.5 · HRATE 0.3.</p>

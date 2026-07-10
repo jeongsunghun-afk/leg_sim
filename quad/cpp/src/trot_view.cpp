@@ -80,7 +80,7 @@ static void scroll(GLFWwindow* w,double dx,double dy){ mjv_moveCamera(gC?gC->q.m
 int main(int argc,char**argv){
   const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   QuadControl q; q.load(path); apply_env_gains(q);
-  q.crouch_home(); q.setup_mpc();
+  q.crouch_home(); q.build_qhome_lut(); q.setup_mpc();   // ★q_home LUT 시작시 빌드(RT-safe: 높이변경 IK를 루프서 제거)
   TrotCtrl ctrl(q); gC=&ctrl;
   ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(점프 순간 파일 I/O 히치=렉 제거). 없으면 jump_N=0(fallback)
   ctrl.mode = getenv("MODE") ? getenv("MODE") : "stand_up";   // ★뷰어는 Ready(서기)로 시작 — GUI 초기값(stand_up)과 일치(시작 보행→멈춤 방지). 헤드리스 trot_sim은 기본 move 유지

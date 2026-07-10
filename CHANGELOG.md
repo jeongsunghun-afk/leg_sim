@@ -5,6 +5,11 @@
 
 ---
 
+## [진행중] q_home LUT — RT-safe 자세 (sim=실배포 동일 아키텍처)
+
+body_h 조절·점프standup 렉 = update_stand_qhome이 높이변경마다 300회 IK를 제어루프서 돌려 per-step 스파이크→실시간 페이싱 밀림. 실로봇선 1kHz 데드라인 위반=저크 위험(더 심각).
+**해결: q_home LUT.** 시작 시 높이(0.18~0.55, 5mm격자)별 q_home(발목 포함)·com_ref·foot_hip_off·foot_gz0를 300회 IK로 표화 → RT는 **선형보간만**(IK 없음). 발목=상수·hip/thigh/calf만 높이변화라 보간 정확. self-check: 보간 vs 직접IK 최대오차 **0.0195°**(walk높이 0.50은 격자점=오차0) → walk 회귀 없음(verify 4/4). ★warm-start(발목버그·미수렴)와 달리 값이 cold와 동일. C++·Python 완전 parity. LUT_CHECK env=self-check. 실로봇 RT 아키텍처와 동일(무거운 IK를 루프서 제거).
+
 ## [진행중] crocoddyl C++ 실시간 OCP (v16 목표)
 
 점프를 offline replay → **C++ live-solve**로. 로드맵=[MPC/RL 리포트 §9](docs/MPC_RL_하이브리드_전략_리포트.md).

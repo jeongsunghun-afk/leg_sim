@@ -360,13 +360,38 @@ class QuadSim:
         self.foot_gz0 = [float(self.foot_point(i)[2]) for i in range(4)]
         return self.q_home
 
-    def update_stand_qhome(self, base_z):
-        """target base_z용 q_home/com_ref 재계산(IK) — 라이브 d는 복원(텔레포트X).
-        WBIC posture+CoM task가 새 q_home으로 부드럽게 구동 → 서기 높이변경/눕기."""
+    def update_stand_qhome_ik(self, base_z):
+        """직접 IK(오프라인 표생성·self-check 전용, RT 미사용). d는 복원(텔레포트X)."""
         _q = self.d.qpos.copy(); _v = self.d.qvel.copy(); _t = self.d.time
         self.crouch_home(base_z)                       # q_home/com_ref 갱신(d 텔레포트됨)
         self.d.qpos[:] = _q; self.d.qvel[:] = _v; self.d.time = _t   # 라이브 d 복원
         mujoco.mj_forward(self.m, self.d)
+
+    def build_qhome_lut(self, h0=0.18, h1=0.55, step=0.005):
+        """★q_home LUT 시작시 빌드(실로봇 RT-safe: 높이변경 IK를 제어루프서 제거). 발목=상수·hip/thigh/calf만 높이변화→보간 정확. C++ 미러."""
+        _q = self.d.qpos.copy(); _v = self.d.qvel.copy(); _t = self.d.time
+        hs = np.arange(h0, h1 + 1e-9, step); self._lut_h = hs; self._lut_step = step
+        self._lut_qh = np.zeros((len(hs), self.nu)); self._lut_com = np.zeros((len(hs), 3))
+        self._lut_fho = np.zeros((len(hs), 4, 2)); self._lut_fgz = np.zeros((len(hs), 4))
+        for k, h in enumerate(hs):
+            self.crouch_home(h)                        # 300회 cold(시작 1회, RT 아님)
+            self._lut_qh[k] = self.q_home; self._lut_com[k] = self.com_ref
+            self._lut_fho[k] = np.array(self.foot_hip_off); self._lut_fgz[k] = np.array(self.foot_gz0)
+        self.d.qpos[:] = _q; self.d.qvel[:] = _v; self.d.time = _t
+        self.crouch_home(self.base_z0)                 # q_home 등 부작용을 명목높이로 원상복구
+        self.d.qpos[:] = _q; self.d.qvel[:] = _v; self.d.time = _t; mujoco.mj_forward(self.m, self.d)
+
+    def update_stand_qhome(self, base_z):
+        """★LUT 보간(RT-safe, IK 없음). 실배포와 동일 경로. q_home/com_ref/foot_* 갱신."""
+        if getattr(self, '_lut_h', None) is None: self.build_qhome_lut()  # 안전망(첫 호출시 빌드)
+        h = float(np.clip(base_z, self._lut_h[0], self._lut_h[-1]))
+        i = int((h - self._lut_h[0]) / self._lut_step); i = max(0, min(len(self._lut_h) - 2, i))
+        a = min(1.0, max(0.0, (h - self._lut_h[i]) / (self._lut_h[i + 1] - self._lut_h[i])))
+        self.q_home = (1 - a) * self._lut_qh[i] + a * self._lut_qh[i + 1]
+        self.com_ref = (1 - a) * self._lut_com[i] + a * self._lut_com[i + 1]
+        _fho = (1 - a) * self._lut_fho[i] + a * self._lut_fho[i + 1]
+        _fgz = (1 - a) * self._lut_fgz[i] + a * self._lut_fgz[i + 1]
+        self.foot_hip_off = [_fho[k] for k in range(4)]; self.foot_gz0 = [float(_fgz[k]) for k in range(4)]
 
     # ── WBIC stance QP (4발 접촉정합 균형) ─────────────
     def wbic_stance(self, contacts=(0, 1, 2, 3)):

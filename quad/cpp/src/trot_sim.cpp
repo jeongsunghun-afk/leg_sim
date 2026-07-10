@@ -9,7 +9,17 @@
 int main(int argc,char**argv){
   const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   int STEPS = (argc>2)?atoi(argv[2]) : (getenv("STEPS")?atoi(getenv("STEPS")):3000);
-  QuadControl q; q.load(path); apply_env_gains(q); q.crouch_home(); q.setup_mpc();
+  QuadControl q; q.load(path); apply_env_gains(q); q.crouch_home(); q.build_qhome_lut(); q.setup_mpc();  // ★q_home LUT 시작시 빌드(RT-safe)
+  if(getenv("LUT_CHECK")){   // ★LUT 보간 vs 직접IK 정확성 self-check(격자 어긋난 높이=최악)
+    double maxdq=0, maxdc=0, wh=0;
+    for(double h=0.20; h<=0.53; h+=0.0017){
+      q.update_stand_qhome_ik(h); Eigen::VectorXd qi=q.q_home; Eigen::Vector3d ci=q.com_ref;
+      q.update_stand_qhome(h);    Eigen::VectorXd ql=q.q_home; Eigen::Vector3d cl=q.com_ref;
+      double dq=(qi-ql).cwiseAbs().maxCoeff(), dc=(ci-cl).cwiseAbs().maxCoeff();
+      if(dq>maxdq){maxdq=dq;wh=h;} maxdc=std::max(maxdc,dc); }
+    std::printf("[LUT_CHECK] 보간 vs 직접IK: q_home 최대오차 %.2e rad(%.4f°, h=%.3f) · com_ref %.2e m — %s\n",
+      maxdq, maxdq*57.2958, wh, maxdc, (maxdq<2e-3&&maxdc<2e-3)?"OK(동일수준)":"확인필요");
+    q.update_stand_qhome_ik(q.base_z0); return 0; }
   if(getenv("QHDBG")) for(int i=0;i<4;i++) std::printf("[qhome] %s hip=%.3f thigh=%.3f calf=%.3f foot=%.3f\n",
       q.legs[i], q.q_home[q.legqp[i][0]-7], q.q_home[q.legqp[i][1]-7], q.q_home[q.legqp[i][2]-7], q.leg_dof[i]==4?q.q_home[q.legqp[i][3]-7]:0.0);
   TrotCtrl ctrl(q);

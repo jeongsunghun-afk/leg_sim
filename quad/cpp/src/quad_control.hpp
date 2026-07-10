@@ -203,12 +203,41 @@ struct QuadControl {
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
   }
   // 가변높이 standing q_home/com_ref 재계산(IK) — 라이브 d 복원(텔레포트X). 서기높이변경·눕기용.
-  void update_stand_qhome(double base_z){
+  // ── q_home LUT (실로봇 RT-safe: 무거운 IK를 제어루프서 제거 → 오프라인 precompute+선형보간. sim=실배포 동일 아키텍처) ──
+  //   높이별 q_home(발목 포함 자세)·com_ref·foot_hip_off·foot_gz0를 시작 시 300회 IK로 표화. RT는 보간만(IK 없음).
+  //   ★값은 cold(300회 완전수렴)이라 직접IK와 동일 → walk 회귀 없음. 발목=상수·hip/thigh/calf만 높이변화→보간 정확.
+  std::vector<double> lut_h; double lut_step=0.005;
+  std::vector<VectorXd> lut_qh; std::vector<Vector3d> lut_com;
+  std::vector<std::array<Vector2d,4>> lut_fho; std::vector<std::array<double,4>> lut_fgz;
+  void update_stand_qhome_ik(double base_z){   // 직접 IK(오프라인 표생성·self-check 전용, RT 미사용)
     std::vector<double> sq(nq),sv(nv); double st=d->time;
     for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
     crouch_home(base_z);
     for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st;
     mj_forward(m,d);
+  }
+  void build_qhome_lut(double h0=0.18, double h1=0.55, double step=0.005){
+    lut_step=step; std::vector<double> sq(nq),sv(nv); double st=d->time;
+    for(int i=0;i<nq;i++) sq[i]=d->qpos[i]; for(int i=0;i<nv;i++) sv[i]=d->qvel[i];
+    lut_h.clear(); lut_qh.clear(); lut_com.clear(); lut_fho.clear(); lut_fgz.clear();
+    for(double h=h0; h<=h1+1e-9; h+=step){
+      crouch_home(h);                                        // 300회 cold(시작 1회, RT 아님)
+      lut_h.push_back(h); lut_qh.push_back(q_home); lut_com.push_back(com_ref);
+      lut_fho.push_back(foot_hip_off); lut_fgz.push_back(foot_gz0);
+    }
+    for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st;
+    crouch_home(base_z0);                                    // q_home 등 부작용을 명목높이로 원상복구
+    for(int i=0;i<nq;i++) d->qpos[i]=sq[i]; for(int i=0;i<nv;i++) d->qvel[i]=sv[i]; d->time=st; mj_forward(m,d);
+  }
+  void update_stand_qhome(double base_z){   // ★LUT 보간(RT-safe, IK 없음). 실배포와 동일 경로.
+    if(lut_h.empty()) build_qhome_lut();                     // 안전망(보통 init서 미리 빌드)
+    double h = std::min(std::max(base_z, lut_h.front()), lut_h.back());
+    int i = (int)((h - lut_h.front())/lut_step); i = std::max(0, std::min((int)lut_h.size()-2, i));
+    double a = (h - lut_h[i]) / (lut_h[i+1]-lut_h[i]); a = std::max(0.0, std::min(1.0, a));
+    q_home = (1-a)*lut_qh[i] + a*lut_qh[i+1];
+    com_ref = (1-a)*lut_com[i] + a*lut_com[i+1];
+    for(int k=0;k<4;k++){ foot_hip_off[k]=(1-a)*lut_fho[i][k]+a*lut_fho[i+1][k];
+      foot_gz0[k]=(1-a)*lut_fgz[i][k]+a*lut_fgz[i+1][k]; }
   }
   // ★앉기 자세 IK: 몸통 pitch↑(nose up)+낮춤 → 앞다리 펴짐·뒷다리 접힘. 뒷다리=calf(+최대)·foot(-최대) 고정,
   //   IK는 앞다리 3DOF(hip/thigh/calf)+뒷다리 2DOF(hip/thigh)만으로 발 지면(z=0) 배치. q_sit 저장(라이브 d 복원).

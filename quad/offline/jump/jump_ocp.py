@@ -57,6 +57,12 @@ q_crouch=mj2pin(mj_crouch(0.30))
 q_stand =mj2pin(mj_crouch(0.50))
 x0=np.concatenate([q_crouch, np.zeros(nv)])
 print(f"[OCP] crouch base_z={q_crouch[2]:.3f} stand base_z={q_stand[2]:.3f}")
+if os.environ.get('DUMP_Q0'):   # ★C++ OCP 포팅 parity용: q_crouch·q_stand 덤프(mj_crouch IK 산물) 후 종료
+    with open(os.environ['DUMP_Q0'],'w') as _f:
+        _f.write(f"{nq} {nv}\n")
+        _f.write(" ".join(f"{v:.10f}" for v in q_crouch)+"\n")
+        _f.write(" ".join(f"{v:.10f}" for v in q_stand)+"\n")
+    print(f"[OCP] q0 덤프 → {os.environ['DUMP_Q0']}"); import sys as _s; _s.exit(0)
 
 state=crocoddyl.StateMultibody(model)
 actu=crocoddyl.ActuationModelFloatingBase(state)

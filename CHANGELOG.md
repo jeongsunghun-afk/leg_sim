@@ -9,8 +9,8 @@
 
 점프를 offline replay → **C++ live-solve**로. 로드맵=[MPC/RL 리포트 §9](docs/MPC_RL_하이브리드_전략_리포트.md).
 - **S0 (완료)**: crocoddyl C++ 빌드 통합 de-risk. `cpp/ocp/build_check.cpp` + CMake `ocp_check` 타겟(crocoddyl 3.2.1=std::shared_ptr, `-lcrocoddyl -lpinocchio_default`). 컴파일·링크·solve 확인.
-- **S1 (다음)**: 점프 OCP C++ 포팅(`offline/jump/jump_ocp.py` → C++), Python parity.
-- **S2**: §9 실시간화(RTI 1~3이터+warm-start·호라이즌 다이어트).
+- **S1 (완료)**: 점프 OCP C++ 포팅(`cpp/ocp/jump_ocp.cpp`). crocoddyl 전체(contact·cost·FDDP·warm-start) → **iter54·cost1.28·apex0.282m Python 완전일치**. (q_crouch/q_stand는 mj_crouch IK 산물 → 임시로 Python DUMP_Q0 로드, IK 포팅은 후속)
+- **S2 (다음)**: §9 실시간화(RTI 1~3이터+warm-start shift·호라이즌 다이어트) + q0 IK C++ 포팅.
 - **S3**: 배포 통합(점프모드 live-solve).
 
 ---

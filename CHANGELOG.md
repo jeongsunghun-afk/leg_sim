@@ -5,6 +5,16 @@
 
 ---
 
+## [진행중] crocoddyl C++ 실시간 OCP (v16 목표)
+
+점프를 offline replay → **C++ live-solve**로. 로드맵=[MPC/RL 리포트 §9](docs/MPC_RL_하이브리드_전략_리포트.md).
+- **S0 (완료)**: crocoddyl C++ 빌드 통합 de-risk. `cpp/ocp/build_check.cpp` + CMake `ocp_check` 타겟(crocoddyl 3.2.1=std::shared_ptr, `-lcrocoddyl -lpinocchio_default`). 컴파일·링크·solve 확인.
+- **S1 (다음)**: 점프 OCP C++ 포팅(`offline/jump/jump_ocp.py` → C++), Python parity.
+- **S2**: §9 실시간화(RTI 1~3이터+warm-start·호라이즌 다이어트).
+- **S3**: 배포 통합(점프모드 live-solve).
+
+---
+
 ## v15.0 — 17-DOF 배포 완성 baseline (2026-07-10)
 
 최신 태그 v14.5.5(2026-05-18) 이후 272 커밋을 정리한 **17-DOF 실배포 마일스톤**. 여기서부터 버전관리 재개.

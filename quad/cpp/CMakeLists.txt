@@ -45,3 +45,20 @@ if(GLFW_LIB AND GLFW_INCLUDE)
 else()
   message(STATUS "GLFW 없음 → trot_view 스킵")
 endif()
+
+# ── OCP: crocoddyl C++ 실시간 OCP (선택, crocoddyl 있을 때만) ──
+#   §9 실시간 OCP 개발. jump OCP를 Python(offline replay)→C++ live-solve로 전환하는 스택.
+#   crocoddyl 3.2.1(std::shared_ptr) + pinocchio. build_check=빌드 통합 확인(S0).
+find_library(CROCODDYL_LIB crocoddyl        PATHS ${ENV_PREFIX}/lib)
+find_library(PINOCCHIO_LIB pinocchio_default PATHS ${ENV_PREFIX}/lib)
+find_path(CROCODDYL_INCLUDE crocoddyl/core/fwd.hpp PATHS ${ENV_PREFIX}/include)
+if(CROCODDYL_LIB AND PINOCCHIO_LIB AND CROCODDYL_INCLUDE)
+  message(STATUS "crocoddyl: ${CROCODDYL_LIB} → ocp 타겟 빌드")
+  add_executable(ocp_check ocp/build_check.cpp)
+  target_include_directories(ocp_check PRIVATE ${CROCODDYL_INCLUDE} ${EIGEN_INCLUDE})
+  target_link_libraries(ocp_check PRIVATE ${ENV_PREFIX}/lib/libstdc++.so ${CROCODDYL_LIB} ${PINOCCHIO_LIB})
+  set_target_properties(ocp_check PROPERTIES BUILD_RPATH "${ENV_PREFIX}/lib" INSTALL_RPATH "${ENV_PREFIX}/lib")
+  target_link_options(ocp_check PRIVATE "-Wl,-rpath-link,${ENV_PREFIX}/lib")
+else()
+  message(STATUS "crocoddyl 없음 → ocp 타겟 스킵")
+endif()

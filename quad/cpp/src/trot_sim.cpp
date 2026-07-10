@@ -34,6 +34,8 @@ int main(int argc,char**argv){
   if(getenv("GROUND_LIE_Z")) ctrl.GROUND_LIE_Z=atof(getenv("GROUND_LIE_Z"));         // ★눕기 저자세 튜닝
   if(getenv("GROUND_REAR_FOOT")) ctrl.GROUND_REAR_FOOT=atof(getenv("GROUND_REAR_FOOT"));
   if(getenv("GROUND_FRONT_FOOT")) ctrl.GROUND_FRONT_FOOT=atof(getenv("GROUND_FRONT_FOOT"));
+  if(getenv("GROUND_FRONT_THIGH")) ctrl.GROUND_FRONT_THIGH=atof(getenv("GROUND_FRONT_THIGH"));
+  if(getenv("GROUND_FRONT_CALF")) ctrl.GROUND_FRONT_CALF=atof(getenv("GROUND_FRONT_CALF"));
   if(getenv("MODE")) ctrl.mode=getenv("MODE");                              // ★모드 테스트(sit/stand_up/stand_down/off)
   if(getenv("SIT_Z")) ctrl.SIT_Z=atof(getenv("SIT_Z"));
   if(getenv("SIT_PITCH")) ctrl.SIT_PITCH=atof(getenv("SIT_PITCH"));

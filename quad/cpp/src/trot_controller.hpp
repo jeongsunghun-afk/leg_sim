@@ -86,7 +86,7 @@ struct TrotCtrl {
       jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
-  double GROUND_LIE_Z=0.22, GROUND_REAR_FOOT=-0.58, GROUND_FRONT_FOOT=-0.5;   // ★눕기(ground) 저자세: base 낮춤 + 뒷발목 -0.58(수평 교차점: 더 접으면 뒤 들려 nose-down)로 z0.21·pitch2.7°·안정. wbic 0.29보다 낮음. PD-fold 홀드
+  double GROUND_LIE_Z=0.22, GROUND_REAR_FOOT=-0.58, GROUND_FRONT_FOOT=-0.5, GROUND_FRONT_THIGH=0.0, GROUND_FRONT_CALF=0.0;   // ★눕기(ground) 저자세: base 낮춤 + 앞뒤 발목/앞다리 fold(GUI 실시간 슬라이더로 CoM균형·수평·무슬라이드 조각). PD-fold 홀드
   // ── 게이트 프리셋(trot/walk/gallop) ──
   std::string gait_type="trot";
   double gp_T=0.5, gp_SWF=0.5, gp_off[4]={0,0.5,0.5,0}, gp_Tsw=0.25, gp_Tst=0.25;
@@ -266,8 +266,9 @@ struct TrotCtrl {
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
       if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }
-      if(mode=="stand_down") for(int i=0;i<4;i++) if(q.leg_dof[i]==4)   // ★앞뒤 발목 접어 다리 flat fold → 몸 낮게+수평(발목+높이 동시)
-        q.q_home[q.legqp[i][3]-7]=(i<2)?GROUND_REAR_FOOT:GROUND_FRONT_FOOT;
+      if(mode=="stand_down") for(int i=0;i<4;i++) if(q.leg_dof[i]==4){   // ★앞뒤 발목 접기 + 앞다리 fold(GUI 슬라이더로 CoM균형·수평·무슬라이드 조각)
+        q.q_home[q.legqp[i][3]-7]=(i<2)?GROUND_REAR_FOOT:GROUND_FRONT_FOOT;   // 발목: 뒤/앞
+        if(i>=2){ q.q_home[q.legqp[i][1]-7]+=GROUND_FRONT_THIGH; q.q_home[q.legqp[i][2]-7]+=GROUND_FRONT_CALF; } }  // 앞다리 thigh/calf 오프셋(접기)
       if(haunch_ready && mode=="stand_up"){   // ★개-앉기서 기립: 높이-스케줄 언폴드(HAUNCH_Z서 fold=1 → UNFOLD_Z서 0). 몸 오르며 뒷다리 펴짐→q_home 점프 없이 인계
         double target_fold=tc_clip((HAUNCH_UNFOLD_Z-ht_cur)/(HAUNCH_UNFOLD_Z-HAUNCH_Z),0.0,1.0);
         haunch_fold+=tc_clip(target_fold-haunch_fold,-HAUNCH_FOLD_RATE*dt,HAUNCH_FOLD_RATE*dt);

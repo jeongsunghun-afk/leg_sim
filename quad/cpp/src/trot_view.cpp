@@ -89,6 +89,11 @@ int main(int argc,char**argv){
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각
   if(getenv("PERCEPTIVE")) ctrl.perceptive=atoi(getenv("PERCEPTIVE"))!=0;    // ★지형인지(mj_ray 착지높이) on/off
   if(getenv("PCV_CLR")) ctrl.PCV_CLR=atof(getenv("PCV_CLR"));
+  // ★눕기(ground) 자세 조각 — GUI 슬라이더가 안 될 때 env로 직접 확인/튜닝(GUI cmd와 동일 파라미터)
+  if(getenv("GROUND_LIE_Z"))     ctrl.GROUND_LIE_Z=atof(getenv("GROUND_LIE_Z"));
+  if(getenv("GROUND_REAR_FOOT")) ctrl.GROUND_REAR_FOOT=atof(getenv("GROUND_REAR_FOOT"));
+  if(getenv("GROUND_FRONT_THIGH")) ctrl.GROUND_FRONT_THIGH=atof(getenv("GROUND_FRONT_THIGH"));
+  if(getenv("GROUND_FRONT_CALF"))  ctrl.GROUND_FRONT_CALF=atof(getenv("GROUND_FRONT_CALF"));
   if(getenv("GETUP_TRAJ_KP")) ctrl.GETUP_TRAJ_KP=atof(getenv("GETUP_TRAJ_KP"));   // ★개-앉기 기립 궤적추종 강성(=앉기→서기 튕김 힘). ↓=부드럽게
   if(getenv("GETUP_TRAJ_KD")) ctrl.GETUP_TRAJ_KD=atof(getenv("GETUP_TRAJ_KD"));   // ↑=튕김 감쇠
   if(getenv("SGU_KP")) ctrl.SGU_KP=atof(getenv("SGU_KP"));                        // ★크라우치-앉기 기립 강성(뷰어에도 추가)
@@ -136,6 +141,10 @@ int main(int argc,char**argv){
         ctrl.auto_whip = json_get(c,"auto_whip",ctrl.auto_whip?1:0) > 0.5;      // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
         ctrl.POS_HOLD = json_get(c,"pos_hold",ctrl.POS_HOLD?1:0) > 0.5;         // ★정지 위치홀드(드리프트 보정) 토글
         ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
+        ctrl.GROUND_LIE_Z    = json_get(c,"g_lie_z",   ctrl.GROUND_LIE_Z);      // ★눕기 자세 실시간 조각(GUI 슬라이더)
+        ctrl.GROUND_REAR_FOOT= json_get(c,"g_rear_foot",ctrl.GROUND_REAR_FOOT);
+        ctrl.GROUND_FRONT_THIGH=json_get(c,"g_front_thigh",ctrl.GROUND_FRONT_THIGH);
+        ctrl.GROUND_FRONT_CALF =json_get(c,"g_front_calf", ctrl.GROUND_FRONT_CALF);
         { std::string mc=json_str(c,"mode","move");             // move/stand_up(서기)/stand_down(눕기)/off
           if(ctrl.mode!="jump") ctrl.mode=mc; }                 // ★점프 중엔 GUI mode 무시(안 그러면 매 폴링 덮어써 점프 즉시 취소). 컨트롤러가 완료 후 stand_up 자가전환
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글

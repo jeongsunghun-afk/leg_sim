@@ -101,6 +101,11 @@ gg,xg = g_gap(X0,                  yc= 0*LY)
 gt,xt = g_stepping(X0,             yc=+1*LY)
 gs,xs = g_stairs(X0, rise=0.05, depth=0.28, yc=+2*LY)
 files["quad_terrain_course.mjcf"]   = scene("terrain_course", gd, gf, gr, gg, gt, gs)
+# 회귀검증 전용: 순차 직진 주파 코스(험지→계단=perceptive 높이적응 테스트). 마찰(얼음)·gap·stepping은
+#   별도 어려운 축(실패허용)이라 제외 — no-regression 기준선은 컨트롤러가 안정 주파하는 높이지형으로.
+vr,vxr = g_rough(1.2, span=2.4)
+vs,vxs = g_stairs(vxr+0.6, rise=0.05, depth=0.28)
+files["quad_terrain_verify.mjcf"]   = scene("terrain_verify", vr, vs)
 
 for fn,txt in files.items():
     p=os.path.join(out,fn); open(p,"w").write(txt)

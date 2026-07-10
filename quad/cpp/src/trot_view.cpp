@@ -82,6 +82,7 @@ int main(int argc,char**argv){
   QuadControl q; q.load(path); apply_env_gains(q);
   q.crouch_home(); q.setup_mpc();
   TrotCtrl ctrl(q); gC=&ctrl;
+  ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(점프 순간 파일 I/O 히치=렉 제거). 없으면 jump_N=0(fallback)
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)
   if(getenv("TROT_STEER")) ctrl.steer=atof(getenv("TROT_STEER"));           // ★자동차식 조향각
@@ -148,13 +149,14 @@ int main(int argc,char**argv){
     // ★벽시계 기준 실시간 페이싱: sim_time이 wall_time×RATE 따라가도록(모니터 refresh 무관)
     double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-wall0).count();
     double target=sim0+wall*RATE; int guard=0;
-    while(d->time < target && guard++ < 200){   // 따라잡기(최대 200스텝/프레임=폭주 방지)
+    while(d->time < target && guard++ < 60){    // 따라잡기(최대 60스텝/프레임=버스트 상한↓, 점프 히치 후 몰아치기 완화)
       ctrl.control(); mj_step(m,d);
       double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
       // ★낙상 시 자동재시작 안 함(그대로 쓰러진 채 유지 → RESET 버튼으로 복구). 낙상은 엣지로만 카운트
       bool low=(td>50||d->qpos[2]<0.2); if(low && !fallen) falls++; fallen=low;
     }
-    if(d->time-sim0 > wall*RATE+0.5){ wall0=std::chrono::steady_clock::now(); sim0=d->time; }  // 드리프트 리셋
+    // ★페이싱 재동기: 뒤처짐(히치 후 백로그)·앞섬 양쪽 모두 0.2s 초과면 시계 리셋 → 백로그 버림(점프 후 fast-forward 렉 방지)
+    if(target-d->time > 0.2 || d->time-sim0 > wall*RATE+0.5){ wall0=std::chrono::steady_clock::now(); sim0=d->time; }
     if(!STATE_PUB.empty() && (frame%3==0)) publish_state(m,d,ctrl,STATE_PUB);   // ★GUI 모니터(IMU/Actuator 17-DOF) 발행
 
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);

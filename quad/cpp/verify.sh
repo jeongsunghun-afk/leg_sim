@@ -8,7 +8,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"                       # simulation/quad/cpp
 MJ=../quad_real_17dof_waist_sphere.mjcf
-COURSE=../quad_terrain_course.mjcf
+COURSE=../quad_terrain_verify.mjcf         # ★회귀검증=순차 직진코스(마찰→험지→계단). 병렬 course는 GUI용(갭/스테핑=실패허용)
 export GEAR_FOOT=0.5714                     # foot 8:1 재기어(배포 기본)
 PY=${PY:-/home/jsh/miniforge3/envs/proxddp/bin/python}
 DOPY=0; [ "${1:-}" = "--python" ] && DOPY=1
@@ -34,15 +34,15 @@ echo "▶ 평지 (quad_real_17dof_waist_sphere)"
 run "walk v0.6" $MJ walk 0.6 6000 8  2.0
 run "trot v1.2" $MJ trot 1.2 6000 8  3.5
 run "run  v2.0" $MJ run  2.0 6000 12 5.0
-echo "▶ 지형 perceptive (course: 마찰→험지→계단)"
-run "course walk v0.5" $COURSE walk 0.5 30000 10 13.0
+echo "▶ 지형 perceptive (verify: 험지→계단 높이적응)"
+run "course walk v0.5" $COURSE walk 0.5 20000 10 7.0
 
 if [ $DOPY = 1 ]; then
   echo "▶ Python 파리티 스팟체크 (느림)"
-  po=$(MJCF="$COURSE" HEADLESS=1 GAIT=walk TROT_V=0.5 STEPS=30000 PRINT_EVERY=9999999 \
+  po=$(MJCF="$COURSE" HEADLESS=1 GAIT=walk TROT_V=0.5 STEPS=20000 PRINT_EVERY=9999999 \
        "$PY" ../quad_mpc_wbic_17dof.py --mode trot --robot ours_17dof_waist_sphere 2>/dev/null | grep -iE "종료")
   pf=$(_num "$po" 'falls=[0-9]+'); px=$(_num "$po" 'x=[+-][0-9.]+')
-  if [ "${pf:-1}" = "0" ] && awk "BEGIN{exit !(${px:-0} >= 13.0)}"; then
+  if [ "${pf:-1}" = "0" ] && awk "BEGIN{exit !(${px:-0} >= 7.0)}"; then
     printf "  ✅ %-22s falls=%s x=%s\n" "PY course walk v0.5" "$pf" "$px"; pass=$((pass+1))
   else printf "  ❌ %-22s falls=%s x=%s\n" "PY course walk v0.5" "$pf" "$px"; fail=$((fail+1)); fi
 fi

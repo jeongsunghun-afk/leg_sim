@@ -155,7 +155,7 @@ struct TrotCtrl {
           if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }
           q.wbic_stance();
           if(bz<=JUMP_CROUCH_Z+0.015 && std::abs(d->qvel[2])<0.06 && t-jt0>0.45){
-            load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
+            if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }  // ★미로드(≤0) 시만 I/O(재점프·프레임 히치 방지). 시작 preload됐으면 스킵
           armed=false; return; }
         if(jphase==1){   // ★OCP 궤적 재생(push+flight): τ_ff + 관절 PD (없으면 구 스크립트 스냅 fallback)
           if(jump_N>0 && jump_k<jump_N){

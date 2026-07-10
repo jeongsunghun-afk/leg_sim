@@ -1,41 +1,45 @@
 #!/bin/bash
 # ============================================================
-# 뷰어 + GUI 데모를 NVENC로 화면 녹화 → mkv → mp4
+# 뷰어 + GUI 데모를 NVENC로 화면 녹화 → mp4
 #   ★반드시 "본인 터미널"에서 실행 (Claude 도구 세션에선 프로세스가 회수됨)
-#   사용:  bash record_demo.sh
-#   종료:  이 터미널에서 [Enter] 를 누르면 녹화 종료 + mp4 생성
+#   사용:  bash record_demo.sh [map]      map=course(기본)|flat|stairs|rough|friction|gap|stepping|soft
+#   종료:  이 터미널에서 [Enter] → 녹화 종료 + mp4 저장
+#
+# ★견고화(2026-07-10):
+#   ①뷰어+GUI 기동을 run_gui.sh 재사용 = 렌더검증+자동재시도(간헐 GL크래시 방지, 단일 소스).
+#   ②SIZE 자동감지(xdpyinfo 현재 해상도) — 지정 안 해도 화면 전체 캡처. SIZE=... 로 오버라이드.
 # ============================================================
-set -e
+set -u
 
-PY=/home/jsh/miniforge3/envs/proxddp/bin/python
-QUAD=/home/jsh/문서/jsh/simulation/quad
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"     # simulation/quad
+export DISPLAY="${DISPLAY:-:0}"
 OUT_DIR=${OUT_DIR:-$HOME/Videos/Screencasts}
-SIZE=${SIZE:-1920x1200}                 # 전체화면 해상도 (xdpyinfo 로 확인)
-GAINS="GEARBOX=1 GEAR_FOOT=0.5714"   # ★17dof 게인(W_ORI20·W_AM12·KD_AM24·발목)은 이제 자동감지 기본값 → env 불요
-# ★GEARBOX=1 GEAR_FOOT=0.5714 = 발목 반사관성(8:1)→현실적 발끝(이상화 발목 flail 억제). 이상화로 보려면 이 둘 제거.
-MAP=${MAP:-mjcf/quad_terrain_course.mjcf}    # ★기본 맵=종합코스(3레인, mjcf/ 폴더). MAP=mjcf/quad_real_17dof_waist_sphere.mjcf 로 평지
+MAP=${1:-course}                                          # run_gui.sh 맵 인자
+# 캡처 해상도: 미지정 시 현재 화면 전체(xdpyinfo) 자동감지 → 실패 시 1920x1080
+SIZE=${SIZE:-$(DISPLAY="$DISPLAY" xdpyinfo 2>/dev/null | awk '/dimensions:/{print $2; exit}')}
+SIZE=${SIZE:-1920x1080}
 
 mkdir -p "$OUT_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)
 MKV="$OUT_DIR/quad_$STAMP.mkv"          # 녹화 원본(크래시 안전)
 MP4="$OUT_DIR/quad_$STAMP.mp4"          # 배포용
 
-cleanup(){ kill "$GUI" "$VIEW" "$FF" 2>/dev/null || true; }
+FF=""
+cleanup(){
+  [ -n "$FF" ] && kill "$FF" 2>/dev/null
+  pkill -TERM -f 'build/trot_view'   2>/dev/null
+  pkill -TERM -f teleop_gui_17dof.py 2>/dev/null
+}
 trap cleanup EXIT
 
-# 1) GUI + C++ 뷰어 실행 (본인 세션이라 유지됨)
-pkill -f trot_view 2>/dev/null || true; pkill -f teleop_gui_17dof 2>/dev/null || true; sleep 1   # 기존 인스턴스 정리(★|| true: 매칭없을때 pkill exit1로 set -e 조기종료 방지)
-rm -f /tmp/quad_cmd.json
-( cd "$QUAD"      && DISPLAY=:0 QUAD_CMD=/tmp/quad_cmd.json "$PY" teleop_gui_17dof.py ) &
-GUI=$!
-sleep 3
-( cd "$QUAD/cpp" && env DISPLAY=:0 $GAINS RATE=1.0 CMDFILE=/tmp/quad_cmd.json STATE_PUB=/tmp/quad_state.json \
-    ./build/trot_view "../$MAP" ) &   # ★기본=종합코스($MAP). 허리 능동모델(조향스파인)
-VIEW=$!
-sleep 2
+# 1) 뷰어 + GUI = 견고화된 run_gui.sh 재사용(렌더 검증 + 실패 시 자동 재시도)
+echo "▶ 뷰어+GUI 기동 (run_gui.sh $MAP)…"
+if ! bash "$HERE/run_gui.sh" "$MAP"; then
+  echo "❌ 뷰어/GUI 기동 실패 — 중단"; exit 1
+fi
 
 echo "============================================================"
-echo " ▶ 3초 후 녹화 시작. GUI에서 Walk/trot·선회·허리조향 슬라이더 등을 조작하세요."
+echo " ▶ SIZE=$SIZE · 3초 후 녹화 시작. GUI에서 Walk/trot·선회·앉기 등 조작하세요."
 echo "   녹화 종료 = 이 터미널에서 [Enter]"
 echo "============================================================"
 sleep 3
@@ -47,12 +51,10 @@ FF=$!
 
 read -r _         # Enter 누르면 아래로
 kill -INT "$FF" 2>/dev/null; wait "$FF" 2>/dev/null || true
+FF=""
 
 # 3) mkv → mp4 remux (재인코딩 없음, 빠름·무손실)
-ffmpeg -y -i "$MKV" -c copy "$MP4" </dev/null
+ffmpeg -y -i "$MKV" -c copy "$MP4" </dev/null && rm -f "$MKV"
 echo ""
-echo "✅ 저장 완료:"
-echo "   원본 : $MKV"
-echo "   배포 : $MP4"
-echo ""
+echo "✅ 저장 완료: $MP4"
 echo "배속 예) ffmpeg -i \"$MP4\" -filter:v \"setpts=0.5*PTS\" \"${MP4%.mp4}_2x.mp4\""

@@ -37,11 +37,24 @@ GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim ../mjcf/quad_r
 # 뷰어 기동은 run_gui.sh 사용(setsid+CMDFILE/STATE_PUB 자동). 맵=인자로 지정.
 ```
 
-## 회귀검증 / 데모
+## 회귀검증
 ```bash
 cd simulation/quad/cpp && ./verify.sh            # 표준 회귀 배터리(평지+지형, PASS/FAIL)
-bash simulation/quad/record_demo.sh              # GUI+뷰어(기본=종합코스) NVENC 녹화(사용자 터미널서). MAP=... 로 맵 지정. 상세=RECORDING.md
 ```
+
+## 데모 녹화 (2가지)
+```bash
+# ── (A) ffmpeg NVENC 원샷 — 뷰어+GUI 자동 기동 + 화면녹화, [Enter]로 종료 ──
+bash simulation/quad/record_demo.sh              # 기본=종합코스. MAP=mjcf/… 로 맵 지정. 상세=RECORDING.md
+#   결과 ~/Videos/Screencasts/quad_<stamp>.mp4. 배속예) ffmpeg -i in.mp4 -filter:v "setpts=0.5*PTS" out_2x.mp4
+
+# ── (B) OBS 병행 — 뷰어+GUI 띄운 뒤 OBS로 녹화(수동 제어, 권장: 긴 데모·화면구성 자유) ──
+bash simulation/quad/run_gui.sh course           # 1) 뷰어+GUI(견고화: 렌더검증+재시도)
+DISPLAY=:0 obs &                                 # 2) OBS 실행 → Start Recording
+#   OBS 설정: Output=Hybrid MP4(또는 MP4 fragmented)·NVENC, Source=Screen Capture(XSHM)→Ctrl+F(Fit)→Alt드래그 crop. 상세=RECORDING.md
+```
+- **★반드시 "본인 터미널"에서 실행** — Claude 도구 세션서 띄우면 프로세스가 회수될 수 있음.
+- 데모 시퀀스 예: Walk→Trot→Run(속도게이트)·허리조향(원주행)·Ready→Sit·Ground→Sit(직행)·Sit→Ready·Jump.
 
 ## 점프 (offline OCP 궤적 추종)
 ```bash

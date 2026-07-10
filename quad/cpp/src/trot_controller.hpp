@@ -97,6 +97,7 @@ struct TrotCtrl {
   // 상태
   bool armed=false; double t0=0, settle_until=TC_SETTLE;
   bool stop_settle=false;   // ★달리다 서기: 정지 감속·CoM 재중심 중(뒤 엉덩방아 방지)
+  double stand_ax=0, stand_ay=0; bool stand_set=false;   // ★서기 위치 앵커(현재 위치서 서기 — 홈으로 빨려감 방지)
   double Vs=0,Vys=0,Ws=0, yaw_ref=0; bool yaw_hold_set=false; double yaw_hold=0;
   bool pos_hold_set=false; double phx=0,phy=0;
   VectorXd x_ref=VectorXd::Zero(13);
@@ -242,6 +243,7 @@ struct TrotCtrl {
       if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)
       if(mode=="stand_down"){ from_sit=true; haunch_ready=false; haunch_fold=0; }  // ★눕기=wbic 균형 저크라우치(0.29)·기립도 wbic_stance(from_sit)로 매끈. haunch 해제(crouch/lie로)
       if(mode=="stand_up" && bz>0.47) from_sit=false;                        // 서기 완료→해제
+      if(!stand_set){ stand_ax=d->subtree_com[0]; stand_ay=d->subtree_com[1]; stand_set=true; }  // ★서기 진입=현재 위치 캡처(홈 x=0으로 안 빨려가게)
       double tgt=(mode=="stand_down")?0.29:body_h;                          // ★눕기=wbic 안정 저크라우치(0.29) 능동홀드(저-PD tuck 슬라이드 제거) / 서기=슬라이더
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
@@ -263,9 +265,10 @@ struct TrotCtrl {
         for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
           d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
         armed=false; return; }
+      if(!haunch_ready){ q.com_ref[0]=stand_ax; q.com_ref[1]=stand_ay; }    // ★서기=멈춘 위치서 홀드(홈 x=0으로 빨려감 방지). haunch getup은 블렌드 com_ref 유지
       have_qref=false; q.wbic_stance(); armed=false; return;                // 서기(높이충분)=wbic_stance
     }
-    have_qref=false;   // move → fold 리셋
+    have_qref=false; stand_set=false;   // move → fold·서기앵커 리셋(다음 서기서 새 위치 캡처)
     auto quat_yaw=[&](){ double*qq=&d->qpos[3]; return std::atan2(2*(qq[0]*qq[3]+qq[1]*qq[2]),1-2*(qq[2]*qq[2]+qq[3]*qq[3])); };
     if(t < settle_until){ q.wbic_stance(); return; }
     if(!armed){ armed=true; t0=t; yaw_ref=0;

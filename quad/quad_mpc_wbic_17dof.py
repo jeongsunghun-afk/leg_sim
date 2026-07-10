@@ -1466,11 +1466,14 @@ def mode_trot():
                     S['homing'] = True; S['home_t0'] = t; S['armed'] = False   # 트로트 재arm 강제(아래 경로로 진행)
                     print('[trot] 기본자세 호밍 시작(발편차 %.0fmm, 제자리 trot)' % (_dev * 1000), flush=True)
             if not S['homing']:                               # 호밍 아니면 일반 stance 유지
+                if not S.get('stand_set', False):             # ★서기 진입=현재 위치 캡처(홈 x=0으로 안 빨려가게, C++ 미러)
+                    S['stand_ax'] = float(q.d.subtree_com[0][0]); S['stand_ay'] = float(q.d.subtree_com[0][1]); S['stand_set'] = True
+                q.com_ref[0] = S['stand_ax']; q.com_ref[1] = S['stand_ay']   # ★멈춘 위치서 홀드
                 q.wbic_stance(); S['armed'] = False; q.cmd_v[:] = 0.0
                 return
             # 호밍 중이면 아래 trot 경로로 진행(제자리 v=0, 발=기본명목 — MPC 균형 재활용)
         else:
-            S['homing'] = False; S['q_ref'] = None            # move(보행) 명령 = 호밍 취소 + fold q_ref 리셋
+            S['homing'] = False; S['q_ref'] = None; S['stand_set'] = False    # move(보행) = 호밍 취소 + fold·서기앵커 리셋(다음 서기서 새 위치 캡처)
         # ── trot 경로 (move 보행 또는 homing 제자리 재정렬) ──
         if S['homing'] and (t - S['home_t0'] > HOME_T):       # 호밍 종료 → stance 복귀
             S['homing'] = False; S['armed'] = False; S['settle_until'] = t + SETTLE

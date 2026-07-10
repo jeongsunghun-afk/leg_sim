@@ -223,10 +223,13 @@ def _set_walk_speed(v):                                # 보행속도 게이지 
 def _gait_preset(gait):                                # ★gait 버튼 → Walk Speed 게이지·Step Height를 그 gait 최적값으로 자동 세팅
     vmax = {'walk': 0.6, 'trot': 1.4, 'run': 2.0, 'stairs': 0.3}.get(gait, 1.4)   # 조이스틱 풀스케일(gait 상한). ★계단=느리게 0.3
     sh   = {'walk': 0.10, 'trot': 0.10, 'run': 0.08, 'stairs': 0.18}.get(gait, 0.10)  # 발 들림(고속 run=낮게·계단=높게 0.18 라이저 클리어). ★walk 0.05→0.10 복원(발 아치 자연스럽게·앞다리 뻣뻣함 해소)
+    bz   = {'walk': 0.50, 'trot': 0.50, 'run': 0.48, 'stairs': 0.50}.get(gait, 0.50)  # ★gait별 최적 base height(축별 worst-util): run=0.48(발목ω 여유)·나머지 0.50. 컨트롤러 set_gait와 동일값
     if dpg.does_item_exist('ws'): dpg.set_value('ws', vmax)
     _set_walk_speed(vmax)
     if dpg.does_item_exist('sh'): dpg.set_value('sh', sh)
     sc.StepHeight(sh)
+    if dpg.does_item_exist('bh'): dpg.set_value('bh', bz)   # ★base height 슬라이더도 gait 최적값 연동
+    sc.BodyHeight(bz)
 
 
 left = JoyPad('joyL', 200, _left)

@@ -8,11 +8,13 @@ ROBOT = "quad_real_17dof_waist_sphere.mjcf"
 HDR = f'<mujoco model="{{name}}">\n  <include file="{ROBOT}"/>\n  <worldbody>\n'
 FTR = "  </worldbody>\n</mujoco>\n"
 
-def box(name, sx, sy, sz, x, y, z, rgba, fric=None, prio=None):
+def box(name, sx, sy, sz, x, y, z, rgba, fric=None, prio=None, sref=None, simp=None):
     f = f' friction="{fric}"' if fric else ""
     p = f' priority="{prio}"' if prio is not None else ""   # ★priority 지정 시 이 geom friction이 접촉을 지배(max규칙 무시)
+    r = f' solref="{sref}"' if sref else ""                 # ★solref/solimp=접촉 강성(물렁한 지형=발 침하)
+    m = f' solimp="{simp}"' if simp else ""
     return (f'    <geom name="{name}" type="box" size="{sx:.3f} {sy:.3f} {sz:.3f}" '
-            f'pos="{x:.3f} {y:.3f} {z:.3f}" rgba="{rgba}"{f}{p}/>\n')
+            f'pos="{x:.3f} {y:.3f} {z:.3f}" rgba="{rgba}"{f}{p}{r}{m}/>\n')
 
 # ── 지형 빌더(geom 문자열만 반환, x0=시작 x, 접두=이름 유일화) ──────────
 def g_stairs(x0, pfx="s", rise=0.15, depth=0.35, yc=0.0):
@@ -49,6 +51,16 @@ def g_friction(x0, pfx="f", yc=0.0):
         s+=box(nm, llen, wid/2, 0.012, x, yc, 0.012, rgba, fric=mu, prio=1); x+=2*llen
     return s, x
 
+def g_soft(x0, pfx="d", yc=0.0):
+    # 저강성(매트리스/이불/모래 근사) — soft contact(solref 큰 time_const·solimp 낮음)로 발이 눌려 침하.
+    # ★탄성 복원(스프링)이라 소성 자국유지는 아님. "물렁·꿀렁" 균형 강건성 테스트용. 발 관통 방지 위해 pad 두껍게(0.16).
+    wid=1.6; L=1.0; h=0.08; s=""; x=x0+L
+    pads=[("d0","0.04 1","0.6 0.85 0.02", "0.72 0.55 0.85 1"),  # 약간 물렁(스펀지)
+          ("d1","0.12 1","0.3 0.65 0.03", "0.85 0.45 0.72 1")]  # 매우 물렁(푹 빠짐)
+    for nm,sref,simp,rgba in pads:
+        s+=box(nm, L, wid/2, h, x, yc, h, rgba, sref=sref, simp=simp); x+=2*L
+    return s, x
+
 def g_gap(x0, pfx="g", yc=0.0):
     # 갭 건너기: 높은 발판 사이 빈 공간(아래 바닥으로 드롭). 제어기 실패 허용 난이도.
     wid=1.4; h=0.16; plat=0.7; gap=0.32; N=3; s=""; x=x0
@@ -79,16 +91,18 @@ files["quad_terrain_rough.mjcf"]    = scene("terrain_rough",    g_rough(1.0, spa
 files["quad_terrain_friction.mjcf"] = scene("terrain_friction", g_friction(1.1)[0])
 files["quad_terrain_gap.mjcf"]      = scene("terrain_gap",      g_gap(1.2)[0])
 files["quad_terrain_stepping.mjcf"] = scene("terrain_stepping", g_stepping(1.2)[0])
-# 종합 코스: 마찰·험지·갭·스테핑·계단을 y축 병렬 레인(각 x0=1.2서 시작) → 조향해 골라 진입(뒤까지 안 걸어도 됨)
+files["quad_terrain_soft.mjcf"]     = scene("terrain_soft",     g_soft(1.2)[0])
+# 종합 코스: 저강성·마찰·험지·갭·스테핑·계단을 y축 병렬 레인(각 x0=1.2서 시작) → 조향해 골라 진입(뒤까지 안 걸어도 됨)
 X0=1.2; LY=2.6   # 레인 y간격(폭 겹침 없이)
+gd,xd = g_soft(X0,                 yc=-3*LY)   # 저강성(매트리스), 마찰 옆
 gf,xf = g_friction(X0,             yc=-2*LY)
 gr,xr = g_rough(X0, span=2.4,      yc=-1*LY)
 gg,xg = g_gap(X0,                  yc= 0*LY)
 gt,xt = g_stepping(X0,             yc=+1*LY)
 gs,xs = g_stairs(X0, rise=0.05, depth=0.28, yc=+2*LY)
-files["quad_terrain_course.mjcf"]   = scene("terrain_course", gf, gr, gg, gt, gs)
+files["quad_terrain_course.mjcf"]   = scene("terrain_course", gd, gf, gr, gg, gt, gs)
 
 for fn,txt in files.items():
     p=os.path.join(out,fn); open(p,"w").write(txt)
     print(f"생성: {fn} ({txt.count('<geom')} geoms)")
-print(f"★ course 병렬 레인(y): 마찰 {-2*LY:+.1f} · 험지 {-1*LY:+.1f} · 갭 0.0 · 스테핑 {+1*LY:+.1f} · 계단 {+2*LY:+.1f} (모두 x={X0}서 시작, 조향 진입)")
+print(f"★ course 병렬 레인(y): 저강성 {-3*LY:+.1f} · 마찰 {-2*LY:+.1f} · 험지 {-1*LY:+.1f} · 갭 0.0 · 스테핑 {+1*LY:+.1f} · 계단 {+2*LY:+.1f} (모두 x={X0}서 시작, 조향 진입)")

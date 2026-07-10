@@ -97,9 +97,9 @@
 <h2>E. 운용 파라미터 (gait / 속도)</h2>
 <table>
 <tr><th>항목</th><th>현재값</th><th>비고</th></tr>
-<tr><td class="k">gait <span class="star">★</span></td><td><b>trot/walk/run</b> · 프리셋 상세=params</td><td>walk=순차 정적안정(step_h 0.10) · run=고속trot · GUI 토글. 허리 조향(WAIST_STEER) 옵션</td></tr>
+<tr><td class="k">gait <span class="star">★</span></td><td><b>trot/walk/run/stairs</b> · 프리셋 상세=params</td><td>walk=순차 정적안정 · run=고속trot · stairs=느림·높은발0.18·정밀배치(완만계단) · GUI 토글(속도·발높이·base height 자동). 허리 조향(WAIST_STEER) 옵션</td></tr>
 <tr><td class="k">뒷발목 자세 <span class="star">★</span></td><td><b>REAR_ANKLE=−0.3</b> (앞 −0.5)</td><td>축별 τ·ω 스윕 최적: 발목 각속도 병목(−0.7서 모터한계 155%)→−0.3서 100%. 실기 발목 모터 속도 여유 확보</td></tr>
-<tr><td class="k">perceptive <span class="star">★</span></td><td>PERCEPTIVE=on (계단/험지 착지·몸통높이 적응)</td><td>종합코스(마찰→험지→계단) 완주 falls=0. 평지 무영향</td></tr>
+<tr><td class="k">perceptive <span class="star">★</span></td><td>PERCEPTIVE=on (계단/험지 착지·몸통높이 적응, group2 단일레이=높이천장 없음)</td><td>3레인 종합코스(마찰→소프트/험지→계단/갭→스테핑) 조향진입. 완만지형 falls=0, 평지 무영향</td></tr>
 <tr><td class="k">시작 램프</td><td>TROT_ACC=0.6 · WARMUP=0.6</td><td>출발 lurch 완화</td></tr>
 <tr><td class="k">안전 운용속도</td><td><b>~1.1 m/s 권장</b></td><td>thigh 95%→1.1 (<span class="star">★</span>고속천장 1.75, 상시 1.1). 병목=thigh 토크·calf 속도</td></tr>
 <tr><td class="k">foot_lock / pos_hold <span class="star">★</span></td><td>trot=1.0 / walk=0.35 · POS_HOLD=on</td><td>터치다운 고정·정지 드리프트 보정</td></tr>

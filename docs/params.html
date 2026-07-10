@@ -153,9 +153,11 @@
       <tr><td class="p">walk</td><td class="val">0.7</td><td class="val">0.25</td><td class="val">0.25, 0.75, 0.5, 0</td><td class="val">0.5</td><td class="val">0.10</td></tr>
       <tr><td class="p">trot <span class="pill">기본</span></td><td class="val">0.5</td><td class="val">0.5</td><td class="val">0, 0.5, 0.5, 0</td><td class="val">0.5</td><td class="val">0.10</td></tr>
       <tr><td class="p">run <span class="pill">고속</span></td><td class="val">0.40</td><td class="val">0.5</td><td class="val">0, 0.5, 0.5, 0</td><td class="val">0.5</td><td class="val">0.08</td></tr>
+      <tr><td class="p">stairs <span class="pill">계단</span></td><td class="val">0.7</td><td class="val">0.25</td><td class="val">0.25, 0.75, 0.5, 0</td><td class="val">0.4</td><td class="val">0.18</td></tr>
       <tr><td class="p">gallop</td><td class="val">0.35</td><td class="val">0.55</td><td class="val">0, 0.05, 0.55, 0.5</td><td class="val">0.8</td><td class="val">0.10</td></tr>
     </tbody>
   </table></div>
+  <p class="note">gait별 <b>base height</b>(GUI 버튼이 슬라이더 자동세팅): walk·trot·stairs <b>0.50</b> · run <b>0.48</b>(발목ω 여유). Ready(서기)=<b>0.52</b>. <b>stairs</b>=walk 시퀀셜+높은 발0.18+낮은 reach0.4+PCV_CLR 0.08+느린속도(GUI 0.3): 완만 계단(≤0.08) 안정, 급계단(0.15+)은 반응형 한계로 marginal.</p>
 </section>
 
 <section id="whip">
@@ -227,10 +229,10 @@
     <tbody>
       <tr><td class="p">perceptive</td><td class="val">true</td><td><span class="tag s">S</span><span class="tag v">V</span> PERCEPTIVE=0 끔</td><td class="mean">① 스윙 착지 z = 지형높이 &nbsp; ② 몸통 목표높이(MPC x_ref[5]) = 지형높이 + com_h0 추종</td></tr>
       <tr><td class="p">PCV_CLR</td><td class="val">0.04</td><td><span class="tag s">S</span><span class="tag v">V</span> PCV_CLR</td><td class="mean">상향 스텝 추가 스윙 클리어런스(라이저 헛디딤 방지)</td></tr>
-      <tr><td class="p">ray_z0</td><td class="val">0.40</td><td><span class="tag dash">—</span></td><td class="mean">mj_ray 시작 z(벨리 아래·지형 위, 자기충돌 회피)</td></tr>
+      <tr><td class="p">ray_z0</td><td class="val">2.0</td><td><span class="tag dash">—</span></td><td class="mean">mj_ray 시작 z(어떤 지형보다 위). ★지형=group2 태그, 레이를 group2만 마스킹→로봇/바닥 무시·단일레이로 어떤 높이도 탐지(구 0.40=천장, 그 이상 높은 지형 미탐지→붕괴). 재캐스트 루프는 40ray/step로 run 실시간 붕괴라 폐기</td></tr>
     </tbody>
   </table></div>
-  <p class="note">효과 — 종합코스(마찰→험지→계단): <span class="ok">perceptive</span> 완주(x13.7 · tilt 2.9° · <span class="ok">falls 0</span>) vs <b>blind</b> 계단서 낙상(x8.8 · tilt 140° · falls 8115). 핵심=발높이만이 아니라 <b>몸통 목표높이도 지형 추종</b>(안 하면 계단서 다리압축→몸통 튐→전복).</p>
+  <p class="note">효과 — verify 코스(험지→계단): <span class="ok">perceptive</span> 완주(<span class="ok">falls 0</span>) vs <b>blind</b> 계단서 낙상(tilt 140°). 핵심=발높이만이 아니라 <b>몸통 목표높이도 지형 추종</b>(안 하면 계단서 다리압축→몸통 튐→전복). ★높이천장 없음(group2 단일레이): 0.40 이상 높은 지형도 몸높이 상승(계단 z0.88 등반). 단 0.45 수직벽·0.15/단 급계단은 물리·반응형 한계.</p>
 </section>
 
 <section id="steer">
@@ -263,7 +265,7 @@
   <p class="note"><b>개-앉기 시드</b>(qc:28–29): <code>HAUNCH_THIGH −1.0</code> · <code>CALF 1.2</code> · <code>FOOT −0.3</code> · <code>HOCK_Z 0.019</code> · <code>FRONT_REACH −0.22</code> · <code>FOOT_LAND −1.2</code> (S,V env).</p>
   <p class="note"><b>스케줄</b>(tc): HAUNCH_Z 0.30 · FOLD_RATE 0.60 · UNFOLD_Z 0.40 · SIT_POSTURE_W 40 · HAUNCH_PITCH 0.50 · SIT_KP 90 · SIT_SLEW 0.6.</p>
   <div class="callout" style="border-left-color:var(--accent)">
-    <p class="note" style="margin:0"><b>★ 앉기 → 서기 "튕김" 조절</b> — <code>GETUP_TRAJ_KP</code> <b>120</b>: 개-앉기 기립 궤적추종 강성 = 튕김 힘. <b>낮출수록 부드러움</b>(예 80). <code>GETUP_TRAJ_KD</code> <b>4</b>: 높일수록 튕김 감쇠. 크라우치-앉기 기립은 <code>SGU_KP</code> 120. 전부 env 조절(<span class="tag s">S</span><span class="tag v">V</span>).</p>
+    <p class="note" style="margin:0"><b>★ 앉기 → 서기 "튕김" 조절</b> — <code>GETUP_TRAJ_KP</code> <b>80</b>(구 120): 개-앉기 기립 궤적추종 강성 = 튕김 힘. <b>낮출수록 부드러움</b>(120→80서 기립중 최대tilt 70°→49°). <code>GETUP_TRAJ_KD</code> <b>6</b>(구 4): 높일수록 튕김 감쇠. 크라우치-앉기 기립은 <code>SGU_KP</code> 120. 전부 env 조절(<span class="tag s">S</span><span class="tag v">V</span>).</p>
   </div>
   <p class="note"><b>스크립트 기립(SGU_*)</b>: KICK_T 0.5 · FB_THIGH −0.55 · FB_CALF 1.20 · SLEW 1.5 · KP 120 · GATHER_Z 0.24 · DONE_TILT 22 · WALKOUT_V 0.6 · HANDOFF_Z 0.34 (S env).</p>
   <p class="note"><b>모드 상태</b>: GROUND_Z 0.18 · GETUP_TRIG 0.32 · GETUP_DONE 0.40 · JOINT_SLEW 1.5 · HRATE 0.3.</p>
@@ -308,10 +310,14 @@
   <div class="scroll"><table>
     <thead><tr><th>씬</th><th>내용</th><th>walk v0.5 결과</th></tr></thead>
     <tbody>
-      <tr><td class="p">stairs</td><td class="mean">오름6 · 랜딩 · 내림6 계단 (rise 4cm · depth 28cm)</td><td class="mean">계단 올라탐 z0.55 · tilt 3.0° · <span class="ok">falls 0</span></td></tr>
+      <tr><td class="p">stairs</td><td class="mean">오름6·랜딩·내림6 (standalone rise 15cm·depth 35cm / course 5cm)</td><td class="mean">완만(5cm) 등반 <span class="ok">falls 0</span> · 급(15cm)은 marginal</td></tr>
       <tr><td class="p">rough</td><td class="mean">불규칙 높이 블록필드 (84개, h 1~10cm)</td><td class="mean">tilt 1.4° · <span class="ok">falls 0</span></td></tr>
-      <tr><td class="p">friction</td><td class="mean">ice μ0.2 · 보통 1.3 · 고마찰 2.5 레인</td><td class="mean">ice 통과 · tilt 1.5° · <span class="ok">falls 0</span></td></tr>
-      <tr><td class="p">course</td><td class="mean">종합(마찰→험지→계단, ~12.9m 순차)</td><td class="mean">perceptive 완주 x13.7 · <span class="ok">falls 0</span> (blind는 계단서 낙상)</td></tr>
+      <tr><td class="p">friction</td><td class="mean">★priority=지형 지배(발μ1.3 무시). 만나는순 μ 0.5→0.3→0.1(f2→f1→f0), 기본바닥 1.0</td><td class="mean">μ0.1 얼음=실제로 미끄러짐(고속 실패허용)</td></tr>
+      <tr><td class="p">soft</td><td class="mean">저강성 매트리스 2단(solref/solimp=발 침하). 탄성복원=소성자국 아님</td><td class="mean">물렁 균형 <span class="ok">falls 0</span></td></tr>
+      <tr><td class="p">gap</td><td class="mean">높은 발판(16cm) 사이 빈공간 32cm×3(드롭)</td><td class="mean">실패허용 난이도</td></tr>
+      <tr><td class="p">stepping</td><td class="mean">좌우 교대 디딤돌 6쌍(정밀 발배치)</td><td class="mean">실패허용 난이도</td></tr>
+      <tr><td class="p">course <span class="pill">기본</span></td><td class="mean">★3레인 병렬·각 난이도순 직렬(좌우 ±2.4m): 레인1 마찰→소프트 / 레인2 험지→계단 / 레인3 갭→스테핑</td><td class="mean">조향해 레인 선택 진입(뒤까지 안 걸음)</td></tr>
+      <tr><td class="p">verify</td><td class="mean">회귀검증 전용 순차(험지→계단, 얼음·gap·stepping 제외)</td><td class="mean">verify.sh 기준선 <span class="ok">falls 0</span></td></tr>
     </tbody>
   </table></div>
 </section>

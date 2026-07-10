@@ -86,6 +86,7 @@ struct TrotCtrl {
       jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
+  double GROUND_LIE_Z=0.22, GROUND_REAR_FOOT=-0.58, GROUND_FRONT_FOOT=-0.5;   // ★눕기(ground) 저자세: base 낮춤 + 뒷발목 -0.58(수평 교차점: 더 접으면 뒤 들려 nose-down)로 z0.21·pitch2.7°·안정. wbic 0.29보다 낮음. PD-fold 홀드
   // ── 게이트 프리셋(trot/walk/gallop) ──
   std::string gait_type="trot";
   double gp_T=0.5, gp_SWF=0.5, gp_off[4]={0,0.5,0.5,0}, gp_Tsw=0.25, gp_Tst=0.25;
@@ -258,13 +259,15 @@ struct TrotCtrl {
       }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
       if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)
-      if(mode=="stand_down"){ from_sit=true; haunch_ready=false; haunch_fold=0; }  // ★눕기=wbic 균형 저크라우치(0.29)·기립도 wbic_stance(from_sit)로 매끈. haunch 해제(crouch/lie로)
+      if(mode=="stand_down"){ from_sit=false; haunch_ready=false; haunch_fold=0; }  // ★눕기=저자세 leg-fold(PD)로 낮게 눕힘. from_sit=false→아래 fold 경로 사용(wbic 0.29 아님)
       if(mode=="stand_up" && bz>0.47) from_sit=false;                        // 서기 완료→해제
       if(!stand_set){ stand_ax=d->subtree_com[0]; stand_ay=d->subtree_com[1]; stand_set=true; }  // ★서기 진입=현재 위치 캡처(홈 x=0으로 안 빨려가게)
-      double tgt=(mode=="stand_down")?0.29:body_h;                          // ★눕기=wbic 안정 저크라우치(0.29) 능동홀드(저-PD tuck 슬라이드 제거) / 서기=슬라이더
+      double tgt=(mode=="stand_down")?GROUND_LIE_Z:body_h;                  // ★눕기=저자세(0.22) leg-fold / 서기=슬라이더
       bool low=(ht_cur<GETUP_DONE)||(tgt<GETUP_DONE); double rate=low?GETUP_RATE:HRATE;
       ht_cur+=tc_clip(tgt-ht_cur,-rate*dt,rate*dt);
       if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; q_crouch=q.q_home; com_crouch=q.com_ref; }
+      if(mode=="stand_down") for(int i=0;i<4;i++) if(q.leg_dof[i]==4)   // ★앞뒤 발목 접어 다리 flat fold → 몸 낮게+수평(발목+높이 동시)
+        q.q_home[q.legqp[i][3]-7]=(i<2)?GROUND_REAR_FOOT:GROUND_FRONT_FOOT;
       if(haunch_ready && mode=="stand_up"){   // ★개-앉기서 기립: 높이-스케줄 언폴드(HAUNCH_Z서 fold=1 → UNFOLD_Z서 0). 몸 오르며 뒷다리 펴짐→q_home 점프 없이 인계
         double target_fold=tc_clip((HAUNCH_UNFOLD_Z-ht_cur)/(HAUNCH_UNFOLD_Z-HAUNCH_Z),0.0,1.0);
         haunch_fold+=tc_clip(target_fold-haunch_fold,-HAUNCH_FOLD_RATE*dt,HAUNCH_FOLD_RATE*dt);
@@ -275,7 +278,7 @@ struct TrotCtrl {
       double jerr=0; for(int j=0;j<nu;j++) jerr+=std::abs(q.q_home[j]-d->qpos[7+j]); jerr/=nu;
       // ★눕기=wbic_stance로 저크라우치(0.29) 능동홀드(슬라이드·붕괴 없음). 진짜 belly-flat은 다중접촉문제(haunch-getup과 동일)라 보류.
       // (구 damp 붕괴는 저크라우치서 발 미끄러져 ~0.4m 슬라이드 → 제거)
-      double foldZ=(mode=="stand_down")?0.0:GETUP_DONE;                     // ★눕기=저-PD fold 안 씀(wbic_stance 균형스쿼트→damp). getup(rising)만 저-PD로 발 몸밑정렬
+      double foldZ=GETUP_DONE;                                             // ★눕기·getup 모두 저-PD fold(ht_cur<0.40): 눕기=저자세 leg-fold 홀드, getup=상승 fold. (구 눕기=wbic0.29는 발목으로 못 낮춰 leg-fold로 전환)
       if(ht_cur<foldZ && !from_sit){                                        // 낮은자세=수평 PD fold(눕기/getup). ★from_sit(crouch-sit≥0.29)=wbic_stance로 매끈 기립
         if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
         for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);

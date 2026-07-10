@@ -16,23 +16,18 @@ CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1 GEAR_FOOT=0.5714"
 - GEARBOX=반사관성(발 flail 억제·필수). ROTOR_I=1e-4·JDAMP=0.1·JFRIC=0.5 = ★대략값, 실측 대기(sim2real 체크리스트).
 - **★17dof 게인은 C++가 허리모델 자동감지로 기본 적용**(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) → env 불요. Python도 동일 기본.
 
-## GUI 텔레옵 원샷 (권장) — C++ 뷰어 + GUI
+## GUI 텔레옵 원샷 (권장) — 뷰어 + GUI 한번에
 ```bash
-cd simulation/quad && bash run_gui.sh            # 기본 맵=종합코스(course)
-#   맵 선택: bash run_gui.sh flat|stairs|rough|friction  (또는 임의 mjcf 경로)
+cd simulation/quad
+bash run_gui.sh            # ★C++ 실시간 배포(1kHz) — 기본 맵=종합코스
+bash run_gui_py.sh        # Python 레퍼런스(연구/디버그, 느림) — 기본 맵=종합코스
+#   맵 선택: 두 스크립트 다 [course(기본)|flat|stairs|rough|friction|gap|stepping|soft] 인자
 ```
-- `run_gui.sh`가 C++ 뷰어(1kHz)+GUI를 **CMDFILE/STATE_PUB 붙여** 띄움. ★이 env 누락 시 뷰어가 GUI 명령을 무시하고 저절로 전진 → 반드시 스크립트로 실행.
-- 버튼: 전원(off)→눕기→앉기(haunch)→서기→보행. gait walk/trot/run 토글(속도·발높이 자동세팅).
+- 종합코스 = 3레인 직렬: 레인1 마찰→소프트 / 레인2 험지→계단 / 레인3 갭→스테핑 (좌우 ±2.4m, 조향해 진입).
+- 두 스크립트 다 뷰어+GUI를 **CMDFILE/STATE_PUB 붙여** 띄움(GUI 명령·모니터 연동). ★이 env 누락 시 저절로 전진 → 반드시 스크립트로 실행.
+- 버튼: 전원(off)→눕기→앉기(haunch)→서기→보행. gait walk/trot/run/stairs 토글(속도·발높이·base height 자동세팅).
 - 조작(마우스1): 좌스틱 위 우클릭=고정(전진 유지)→"허리 핸들"로 조향(±68°, 오른쪽=우선회). 재우클릭/X=해제.
 - perceptive 자동 ON(지형 씬). 평지만 원하면 `run_gui.sh flat`.
-
-## 수동 실행 (참고 · Python 컨트롤러 또는 개별 기동)
-```bash
-# Python 컨트롤러(연구/디버그)  cd simulation/quad
-DISPLAY=:0 PXI teleop_gui_17dof.py &                                     # GUI
-env $CFG CMDFILE=/tmp/quad_cmd.json STATE_PUB=/tmp/quad_state.json \
-  PXI quad_mpc_wbic_17dof.py --robot ours_17dof_waist_sphere --mode trot  # 컨트롤러
-```
 
 ## C++ 헤드리스 / 빌드
 ```bash
@@ -45,7 +40,7 @@ GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim ../quad_real_1
 ## 회귀검증 / 데모
 ```bash
 cd simulation/quad/cpp && ./verify.sh            # 표준 회귀 배터리(평지+지형, PASS/FAIL)
-bash simulation/quad/record_demo.sh              # GUI+뷰어 NVENC 녹화(사용자 터미널서, 상세=RECORDING.md)
+bash simulation/quad/record_demo.sh              # GUI+뷰어(기본=종합코스) NVENC 녹화(사용자 터미널서). MAP=... 로 맵 지정. 상세=RECORDING.md
 ```
 
 ## 점프 (offline OCP 궤적 추종)

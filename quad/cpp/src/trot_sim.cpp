@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
+#include <random>
 
 int main(int argc,char**argv){
   const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
@@ -115,18 +116,29 @@ int main(int argc,char**argv){
   est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));
   double epx=0,epy=0,epz=0,evx=0,evy=0,evz=0; long ecnt=0;
   mjData* d_est=(ESTCTRL)?mj_makeData(m):nullptr;   // 추정상태 mjData(컨트롤러가 여기서 Jacobian·MPC·WBIC 계산)
+  // ★Phase3 센서 노이즈(가우시안, 고정시드=재현). IMU gyro[rad/s]·quat[rad]·엔코더 q[rad]·dq[rad/s]
+  std::mt19937 _rng(2024); std::normal_distribution<double> _nd(0.0,1.0);
+  double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
+  double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
   for(int step=0; step<STEPS; step++){
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     if(ESTCTRL){
-      // ★Phase2: 실기 상태서 센서→추정→d_est(base=추정·자세gyro관절=측정)→컨트롤러가 d_est로 계산→토크를 실기 적용
+      // ★Phase2/3: 실기 센서(+노이즈)→추정→d_est(base=추정 · 자세·gyro·관절=노이즈 측정)→컨트롤러 계산→토크 실기 적용
+      int NJ=m->nq-7;
       std::vector<bool> cts(4,false);
       for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
-      est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);
+      static std::vector<double> qn,dqn; qn.resize(NJ); dqn.resize(NJ);
+      for(int j=0;j<NJ;j++){ qn[j]=d->qpos[7+j]+ENCQN*_nd(_rng); dqn[j]=d->qvel[6+j]+ENCDQN*_nd(_rng); }
+      double gyron[3]; for(int c=0;c<3;c++) gyron[c]=d->qvel[3+c]+GYRON*_nd(_rng);
+      double quatn[4]; { double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp); mju_mulQuat(quatn,&d->qpos[3],dqp); }
+      est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
       if(d->time>1.0){ epx+=std::pow(est.p[0]-d->qpos[0],2); epy+=std::pow(est.p[1]-d->qpos[1],2); epz+=std::pow(est.p[2]-d->qpos[2],2);
         evx+=std::pow(est.v[0]-d->qvel[0],2); evy+=std::pow(est.v[1]-d->qvel[1],2); evz+=std::pow(est.v[2]-d->qvel[2],2); ecnt++; }
-      mju_copy(d_est->qpos,d->qpos,m->nq); mju_copy(d_est->qvel,d->qvel,m->nv);
       for(int c=0;c<3;c++){ d_est->qpos[c]=est.p[c]; d_est->qvel[c]=est.v[c]; }
+      for(int c=0;c<4;c++) d_est->qpos[3+c]=quatn[c];
+      for(int c=0;c<3;c++) d_est->qvel[3+c]=gyron[c];
+      for(int j=0;j<NJ;j++){ d_est->qpos[7+j]=qn[j]; d_est->qvel[6+j]=dqn[j]; }
       d_est->time=d->time; mj_forward(m,d_est);
       q.d=d_est; ctrl.control(); q.d=d;
       mju_copy(d->ctrl,d_est->ctrl,m->nu);

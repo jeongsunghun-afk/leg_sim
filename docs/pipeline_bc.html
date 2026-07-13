@@ -77,13 +77,14 @@
 
 <section id="shared">
   <h2>1 · 공통 골격 <span class="dim">02_Leg 14-DOF (nu=nv−6, 앞발목 고정) · URDF _9 · free-flyer · 4 point-feet</span></h2>
-  <p>두 컨트롤러 모두 <b>2-레이트</b> 구조다. 무거운 <b>OCP를 100 Hz</b>로 풀어 계획을 만들고(<code>mpc.iterate(x)</code>), 그 계획을 <b>1 kHz 내부 루프</b>에서 보간(<code>Interpolator</code>)해 매 스텝 저수준 명령으로 실현한다. 상태 <var>x=[q;v]</var> (<code>MultibodyPhaseSpace</code>, dim <var>nq+nv</var>), 호라이즌 <var>T=50</var> 노드, <var>dt=0.01</var>, trot(더블서포트+대각스윙). 발배치·속도 기준은 <code>MPC::updateStepTrackerReferences</code>(Raibert + capture-point)에서 생성, 매 사이클 receding-warm-start.</p>
+  <p>두 컨트롤러 모두 <b>2-레이트</b> 구조다. 무거운 <b>OCP</b>를 풀어 계획을 만들고(<code>mpc.iterate(x)</code>), 그 계획을 <b>1 kHz 내부 루프</b>에서 보간(<code>Interpolator</code>)해 매 스텝 저수준 명령으로 실현한다. 상태 <var>x=[q;v]</var> (<code>MultibodyPhaseSpace</code>, dim <var>nq+nv</var>), 호라이즌 <var>T=50</var> 노드, <var>dt=0.01</var>, trot(더블서포트+대각스윙). 발배치·속도 기준은 <code>MPC::updateStepTrackerReferences</code>(Raibert + capture-point)에서 생성, 매 사이클 receding-warm-start.</p>
+  <div class="note-nb">* <b>재계산 속도 주의</b>: <code>dt_mpc=0.01</code>은 OCP <b>노드 간격</b>(계획 해상도 100 Hz)일 뿐, <code>mpc.iterate</code> <b>실제 solve 벽시계는 ~40 ms → 재계산 ~20–30 Hz(비실시간)</b>. 1 kHz 내부 루프는 그 사이 <b>stale 계획을 보간·전개</b>해 메운다(<code>MPC_DECIM</code>). 이 solve 병목이 B·C를 배포에서 제외한 이유(고속보행 한계=언어 아닌 OCP 수렴).</div>
 
   <div class="flowlabel kino">B — Kinodynamics OCP → TSID (2단 캐스케이드)</div>
   <div class="flow">
     <div class="stage"><span class="n">state</span><span class="t">measureState (pinocchio)</span><div class="d">q, v (base SE3 + 14 관절)</div></div>
     <div class="arrow">↓</div>
-    <div class="stage kino"><span class="rate">100 Hz</span><span class="n">OCP</span><span class="t">KinodynamicsOCP · mpc.iterate</span><div class="d">→ us = [ <b>forces[4×3]</b> , <b>q<sup>¨</sup>[14]</b> ] · xs(상태궤적) · 접촉스케줄</div></div>
+    <div class="stage kino"><span class="rate">~20–30 Hz*</span><span class="n">OCP</span><span class="t">KinodynamicsOCP · mpc.iterate</span><div class="d">→ us = [ <b>forces[4×3]</b> , <b>q<sup>¨</sup>[14]</b> ] · xs(상태궤적) · 접촉스케줄</div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">Interpolator (계획 보간, 100→1000 Hz)</span></div>
     <div class="stage tsid"><span class="rate">1 kHz</span><span class="n">ID</span><span class="t">KinodynamicsID · kino_ID.solve (TSID QP)</span><div class="d">setTarget(q,v,a,contacts,<b>forces</b>) → 계층 QP(proxqp) → <b>τ[14]</b></div></div>
     <div class="arrow">↓</div>
@@ -94,7 +95,7 @@
   <div class="flow">
     <div class="stage"><span class="n">state</span><span class="t">measureState (+ 선택 추정기)</span><div class="d">q, v · 선택: StateEstimator 다리오도메트리</div></div>
     <div class="arrow">↓</div>
-    <div class="stage full"><span class="rate">100 Hz</span><span class="n">OCP</span><span class="t">FullDynamicsOCP · mpc.iterate</span><div class="d">→ us = <b>τ[14] 직접</b> · xs · Riccati 게인 K<sub>s</sub></div></div>
+    <div class="stage full"><span class="rate">~20–30 Hz*</span><span class="n">OCP</span><span class="t">FullDynamicsOCP · mpc.iterate</span><div class="d">→ us = <b>τ[14] 직접</b> · xs · Riccati 게인 K<sub>s</sub></div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">Interpolator + Riccati 보정</span></div>
     <div class="stage full"><span class="rate">1 kHz</span><span class="n">fb</span><span class="t">τ = u<sub>interp</sub> − RIC·K<sub>s</sub>·(x<sub>meas</sub> ⊖ x<sub>interp</sub>)</span></div>
     <div class="arrow">↓</div>
@@ -199,9 +200,10 @@
       <tr><td class="p">base pose 가중</td><td class="mean">z=100·ori=200</td><td class="mean">0 (발 추종으로 안정화)</td></tr>
       <tr><td class="p">gait 노드</td><td class="mean">T<sub>ds</sub>=10 · T<sub>ss</sub>=30</td><td class="mean">T<sub>ds</sub>=8 · T<sub>ss</sub>=20</td></tr>
       <tr><td class="p">추정기 / 비동기</td><td class="mean">—</td><td class="mean">StateEstimator(다리오도메트리) · async worker</td></tr>
-      <tr><td class="p">공통</td><td class="mean" colspan="2">aligator SolverProxDDP RTI(max_iters=1) · T=50 · dt=0.01(OCP 100 Hz) · 1 kHz sim(N_simu=10) · Raibert+capture 발배치 · <b>비실시간 연구용</b></td></tr>
+      <tr><td class="p">공통</td><td class="mean" colspan="2">aligator SolverProxDDP RTI(max_iters=1) · T=50 · dt=0.01(노드 100 Hz, <b>실측 재solve ~20–30 Hz</b>) · 1 kHz sim(N_simu=10) · Raibert+capture 발배치 · <b>비실시간 연구용</b></td></tr>
     </tbody>
   </table></div>
+  <div class="note-nb">↔ <b>A(MPC+WBIC)의 마찰추/착지</b>: A의 볼록 힘-MPC는 <b>마찰추(피라미드)를 stance에 항상 적용</b>(μ=MU·MU_MARGIN=0.424, QP 코어 제약·토글 없음). <b>착지 제약은 없음</b> — A는 kinodynamic OCP가 아니라 swing발=힘0 등식일 뿐이고, 터치다운 slip은 WBIC의 <code>STANCE_KD</code>(baumgarte 속도감쇠)가 처리. 즉 force_cone/land_cstr on-off 토글은 <b>B·C(aligator OCP) 전용</b> 개념이다.</div>
 
   <h3>입출력</h3>
   <div class="scroll"><table>

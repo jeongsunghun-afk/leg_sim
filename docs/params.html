@@ -277,6 +277,11 @@
   </div>
   <p class="note"><b>스크립트 기립(SGU_*)</b>: KICK_T 0.5 · FB_THIGH −0.55 · FB_CALF 1.20 · SLEW 1.5 · KP 120 · GATHER_Z 0.24 · DONE_TILT 22 · WALKOUT_V 0.6 · HANDOFF_Z 0.34 (S env).</p>
   <p class="note"><b>모드 상태</b>: GROUND_Z 0.18 · GETUP_TRIG 0.32 · GETUP_DONE 0.40 · JOINT_SLEW 1.5 · HRATE 0.3.</p>
+  <div class="callout">
+    <p class="note" style="margin:0 0 6px"><b>★ 점프 — aligator OCP + WBIC 추종</b> (2026-07-13, <code>ocp/jump_solver.hpp</code>·<code>wbic_jump</code>). crouch 정착 시 <b>별도 스레드</b>(std::async)로 aligator SolverProxDDP solve(~331 ms, 1 kHz 루프 안 멈춤). <code>JUMP_VX</code> 0.6(전방 이륙속도, 0=수직) · <code>JUMP_MAXIT</code> 8(RTI) · 3상 push22/flight~34/land40 · dt 0.01 · 하드 토크 BoxConstraint(±Peak)·마찰추. <code>gen_jump.sh [VX]</code>로 파일 생성도 가능(fallback).</p>
+    <p class="note" style="margin:0 0 6px"><b>wbic_jump</b>(push·land 추종): CoM 가속ff kp_lin 120·kd_lin 22 · 자세 upright w_ori 8 · 관절 kp_j 160/kd_j 12 w_j 2 · λ reg w_lam 0.1. flight=관절 PD(무접촉). ★crocoddyl(soft barrier)→aligator(하드제약)=B·C 통일·실기 실현성.</p>
+    <p class="note" style="margin:0"><b>★ 기립(getup) — C++ 자립 기구학 gather</b> (<code>gen_getup</code>): 현재 sit qpos=q_sit → G(gather)→A1(HL)→A2(HR)→B(상승) 순수 MuJoCo IK 생성(Python 파일 의존 제거). phaseA=관절 PD(<code>GETUP_TRAJ_KP 80/KD 6</code>, WBIC 아님·준정적이라 정답) · phaseB=wbic_stance 상승. ★wbic_jump 폐루프는 기립엔 무익(lean과 싸움, 검증).</p>
+  </div>
 </section>
 
 <section id="run">

@@ -64,10 +64,10 @@
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">02_Leg 17-DOF · cpp/src/ · WBIC + Convex MPC</div>
-  <h1>MPC + WBIC 제어 파이프라인 &amp; 솔버 문제 정의</h1>
-  <p class="sub"><b class="mpc">MPC</b>(Di Carlo Convex SRBD, 50 Hz)가 <b>최적 지면반력(GRF)</b>을 계획하고,
-  <b class="wbic">WBIC</b>(단일 전신 QP, 1 kHz)가 그 GRF를 실현하는 <b>관절 토크</b>를 푼다. 둘 다 eiquadprog로 해결.</p>
+  <div class="eyebrow">02_Leg 17-DOF · cpp/src/ · WBIC + Convex MPC + 점프 OCP</div>
+  <h1>A 배포 제어 파이프라인 &amp; 솔버 문제 정의</h1>
+  <p class="sub"><b>보행</b>: <b class="mpc">MPC</b>(Di Carlo Convex SRBD, 50 Hz)가 <b>최적 지면반력(GRF)</b>을 계획하고 <b class="wbic">WBIC</b>(단일 전신 QP, 1 kHz)가 그 GRF를 실현하는 <b>관절 토크</b>를 푼다(둘 다 eiquadprog).
+  <b>기동</b>(§5): 점프=<b class="mpc">aligator OCP</b>+WBIC 추종 · 기립=기구학+PD/WBIC.</p>
 </header>
 
 <section id="pipeline">
@@ -179,7 +179,38 @@
   </table></div>
 </section>
 
+<section id="maneuver">
+  <h2>5 · 기동 모드 — 점프(OCP) · 기립 <span class="dim">배포 상태머신: off↔ground↔ready↔sit→getup · jump(전 자세서)</span></h2>
+  <p>보행 외 기동은 <b>궤적 + WBIC 추종</b> 구조. 점프=<b class="mpc">aligator OCP</b>(동적 최적화, B/C와 동일 라이브러리) · 기립=<b>기구학 gather</b>(준정적. OCP는 깊은 haunch서 미수렴 확정→휴리스틱이 정답).</p>
+
+  <h3>점프 — aligator OCP → WBIC 추종 (crouch 중 실시간 solve)</h3>
+  <div class="flow">
+    <div class="stage"><span class="n">crouch</span><span class="t">wbic_stance로 0.30 정착</span><div class="d">앉기/눕기서 진입해도 ht_cur(crouch 명령) 기준 트리거 → 갇힘 없음</div></div>
+    <div class="arrow">↓ &nbsp;<span class="dim">crouch 중 백그라운드 스레드(std::async) — 1 kHz 루프 안 멈춤</span></div>
+    <div class="stage mpc"><span class="rate">별도 스레드</span><span class="n">OCP</span><span class="t">aligator SolverProxDDP · jump_solver</span><div class="d">3상(push·flight·land) · 하드 <b>토크 BoxConstraint</b>·마찰추 · CoM ref 생성 · ~331 ms(캐시된 solve, warmup 예열)</div></div>
+    <div class="arrow">↓ &nbsp;<span class="dim">신선 궤적(q·dq·τ·CoM·φ)</span></div>
+    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">track</span><span class="t">wbic_jump (push·land 접촉)</span><div class="d">CoM 가속 피드포워드 + <b>base를 GRF로 닫음</b>(표류보정·실기강건). flight(무접촉)=관절 PD. QP실패 시 τ<sub>ff</sub>+PD fallback</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage wbic"><span class="n">land</span><span class="t">wbic_stance 착지</span><div class="d">touchdown 감지 → 균형 회복 → stand_up 자가전환</div></div>
+  </div>
+
+  <h3>기립(getup) — 기구학 gather → PD/WBIC 하이브리드</h3>
+  <div class="flow">
+    <div class="stage"><span class="n">gen</span><span class="t">gen_getup — C++ 자립, 순수 MuJoCo IK</span><div class="d">현재 sit qpos=q_sit · G(gather:CoM 전진+낮춤+숙임)→A1(HL착지)→A2(HR착지)→B(상승·레벨)</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage"><span class="n">A</span><span class="t">phaseA: 관절 PD 추종 (WBIC 아님)</span><div class="d">gather+뒷발착지 = 중력보상 + KP·Δq + KD·Δq<sup>˙</sup>. 준정적이라 PD가 정답(wbic_jump는 lean과 싸워 무익=검증)</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">B</span><span class="t">phaseB: wbic_stance 상승</span><div class="d">4발 균형 잡으며 서기(WBIC)</div></div>
+  </div>
+
+  <div class="card mpc">
+    <h3>점프 OCP 문제 정의 <span class="dim">(aligator SolverProxDDP · jump_solver.hpp)</span></h3>
+    <div class="eq"><span class="lbl">상태 x = </span>[ q ; v ]&nbsp;<span class="lbl">(pinocchio 16-DOF, 허리 lock)</span>&nbsp;&nbsp; <span class="lbl">제어 u = </span>관절토크(14)</div>
+    <p class="dim">동역학 = MultibodyConstraintFwdDynamics(3D 접촉) · 비용 = CoM/자세/관절 정규화 · <b>하드제약</b> = 토크 BoxConstraint(±Peak) · 마찰추(NegativeOrthant) · 기구학한계 · 3상 스케줄(push 22 · flight ~34 · land 40) · dt 0.01 · RTI(maxit 8). ★<b>crocoddyl FDDP(무제약, soft barrier)와 달리 aligator=하드 제약</b> → 계획 τ가 한계 내 보장(실기 실현성, replay clip 무의미). 점프도 B·C와 동일 라이브러리로 통일.</p>
+  </div>
+</section>
+
 <footer>
-  소스: <code>cpp/src/mpc.hpp</code> (mpc_qp_plan) · <code>quad_control.hpp</code> (setup_mpc·body_x0·mpc_grf·wbic_track·wbic_stance) · <code>trot_controller.hpp</code> (control 루프). 솔버: eiquadprog-fast (active-set QP).
+  소스: <code>cpp/src/mpc.hpp</code> (mpc_qp_plan) · <code>quad_control.hpp</code> (setup_mpc·body_x0·mpc_grf·wbic_track·wbic_stance·<b>wbic_jump</b>) · <code>trot_controller.hpp</code> (control 루프·<b>gen_getup</b>) · <code>ocp/jump_solver.hpp</code> (aligator 점프 OCP). 솔버: eiquadprog-fast(WBIC) · aligator SolverProxDDP(점프 OCP). 점프 OCP 상세=별도, B·C OCP=<code>pipeline_bc.html</code>.
 </footer>
 </div>

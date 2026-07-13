@@ -124,6 +124,8 @@ N=14, dt=0.02. Q대각(roll,pitch,yaw/px,py,pz/ω/v/g)=[200,200,100, 0,0,200, 0,
 **★앉기→서기 튕김 조절**: `GETUP_TRAJ_KP` 80(개-앉기 기립 궤적추종 강성=튕김 힘, **↓=부드럽게**)·`GETUP_TRAJ_KD` 6(↑=튕김 감쇠)·getup_dt 0.01. 크라우치-앉기 기립은 `SGU_KP` 120. 모두 env 조절 가능(S,V).
 **스크립트 기립(SGU_*)**: KICK_T 0.5·FB_THIGH −0.55·FB_CALF 1.20·SLEW 1.5·KP 120·GATHER_Z 0.24·DONE_TILT 22·WALKOUT_V 0.6·HANDOFF_Z 0.34 (모두 S env).
 **모드 상태**: GROUND_Z 0.18·GETUP_TRIG 0.32·GETUP_DONE 0.40·JOINT_SLEW 1.5·HRATE 0.3.
+**★점프 — aligator OCP + WBIC 추종**(2026-07-13, `ocp/jump_solver.hpp`·`wbic_jump`): crouch 정착 시 별도 스레드(std::async)로 aligator SolverProxDDP solve(~331ms, 1kHz 루프 안 멈춤). JUMP_VX 0.6(전방 이륙속도)·JUMP_MAXIT 8(RTI)·3상 push22/flight~34/land40·dt0.01·하드 토크BoxConstraint(±Peak)·마찰추. wbic_jump 추종(push·land): CoM 가속ff kp_lin120/kd_lin22·자세 w_ori8·관절 kp_j160/kd_j12 w_j2·λ reg w_lam0.1, flight=관절PD. ★crocoddyl(soft)→aligator(하드제약)=B·C 통일. gen_jump.sh로 파일 fallback도 생성.
+**★기립 — C++ 자립 gather**(`gen_getup`): 현재 sit qpos=q_sit→G(gather)→A1(HL)→A2(HR)→B(상승) 순수 MuJoCo IK(Python 파일 의존 제거). phaseA=관절PD(GETUP_TRAJ_KP80/KD6, WBIC 아님·준정적이라 정답)·phaseB=wbic_stance. ★wbic_jump는 기립엔 무익(lean과 싸움, 검증).
 
 ## 실행 / 진단 env
 

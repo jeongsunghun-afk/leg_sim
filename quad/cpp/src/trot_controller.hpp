@@ -7,6 +7,8 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include <chrono>
+#include <cstdio>
 #ifdef HAVE_CROCODDYL
 #include "jump_solver.hpp"   // ★S3-b Step2: 점프 crouch중 live-solve(trot_view만, crocoddyl 링크 시)
 #endif
@@ -94,9 +96,18 @@ struct TrotCtrl {
 #ifdef HAVE_CROCODDYL
   std::string JUMP_URDF="/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf";
   std::string JUMP_MJCF="/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
-  int JUMP_MAXIT=8;     // ★crouch중 live-solve FDDP 반복(S2: iter~8=~150ms 수렴). crouch 예산 450ms 내
-  bool solve_jump_live(double vx){   // crouch 정착 시 1회 호출 → 신선 궤적을 인메모리로 채움(파일 I/O 없음)
-    JumpTraj J=jump_solve(JUMP_URDF,JUMP_MJCF,vx,JUMP_MAXIT,false);
+  int JUMP_MAXIT=8;     // ★crouch중 live-solve FDDP 반복(S2: iter~8. crouch 예산 450ms 내)
+  JumpSolver jsolver; bool jsolver_ready=false;   // ★셋업(모델·MJCF·IK) 캐시 → 점프마다 solve만
+  void warmup_jump(){   // ★뷰어 시작 시 1회: 무거운 셋업 + 예열 solve → 첫 점프도 빠르게(stall=solve만)
+    if(jsolver_ready) return;
+    jsolver_ready=jsolver.init(JUMP_URDF,JUMP_MJCF);
+    if(jsolver_ready) jsolver.solve(JUMP_VX,JUMP_MAXIT,false); }
+  bool solve_jump_live(double vx){   // crouch 정착 시 1회 → 신선 궤적 인메모리(셋업은 재사용, solve만)
+    if(!jsolver_ready){ jsolver_ready=jsolver.init(JUMP_URDF,JUMP_MJCF); if(!jsolver_ready) return false; }
+    auto _t=std::chrono::steady_clock::now();
+    JumpTraj J=jsolver.solve(vx,JUMP_MAXIT,false);
+    double _ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-_t).count();
+    std::printf("[jump] live-solve %.0f ms (crouch stall) · apex=%.3f\n", _ms, J.apex); std::fflush(stdout);
     if(J.N<=0) return false;
     jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph; return true; }
 #endif

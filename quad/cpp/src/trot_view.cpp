@@ -82,7 +82,10 @@ int main(int argc,char**argv){
   QuadControl q; q.load(path); apply_env_gains(q);
   q.crouch_home(); q.build_qhome_lut(); q.setup_mpc();   // ★q_home LUT 시작시 빌드(RT-safe: 높이변경 IK를 루프서 제거)
   TrotCtrl ctrl(q); gC=&ctrl;
-  ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(점프 순간 파일 I/O 히치=렉 제거). 없으면 jump_N=0(fallback)
+  ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(fallback용). 없으면 jump_N=0
+#ifdef HAVE_CROCODDYL
+  if(!getenv("NO_JUMP_WARMUP")){ std::printf("[trot_view] 점프 OCP 예열(모델·IK 캐시)…\n"); std::fflush(stdout); ctrl.warmup_jump(); std::printf("[trot_view] 예열 완료 — 점프 live-solve 활성\n"); }
+#endif
   ctrl.mode = getenv("MODE") ? getenv("MODE") : "stand_up";   // ★뷰어는 Ready(서기)로 시작 — GUI 초기값(stand_up)과 일치(시작 보행→멈춤 방지). 헤드리스 trot_sim은 기본 move 유지
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("WAIST_STEER")) ctrl.waist_steer=atof(getenv("WAIST_STEER"));   // 허리 lean 게인(기본0.4)

@@ -7,6 +7,8 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
+#include <string>
 #include <Eigen/Dense>
 
 #include <mujoco/mujoco.h>
@@ -113,7 +115,7 @@ int main(int argc, char** argv) {
   };
   VectorXd q_crouch = mj2pin(mj_crouch(0.30));
   VectorXd q_stand  = mj2pin(mj_crouch(0.50));
-  mj_deleteData(mjd); mj_deleteModel(mjm);
+  // ★mjm/mjd는 아래 궤적 출력(pin→mj 매핑)까지 유지 → main 끝에서 삭제
   VectorXd x0(nq + nv); x0 << q_crouch, VectorXd::Zero(nv);
   std::cout << "[ocp] q0(C++ mj_crouch): crouch z=" << q_crouch[2] << " stand z=" << q_stand[2] << "\n";
 
@@ -242,5 +244,48 @@ int main(int argc, char** argv) {
     return std::acos(std::min(1.0, std::max(-1.0, r22))) * 180.0 / M_PI;
   };
   std::cout << "[ocp] tilt: peak중 " << tilt(X[n_push + n_fly / 2]) << "° 착지 " << tilt(X[n_push + n_fly]) << "°\n";
+
+  // ── ★S3-b: 궤적을 배포 replay 포맷(/tmp/jump_traj.txt)으로 출력 ──
+  //   pin 16-DOF(허리 lock) → MuJoCo 17-DOF(qpos 순서, 허리=0). load_jump 포맷: "N dt" 후 노드별 "ph q[17] dq[17] tau[17]".
+  {
+    const auto& U = solver.get_us();          // us[k] = nu(16) 관절토크
+    const int Nn = (int)models.size();         // push+flight+land 노드
+    const int NJ = mjm->nq - 7;                // MuJoCo 관절 수(17)
+    std::vector<int> qi2jid(NJ, -1);           // qpos(7+j) → MuJoCo joint id
+    for (int jid = 0; jid < mjm->njnt; jid++) {
+      int qa = mjm->jnt_qposadr[jid];
+      if (qa >= 7 && qa < 7 + NJ) qi2jid[qa - 7] = jid;
+    }
+    const char* outp = std::getenv("JUMP_OUT");
+    std::string OUT = outp ? outp : "/tmp/jump_traj.txt";
+    std::ofstream of(OUT);
+    of << Nn << " " << dt << "\n";
+    for (int k = 0; k < Nn; k++) {
+      int ph = (k < n_push) ? 0 : (k < n_push + n_fly ? 1 : 2);   // push=0 / flight=1 / land=2
+      const VectorXd& xk = X[k];               // [q(nq); v(nv)]
+      const VectorXd& uk = U[k];
+      VectorXd qj = VectorXd::Zero(NJ), dj = VectorXd::Zero(NJ), tj = VectorXd::Zero(NJ);
+      for (int j = 0; j < NJ; j++) {
+        int jid = qi2jid[j]; if (jid < 0) continue;
+        const char* nmc = mj_id2name(mjm, mjOBJ_JOINT, jid);
+        std::string nm = nmc ? nmc : "";
+        if (nm == "FB_waist_joint") continue;  // 허리 lock → 0 유지
+        pinocchio::JointIndex pj = model->getJointId(nm);
+        if (pj == 0 || pj >= (pinocchio::JointIndex)model->njoints) continue;
+        int qs = model->joints[pj].idx_q(), vs = model->joints[pj].idx_v();
+        qj[j] = xk[qs];
+        dj[j] = xk[nq + vs];
+        int ui = vs - 6; if (ui >= 0 && ui < (int)nu) tj[j] = uk[ui];
+      }
+      of << ph;
+      for (int j = 0; j < NJ; j++) of << " " << qj[j];
+      for (int j = 0; j < NJ; j++) of << " " << dj[j];
+      for (int j = 0; j < NJ; j++) of << " " << tj[j];
+      of << "\n";
+    }
+    of.close();
+    std::cout << "[ocp] 궤적 저장 → " << OUT << " (N=" << Nn << " 노드 · 17-DOF MuJoCo순 · 허리=0)\n";
+  }
+  mj_deleteData(mjd); mj_deleteModel(mjm);
   return ok ? 0 : 1;
 }

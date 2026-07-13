@@ -1,17 +1,20 @@
 // trot_view — C++ closed-loop trot을 MuJoCo GLFW 뷰어로 렌더. trot_sim과 동일 제어(TrotCtrl).
 //   마우스: 좌드래그=회전 우드래그=이동 휠=줌.  키보드: ↑↓=전진속도 ←→=선회 space=정지 backspace=리셋.
 #include "trot_controller.hpp"
+#include "state_estimator.hpp"   // ★sim2real: leg-odometry 추정기(뷰어 추정상태 제어 + GT비교 시각화)
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <chrono>
 #include <thread>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <random>
 #include <algorithm>
 
 // 평면 JSON에서 "key": 숫자 추출(GUI cmd 파일용, 경량)
@@ -19,6 +22,16 @@ static double json_get(const std::string& s,const char* key,double def){
   std::string k=std::string("\"")+key+"\""; auto p=s.find(k);
   if(p==std::string::npos) return def; p=s.find(':',p);
   if(p==std::string::npos) return def; return atof(s.c_str()+p+1);
+}
+// ★"key": true/false(JSON 불리언) 추출 — atof는 "true"→0이라 불리언을 못 읽어(체크박스 stuck) 전용 파서 필요
+static bool json_bool(const std::string& s,const char* key,bool def){
+  std::string k=std::string("\"")+key+"\""; auto p=s.find(k);
+  if(p==std::string::npos) return def; p=s.find(':',p);
+  if(p==std::string::npos) return def; auto q=s.find_first_not_of(" \t",p+1);
+  if(q==std::string::npos) return def;
+  if(s.compare(q,4,"true")==0)  return true;
+  if(s.compare(q,5,"false")==0) return false;
+  return atof(s.c_str()+q)!=0.0;   // 숫자(1/0) 폴백
 }
 // "key": "문자열" 추출
 static std::string json_str(const std::string& s,const char* key,const std::string& def){
@@ -114,6 +127,22 @@ int main(int argc,char**argv){
   if(getenv("SIT_CPITCH")) ctrl.SIT_CPITCH=atof(getenv("SIT_CPITCH"));      // 앉기 nose-up 목표(뷰어 튜닝)
   mjModel*m=q.m; mjData*d=q.d;
 
+  // ★sim2real GT↔추정 비교 시각화.
+  //   기본(GUI '모니터 표시' viz on): 추정기를 **개루프**로 병행(컨트롤러는 참 상태 GT로 제어=보행 안정 유지) + 추정 base 고스트 오버레이.
+  //   env EST_CTRL=1: **폐루프** — 컨트롤러가 추정 base로 계산→토크 참 상태 적용(실기 동일 구조, 스트레스 검증용. 추정오차 폐루프 증폭으로 보행 marginal).
+  StateEstimator est; mjData* d_est=(getenv("EST_CTRL")?mj_makeData(m):nullptr);
+  std::vector<int> _efg={q.fgid[0],q.fgid[1],q.fgid[2],q.fgid[3]};
+  std::vector<double> _efr={q.fr[0],q.fr[1],q.fr[2],q.fr[3]};
+  est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));
+  bool est_ctrl=getenv("EST_CTRL")!=nullptr;   // 폐루프(제어에 추정상태 사용) — env 전용
+  bool est_on=est_ctrl;                        // 추정기 실행+고스트 표시(viz 체크박스로 켜짐). 폐루프면 당연히 on
+  std::mt19937 _rng(2024); std::normal_distribution<double> _nd(0.0,1.0);
+  // 센서노이즈(현실 프리셋 = GUI '센서 노이즈' 체크 시). env로도 덮어씀. 0=완벽센서.
+  double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
+  double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
+  double est_perr=0, est_verr=0;   // 최신 추정오차(HUD 표시)
+  double est_quat[4]={1,0,0,0};    // 최신 추정(측정) 방위 — 고스트 헤딩 화살표용
+
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
   GLFWwindow* win=glfwCreateWindow(1280,900,"17-DOF C++ trot (quad_mpc_wbic_17dof)",NULL,NULL);
   if(!win){ std::fprintf(stderr,"창 생성 실패(DISPLAY?)\n"); glfwTerminate(); return 1; }
@@ -141,8 +170,8 @@ int main(int argc,char**argv){
         double sw=json_get(c,"swing_w",-1); if(sw>=0){ ctrl.whip_lo_r=sw; ctrl.whip_lo_f=sw; }  // 통합(하위호환)
         double swf=json_get(c,"swing_w_f",-1); if(swf>=0) ctrl.whip_lo_f=swf;   // ★앞다리 whip 목표(고속target·auto off시 상수)
         double swr=json_get(c,"swing_w_r",-1); if(swr>=0) ctrl.whip_lo_r=swr;   // ★뒷다리 whip 목표
-        ctrl.auto_whip = json_get(c,"auto_whip",ctrl.auto_whip?1:0) > 0.5;      // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
-        ctrl.POS_HOLD = json_get(c,"pos_hold",ctrl.POS_HOLD?1:0) > 0.5;         // ★정지 위치홀드(드리프트 보정) 토글
+        ctrl.auto_whip = json_bool(c,"auto_whip",ctrl.auto_whip);              // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
+        ctrl.POS_HOLD = json_bool(c,"pos_hold",ctrl.POS_HOLD);                 // ★정지 위치홀드(드리프트 보정) 토글
         ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
         ctrl.GROUND_LIE_Z    = json_get(c,"g_lie_z",   ctrl.GROUND_LIE_Z);      // ★눕기 자세 실시간 조각(GUI 슬라이더)
         ctrl.GROUND_REAR_FOOT= json_get(c,"g_rear_foot",ctrl.GROUND_REAR_FOOT);
@@ -152,10 +181,14 @@ int main(int argc,char**argv){
           if(ctrl.mode!="jump") ctrl.mode=mc; }                 // ★점프 중엔 GUI mode 무시(안 그러면 매 폴링 덮어써 점프 즉시 취소). 컨트롤러가 완료 후 stand_up 자가전환
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글
         ctrl.body_h = json_get(c,"body_h",ctrl.body_h);         // 서기 높이 슬라이더
+        { bool er=json_bool(c,"viz",est_on) || est_ctrl;        // ★추정 고스트 = 기존 '모니터 표시(viz)' 체크박스 (개루프, 보행 GT제어라 안정). 폐루프(env)면 항상 on
+          if(er && !est_on) est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));  // 켤 때 현재 참 base로 초기화(스테일 드리프트 방지)
+          est_on=er; }
         double rt=json_get(c,"rate",RATE); if(rt>0) RATE=rt;
         long rseq=(long)json_get(c,"reset_seq",reset_seen);     // ★RESET 버튼(상승엣지): mj_resetData+crouch_home+상태초기화
         if(reset_seen<0) reset_seen=rseq;                       //   첫폴링=동기화(시작리셋 방지)
         else if(rseq>reset_seen){ reset_seen=rseq; mj_resetData(m,d); q.crouch_home(); ctrl.reset(); ctrl.mode="stand_up"; falls=0; fallen=false;
+          est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2])); est_perr=est_verr=0;   // ★추정기도 리셋(참 base로)
           wall0=std::chrono::steady_clock::now(); sim0=d->time; }   // ★reset=Ready 복귀(mode 미초기화 시 점프 중 reset하면 그대로 재점프하던 버그)
         long jseq=(long)json_get(c,"jump_seq",jump_seen);       // ★Jump 버튼(상승엣지): 스크립트 점프 발동(mode=jump)
         if(jump_seen<0) jump_seen=jseq; else if(jseq>jump_seen){ jump_seen=jseq; ctrl.mode="jump"; } } }
@@ -163,7 +196,34 @@ int main(int argc,char**argv){
     double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-wall0).count();
     double target=sim0+wall*RATE; int guard=0;
     while(d->time < target && guard++ < 60){    // 따라잡기(최대 60스텝/프레임=버스트 상한↓, 점프 히치 후 몰아치기 완화)
-      ctrl.control(); mj_step(m,d);
+      if(est_on){
+        // ★실기 센서(+노이즈)→leg-odometry 추정. 개루프(뷰어 비교)=추정만 갱신하고 제어는 GT / 폐루프(env)=추정상태로 제어
+        int NJ=m->nq-7;
+        std::vector<bool> cts(4,false);
+        for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&cc=d->contact[ci]; if((cc.geom1==q.fgid[i]||cc.geom2==q.fgid[i])&&cc.dist<0.002){ cts[i]=true; break; } }
+        static std::vector<double> qn,dqn; qn.resize(NJ); dqn.resize(NJ);
+        for(int j=0;j<NJ;j++){ qn[j]=d->qpos[7+j]+ENCQN*_nd(_rng); dqn[j]=d->qvel[6+j]+ENCDQN*_nd(_rng); }
+        double gyron[3]; for(int a=0;a<3;a++) gyron[a]=d->qvel[3+a]+GYRON*_nd(_rng);
+        double quatn[4]; { double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp); mju_mulQuat(quatn,&d->qpos[3],dqp); }
+        // ★ZUPT: 정적 모드(서기/앉기/눕기/off)=base 수평이동 없음 → leg-odometry 대신 v=0 고정.
+        //   앉기/눕기/기립 중 발이 미끄러지고 굴러 stance-정지 가정이 깨지면 속도 오추정→적분 표류(뒤로 밀림·복귀불가)하므로, 이동/점프 때만 오도메트리 실행.
+        bool locomoting = (ctrl.mode=="move" || ctrl.mode=="jump");
+        if(locomoting) est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
+        else           est.v.setZero();   // ZUPT(적분 안 함 → p 유지, 표류 없음)
+        for(int a=0;a<4;a++) est_quat[a]=quatn[a];   // 추정(측정) 방위 저장 → 고스트 헤딩 화살표
+        est_perr=std::sqrt(std::pow(est.p[0]-d->qpos[0],2)+std::pow(est.p[1]-d->qpos[1],2)+std::pow(est.p[2]-d->qpos[2],2));
+        est_verr=std::sqrt(std::pow(est.v[0]-d->qvel[0],2)+std::pow(est.v[1]-d->qvel[1],2)+std::pow(est.v[2]-d->qvel[2],2));
+        if(est_ctrl && d_est){       // 폐루프(env EST_CTRL): 컨트롤러=추정상태, 토크=참 상태 적용
+          for(int a=0;a<3;a++){ d_est->qpos[a]=est.p[a]; d_est->qvel[a]=est.v[a]; }
+          for(int a=0;a<4;a++) d_est->qpos[3+a]=quatn[a];
+          for(int a=0;a<3;a++) d_est->qvel[3+a]=gyron[a];
+          for(int j=0;j<NJ;j++){ d_est->qpos[7+j]=qn[j]; d_est->qvel[6+j]=dqn[j]; }
+          d_est->time=d->time; mj_forward(m,d_est);
+          q.d=d_est; ctrl.control(); q.d=d;
+          mju_copy(d->ctrl,d_est->ctrl,m->nu);
+        } else { ctrl.control(); }   // 개루프: 제어는 GT(보행 안정), 추정기는 고스트용으로만 병행
+      } else { ctrl.control(); }
+      mj_step(m,d);
       double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
       // ★낙상 시 자동재시작 안 함(그대로 쓰러진 채 유지 → RESET 버튼으로 복구). 낙상은 엣지로만 카운트
       bool low=(td>50||d->qpos[2]<0.2); if(low && !fallen) falls++; fallen=low;
@@ -175,13 +235,43 @@ int main(int argc,char**argv){
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);
     cam.lookat[0]=d->qpos[0]; cam.lookat[1]=d->qpos[1];   // 로봇 추적
     mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);
+    if(est_on && scn.ngeom+4<=scn.maxgeom){   // ★GT↔추정 비교: 로봇 위로 띄운 마커쌍(초록=참 base / 주황=추정 base) — 정지 시 겹치고, 드리프트하면 수평 이격
+      const double H=0.35;                     // 몸통 위 띄움 높이(메시에 안 묻히게)
+      mjtNum bz=d->qpos[2];
+      mjtNum gtM[3]={d->qpos[0],d->qpos[1],bz+H};      // GT 마커(참 base 위)
+      mjtNum esM[3]={est.p[0],est.p[1],bz+H};          // 추정 마커(같은 높이, xy는 추정값 → 수평 이격=xy 드리프트)
+      mjtNum gtB[3]={d->qpos[0],d->qpos[1],bz};        // 참 base(테더 앵커)
+      float grn[4]={0.20f,0.90f,0.35f,0.95f}, org[4]={1.0f,0.55f,0.10f,0.95f}, orgL[4]={1.0f,0.55f,0.10f,0.65f};
+      mjtNum szG[3]={0.05,0,0}, szO[3]={0.06,0,0};
+      mjvGeom* g0=&scn.geoms[scn.ngeom]; mjv_initGeom(g0,mjGEOM_SPHERE,szG,gtM,NULL,grn); g0->category=mjCAT_DECOR; scn.ngeom++;   // GT(초록)
+      mjvGeom* g1=&scn.geoms[scn.ngeom]; mjv_initGeom(g1,mjGEOM_SPHERE,szO,esM,NULL,org); g1->category=mjCAT_DECOR; scn.ngeom++;   // 추정(주황)
+      mjvGeom* g2=&scn.geoms[scn.ngeom]; mjv_initGeom(g2,mjGEOM_LINE,NULL,NULL,NULL,org);  mjv_connector(g2,mjGEOM_LINE,5,gtM,esM); g2->category=mjCAT_DECOR; scn.ngeom++;   // 드리프트 이격선
+      mjvGeom* g3=&scn.geoms[scn.ngeom]; mjv_initGeom(g3,mjGEOM_LINE,NULL,NULL,NULL,grn);  mjv_connector(g3,mjGEOM_LINE,2,gtB,gtM); g3->category=mjCAT_DECOR; scn.ngeom++;   // 로봇↔마커 테더
+      // ★헤딩 화살표(선회 시각화): 각 마커서 yaw 방향으로 뻗음. 초록=GT yaw / 주황=추정(측정 IMU) yaw. 제자리 선회도 회전이 보임
+      if(scn.ngeom+2<=scn.maxgeom){
+        double Rg[9]; mju_quat2Mat(Rg,&d->qpos[3]);  double yg=atan2(Rg[3],Rg[0]);   // GT yaw
+        double Re[9]; mju_quat2Mat(Re,est_quat);     double ye=atan2(Re[3],Re[0]);   // 추정 yaw
+        const double L=0.28;
+        mjtNum gtA[3]={gtM[0]+L*cos(yg),gtM[1]+L*sin(yg),gtM[2]}, esA[3]={esM[0]+L*cos(ye),esM[1]+L*sin(ye),esM[2]};
+        mjvGeom* g4=&scn.geoms[scn.ngeom]; mjv_initGeom(g4,mjGEOM_LINE,NULL,NULL,NULL,grn); mjv_connector(g4,mjGEOM_LINE,4,gtM,gtA); g4->category=mjCAT_DECOR; scn.ngeom++;
+        mjvGeom* g5=&scn.geoms[scn.ngeom]; mjv_initGeom(g5,mjGEOM_LINE,NULL,NULL,NULL,org); mjv_connector(g5,mjGEOM_LINE,4,esM,esA); g5->category=mjCAT_DECOR; scn.ngeom++;
+      }
+    }
     mjr_render(vp,&scn,&con);
-    char hud[256];
-    std::snprintf(hud,256,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\nmouse: rotate/zoom  |  control via GUI",
-                  ctrl.V,ctrl.WZ,d->qpos[2],ctrl.tiltdeg(),d->qpos[0],falls);
-    mjr_overlay(mjFONT_NORMAL,mjGRID_TOPLEFT,vp,"17-DOF C++ trot (GUI controlled)",hud,&con);
+    char hud[320];
+    // ★HUD는 MuJoCo 오버레이(ASCII 전용 비트맵 폰트)라 한글 불가 → 영문 표기
+    if(est_on)
+      std::snprintf(hud,320,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\n%s  [green=GT  orange=EST]\nest err  pos=%.3f m  vel=%.3f m/s  noise=%s",
+                    ctrl.V,ctrl.WZ,d->qpos[2],ctrl.tiltdeg(),d->qpos[0],falls,
+                    est_ctrl?"EST-CTRL closed-loop (stress)":"estimator open-loop (GT ctrl)",
+                    est_perr,est_verr,(GYRON>0||QUATN>0||ENCQN>0||ENCDQN>0)?"ON":"off");
+    else
+      std::snprintf(hud,320,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\nstate: GT (ground truth) control\nmouse: rotate/zoom  |  control via GUI",
+                    ctrl.V,ctrl.WZ,d->qpos[2],ctrl.tiltdeg(),d->qpos[0],falls);
+    mjr_overlay(mjFONT_NORMAL,mjGRID_TOPLEFT,vp,est_on?"17-DOF C++ trot (GT vs EST compare)":"17-DOF C++ trot (GUI controlled)",hud,&con);
     glfwSwapBuffers(win); glfwPollEvents();
   }
   mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate();
+  if(d_est) mj_deleteData(d_est);
   mj_deleteData(d); mj_deleteModel(m); return 0;
 }

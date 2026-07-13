@@ -28,7 +28,7 @@ class SportClient:
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'mode': 'stand_up',   # 시작=Ready(서기). Walk 눌러야 보행
                     'body_h': 0.52, 'step_h': 0.10, 'euler': [0.0, 0.0, 0.0], 'gait': 'trot',   # ★초기 서기 높이=0.52(Ready·slider와 일치, 보행은 gait 버튼서 0.50)
                     'vmax': VMAX, 'jump_seq': 0, 'home_seq': 0, 'reset_seq': 0,
-                    'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시 terrain=지형적응
+                    'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시+추정 base 고스트(개루프·보행 GT제어) terrain=지형적응
                     'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
                     'raibert_k': 0.5,
                     'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
@@ -339,7 +339,7 @@ _FONT = os.environ.get('GUI_FONT', '/usr/share/fonts/opentype/noto/NotoSansCJK-R
 _kf = None
 if os.path.exists(_FONT):
     with dpg.font_registry():
-        _kf = dpg.add_font(_FONT, 18)
+        _kf = dpg.add_font(_FONT, 18)   # 한글 범위는 이 dpg 버전서 자동(range_hint는 deprecated no-op)
 
 # 다크 테마(RBQ 느낌)
 with dpg.theme() as _dark:
@@ -456,7 +456,7 @@ with dpg.window(tag='main'):
         dpg.add_checkbox(label='지형적응 (Terrain perception)', tag='terr', default_value=True,
                          callback=lambda s, a: sc.SetTerrain(a))
         dpg.add_spacer(width=20)
-        dpg.add_checkbox(label='모니터 표시 (GRF/CoM/궤적/elevation)', tag='viz', default_value=True,
+        dpg.add_checkbox(label='모니터 표시 + 추정 base 고스트 (초록=GT·주황=추정 · 보행은 GT제어 유지)', tag='viz', default_value=True,
                          callback=lambda s, a: sc.SetViz(a))
     dpg.add_separator()
     dpg.add_text('키: ↑↓=전후  ←→=측방  ,/.=선회  J=점프  X/Space=STOP', color=(140, 140, 155))

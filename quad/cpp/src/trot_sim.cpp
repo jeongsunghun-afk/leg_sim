@@ -108,17 +108,31 @@ int main(int argc,char**argv){
   // ★외란 PUSH(임펄스): PUSH_F[N] 을 PUSH_T[s]±PUSH_DUR 동안 base에 측방(기본 y)으로 — W_AM 등 외란복구 벤치
   double pF=getenv("PUSH_F")?atof(getenv("PUSH_F")):0, pT=getenv("PUSH_T")?atof(getenv("PUSH_T")):3.0, pDur=getenv("PUSH_DUR")?atof(getenv("PUSH_DUR")):0.1;
   int pAX=getenv("PUSH_AX")?atoi(getenv("PUSH_AX")):1, pbid=m->jnt_bodyid[0];   // free joint의 base body
-  // ★sim2real Phase1: leg-odometry 추정기 정확도 검증(EST_TEST). 컨트롤러엔 미공급(제어는 true state 유지)
-  StateEstimator est; bool ESTTEST=getenv("EST_TEST")!=nullptr;
+  // ★sim2real 추정기. EST_TEST=Phase1(정확도만, 미공급) · EST_CTRL=Phase2(컨트롤러가 추정상태로 계산→토크는 실기 적용)
+  StateEstimator est; bool ESTTEST=getenv("EST_TEST")!=nullptr; bool ESTCTRL=getenv("EST_CTRL")!=nullptr;
   std::vector<int> _efg={q.fgid[0],q.fgid[1],q.fgid[2],q.fgid[3]};
   std::vector<double> _efr={q.fr[0],q.fr[1],q.fr[2],q.fr[3]};
   est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));
   double epx=0,epy=0,epz=0,evx=0,evy=0,evz=0; long ecnt=0;
+  mjData* d_est=(ESTCTRL)?mj_makeData(m):nullptr;   // 추정상태 mjData(컨트롤러가 여기서 Jacobian·MPC·WBIC 계산)
   for(int step=0; step<STEPS; step++){
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
-    ctrl.control(); mj_step(m,d);
-    if(ESTTEST){
+    if(ESTCTRL){
+      // ★Phase2: 실기 상태서 센서→추정→d_est(base=추정·자세gyro관절=측정)→컨트롤러가 d_est로 계산→토크를 실기 적용
+      std::vector<bool> cts(4,false);
+      for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
+      est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);
+      if(d->time>1.0){ epx+=std::pow(est.p[0]-d->qpos[0],2); epy+=std::pow(est.p[1]-d->qpos[1],2); epz+=std::pow(est.p[2]-d->qpos[2],2);
+        evx+=std::pow(est.v[0]-d->qvel[0],2); evy+=std::pow(est.v[1]-d->qvel[1],2); evz+=std::pow(est.v[2]-d->qvel[2],2); ecnt++; }
+      mju_copy(d_est->qpos,d->qpos,m->nq); mju_copy(d_est->qvel,d->qvel,m->nv);
+      for(int c=0;c<3;c++){ d_est->qpos[c]=est.p[c]; d_est->qvel[c]=est.v[c]; }
+      d_est->time=d->time; mj_forward(m,d_est);
+      q.d=d_est; ctrl.control(); q.d=d;
+      mju_copy(d->ctrl,d_est->ctrl,m->nu);
+    } else { ctrl.control(); }
+    mj_step(m,d);
+    if(ESTTEST && !ESTCTRL){
       std::vector<bool> cts(4,false);
       for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
       est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);
@@ -183,8 +197,9 @@ int main(int argc,char**argv){
   if(getenv("DUMP_QPOS")){ FILE*f=fopen(getenv("DUMP_QPOS"),"w");   // ★정착 qpos 덤프(trajopt x0/xf용)
     for(int i=0;i<m->nq;i++) fprintf(f,"%.8f ",d->qpos[i]); fclose(f);
     std::printf("[dump] qpos → %s (nq=%d)\n", getenv("DUMP_QPOS"), m->nq); }
-  if(ESTTEST && ecnt>0){
-    std::printf("[EST] leg-odometry 추정오차(RMS, 정착후 %ld스텝): pos xyz=%.3f/%.3f/%.3f m · vel xyz=%.3f/%.3f/%.3f m/s\n",
+  if(d_est) mj_deleteData(d_est);
+  if((ESTTEST||ESTCTRL) && ecnt>0){
+    std::printf("[EST%s] leg-odometry 추정오차(RMS, 정착후 %ld스텝): pos xyz=%.3f/%.3f/%.3f m · vel xyz=%.3f/%.3f/%.3f m/s\n", ESTCTRL?"-CTRL":"",
       ecnt, std::sqrt(epx/ecnt),std::sqrt(epy/ecnt),std::sqrt(epz/ecnt), std::sqrt(evx/ecnt),std::sqrt(evy/ecnt),std::sqrt(evz/ecnt));
     std::printf("    ★pos는 적분 드리프트 누적(실기 동일, 절대위치 안 씀) · vel/자세가 제어핵심. 추정 base 최종=[%.3f,%.3f,%.3f] vs true=[%.3f,%.3f,%.3f]\n",
       est.p[0],est.p[1],est.p[2], d->qpos[0],d->qpos[1],d->qpos[2]); }

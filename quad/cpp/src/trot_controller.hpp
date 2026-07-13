@@ -160,8 +160,10 @@ struct TrotCtrl {
   double JUMP_CROUCH_Z=0.30, JUMP_THRUST_T=0.16, JUMP_KP=380, JUMP_KD=6;   // (구 스크립트 스냅용)
   // ★★J2 통합: OCP 궤적(/tmp/jump_traj.txt, MuJoCo순서 phase·q·dq·tau) 재생 → thrust/flight, 착지는 wbic_stance
   std::vector<VectorXd> jump_q, jump_dq, jump_tau; std::vector<int> jump_ph;
-  std::vector<Vector3d> jump_com, jump_comv, jump_acom;   // ★WBIC-추종용 CoM 위치/속도/가속
+  std::vector<Vector3d> jump_com, jump_comv, jump_acom;   // ★WBIC-추종용 CoM 위치/속도/가속(궤적 자체 프레임: yaw0·원점기준)
   int jump_N=-1, jump_k=-1; double jump_dt=0.01, jump_kt=0, JUMP_TRAJ_KP=120, JUMP_TRAJ_KD=4;
+  // ★점프 궤적을 "발사 시점 현재 자세(위치·헤딩)"로 re-anchor: 선회 후 점프해도 바라보는 방향으로 뛰고 스핀 안 함(궤적은 yaw0 프레임이라 그대로 쓰면 world+x로 튐)
+  bool jump_anchored=false; Vector3d jump_launch_com=Vector3d::Zero(), jump_com0=Vector3d::Zero(); double jump_launch_yaw=0;
   void load_jump(const std::string& path){
     std::ifstream f(path); if(!f){ jump_N=0; return; }
     f>>jump_N>>jump_dt; jump_q.clear(); jump_dq.clear(); jump_tau.clear(); jump_ph.clear();
@@ -239,7 +241,7 @@ struct TrotCtrl {
     armed=false; settle_until=q.d->time+TC_SETTLE; have_qref=false;
     Vs=Vys=Ws=Ss_steer=0; yaw_hold_set=false; mpc_t=-1.0;
     ht_cur=qhome_h=body_h=q.base_z0; for(int i=0;i<4;i++) have_prev[i]=false;
-    haunch_ready=false; haunch_fold=0; jphase=-1;
+    haunch_ready=false; haunch_fold=0; jphase=-1; jump_anchored=false;
 #ifdef HAVE_JUMP_SOLVER
     jlaunched=false; jsolving=false;
 #endif
@@ -280,7 +282,7 @@ struct TrotCtrl {
         double bz=d->qpos[2];
         int ncon=0; for(int ci=0;ci<d->ncon;ci++){ int g1=d->contact[ci].geom1,g2=d->contact[ci].geom2;
           for(int fi=0;fi<4;fi++) if(g1==q.fgid[fi]||g2==q.fgid[fi]){ ncon++; break; } }
-        if(jphase<0){ jphase=0; jt0=t; jzpk=bz; ht_cur=std::max(JUMP_CROUCH_Z,bz); qhome_h=-1; jump_k=-1;
+        if(jphase<0){ jphase=0; jt0=t; jzpk=bz; ht_cur=std::max(JUMP_CROUCH_Z,bz); qhome_h=-1; jump_k=-1; jump_anchored=false;   // ★새 점프=발사 프레임 재캡처
           from_sit=false; haunch_ready=false; haunch_fold=0; have_qref=false;   // ★눕기/앉기서 점프 진입=sit/ground 잔여상태 리셋(wbic_stance 정상 크라우치)
 #ifdef HAVE_JUMP_SOLVER
           jlaunched=false; jsolving=false;   // 새 점프=미발사 상태
@@ -314,8 +316,18 @@ struct TrotCtrl {
           if(jump_N>0 && jump_k<jump_N){
             bool wbc_ok=false;
             if((int)jump_com.size()>jump_k){   // CoM 참조 있으면 WBIC-추종
+              if(!jump_anchored){   // ★발사 프레임 캡처(1회): 현재 CoM·yaw를 원점 삼아 궤적을 re-anchor
+                jump_launch_com=Vector3d(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
+                const double* qc=&d->qpos[3];
+                jump_launch_yaw=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
+                jump_com0=jump_com[0]; jump_anchored=true;
+              }
+              double cy=std::cos(jump_launch_yaw), sy=std::sin(jump_launch_yaw);
+              auto rotz=[&](const Vector3d& v){ return Vector3d(cy*v[0]-sy*v[1], sy*v[0]+cy*v[1], v[2]); };   // 궤적 프레임→현재 헤딩
+              Vector3d com_ref=jump_launch_com+rotz(jump_com[jump_k]-jump_com0);   // 위치=현재 발사점 + 헤딩회전된 궤적변위
+              Vector3d comv_ref=rotz(jump_comv[jump_k]), acom_ref=rotz(jump_acom[jump_k]);   // 속도·가속=헤딩회전
               std::vector<int> cts = (jump_ph[jump_k]==1) ? std::vector<int>{} : std::vector<int>{0,1,2,3};  // flight(ph1)=무접촉
-              wbc_ok=q.wbic_jump(jump_com[jump_k],jump_comv[jump_k],jump_acom[jump_k],jump_q[jump_k],jump_dq[jump_k],cts);
+              wbc_ok=q.wbic_jump(com_ref,comv_ref,acom_ref,jump_q[jump_k],jump_dq[jump_k],cts);
             }
             if(!wbc_ok){   // WBIC 미가용/실패 → τ_ff + 관절 PD 개루프 재생
               for(int j=0;j<nu;j++){ double tau=jump_tau[jump_k][j]+JUMP_TRAJ_KP*(jump_q[jump_k][j]-d->qpos[7+j])+JUMP_TRAJ_KD*(jump_dq[jump_k][j]-d->qvel[6+j]);

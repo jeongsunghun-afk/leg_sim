@@ -732,10 +732,14 @@ class QuadSim:
             com = d.subtree_com[0]; comv = Jc @ qv
             a_lin = acom_ref + kp_lin * (com_ref - com) + kd_lin * (comv_ref - comv)
             P[:nv, :nv] += w_lin * (Jc.T @ Jc); g[:nv] -= w_lin * (Jc.T @ a_lin)
-        # ② base 자세 upright (점프는 수평 유지)
-        oerr = np.zeros(3); mujoco.mju_quat2Vel(oerr, d.qpos[3:7], 1.0)
+        # ② base 자세 레벨링 — ★현재 yaw 프레임서 roll/pitch만 레벨(yaw 안 되당김). 선회 후 점프해도 스핀 안 함(wbic_track과 동일 원리).
+        #   기존엔 단위자세(yaw=0) 대비 3축이라 몸통 돌린 뒤 점프하면 yaw를 0으로 되당겨 점프 중 회전. yaw는 자유(현재 헤딩 유지).
+        _qc = d.qpos[3:7]
+        _yawj = math.atan2(2 * (_qc[0] * _qc[3] + _qc[1] * _qc[2]), 1 - 2 * (_qc[2]**2 + _qc[3]**2))
+        _qlev = np.array([math.cos(_yawj / 2), 0.0, 0.0, math.sin(_yawj / 2)])
+        oerr = np.zeros(3); mujoco.mju_subQuat(oerr, d.qpos[3:7], _qlev)   # roll/pitch 오차(yaw≈0)
         a_ori = 150 * (-oerr) - 20 * qv[3:6]
-        for j in range(3):
+        for j in range(2):                                # roll/pitch만(yaw=j2 자유)
             P[3 + j, 3 + j] += w_ori; g[3 + j] -= w_ori * a_ori[j]
         # ③ 관절 추종 (q_ref/dq_ref — 발목 포함 전관절 → 여자유도 flail 차단)
         a_j = kp_j * (q_ref - d.qpos[7:7 + nu]) + kd_j * (dq_ref - qv[6:6 + nu])
@@ -1396,7 +1400,7 @@ def mode_trot():
                 if JUMP is not None:                                  # 점프 트리거(jump_seq 상승엣지)
                     _js = int(_c.get('jump_seq', 0))
                     if S['jseq'] is not None and _js > S['jseq'] and not S['jact']:  # 첫폴링=동기화(시작점프 방지)
-                        S['jact'] = True; S['jk'] = 0; S['jsub'] = 0
+                        S['jact'] = True; S['jk'] = 0; S['jsub'] = 0; S['janch'] = None   # ★새 점프=발사 프레임 재캡처
                         print('[trot] 점프 트리거(seq=%d) → offline 궤적 재생' % _js, flush=True)
                     S['jseq'] = _js
                 _hs = int(_c.get('home_seq', 0))                     # Ready 버튼 → 기본자세 호밍 요청(모드 무관)
@@ -1409,6 +1413,7 @@ def mode_trot():
                     S['armed'] = False; S['lam_des'] = None; S['ptgt_prev'] = [None, None, None, None]
                     S['settle_until'] = q.d.time + SETTLE; S['yaw_ref'] = 0.0
                     S['Vs'] = S['Vys'] = S['Ws'] = S['Ss'] = 0.0; S['bx'] = float(q.d.qpos[0]); S['last_t'] = q.d.time
+                    S['jact'] = False; S['janch'] = None             # ★점프 상태도 리셋(재점프 방지·발사프레임 초기화)
                     print('[trot] RESET 버튼 → 시뮬 리셋', flush=True)
                 S['rseq'] = _rs
             except Exception: pass
@@ -1418,10 +1423,19 @@ def mode_trot():
         # ── 점프 재생: WBC추종(base를 GRF로 닫음, 표준) 또는 open-loop(피드포워드+관절PD) ──
         if S['jact'] and JUMP is not None:
             k = min(S['jk'], JUMP['N'] - 1)
+            # ★점프 궤적을 발사 시점 현재 자세(위치·헤딩)로 re-anchor: 선회 후 점프해도 바라보는 방향으로 뛰고 스핀 안 함(궤적은 yaw0·원점 프레임)
+            if S.get('janch') is None:
+                _qcj = q.d.qpos[3:7]
+                _lyaw = math.atan2(2 * (_qcj[0] * _qcj[3] + _qcj[1] * _qcj[2]), 1 - 2 * (_qcj[2]**2 + _qcj[3]**2))
+                S['janch'] = (np.array(q.d.subtree_com[0]).copy(), _lyaw, np.array(JUMP['com_ref'][0]).copy())
+            _lcom, _lyaw, _c0 = S['janch']; _cy, _sy = math.cos(_lyaw), math.sin(_lyaw)
+            def _rotz(v): return np.array([_cy * v[0] - _sy * v[1], _sy * v[0] + _cy * v[1], v[2]])  # 궤적 프레임→현재 헤딩
+            _cr = _lcom + _rotz(JUMP['com_ref'][k] - _c0)           # 위치=발사점 + 헤딩회전된 궤적변위
+            _cvr = _rotz(JUMP['comv_ref'][k]); _car = _rotz(JUMP['acom_ref'][k])  # 속도·가속=헤딩회전
             if JUMP['wbc']:                                          # ★표준 WBC: CoM 3-DOF 피드백 + 관절추종
                 _ph = JUMP['sched'][k] if JUMP['sched'] is not None else 'push'
                 _cts = () if _ph == 'flight' else (0, 1, 2, 3)       # flight=탄도(접촉없음)
-                _r = q.wbic_jump(JUMP['com_ref'][k], JUMP['comv_ref'][k], JUMP['acom_ref'][k],
+                _r = q.wbic_jump(_cr, _cvr, _car,
                                  JUMP['q_qp'][k], JUMP['dq_qp'][k], _cts)
                 if _r[0] is None:                                    # QP 실패 시 open-loop 폴백
                     qcur = q.d.qpos[JUMP['qadr']]; dqcur = q.d.qvel[JUMP['vadr']]
@@ -1436,7 +1450,7 @@ def mode_trot():
             if S['jsub'] >= JUMP['sub']:
                 S['jsub'] = 0; S['jk'] += 1
                 if S['jk'] >= JUMP['N']:                              # 착지·복귀 완료 → 정착(자동호밍 없음; 발 재정렬은 Ready 수동)
-                    S['jact'] = False; S['armed'] = False
+                    S['jact'] = False; S['armed'] = False; S['janch'] = None
                     S['settle_until'] = t + SETTLE
                     q.update_stand_qhome(q.base_z0); S['ht_cur'] = q.base_z0; S['qhome_h'] = q.base_z0
                     print('[trot] 점프 완료 → 정착(base_z=%.3f)' % q.d.qpos[2], flush=True)

@@ -462,9 +462,13 @@ struct QuadControl {
       Vector3d a_lin=acom_ref+kp_lin*(com_ref-com)+kd_lin*(comv_ref-comv);
       P.topLeftCorner(nv,nv)+=w_lin*(Jc.transpose()*Jc); g.head(nv)-=w_lin*(Jc.transpose()*a_lin);
     }
-    // ② 자세 upright(단위자세 대비, 3축) — 직진점프. 선회점프는 yaw 싸움(현재 미사용)
-    double oerr[3]; mju_quat2Vel(oerr,&d->qpos[3],1.0);
-    for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
+    // ② 자세 레벨링 — ★현재 yaw 프레임서 roll/pitch만 레벨(yaw는 안 되당김). 선회 후 점프해도 스핀 안 함(wbic_track·wbic_stance와 동일 원리).
+    //   기존엔 단위자세(yaw=0) 대비 3축이라 몸통 돌린 뒤 점프하면 yaw를 0으로 되당겨 점프 중 회전. yaw는 자유(현재 헤딩 유지).
+    const double* qc=&d->qpos[3];
+    double yaw_j=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
+    double qlev[4]={std::cos(yaw_j/2),0,0,std::sin(yaw_j/2)};   // 현재 yaw서 수평(정확 프레임)
+    double oerr[3]; mju_subQuat(oerr,&d->qpos[3],qlev);          // roll/pitch 오차(yaw≈0)
+    for(int j=0;j<2;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }   // roll/pitch만(yaw=j2 자유)
     // ③ 관절 posture(OCP q_ref/dq_ref 전관절 추종=발목 flail 억제)
     for(int j=0;j<nu;j++){ double a=kp_j*(q_ref[j]-d->qpos[7+j])+kd_j*(dq_ref[j]-qv[6+j]); P(6+j,6+j)+=w_j; g[6+j]-=w_j*a; }
     P.topLeftCorner(nv,nv)+=1e-3*MatrixXd::Identity(nv,nv);

@@ -34,6 +34,9 @@ int main(int argc, char** argv) {
     for (int j = 0; j < NJ; j++) of << " " << J.q[k][j];
     for (int j = 0; j < NJ; j++) of << " " << J.dq[k][j];
     for (int j = 0; j < NJ; j++) of << " " << J.tau[k][j];
+    for (int c = 0; c < 3; c++) of << " " << J.com[k][c];    // ★WBIC-추종용 CoM 위치
+    for (int c = 0; c < 3; c++) of << " " << J.comv[k][c];   //   속도
+    for (int c = 0; c < 3; c++) of << " " << J.acom[k][c];   //   가속
     of << "\n";
   }
   of.close();

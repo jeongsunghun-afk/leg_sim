@@ -85,14 +85,18 @@ struct TrotCtrl {
   double JUMP_CROUCH_Z=0.30, JUMP_THRUST_T=0.16, JUMP_KP=380, JUMP_KD=6;   // (구 스크립트 스냅용)
   // ★★J2 통합: OCP 궤적(/tmp/jump_traj.txt, MuJoCo순서 phase·q·dq·tau) 재생 → thrust/flight, 착지는 wbic_stance
   std::vector<VectorXd> jump_q, jump_dq, jump_tau; std::vector<int> jump_ph;
+  std::vector<Vector3d> jump_com, jump_comv, jump_acom;   // ★WBIC-추종용 CoM 위치/속도/가속
   int jump_N=-1, jump_k=-1; double jump_dt=0.01, jump_kt=0, JUMP_TRAJ_KP=120, JUMP_TRAJ_KD=4;
   void load_jump(const std::string& path){
     std::ifstream f(path); if(!f){ jump_N=0; return; }
     f>>jump_N>>jump_dt; jump_q.clear(); jump_dq.clear(); jump_tau.clear(); jump_ph.clear();
+    jump_com.clear(); jump_comv.clear(); jump_acom.clear();
     for(int k=0;k<jump_N;k++){ int ph; f>>ph; jump_ph.push_back(ph);
       VectorXd qq(q.nu),dd(q.nu),tt(q.nu);
       for(int j=0;j<q.nu;j++) f>>qq[j]; for(int j=0;j<q.nu;j++) f>>dd[j]; for(int j=0;j<q.nu;j++) f>>tt[j];
-      jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
+      Vector3d cm,cv,ca; for(int c=0;c<3;c++) f>>cm[c]; for(int c=0;c<3;c++) f>>cv[c]; for(int c=0;c<3;c++) f>>ca[c];
+      jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt);
+      jump_com.push_back(cm); jump_comv.push_back(cv); jump_acom.push_back(ca); } }
   double JUMP_VX=0.6;   // ★점프 전방 이륙속도(0=수직 제자리). live-solve·gen_jump 공통 의미
 #ifdef HAVE_JUMP_SOLVER
   std::string JUMP_URDF="/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf";
@@ -111,7 +115,8 @@ struct TrotCtrl {
     double _ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-_t).count();
     std::printf("[jump] live-solve %.0f ms (crouch stall) · apex=%.3f\n", _ms, J.apex); std::fflush(stdout);
     if(J.N<=0) return false;
-    jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph; return true; }
+    jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph;
+    jump_com=J.com; jump_comv=J.comv; jump_acom=J.acom; return true; }
 #endif
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
@@ -221,7 +226,8 @@ struct TrotCtrl {
           }
           if(jsolving && jfut.wait_for(std::chrono::seconds(0))==std::future_status::ready){
             JumpTraj J=jfut.get(); jsolving=false;
-            if(J.N>0){ jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph; }
+            if(J.N>0){ jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph;
+              jump_com=J.com; jump_comv=J.comv; jump_acom=J.acom; }
             else if(jump_N<=0) load_jump("/tmp/jump_traj.txt");
             jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz;
           }
@@ -229,10 +235,17 @@ struct TrotCtrl {
           if(jsettled){ if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
 #endif
           armed=false; return; }
-        if(jphase==1){   // ★OCP 궤적 재생(push+flight): τ_ff + 관절 PD (없으면 구 스크립트 스냅 fallback)
+        if(jphase==1){   // ★OCP 궤적 WBIC-추종(push+flight): wbic_jump(CoM ff+접촉GRF로 base 닫음). QP실패 시 τ_ff+PD fallback
           if(jump_N>0 && jump_k<jump_N){
-            for(int j=0;j<nu;j++){ double tau=jump_tau[jump_k][j]+JUMP_TRAJ_KP*(jump_q[jump_k][j]-d->qpos[7+j])+JUMP_TRAJ_KD*(jump_dq[jump_k][j]-d->qvel[6+j]);
-              d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+            bool wbc_ok=false;
+            if((int)jump_com.size()>jump_k){   // CoM 참조 있으면 WBIC-추종
+              std::vector<int> cts = (jump_ph[jump_k]==1) ? std::vector<int>{} : std::vector<int>{0,1,2,3};  // flight(ph1)=무접촉
+              wbc_ok=q.wbic_jump(jump_com[jump_k],jump_comv[jump_k],jump_acom[jump_k],jump_q[jump_k],jump_dq[jump_k],cts);
+            }
+            if(!wbc_ok){   // WBIC 미가용/실패 → τ_ff + 관절 PD 개루프 재생
+              for(int j=0;j<nu;j++){ double tau=jump_tau[jump_k][j]+JUMP_TRAJ_KP*(jump_q[jump_k][j]-d->qpos[7+j])+JUMP_TRAJ_KD*(jump_dq[jump_k][j]-d->qvel[6+j]);
+                d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+            }
             jzpk=std::max(jzpk,bz);
             jump_kt+=dt; if(jump_kt>=jump_dt && jump_k<jump_N-1){ jump_kt=0; jump_k++; }
             bool airborne=(jzpk>JUMP_CROUCH_Z+0.10);

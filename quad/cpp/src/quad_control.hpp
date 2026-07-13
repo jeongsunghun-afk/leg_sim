@@ -44,7 +44,7 @@ struct QuadControl {
   bool motor_curve=false;                                 // ★MOTOR_CURVE: 가용토크=tau_peak·max(0,1−|ω|/w_limit) (고속서↓=실모터)
   std::array<Vector2d,4> foot_hip_off; std::array<double,4> foot_gz0;
   MpcCfg mpc; double _body_terr=0.0;
-  eiquadprog::solvers::EiquadprogFast _qp_st, _qp_tr;
+  eiquadprog::solvers::EiquadprogFast _qp_st, _qp_tr, _qp_jm;
 
   void load(const char* path){
     char err[1000]=""; m=mj_loadXML(path,nullptr,err,1000);
@@ -436,6 +436,76 @@ struct QuadControl {
     for(int k=0;k<Kc;k++) tau-=cjac[k].block(0,6,3,nu).transpose()*x.segment(sl(k),3);
     for(int i=0;i<nu;i++){ double lim=tau_peak[i];
       if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);  // ★고속서 가용토크↓(실모터 토크-속도곡선)
+      d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    return true;
+  }
+
+  // ── wbic_jump (점프 WBIC-추종: OCP CoM궤적을 가속 피드포워드로 추종+base를 GRF로 닫음. Python wbic_jump 포팅) ──
+  //   접촉(push/land)=CoM 3-DOF 추종+접촉/마찰, flight(K=0)=관절·자세만. λ는 자유(reg만). τ=M q̈+h−Jᵀλ.
+  bool wbic_jump(const Vector3d& com_ref, const Vector3d& comv_ref, const Vector3d& acom_ref,
+                 const VectorXd& q_ref, const VectorXd& dq_ref, const std::vector<int>& contacts,
+                 double kp_lin=120, double kd_lin=22, double kp_j=160, double kd_j=12,
+                 double w_lin=120, double w_ori=8.0, double w_j=2.0, double w_lam=0.1){
+    int Kc=(int)contacts.size(), nzt=nv+3*Kc; auto sl=[&](int k){ return nv+3*k; };
+    std::vector<Matrix<double,3,Dynamic>> cjac(Kc);
+    for(int k=0;k<Kc;k++) cjac[k]=foot_jac(contacts[k]);
+    std::vector<double> Mb(nv*nv); mj_fullM(m,Mb.data(),d->qM);
+    Map<Matrix<double,Dynamic,Dynamic,RowMajor>> M(Mb.data(),nv,nv);
+    Map<VectorXd> h(d->qfrc_bias,nv); VectorXd qv=Map<VectorXd>(d->qvel,nv);
+    MatrixXd P=MatrixXd::Zero(nzt,nzt); VectorXd g=VectorXd::Zero(nzt);
+    // ① CoM 3-DOF 추종(가속 피드포워드) — 접촉 시만(flight=탄도, 제어불가)
+    if(Kc>0){
+      std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
+      Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];
+      Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
+      Vector3d comv=Jc*qv;
+      Vector3d a_lin=acom_ref+kp_lin*(com_ref-com)+kd_lin*(comv_ref-comv);
+      P.topLeftCorner(nv,nv)+=w_lin*(Jc.transpose()*Jc); g.head(nv)-=w_lin*(Jc.transpose()*a_lin);
+    }
+    // ② 자세 upright(단위자세 대비, 3축) — 직진점프. 선회점프는 yaw 싸움(현재 미사용)
+    double oerr[3]; mju_quat2Vel(oerr,&d->qpos[3],1.0);
+    for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
+    // ③ 관절 posture(OCP q_ref/dq_ref 전관절 추종=발목 flail 억제)
+    for(int j=0;j<nu;j++){ double a=kp_j*(q_ref[j]-d->qpos[7+j])+kd_j*(dq_ref[j]-qv[6+j]); P(6+j,6+j)+=w_j; g[6+j]-=w_j*a; }
+    P.topLeftCorner(nv,nv)+=1e-3*MatrixXd::Identity(nv,nv);
+    for(int k=0;k<Kc;k++) P.block(sl(k),sl(k),3,3)+=w_lam*Matrix3d::Identity();   // λ는 reg만(MPC GRF 추종 없음)
+    // 등식: base EOM(6) + 접촉 no-accel baumgarte(3K)
+    int neq=6+3*Kc; MatrixXd A=MatrixXd::Zero(neq,nzt); VectorXd b=VectorXd::Zero(neq);
+    A.block(0,0,6,nv)=M.topRows(6); b.head(6)=-h.head(6);
+    for(int k=0;k<Kc;k++) A.block(0,sl(k),6,3)=-cjac[k].leftCols(6).transpose();
+    for(int k=0;k<Kc;k++){ A.block(6+3*k,0,3,nv)=cjac[k];
+      if(STANCE_KD>0) b.segment(6+3*k,3)=-STANCE_KD*(cjac[k]*qv); }
+    // 관절 위치한계(가속 상하한)
+    VectorXd lb=VectorXd::Constant(nzt,-1e8),ub=VectorXd::Constant(nzt,1e8);
+    { double tla=0.05,c2=0.5*tla*tla;
+      for(int j=0;j<nu;j++){ double qj=d->qpos[7+j],dqj=qv[6+j];
+        double ubp=(qmax[j]-qj-dqj*tla)/c2, lbp=(qmin[j]-qj-dqj*tla)/c2;
+        double u=std::min(ub[6+j],ubp), l=std::max(lb[6+j],lbp);
+        if(l<=u){ ub[6+j]=u; lb[6+j]=l; } } }
+    for(int k=0;k<Kc;k++) lb[sl(k)+2]=LAMZ_MIN;
+    // 부등식: 마찰추 + 토크한계
+    std::vector<VectorXd> Gr; std::vector<double> hv;
+    int sgn[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
+    for(int k=0;k<Kc;k++){ int o=sl(k); for(int s=0;s<4;s++){ VectorXd r=VectorXd::Zero(nzt);
+      r[o]=sgn[s][0]; r[o+1]=sgn[s][1]; r[o+2]=-MU*MU_MARGIN; Gr.push_back(r); hv.push_back(0.0); } }
+    VectorXd h_act=h.segment(6,nu); MatrixXd T_mat=MatrixXd::Zero(nu,nzt); T_mat.leftCols(nv)=M.block(6,0,nu,nv);
+    for(int k=0;k<Kc;k++) T_mat.block(0,sl(k),nu,3)=-cjac[k].block(0,6,3,nu).transpose();
+    for(int i=0;i<nu;i++){ Gr.push_back(T_mat.row(i)); hv.push_back(tau_peak[i]-h_act[i]); }
+    for(int i=0;i<nu;i++){ Gr.push_back(-T_mat.row(i)); hv.push_back(tau_peak[i]+h_act[i]); }
+    P=(0.5*(P+P.transpose())).eval()+1e-8*MatrixXd::Identity(nzt,nzt);
+    std::vector<VectorXd> CIr; std::vector<double> ci0v;
+    for(size_t i=0;i<Gr.size();i++){ CIr.push_back(-Gr[i]); ci0v.push_back(hv[i]); }
+    for(int i=0;i<nzt;i++){ if(lb[i]>-1e7){ VectorXd r=VectorXd::Zero(nzt); r[i]=1; CIr.push_back(r); ci0v.push_back(-lb[i]); }
+                            if(ub[i]< 1e7){ VectorXd r=VectorXd::Zero(nzt); r[i]=-1; CIr.push_back(r); ci0v.push_back(ub[i]); } }
+    int nci=(int)CIr.size(); MatrixXd CI(nci,nzt); VectorXd ci0(nci);
+    for(int i=0;i<nci;i++){ CI.row(i)=CIr[i]; ci0[i]=ci0v[i]; }
+    MatrixXd CE=A; VectorXd ce0=-b, x(nzt);
+    _qp_jm.reset(nzt,neq,nci); auto st=_qp_jm.solve_quadprog(P,g,CE,ce0,CI,ci0,x);
+    if(st!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
+    VectorXd qdd=x.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
+    for(int k=0;k<Kc;k++) tau-=cjac[k].block(0,6,3,nu).transpose()*x.segment(sl(k),3);
+    for(int i=0;i<nu;i++){ double lim=tau_peak[i];
+      if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);
       d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
     return true;
   }

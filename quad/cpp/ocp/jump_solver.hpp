@@ -36,6 +36,7 @@ struct JumpTraj {
   int N = 0; double dt = 0.01; bool ok = false;
   std::vector<Eigen::VectorXd> q, dq, tau;
   std::vector<int> ph;
+  std::vector<Eigen::Vector3d> com, comv, acom;   // ★WBIC-추종용 CoM 위치/속도/가속(MuJoCo subtree_com 프레임)
   double apex = 0, tilt_land = 0;
 };
 
@@ -298,6 +299,24 @@ struct JumpSolver {
       }
       R.q.push_back(qj); R.dq.push_back(dj); R.tau.push_back(tj); R.ph.push_back(ph);
     }
+    // ── ★WBIC-추종용 CoM 참조: 각 노드 full qpos→mj_forward→subtree_com, gradient로 vel/accel ──
+    R.com.assign(T, Eigen::Vector3d::Zero());
+    for (int k = 0; k < T; k++) {
+      const VectorXd& xk = X[k];
+      for (int i = 0; i < mjm->nq; i++) mjd->qpos[i] = 0;
+      mjd->qpos[0] = xk[0]; mjd->qpos[1] = xk[1]; mjd->qpos[2] = xk[2];
+      mjd->qpos[3] = xk[6]; mjd->qpos[4] = xk[3]; mjd->qpos[5] = xk[4]; mjd->qpos[6] = xk[5];  // pin xyzw → mj wxyz
+      for (int j = 0; j < NJ; j++) mjd->qpos[7 + j] = R.q[k][j];   // 관절(허리=0)
+      for (int i = 0; i < mjm->nv; i++) mjd->qvel[i] = 0;
+      mj_forward(mjm, mjd);
+      R.com[k] = Eigen::Vector3d(mjd->subtree_com[0], mjd->subtree_com[1], mjd->subtree_com[2]);
+    }
+    R.comv.assign(T, Eigen::Vector3d::Zero());
+    R.acom.assign(T, Eigen::Vector3d::Zero());
+    for (int k = 0; k < T; k++) { int kp = std::min(k + 1, T - 1), km = std::max(k - 1, 0);
+      double hh = (kp - km) * dt; if (hh > 0) R.comv[k] = (R.com[kp] - R.com[km]) / hh; }
+    for (int k = 0; k < T; k++) { int kp = std::min(k + 1, T - 1), km = std::max(k - 1, 0);
+      double hh = (kp - km) * dt; if (hh > 0) R.acom[k] = (R.comv[kp] - R.comv[km]) / hh; }
     auto tilt = [&](const VectorXd& x) {
       Eigen::Quaterniond quat(x[6], x[3], x[4], x[5]);
       double r22 = quat.toRotationMatrix()(2, 2);

@@ -155,8 +155,8 @@ int main(int argc,char**argv){
         double rt=json_get(c,"rate",RATE); if(rt>0) RATE=rt;
         long rseq=(long)json_get(c,"reset_seq",reset_seen);     // ★RESET 버튼(상승엣지): mj_resetData+crouch_home+상태초기화
         if(reset_seen<0) reset_seen=rseq;                       //   첫폴링=동기화(시작리셋 방지)
-        else if(rseq>reset_seen){ reset_seen=rseq; mj_resetData(m,d); q.crouch_home(); ctrl.reset(); falls=0; fallen=false;
-          wall0=std::chrono::steady_clock::now(); sim0=d->time; }
+        else if(rseq>reset_seen){ reset_seen=rseq; mj_resetData(m,d); q.crouch_home(); ctrl.reset(); ctrl.mode="stand_up"; falls=0; fallen=false;
+          wall0=std::chrono::steady_clock::now(); sim0=d->time; }   // ★reset=Ready 복귀(mode 미초기화 시 점프 중 reset하면 그대로 재점프하던 버그)
         long jseq=(long)json_get(c,"jump_seq",jump_seen);       // ★Jump 버튼(상승엣지): 스크립트 점프 발동(mode=jump)
         if(jump_seen<0) jump_seen=jseq; else if(jseq>jump_seen){ jump_seen=jseq; ctrl.mode="jump"; } } }
     // ★벽시계 기준 실시간 페이싱: sim_time이 wall_time×RATE 따라가도록(모니터 refresh 무관)

@@ -7,6 +7,9 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#ifdef HAVE_CROCODDYL
+#include "jump_solver.hpp"   // ★S3-b Step2: 점프 crouch중 live-solve(trot_view만, crocoddyl 링크 시)
+#endif
 
 // gait 상수(config + trot 프리셋)
 static const double GP_T=0.50, GP_SWF=0.50;
@@ -87,6 +90,16 @@ struct TrotCtrl {
       VectorXd qq(q.nu),dd(q.nu),tt(q.nu);
       for(int j=0;j<q.nu;j++) f>>qq[j]; for(int j=0;j<q.nu;j++) f>>dd[j]; for(int j=0;j<q.nu;j++) f>>tt[j];
       jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
+  double JUMP_VX=0.6;   // ★점프 전방 이륙속도(0=수직 제자리). live-solve·gen_jump 공통 의미
+#ifdef HAVE_CROCODDYL
+  std::string JUMP_URDF="/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf";
+  std::string JUMP_MJCF="/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
+  int JUMP_MAXIT=8;     // ★crouch중 live-solve FDDP 반복(S2: iter~8=~150ms 수렴). crouch 예산 450ms 내
+  bool solve_jump_live(double vx){   // crouch 정착 시 1회 호출 → 신선 궤적을 인메모리로 채움(파일 I/O 없음)
+    JumpTraj J=jump_solve(JUMP_URDF,JUMP_MJCF,vx,JUMP_MAXIT,false);
+    if(J.N<=0) return false;
+    jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph; return true; }
+#endif
   // 모드관리 상수(Python 17dof와 동일)
   double GROUND_Z=0.18, GETUP_TRIG=0.32, GETUP_DONE=0.40, GETUP_KP=90, GETUP_KD=3, GETUP_RATE=0.18, REST_KD=3.0, JOINT_SLEW=1.5, HRATE=0.3;
   double GROUND_LIE_Z=0.226, GROUND_REAR_FOOT=-1.15, GROUND_FRONT_FOOT=-0.5, GROUND_FRONT_THIGH=-0.24, GROUND_FRONT_CALF=-0.4;   // ★눕기(ground) 저자세: base 낮춤 + 앞뒤 발목/앞다리 fold(GUI 실시간 슬라이더로 CoM균형·수평·무슬라이드 조각). PD-fold 홀드. ★기본값=뷰어 라이브튜닝서 확정(base_z≈0.166 깊은 belly-lie)
@@ -177,7 +190,14 @@ struct TrotCtrl {
           if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }
           q.wbic_stance();
           if(bz<=JUMP_CROUCH_Z+0.015 && std::abs(d->qvel[2])<0.06 && t-jt0>0.45){
-            if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }  // ★미로드(≤0) 시만 I/O(재점프·프레임 히치 방지). 시작 preload됐으면 스킵
+            // ★S3-b Step2: crouch 정착 → 신선 궤적 확보. crocoddyl 있으면 이 자리서 live-solve(~150ms 1회 stall,
+            //   crouch 예산 내) → 명령 vx로 거리 조정. 없거나 실패 시 /tmp/jump_traj.txt replay fallback.
+#ifdef HAVE_CROCODDYL
+            if(!solve_jump_live(JUMP_VX)){ if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); }
+#else
+            if(jump_N<=0) load_jump("/tmp/jump_traj.txt");
+#endif
+            jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
           armed=false; return; }
         if(jphase==1){   // ★OCP 궤적 재생(push+flight): τ_ff + 관절 PD (없으면 구 스크립트 스냅 fallback)
           if(jump_N>0 && jump_k<jump_N){

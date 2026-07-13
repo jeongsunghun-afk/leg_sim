@@ -1,291 +1,42 @@
-// S1 — 점프 OCP C++ 포팅 (offline/jump/jump_ocp.py 대응). 실시간 OCP(§9)의 backbone.
-//   crocoddyl FDDP 다상: push(4접촉,vz↑) → flight(무접촉) → land(4접촉). 허리 lock=16 leg DOF.
-//   q_crouch·q_stand = MuJoCo IK 산물이라 /tmp/ocp_q0.txt(Python DUMP_Q0)에서 로드(IK 포팅은 후속).
-//   사용: jump_ocp [URDF] [VX]   VX=전방 이륙속도(기본 0.6). Python parity 검증용.
+// S1/S3-b — 점프 OCP C++ (jump_solver.hpp 사용). crocoddyl FDDP 다상: push→flight→land, 허리 lock=16 leg DOF.
+//   이 실행파일 = OCP solve 후 궤적을 배포 replay 포맷(/tmp/jump_traj.txt)으로 파일 저장(gen_jump.sh용).
+//   solve 로직은 jump_solver.hpp의 jump_solve()에 있고 trot_view live-solve와 공용.
+//   사용: jump_ocp [URDF] [VX] [maxit]   VX=전방 이륙속도(기본 0.6). JUMP_OUT=경로(기본 /tmp/jump_traj.txt).
 #include <iostream>
 #include <fstream>
-#include <vector>
-#include <cmath>
-#include <chrono>
 #include <cstdlib>
 #include <string>
-#include <Eigen/Dense>
-
-#include <mujoco/mujoco.h>
-#include <pinocchio/multibody/joint.hpp>
-#include <pinocchio/parsers/urdf.hpp>
-#include <pinocchio/algorithm/model.hpp>
-#include <pinocchio/algorithm/joint-configuration.hpp>
-#include <pinocchio/algorithm/kinematics.hpp>
-
-#include <crocoddyl/multibody/states/multibody.hpp>
-#include <crocoddyl/multibody/actuations/floating-base.hpp>
-#include <crocoddyl/multibody/contacts/contact-3d.hpp>
-#include <crocoddyl/multibody/contacts/multiple-contacts.hpp>
-#include <crocoddyl/multibody/actions/contact-fwddyn.hpp>
-#include <crocoddyl/multibody/residuals/state.hpp>
-#include <crocoddyl/core/residuals/control.hpp>
-#include <crocoddyl/core/costs/cost-sum.hpp>
-#include <crocoddyl/core/costs/residual.hpp>
-#include <crocoddyl/core/activations/weighted-quadratic.hpp>
-#include <crocoddyl/core/activations/quadratic-barrier.hpp>
-#include <crocoddyl/core/integrator/euler.hpp>
-#include <crocoddyl/core/optctrl/shooting.hpp>
-#include <crocoddyl/core/solvers/fddp.hpp>
-
-using Eigen::VectorXd; using Eigen::Vector3d; using Eigen::Vector2d;
-namespace cr = crocoddyl;
-using Model = cr::ActionModelAbstract;
-using SP = std::shared_ptr<Model>;
+#include <chrono>
+#include "jump_solver.hpp"
 
 int main(int argc, char** argv) {
-  const double G = 9.81;
   const std::string URDF = argc > 1 ? argv[1]
       : "/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf";
   const double VX = argc > 2 ? std::atof(argv[2]) : 0.6;
-
-  // ── 모델(허리 lock → reduced 16 leg DOF) ──
-  pinocchio::Model full;
-  pinocchio::urdf::buildModel(URDF, pinocchio::JointModelFreeFlyer(), full);
-  const pinocchio::JointIndex wj = full.getJointId("FB_waist_joint");
-  VectorXd q0full = pinocchio::neutral(full);
-  auto model = std::make_shared<pinocchio::Model>();
-  pinocchio::buildReducedModel(full, std::vector<pinocchio::JointIndex>{wj}, q0full, *model);
-  pinocchio::Data data(*model);
-  const int nq = model->nq, nv = model->nv;
-  const std::vector<std::string> FEET = {"FL_foot_contact_link", "FR_foot_contact_link",
-                                         "HL_foot_contact_link", "HR_foot_contact_link"};
-  std::vector<pinocchio::FrameIndex> fids;
-  for (auto& f : FEET) fids.push_back(model->getFrameId(f));
-
-  // ── q_crouch·q_stand: MuJoCo crouch IK(mj_crouch) → pinocchio 매핑(mj2pin). Python 원본 직역(self-contained) ──
+  const int MAXIT = argc > 3 ? std::atoi(argv[3]) : 200;
   const std::string MJCF = "/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
-  char merr[1000];
-  mjModel* mjm = mj_loadXML(MJCF.c_str(), nullptr, merr, 1000);
-  if (!mjm) { std::cerr << "mjcf 로드실패: " << merr << "\n"; return 2; }
-  mjData* mjd = mj_makeData(mjm);
-  const char* LEGS[4] = {"HL", "HR", "FL", "FR"};
-  const char* JN[4] = {"hip", "thigh", "calf", "foot"};
-  int mfgid[4]; double mfr[4];
-  for (int i = 0; i < 4; i++) {
-    mfgid[i] = mj_name2id(mjm, mjOBJ_GEOM, (std::string(LEGS[i]) + "_sphere").c_str());
-    mfr[i] = mjm->geom_size[3 * mfgid[i]];
+
+  auto t0 = std::chrono::steady_clock::now();
+  JumpTraj J = jump_solve(URDF, MJCF, VX, MAXIT, true);
+  double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+  if (J.N == 0) { std::cerr << "[jump_ocp] solve 실패\n"; return 2; }
+  std::cout << "[jump_ocp] solve+변환 " << ms << " ms · 수렴=" << J.ok
+            << " apex=" << J.apex << "m 착지tilt=" << J.tilt_land << "°\n";
+
+  // ── 배포 replay 포맷으로 파일 저장 ──
+  const char* outp = std::getenv("JUMP_OUT");
+  std::string OUT = outp ? outp : "/tmp/jump_traj.txt";
+  std::ofstream of(OUT);
+  of << J.N << " " << J.dt << "\n";
+  const int NJ = (int)J.q[0].size();
+  for (int k = 0; k < J.N; k++) {
+    of << J.ph[k];
+    for (int j = 0; j < NJ; j++) of << " " << J.q[k][j];
+    for (int j = 0; j < NJ; j++) of << " " << J.dq[k][j];
+    for (int j = 0; j < NJ; j++) of << " " << J.tau[k][j];
+    of << "\n";
   }
-  auto mj_crouch = [&](double base_z) -> VectorXd {
-    if (mjm->nkey > 0) mj_resetDataKeyframe(mjm, mjd, 0);
-    else { for (int i = 0; i < mjm->nq; i++) mjd->qpos[i] = 0; mjd->qpos[3] = 1; }
-    mjd->qpos[2] = 0.55; mj_forward(mjm, mjd);
-    double fxy[4][2];
-    for (int i = 0; i < 4; i++) { fxy[i][0] = mjd->geom_xpos[3 * mfgid[i]]; fxy[i][1] = mjd->geom_xpos[3 * mfgid[i] + 1]; }
-    mjd->qpos[2] = base_z;
-    std::vector<double> jp(3 * mjm->nv);
-    for (int it = 0; it < 300; it++) {
-      mj_kinematics(mjm, mjd);
-      for (int i = 0; i < 4; i++) {
-        Eigen::Vector3d e(fxy[i][0] - mjd->geom_xpos[3 * mfgid[i]],
-                          fxy[i][1] - mjd->geom_xpos[3 * mfgid[i] + 1],
-                          0.0 - (mjd->geom_xpos[3 * mfgid[i] + 2] - mfr[i]));
-        mjtNum pnt[3] = {mjd->geom_xpos[3 * mfgid[i]], mjd->geom_xpos[3 * mfgid[i] + 1], mjd->geom_xpos[3 * mfgid[i] + 2]};
-        mj_jac(mjm, mjd, jp.data(), nullptr, pnt, mjm->geom_bodyid[mfgid[i]]);
-        int cols[4], qa[4];
-        for (int k = 0; k < 4; k++) {
-          int jid = mj_name2id(mjm, mjOBJ_JOINT, (std::string(LEGS[i]) + "_" + JN[k] + "_joint").c_str());
-          cols[k] = mjm->jnt_dofadr[jid]; qa[k] = mjm->jnt_qposadr[jid];
-        }
-        Eigen::Matrix<double, 3, 4> Jl;
-        for (int r = 0; r < 3; r++) for (int k = 0; k < 4; k++) Jl(r, k) = jp[r * mjm->nv + cols[k]];
-        Eigen::Vector4d dq = 0.5 * Jl.transpose() *
-            (Jl * Jl.transpose() + 1e-4 * Eigen::Matrix3d::Identity()).ldlt().solve(e);
-        for (int k = 0; k < 4; k++) mjd->qpos[qa[k]] += dq[k];
-      }
-    }
-    mj_forward(mjm, mjd);
-    VectorXd out(mjm->nq); for (int i = 0; i < mjm->nq; i++) out[i] = mjd->qpos[i];
-    return out;
-  };
-  auto mj2pin = [&](const VectorXd& qpos) -> VectorXd {
-    VectorXd q = pinocchio::neutral(*model);
-    q[0] = qpos[0]; q[1] = qpos[1]; q[2] = qpos[2];
-    q[3] = qpos[4]; q[4] = qpos[5]; q[5] = qpos[6]; q[6] = qpos[3];  // wxyz→xyzw
-    for (pinocchio::JointIndex jid = 1; jid < (pinocchio::JointIndex)model->njoints; ++jid) {
-      int mjid = mj_name2id(mjm, mjOBJ_JOINT, model->names[jid].c_str());
-      if (mjid >= 0) q[model->idx_qs[jid]] = qpos[mjm->jnt_qposadr[mjid]];
-    }
-    return q;
-  };
-  VectorXd q_crouch = mj2pin(mj_crouch(0.30));
-  VectorXd q_stand  = mj2pin(mj_crouch(0.50));
-  // ★mjm/mjd는 아래 궤적 출력(pin→mj 매핑)까지 유지 → main 끝에서 삭제
-  VectorXd x0(nq + nv); x0 << q_crouch, VectorXd::Zero(nv);
-  std::cout << "[ocp] q0(C++ mj_crouch): crouch z=" << q_crouch[2] << " stand z=" << q_stand[2] << "\n";
-
-  // ── state·actuation ──
-  auto state = std::make_shared<cr::StateMultibody>(model);
-  auto actu  = std::make_shared<cr::ActuationModelFloatingBase>(state);
-  const std::size_t nu = actu->get_nu();
-
-  // 토크한계(다리 peak, foot 8:1=96). 매칭 관절만 순서대로(freeflyer 제외).
-  VectorXd tau_lim = VectorXd::Constant(nu, 100.0);
-  { std::size_t idx = 0;
-    for (pinocchio::JointIndex jid = 1; jid < (pinocchio::JointIndex)model->njoints; ++jid) {
-      const std::string& nm = model->names[jid];
-      double lim = -1;
-      if (nm.find("hip") != std::string::npos) lim = 84;
-      else if (nm.find("thigh") != std::string::npos) lim = 84;
-      else if (nm.find("calf") != std::string::npos) lim = 126;
-      else if (nm.find("foot") != std::string::npos) lim = 96;
-      if (lim > 0) for (int k = 0; k < model->joints[jid].nv(); ++k) { if (idx < nu) tau_lim[idx++] = lim; }
-    }
-  }
-
-  // ── 헬퍼: 접촉 모델 ──
-  auto make_contacts = [&](bool active) {
-    auto cm = std::make_shared<cr::ContactModelMultiple>(state, nu);
-    if (active)
-      for (size_t i = 0; i < FEET.size(); ++i) {
-        auto c = std::make_shared<cr::ContactModel3D>(state, fids[i], Vector3d::Zero(),
-                                                      pinocchio::LOCAL_WORLD_ALIGNED, nu, Vector2d(0., 50.));
-        cm->addContact(FEET[i], c);
-      }
-    return cm;
-  };
-  // ── 헬퍼: 비용 ──
-  auto costs = [&](bool has_push, double vz_tar, double vx_tar, const VectorXd& xreg_to,
-                   double wpush, bool term) {
-    auto cs = std::make_shared<cr::CostModelSum>(state, nu);
-    VectorXd xref(nq + nv); xref << xreg_to, VectorXd::Zero(nv);
-    VectorXd wx(2 * nv);            // base 자세 강조: [0,0,0,300,300,300, 1×(nv-6) | 1,1,1,10,10,10, 0.1×(nv-6)]
-    wx.setOnes();
-    wx.segment(0, 3).setZero(); wx.segment(3, 3).setConstant(300);
-    wx.segment(nv, 3).setConstant(1); wx.segment(nv + 3, 3).setConstant(10);
-    wx.segment(nv + 6, nv - 6).setConstant(0.1);
-    auto act_x = std::make_shared<cr::ActivationModelWeightedQuad>(wx.array().square().matrix());
-    auto res_x = std::make_shared<cr::ResidualModelState>(state, xref, nu);
-    cs->addCost("xreg", std::make_shared<cr::CostModelResidual>(state, act_x, res_x), term ? 2.0 : 0.2);
-    cs->addCost("ureg", std::make_shared<cr::CostModelResidual>(
-                            state, std::make_shared<cr::ResidualModelControl>(state, nu)), 1e-3);
-    auto bounds = cr::ActivationBounds(-tau_lim, tau_lim);
-    auto act_b = std::make_shared<cr::ActivationModelQuadraticBarrier>(bounds);
-    cs->addCost("taulim", std::make_shared<cr::CostModelResidual>(
-                              state, act_b, std::make_shared<cr::ResidualModelControl>(state, nu)), 1.0);
-    if (has_push) {
-      VectorXd vtar = VectorXd::Zero(nv); vtar[2] = vz_tar; vtar[0] = vx_tar;
-      VectorXd wv = VectorXd::Zero(2 * nv); wv[nv + 2] = 1.0; if (vx_tar != 0.0) wv[nv + 0] = 1.0;
-      VectorXd pref(nq + nv); pref << q_stand, vtar;
-      auto act_v = std::make_shared<cr::ActivationModelWeightedQuad>(wv.array().square().matrix());
-      auto res_v = std::make_shared<cr::ResidualModelState>(state, pref, nu);
-      cs->addCost("pushv", std::make_shared<cr::CostModelResidual>(state, act_v, res_v), wpush);
-    }
-    return cs;
-  };
-  auto run_model = [&](double dt, bool contact, bool has_push, double vz_tar, double vx_tar,
-                       const VectorXd& xreg_to, double wpush, bool term) -> SP {
-    auto dam = std::make_shared<cr::DifferentialActionModelContactFwdDynamics>(
-        state, actu, make_contacts(contact), costs(has_push, vz_tar, vx_tar, xreg_to, wpush, term), 0., true);
-    return std::make_shared<cr::IntegratedActionModelEuler>(dam, dt);
-  };
-
-  // ── 스케줄 ──
-  const double dt = 0.01;
-  const double vz_tk = std::sqrt(2 * G * 0.15);
-  const double T_fly = 2 * vz_tk / G, D = VX * T_fly;
-  const int n_push = 22, n_land = 40;
-  const int n_fly = std::max(6, (int)(2 * vz_tk / G / dt));
-  std::vector<SP> models;
-  for (int i = 0; i < n_push; i++) models.push_back(run_model(dt, true,  true,  vz_tk, VX, q_stand, 4.0, false));
-  for (int i = 0; i < n_fly;  i++) models.push_back(run_model(dt, false, false, 0, 0, q_crouch, 0.0, false));
-  for (int i = 0; i < n_land; i++) models.push_back(run_model(dt, true,  false, 0, 0, q_stand, 0.0, false));
-  SP terminal = run_model(dt, true, false, 0, 0, q_stand, 0.0, true);
-  std::cout << "[ocp] 스케줄 push=" << n_push << " flight=" << n_fly << " land=" << n_land
-            << " (T=" << (n_push + n_fly + n_land) * dt << "s)\n";
-
-  auto problem = std::make_shared<cr::ShootingProblem>(x0, models, terminal);
-  cr::SolverFDDP solver(problem);
-
-  // ── 점프형 warm-start ──
-  std::vector<VectorXd> xs; xs.reserve(models.size() + 1);
-  xs.push_back(x0);
-  for (int k = 0; k < n_push; k++) {
-    double a = (k + 1.0) / n_push;
-    VectorXd q = (1 - a) * q_crouch + a * q_stand;
-    VectorXd v = VectorXd::Zero(nv); v[2] = a * vz_tk; v[0] = a * VX;
-    VectorXd x(nq + nv); x << q, v; xs.push_back(x);
-  }
-  for (int k = 0; k < n_fly; k++) {
-    double tt = k * dt; VectorXd q = q_crouch;
-    q[2] = q_stand[2] + vz_tk * tt - 0.5 * G * tt * tt; q[0] = VX * tt;
-    VectorXd v = VectorXd::Zero(nv); v[2] = vz_tk - G * tt; v[0] = VX;
-    VectorXd x(nq + nv); x << q, v; xs.push_back(x);
-  }
-  VectorXd qsf = q_stand; qsf[0] = D;
-  VectorXd xsf(nq + nv); xsf << qsf, VectorXd::Zero(nv);
-  while ((int)xs.size() < (int)models.size() + 1) xs.push_back(xsf);
-  xs.resize(models.size() + 1);
-
-  std::vector<VectorXd> us(models.size(), VectorXd::Zero(nu));   // ★void quasiStatic=us 사전할당(T개) 규약
-  problem->quasiStatic(us, std::vector<VectorXd>(xs.begin(), xs.end() - 1));
-
-  std::cout << "[ocp] FDDP 풀이…\n";
-  const int MAXIT = argc > 3 ? std::atoi(argv[3]) : 200;   // ★S2용: RTI 이터수 제어(argv[3])
-  auto _t0 = std::chrono::steady_clock::now();
-  bool ok = solver.solve(xs, us, MAXIT, false, 1e-4);
-  double _ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _t0).count();
-  std::cout << "[ocp] solve 시간 " << _ms << " ms (maxit=" << MAXIT << ")\n";
-  const auto& X = solver.get_xs();
-  double z0 = X[0][2], zpk = z0, zend = X.back()[2];
-  for (auto& x : X) zpk = std::max(zpk, x[2]);
-  std::cout << "[ocp] 수렴=" << ok << " iter=" << solver.get_iter() << " cost=" << solver.get_cost() << "\n";
-  std::cout << "[ocp] base_z: 시작 " << z0 << " → peak " << zpk << " (apex " << (zpk - q_crouch[2])
-            << "m) → 끝 " << zend << "\n";
-  // 착지 tilt(quat→R[2,2])
-  auto tilt = [&](const VectorXd& x) {
-    Eigen::Quaterniond quat(x[6], x[3], x[4], x[5]);  // (w,x,y,z)
-    double r22 = quat.toRotationMatrix()(2, 2);
-    return std::acos(std::min(1.0, std::max(-1.0, r22))) * 180.0 / M_PI;
-  };
-  std::cout << "[ocp] tilt: peak중 " << tilt(X[n_push + n_fly / 2]) << "° 착지 " << tilt(X[n_push + n_fly]) << "°\n";
-
-  // ── ★S3-b: 궤적을 배포 replay 포맷(/tmp/jump_traj.txt)으로 출력 ──
-  //   pin 16-DOF(허리 lock) → MuJoCo 17-DOF(qpos 순서, 허리=0). load_jump 포맷: "N dt" 후 노드별 "ph q[17] dq[17] tau[17]".
-  {
-    const auto& U = solver.get_us();          // us[k] = nu(16) 관절토크
-    const int Nn = (int)models.size();         // push+flight+land 노드
-    const int NJ = mjm->nq - 7;                // MuJoCo 관절 수(17)
-    std::vector<int> qi2jid(NJ, -1);           // qpos(7+j) → MuJoCo joint id
-    for (int jid = 0; jid < mjm->njnt; jid++) {
-      int qa = mjm->jnt_qposadr[jid];
-      if (qa >= 7 && qa < 7 + NJ) qi2jid[qa - 7] = jid;
-    }
-    const char* outp = std::getenv("JUMP_OUT");
-    std::string OUT = outp ? outp : "/tmp/jump_traj.txt";
-    std::ofstream of(OUT);
-    of << Nn << " " << dt << "\n";
-    for (int k = 0; k < Nn; k++) {
-      int ph = (k < n_push) ? 0 : (k < n_push + n_fly ? 1 : 2);   // push=0 / flight=1 / land=2
-      const VectorXd& xk = X[k];               // [q(nq); v(nv)]
-      const VectorXd& uk = U[k];
-      VectorXd qj = VectorXd::Zero(NJ), dj = VectorXd::Zero(NJ), tj = VectorXd::Zero(NJ);
-      for (int j = 0; j < NJ; j++) {
-        int jid = qi2jid[j]; if (jid < 0) continue;
-        const char* nmc = mj_id2name(mjm, mjOBJ_JOINT, jid);
-        std::string nm = nmc ? nmc : "";
-        if (nm == "FB_waist_joint") continue;  // 허리 lock → 0 유지
-        pinocchio::JointIndex pj = model->getJointId(nm);
-        if (pj == 0 || pj >= (pinocchio::JointIndex)model->njoints) continue;
-        int qs = model->joints[pj].idx_q(), vs = model->joints[pj].idx_v();
-        qj[j] = xk[qs];
-        dj[j] = xk[nq + vs];
-        int ui = vs - 6; if (ui >= 0 && ui < (int)nu) tj[j] = uk[ui];
-      }
-      of << ph;
-      for (int j = 0; j < NJ; j++) of << " " << qj[j];
-      for (int j = 0; j < NJ; j++) of << " " << dj[j];
-      for (int j = 0; j < NJ; j++) of << " " << tj[j];
-      of << "\n";
-    }
-    of.close();
-    std::cout << "[ocp] 궤적 저장 → " << OUT << " (N=" << Nn << " 노드 · 17-DOF MuJoCo순 · 허리=0)\n";
-  }
-  mj_deleteData(mjd); mj_deleteModel(mjm);
-  return ok ? 0 : 1;
+  of.close();
+  std::cout << "[jump_ocp] 궤적 저장 → " << OUT << " (N=" << J.N << " 노드 · " << NJ << "-DOF MuJoCo순 · 허리=0)\n";
+  return J.ok ? 0 : 1;
 }

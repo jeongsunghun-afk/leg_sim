@@ -8,7 +8,8 @@
 | **[RUN.md](RUN.md)** | 실행 레시피(빌드·GUI·헤드리스·지형·회귀·데모) | md |
 | **[MAINTENANCE.md](MAINTENANCE.md)** | 품질 프로세스(하네스·스킬·파리티·문서동기화 규칙) | md |
 | **[params.html](params.html)** | 파라미터 값 **전체** + Python↔C++ 파리티 + 튕김조절 | 아티팩트 |
-| **[pipeline.html](pipeline.html)** | MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수 | 아티팩트 |
+| **[pipeline.html](pipeline.html)** | **A** — MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수(배포) | 아티팩트 |
+| **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
 | [RECORDING.md](RECORDING.md) | 화면 녹화 가이드(NVENC/OBS) | md |
 | [DEVLOG.md](DEVLOG.md) | 개발일지 + 참조 메모(연대기) | md |

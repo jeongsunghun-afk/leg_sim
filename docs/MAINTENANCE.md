@@ -54,4 +54,6 @@ cd simulation/quad/cpp
 
 ## 6. 원칙
 - **비물리 sim2real 수단 금지** — 상태절단·VEL_CLIP 등으로 한계를 숨기지 말 것. 물리적 수단(VEL_LIM·MOTOR_CURVE·기어·GEARBOX)만. 한계 못 지키면 정직히 드러낼 것.
-- 아티팩트 재배포: `docs/*.html` 편집 → `Artifact` 도구로 각 URL에 갱신(params/pipeline은 고정 URL).
+- 아티팩트 재배포: `docs/*.html` 편집 → `Artifact` 도구로 각 URL에 갱신. **★재배포 시 반드시 아래 고정 URL을 `url=`로 지정**(미지정 시 새 URL 발급되어 파편화·기존 링크 stale).
+  - `pipeline_bc.html` → https://claude.ai/code/artifact/0aedd22e-f124-43a4-908c-11fda4823d49
+  - `params.html` · `pipeline.html` · `sim2real_checklist_17dof.html` → (URL 미기록 — 다음 재배포 시 발급되는 URL을 여기 기록할 것)

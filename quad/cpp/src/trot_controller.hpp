@@ -9,7 +9,8 @@
 #include <sstream>
 #include <chrono>
 #include <cstdio>
-#ifdef HAVE_CROCODDYL
+#ifdef HAVE_JUMP_SOLVER
+#include <future>
 #include "jump_solver.hpp"   // ★S3-b Step2: 점프 crouch중 live-solve(trot_view만, crocoddyl 링크 시)
 #endif
 
@@ -93,11 +94,12 @@ struct TrotCtrl {
       for(int j=0;j<q.nu;j++) f>>qq[j]; for(int j=0;j<q.nu;j++) f>>dd[j]; for(int j=0;j<q.nu;j++) f>>tt[j];
       jump_q.push_back(qq); jump_dq.push_back(dd); jump_tau.push_back(tt); } }
   double JUMP_VX=0.6;   // ★점프 전방 이륙속도(0=수직 제자리). live-solve·gen_jump 공통 의미
-#ifdef HAVE_CROCODDYL
+#ifdef HAVE_JUMP_SOLVER
   std::string JUMP_URDF="/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf";
   std::string JUMP_MJCF="/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
   int JUMP_MAXIT=8;     // ★crouch중 live-solve FDDP 반복(S2: iter~8. crouch 예산 450ms 내)
   JumpSolver jsolver; bool jsolver_ready=false;   // ★셋업(모델·MJCF·IK) 캐시 → 점프마다 solve만
+  std::future<JumpTraj> jfut; bool jsolving=false, jlaunched=false;   // ★실기대비: solve를 별도 스레드로(1kHz 루프 안 멈춤). crouch 유지하며 백그라운드 계산→완료 시 인계
   void warmup_jump(){   // ★뷰어 시작 시 1회: 무거운 셋업 + 예열 solve → 첫 점프도 빠르게(stall=solve만)
     if(jsolver_ready) return;
     jsolver_ready=jsolver.init(JUMP_URDF,JUMP_MJCF);
@@ -158,6 +160,9 @@ struct TrotCtrl {
     Vs=Vys=Ws=Ss_steer=0; yaw_hold_set=false; mpc_t=-1.0;
     ht_cur=qhome_h=body_h=q.base_z0; for(int i=0;i<4;i++) have_prev[i]=false;
     haunch_ready=false; haunch_fold=0; jphase=-1;
+#ifdef HAVE_JUMP_SOLVER
+    jlaunched=false; jsolving=false;
+#endif
   }
 
   // 1틱 제어: d->ctrl 설정(mj_step은 호출자). q.d->time 기준.
@@ -195,20 +200,34 @@ struct TrotCtrl {
         double bz=d->qpos[2];
         int ncon=0; for(int ci=0;ci<d->ncon;ci++){ int g1=d->contact[ci].geom1,g2=d->contact[ci].geom2;
           for(int fi=0;fi<4;fi++) if(g1==q.fgid[fi]||g2==q.fgid[fi]){ ncon++; break; } }
-        if(jphase<0){ jphase=0; jt0=t; jzpk=bz; ht_cur=std::max(JUMP_CROUCH_Z,bz); qhome_h=-1; jump_k=-1; }
-        if(jphase==0){   // crouch: wbic_stance로 JUMP_CROUCH_Z 정착 → OCP 궤적 로드
+        if(jphase<0){ jphase=0; jt0=t; jzpk=bz; ht_cur=std::max(JUMP_CROUCH_Z,bz); qhome_h=-1; jump_k=-1;
+          from_sit=false; haunch_ready=false; haunch_fold=0; have_qref=false;   // ★눕기/앉기서 점프 진입=sit/ground 잔여상태 리셋(wbic_stance 정상 크라우치)
+#ifdef HAVE_JUMP_SOLVER
+          jlaunched=false; jsolving=false;   // 새 점프=미발사 상태
+#endif
+        }
+        if(jphase==0){   // crouch: wbic_stance로 JUMP_CROUCH_Z 정착 → OCP 궤적 확보 후 jphase1
           ht_cur+=tc_clip(JUMP_CROUCH_Z-ht_cur,-0.4*dt,0.4*dt);
           if(std::abs(ht_cur-qhome_h)>6e-3){ q.update_stand_qhome(ht_cur); qhome_h=ht_cur; }
           q.wbic_stance();
-          if(bz<=JUMP_CROUCH_Z+0.015 && std::abs(d->qvel[2])<0.06 && t-jt0>0.45){
-            // ★S3-b Step2: crouch 정착 → 신선 궤적 확보. crocoddyl 있으면 이 자리서 live-solve(~150ms 1회 stall,
-            //   crouch 예산 내) → 명령 vx로 거리 조정. 없거나 실패 시 /tmp/jump_traj.txt replay fallback.
-#ifdef HAVE_CROCODDYL
-            if(!solve_jump_live(JUMP_VX)){ if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); }
+          // ★takeoff 트리거=crouch 명령(ht_cur) 도달 기준(아래=눕기/앉기서 올라와도 트리거. 구 bz≤0.315는 아래서 정착0.32라 갇힘)
+          bool jsettled=(std::abs(ht_cur-JUMP_CROUCH_Z)<0.02 && std::abs(d->qvel[2])<0.08 && bz<=JUMP_CROUCH_Z+0.06 && t-jt0>0.45);
+#ifdef HAVE_JUMP_SOLVER
+          // ★S3-b: solve(aligator, ~331ms)를 별도 스레드로 → 1kHz 루프는 crouch 유지하며 안 멈춤(실기대비).
+          //   crouch 정착 시 백그라운드 launch → future ready면 신선 궤적 인계 후 jphase1. 셋업실패=파일 replay.
+          if(jsettled && !jlaunched){
+            if(jsolver_ready){ double vx=JUMP_VX; jfut=std::async(std::launch::async,[this,vx]{ return jsolver.solve(vx,JUMP_MAXIT,false); }); jsolving=true; jlaunched=true; }
+            else { if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; jlaunched=true; }
+          }
+          if(jsolving && jfut.wait_for(std::chrono::seconds(0))==std::future_status::ready){
+            JumpTraj J=jfut.get(); jsolving=false;
+            if(J.N>0){ jump_N=J.N; jump_dt=J.dt; jump_q=J.q; jump_dq=J.dq; jump_tau=J.tau; jump_ph=J.ph; }
+            else if(jump_N<=0) load_jump("/tmp/jump_traj.txt");
+            jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz;
+          }
 #else
-            if(jump_N<=0) load_jump("/tmp/jump_traj.txt");
+          if(jsettled){ if(jump_N<=0) load_jump("/tmp/jump_traj.txt"); jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
 #endif
-            jump_k=0; jump_kt=0; jphase=1; jt0=t; jzpk=bz; }
           armed=false; return; }
         if(jphase==1){   // ★OCP 궤적 재생(push+flight): τ_ff + 관절 PD (없으면 구 스크립트 스냅 fallback)
           if(jump_N>0 && jump_k<jump_N){

@@ -23,6 +23,9 @@ int main(int argc,char**argv){
   if(getenv("QHDBG")) for(int i=0;i<4;i++) std::printf("[qhome] %s hip=%.3f thigh=%.3f calf=%.3f foot=%.3f\n",
       q.legs[i], q.q_home[q.legqp[i][0]-7], q.q_home[q.legqp[i][1]-7], q.q_home[q.legqp[i][2]-7], q.leg_dof[i]==4?q.q_home[q.legqp[i][3]-7]:0.0);
   TrotCtrl ctrl(q);
+#ifdef HAVE_JUMP_SOLVER
+  if(!getenv("NO_JUMP_WARMUP")){ std::printf("[trot_sim] 점프 OCP 예열…\n"); std::fflush(stdout); ctrl.warmup_jump(); std::printf("[trot_sim] 예열 완료(live-solve)\n"); }
+#endif
   if(getenv("TROT_V")) ctrl.V=atof(getenv("TROT_V"));
   if(getenv("BODY_H")) ctrl.body_h=atof(getenv("BODY_H"));   // ★서기 높이 테스트(슬라이더 범위 검증)
   if(getenv("STANCE_KD")) q.STANCE_KD=atof(getenv("STANCE_KD"));   // ★stance 발 속도감쇠(slip↓)

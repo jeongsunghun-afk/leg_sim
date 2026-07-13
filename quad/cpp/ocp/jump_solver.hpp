@@ -1,8 +1,8 @@
 #pragma once
-// S3-b Step2+캐싱 — 점프 OCP. JumpSolver: 무거운 셋업(URDF·MJCF·모델·crouch IK)은 init() 1회,
-//   점프마다 solve()만(vx 바뀔 때만 crocoddyl 문제 재구축) → crouch중 stall ~464ms→~solve만.
-//   crocoddyl FDDP 다상: push(4접촉,vz↑) → flight(무접촉) → land(4접촉). 허리 lock=16 leg DOF.
-//   결과 궤적 = MuJoCo 17-DOF(qpos순, 허리=0) 배포 replay 포맷과 동일 인메모리.
+// S3-b — 점프 OCP (aligator/proxddp). B/C(simple_mpc)와 동일 라이브러리로 통일.
+//   JumpSolver: 무거운 셋업(URDF·MJCF·모델·crouch IK·접촉모델)은 init() 1회, 점프마다 solve()만.
+//   3상: push(4접촉,vz·vx↑) → flight(무접촉,ballistic) → land(4접촉,서기회귀). 허리 lock=16 leg DOF.
+//   ★토크한계 = 하드 BoxConstraint(AL 처리, 실기 실현성). 결과 궤적 = MuJoCo 17-DOF(qpos순, 허리=0).
 #include <string>
 #include <vector>
 #include <cmath>
@@ -16,63 +16,76 @@
 #include <pinocchio/algorithm/model.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/algorithm/contact-info.hpp>
+#include <pinocchio/algorithm/proximal.hpp>
 
-#include <crocoddyl/multibody/states/multibody.hpp>
-#include <crocoddyl/multibody/actuations/floating-base.hpp>
-#include <crocoddyl/multibody/contacts/contact-3d.hpp>
-#include <crocoddyl/multibody/contacts/multiple-contacts.hpp>
-#include <crocoddyl/multibody/actions/contact-fwddyn.hpp>
-#include <crocoddyl/multibody/residuals/state.hpp>
-#include <crocoddyl/core/residuals/control.hpp>
-#include <crocoddyl/core/costs/cost-sum.hpp>
-#include <crocoddyl/core/costs/residual.hpp>
-#include <crocoddyl/core/activations/weighted-quadratic.hpp>
-#include <crocoddyl/core/activations/quadratic-barrier.hpp>
-#include <crocoddyl/core/integrator/euler.hpp>
-#include <crocoddyl/core/optctrl/shooting.hpp>
-#include <crocoddyl/core/solvers/fddp.hpp>
+#include <aligator/modelling/spaces/multibody.hpp>
+#include <aligator/modelling/dynamics/multibody-constraint-fwd.hpp>
+#include <aligator/modelling/dynamics/integrator-euler.hpp>
+#include <aligator/modelling/costs/quad-state-cost.hpp>
+#include <aligator/modelling/costs/quad-residual-cost.hpp>
+#include <aligator/modelling/costs/sum-of-costs.hpp>
+#include <aligator/modelling/state-error.hpp>
+#include <aligator/modelling/constraints/box-constraint.hpp>
+#include <aligator/core/stage-model.hpp>
+#include <aligator/core/traj-opt-problem.hpp>
+#include <aligator/solvers/proxddp/solver-proxddp.hpp>
 
 // 점프 궤적 결과(MuJoCo 17-DOF qpos순, 허리=0). load_jump 포맷과 동일 필드.
 struct JumpTraj {
   int N = 0; double dt = 0.01; bool ok = false;
-  std::vector<Eigen::VectorXd> q, dq, tau;   // 각 원소 dim = 관절수(17)
-  std::vector<int> ph;                        // push=0 / flight=1 / land=2
+  std::vector<Eigen::VectorXd> q, dq, tau;
+  std::vector<int> ph;
   double apex = 0, tilt_land = 0;
 };
 
-// 점프 OCP 솔버 — 셋업 1회(init) + 점프별 solve. 뷰어 live-solve용(재사용).
 struct JumpSolver {
+  using MBSpace   = aligator::MultibodyPhaseSpace<double>;
+  using ConFwd    = aligator::dynamics::MultibodyConstraintFwdDynamicsTpl<double>;
+  using IntEuler  = aligator::dynamics::IntegratorEulerTpl<double>;
+  using CostStack = aligator::CostStackTpl<double>;
+  using QStateCost= aligator::QuadraticStateCostTpl<double>;
+  using QCtrlCost = aligator::QuadraticControlCostTpl<double>;
+  using QResCost  = aligator::QuadraticResidualCostTpl<double>;
+  using StateErr  = aligator::StateErrorResidualTpl<double>;
+  using CtrlErr   = aligator::ControlErrorResidualTpl<double>;
+  using BoxCstr   = aligator::BoxConstraintTpl<double>;
+  using StageModel= aligator::StageModelTpl<double>;
+  using TrajProblem = aligator::TrajOptProblemTpl<double>;
+  using Solver    = aligator::SolverProxDDPTpl<double>;
+  using ProxSettings = pinocchio::ProximalSettingsTpl<double>;
+  using RCModelVec = PINOCCHIO_ALIGNED_STD_VECTOR(pinocchio::RigidConstraintModel);
+
   // ── vx-독립 셋업(init 1회) ──
   std::shared_ptr<pinocchio::Model> model;
   mjModel* mjm = nullptr; mjData* mjd = nullptr;
-  std::vector<pinocchio::FrameIndex> fids;
   std::vector<std::string> FEET = {"FL_foot_contact_link", "FR_foot_contact_link",
                                    "HL_foot_contact_link", "HR_foot_contact_link"};
-  int nq = 0, nv = 0; std::size_t nu = 0; int NJ = 0;
-  Eigen::VectorXd q_crouch, q_stand, tau_lim;
-  std::shared_ptr<crocoddyl::StateMultibody> state;
-  std::shared_ptr<crocoddyl::ActuationModelFloatingBase> actu;
+  int nq = 0, nv = 0; std::size_t nu = 0; int NJ = 0, ndx = 0;
+  Eigen::VectorXd q_crouch, q_stand, umin, umax;
+  Eigen::MatrixXd actu_mat;
+  RCModelVec all_contacts;
+  ProxSettings prox = ProxSettings(1e-9, 1e-10, 10);
+  std::shared_ptr<MBSpace> space;
   std::vector<int> qi2jid;
   bool ready = false;
   // ── vx-의존 문제 캐시 ──
   double cached_vx = -1e9, dt = 0.01, vz_tk = 0;
   int n_push = 0, n_fly = 0, n_land = 0;
-  std::shared_ptr<crocoddyl::ShootingProblem> problem;
-  std::shared_ptr<crocoddyl::SolverFDDP> solver;
+  std::shared_ptr<TrajProblem> problem;
+  std::shared_ptr<Solver> solver;
 
   ~JumpSolver() { if (mjd) mj_deleteData(mjd); if (mjm) mj_deleteModel(mjm); }
 
-  // ── 무거운 셋업 1회: 모델 빌드 + MJCF 로드 + crouch/stand IK + state/actuation/tau_lim ──
   bool init(const std::string& URDF, const std::string& MJCF) {
-    using Eigen::VectorXd; namespace cr = crocoddyl;
+    using Eigen::VectorXd;
     pinocchio::Model full;
     pinocchio::urdf::buildModel(URDF, pinocchio::JointModelFreeFlyer(), full);
     const pinocchio::JointIndex wj = full.getJointId("FB_waist_joint");
     VectorXd q0full = pinocchio::neutral(full);
     model = std::make_shared<pinocchio::Model>();
     pinocchio::buildReducedModel(full, std::vector<pinocchio::JointIndex>{wj}, q0full, *model);
-    nq = model->nq; nv = model->nv;
-    fids.clear(); for (auto& f : FEET) fids.push_back(model->getFrameId(f));
+    nq = model->nq; nv = model->nv; ndx = 2 * nv;
 
     char merr[1000];
     mjm = mj_loadXML(MJCF.c_str(), nullptr, merr, 1000);
@@ -130,10 +143,13 @@ struct JumpSolver {
     q_crouch = mj2pin(mj_crouch(0.30));
     q_stand  = mj2pin(mj_crouch(0.50));
 
-    state = std::make_shared<cr::StateMultibody>(model);
-    actu  = std::make_shared<cr::ActuationModelFloatingBase>(state);
-    nu = actu->get_nu();
-    tau_lim = VectorXd::Constant(nu, 100.0);
+    space = std::make_shared<MBSpace>(*model);
+    nu = nv - 6;
+    // 액추에이션 행렬(nv×nu, 하단 nu행 단위=관절만 구동)
+    actu_mat = Eigen::MatrixXd::Zero(nv, nu);
+    actu_mat.bottomRows(nu).setIdentity();
+    // 토크한계 box(다리 peak, foot 8:1=96)
+    umin = Eigen::VectorXd::Constant(nu, -100.0); umax = Eigen::VectorXd::Constant(nu, 100.0);
     { std::size_t idx = 0;
       for (pinocchio::JointIndex jid = 1; jid < (pinocchio::JointIndex)model->njoints; ++jid) {
         const std::string& nm = model->names[jid];
@@ -142,8 +158,19 @@ struct JumpSolver {
         else if (nm.find("thigh") != std::string::npos) lim = 84;
         else if (nm.find("calf") != std::string::npos) lim = 126;
         else if (nm.find("foot") != std::string::npos) lim = 96;
-        if (lim > 0) for (int k = 0; k < model->joints[jid].nv(); ++k) { if (idx < nu) tau_lim[idx++] = lim; }
+        if (lim > 0) for (int k = 0; k < model->joints[jid].nv(); ++k) { if (idx < nu) { umin[idx] = -lim; umax[idx] = lim; idx++; } }
       }
+    }
+    // 접촉모델 4발(pinocchio RigidConstraintModel, CONTACT_3D)
+    all_contacts.clear();
+    for (auto& fn : FEET) {
+      pinocchio::FrameIndex fid = model->getFrameId(fn);
+      pinocchio::JointIndex jid = model->frames[fid].parentJoint;
+      pinocchio::SE3 pl1 = model->frames[fid].placement;
+      pinocchio::RigidConstraintModel cm(pinocchio::ContactType::CONTACT_3D, *model, jid, pl1,
+                                         0, pinocchio::SE3::Identity(), pinocchio::LOCAL);
+      cm.name = fn;   // Baumgarte corrector=기본값(짧은 점프엔 충분)
+      all_contacts.push_back(cm);
     }
     // pin→mj 변환 사전계산
     NJ = mjm->nq - 7;
@@ -156,80 +183,71 @@ struct JumpSolver {
     return true;
   }
 
-  // ── vx별 crocoddyl 문제 구축(vx 바뀔 때만 호출) ──
+  // 상태 정규화 가중행렬(ndx×ndx 대각). base 자세 강조.
+  Eigen::MatrixXd Wx_mat() const {
+    Eigen::VectorXd wx(ndx); wx.setOnes();
+    wx.segment(0, 3).setZero(); wx.segment(3, 3).setConstant(300);
+    wx.segment(nv, 3).setConstant(1); wx.segment(nv + 3, 3).setConstant(10);
+    wx.segment(nv + 6, nv - 6).setConstant(0.1);
+    return Eigen::MatrixXd(wx.array().square().matrix().asDiagonal());
+  }
+
+  StageModel make_stage(bool contact, bool has_push, double vz_tar, double vx_tar,
+                        const Eigen::VectorXd& xreg_to, double wpush) {
+    using Eigen::VectorXd; using Eigen::MatrixXd;
+    RCModelVec cms; if (contact) cms = all_contacts;   // flight=빈 벡터=free dynamics
+    ConFwd ode(*space, actu_mat, cms, prox);
+    IntEuler dyn(ode, dt);
+    CostStack cost(*space, nu);
+    VectorXd xref(nq + nv); xref << xreg_to, VectorXd::Zero(nv);
+    cost.addCost("xreg", QStateCost(*space, nu, xref, Wx_mat()), 0.2);
+    cost.addCost("ureg", QCtrlCost(*space, VectorXd::Zero(nu), MatrixXd::Identity(nu, nu)), 1e-3);
+    if (has_push) {
+      VectorXd vtar = VectorXd::Zero(nv); vtar[2] = vz_tar; vtar[0] = vx_tar;
+      VectorXd pref(nq + nv); pref << q_stand, vtar;
+      VectorXd wv = VectorXd::Zero(ndx); wv[nv + 2] = 1.0; if (vx_tar != 0.0) wv[nv + 0] = 1.0;
+      MatrixXd Wv(wv.array().square().matrix().asDiagonal());
+      cost.addCost("pushv", QResCost(*space, StateErr(*space, (int)nu, pref), Wv), wpush);
+    }
+    StageModel stm(cost, dyn);
+    stm.addConstraint(CtrlErr(ndx, Eigen::VectorXd::Zero(nu)), BoxCstr(umin, umax));  // ★하드 토크한계
+    return stm;
+  }
+
   void build_problem(double VX) {
-    using Eigen::VectorXd; using Eigen::Vector3d; using Eigen::Vector2d; namespace cr = crocoddyl;
-    using SP = std::shared_ptr<cr::ActionModelAbstract>;
+    using Eigen::VectorXd; using Eigen::MatrixXd;
     const double G = 9.81;
-    auto make_contacts = [&](bool active) {
-      auto cm = std::make_shared<cr::ContactModelMultiple>(state, nu);
-      if (active)
-        for (size_t i = 0; i < FEET.size(); ++i) {
-          auto c = std::make_shared<cr::ContactModel3D>(state, fids[i], Vector3d::Zero(),
-                                                        pinocchio::LOCAL_WORLD_ALIGNED, nu, Vector2d(0., 50.));
-          cm->addContact(FEET[i], c);
-        }
-      return cm;
-    };
-    auto costs = [&](bool has_push, double vz_tar, double vx_tar, const VectorXd& xreg_to, double wpush, bool term) {
-      auto cs = std::make_shared<cr::CostModelSum>(state, nu);
-      VectorXd xref(nq + nv); xref << xreg_to, VectorXd::Zero(nv);
-      VectorXd wx(2 * nv);
-      wx.setOnes();
-      wx.segment(0, 3).setZero(); wx.segment(3, 3).setConstant(300);
-      wx.segment(nv, 3).setConstant(1); wx.segment(nv + 3, 3).setConstant(10);
-      wx.segment(nv + 6, nv - 6).setConstant(0.1);
-      auto act_x = std::make_shared<cr::ActivationModelWeightedQuad>(wx.array().square().matrix());
-      auto res_x = std::make_shared<cr::ResidualModelState>(state, xref, nu);
-      cs->addCost("xreg", std::make_shared<cr::CostModelResidual>(state, act_x, res_x), term ? 2.0 : 0.2);
-      cs->addCost("ureg", std::make_shared<cr::CostModelResidual>(
-                              state, std::make_shared<cr::ResidualModelControl>(state, nu)), 1e-3);
-      auto bounds = cr::ActivationBounds(-tau_lim, tau_lim);
-      auto act_b = std::make_shared<cr::ActivationModelQuadraticBarrier>(bounds);
-      cs->addCost("taulim", std::make_shared<cr::CostModelResidual>(
-                                state, act_b, std::make_shared<cr::ResidualModelControl>(state, nu)), 1.0);
-      if (has_push) {
-        VectorXd vtar = VectorXd::Zero(nv); vtar[2] = vz_tar; vtar[0] = vx_tar;
-        VectorXd wv = VectorXd::Zero(2 * nv); wv[nv + 2] = 1.0; if (vx_tar != 0.0) wv[nv + 0] = 1.0;
-        VectorXd pref(nq + nv); pref << q_stand, vtar;
-        auto act_v = std::make_shared<cr::ActivationModelWeightedQuad>(wv.array().square().matrix());
-        auto res_v = std::make_shared<cr::ResidualModelState>(state, pref, nu);
-        cs->addCost("pushv", std::make_shared<cr::CostModelResidual>(state, act_v, res_v), wpush);
-      }
-      return cs;
-    };
-    auto run_model = [&](double dt_, bool contact, bool has_push, double vz_tar, double vx_tar,
-                         const VectorXd& xreg_to, double wpush, bool term) -> SP {
-      auto dam = std::make_shared<cr::DifferentialActionModelContactFwdDynamics>(
-          state, actu, make_contacts(contact), costs(has_push, vz_tar, vx_tar, xreg_to, wpush, term), 0., true);
-      return std::make_shared<cr::IntegratedActionModelEuler>(dam, dt_);
-    };
-    dt = 0.01;
-    vz_tk = std::sqrt(2 * G * 0.15);
+    dt = 0.01; vz_tk = std::sqrt(2 * G * 0.15);
     n_push = 22; n_land = 40;
     n_fly = std::max(6, (int)(2 * vz_tk / G / dt));
-    std::vector<SP> models;
-    for (int i = 0; i < n_push; i++) models.push_back(run_model(dt, true,  true,  vz_tk, VX, q_stand, 4.0, false));
-    for (int i = 0; i < n_fly;  i++) models.push_back(run_model(dt, false, false, 0, 0, q_crouch, 0.0, false));
-    for (int i = 0; i < n_land; i++) models.push_back(run_model(dt, true,  false, 0, 0, q_stand, 0.0, false));
-    SP terminal = run_model(dt, true, false, 0, 0, q_stand, 0.0, true);
+    std::vector<xyz::polymorphic<StageModel>> stages;
+    for (int i = 0; i < n_push; i++) stages.push_back(make_stage(true,  true,  vz_tk, VX, q_stand, 4.0));
+    for (int i = 0; i < n_fly;  i++) stages.push_back(make_stage(false, false, 0, 0, q_crouch, 0.0));
+    for (int i = 0; i < n_land; i++) stages.push_back(make_stage(true,  false, 0, 0, q_stand, 0.0));
+    // 종단 비용(state, coef 2.0)
+    CostStack term(*space, nu);
+    VectorXd xref(nq + nv); xref << q_stand, VectorXd::Zero(nv);
+    term.addCost("xreg", QStateCost(*space, nu, xref, Wx_mat()), 2.0);
     VectorXd x0(nq + nv); x0 << q_crouch, VectorXd::Zero(nv);
-    problem = std::make_shared<cr::ShootingProblem>(x0, models, terminal);
-    solver = std::make_shared<cr::SolverFDDP>(problem);
+    problem = std::make_shared<TrajProblem>(x0, stages, term);
+    solver = std::make_shared<Solver>(1e-4, 1e-2, 200, aligator::QUIET);   // (tol, mu_init, max_iters, verbose)
+    solver->rollout_type_ = aligator::RolloutType::LINEAR;
+    solver->force_initial_condition_ = true;
+    solver->setup(*problem);
     cached_vx = VX;
   }
 
-  // ── 점프 궤적 풀이(vx 바뀌면 재구축) ──
   JumpTraj solve(double VX, int MAXIT, bool verbose = false) {
-    using Eigen::VectorXd; namespace cr = crocoddyl;
+    using Eigen::VectorXd;
     const double G = 9.81;
     JumpTraj R;
     if (!ready) { std::cerr << "[JumpSolver] init 안됨\n"; return R; }
     if (VX != cached_vx || !problem) build_problem(VX);
+    solver->max_iters = MAXIT;
 
-    const int T = (int)problem->get_runningModels().size();
+    const int T = n_push + n_fly + n_land;
     const double D = VX * (2 * vz_tk / G);
-    // ── 점프형 ballistic warm-start ──
+    // ballistic warm-start
     std::vector<VectorXd> xs; xs.reserve(T + 1);
     VectorXd x0(nq + nv); x0 << q_crouch, VectorXd::Zero(nv);
     xs.push_back(x0);
@@ -250,18 +268,17 @@ struct JumpSolver {
     while ((int)xs.size() < T + 1) xs.push_back(xsf);
     xs.resize(T + 1);
     std::vector<VectorXd> us(T, VectorXd::Zero(nu));
-    problem->quasiStatic(us, std::vector<VectorXd>(xs.begin(), xs.end() - 1));
 
-    R.ok = solver->solve(xs, us, MAXIT, false, 1e-4);
-    const auto& X = solver->get_xs();
-    const auto& U = solver->get_us();
+    R.ok = solver->run(*problem, xs, us);
+    const auto& X = solver->results_.xs;
+    const auto& U = solver->results_.us;
     double zpk = X[0][2]; for (auto& x : X) zpk = std::max(zpk, x[2]);
     R.apex = zpk - q_crouch[2];
     if (verbose)
-      std::cout << "[JumpSolver] 수렴=" << R.ok << " iter=" << solver->get_iter()
-                << " cost=" << solver->get_cost() << " apex=" << R.apex << "m\n";
+      std::cout << "[JumpSolver] 수렴=" << R.ok << " iter=" << solver->results_.num_iters
+                << " cost=" << solver->results_.traj_cost_ << " apex=" << R.apex << "m\n";
 
-    // ── pin 16-DOF → MuJoCo 17-DOF(qpos순, 허리=0) 변환 ──
+    // pin 16-DOF → MuJoCo 17-DOF(qpos순, 허리=0)
     R.N = T; R.dt = dt;
     R.q.clear(); R.dq.clear(); R.tau.clear(); R.ph.clear();
     for (int k = 0; k < T; k++) {

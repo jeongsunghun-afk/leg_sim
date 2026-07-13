@@ -83,7 +83,7 @@ int main(int argc,char**argv){
   q.crouch_home(); q.build_qhome_lut(); q.setup_mpc();   // ★q_home LUT 시작시 빌드(RT-safe: 높이변경 IK를 루프서 제거)
   TrotCtrl ctrl(q); gC=&ctrl;
   ctrl.load_jump("/tmp/jump_traj.txt");   // ★점프 궤적 시작 시 preload(fallback용). 없으면 jump_N=0
-#ifdef HAVE_CROCODDYL
+#ifdef HAVE_JUMP_SOLVER
   if(!getenv("NO_JUMP_WARMUP")){ std::printf("[trot_view] 점프 OCP 예열(모델·IK 캐시)…\n"); std::fflush(stdout); ctrl.warmup_jump(); std::printf("[trot_view] 예열 완료 — 점프 live-solve 활성\n"); }
 #endif
   ctrl.mode = getenv("MODE") ? getenv("MODE") : "stand_up";   // ★뷰어는 Ready(서기)로 시작 — GUI 초기값(stand_up)과 일치(시작 보행→멈춤 방지). 헤드리스 trot_sim은 기본 move 유지

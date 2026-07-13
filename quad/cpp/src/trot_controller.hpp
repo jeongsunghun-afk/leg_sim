@@ -73,6 +73,81 @@ struct TrotCtrl {
       getup_q.push_back(qv); getup_dqv.push_back(dv); }
     std::printf("[getup] 궤적 로드 N=%d dt=%.3f\n", getup_N, getup_dt);
   }
+  std::vector<Vector3d> getup_com, getup_comv, getup_acom;   // ★WBIC-추종용 CoM(기립도 점프처럼 폐루프 추적)
+  mjData* gu_d=nullptr;
+  static void gu_slerp(const double a[4], const double b[4], double t, double out[4]){  // wxyz
+    double bb[4]={b[0],b[1],b[2],b[3]}, dot=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3];
+    if(dot<0){ for(int i=0;i<4;i++) bb[i]=-bb[i]; dot=-dot; }
+    if(dot>0.9995){ for(int i=0;i<4;i++) out[i]=a[i]+t*(bb[i]-a[i]); }
+    else{ double th=std::acos(std::max(-1.0,std::min(1.0,dot))), s=std::sin(th), w0=std::sin((1-t)*th)/s, w1=std::sin(t*th)/s;
+      for(int i=0;i<4;i++) out[i]=w0*a[i]+w1*bb[i]; }
+    double n=std::sqrt(out[0]*out[0]+out[1]*out[1]+out[2]*out[2]+out[3]*out[3]); for(int i=0;i<4;i++) out[i]/=n;
+  }
+  // ★C++ 자립 기립 궤적 생성(getup_kinematic.py 포팅, 순수 MuJoCo IK). 현재 sit qpos=q_sit, base_z0+q_home=stand.
+  //   스케줄 G(gather:전진+낮춤+앞숙임)→A1(HL착지)→A2(HR착지)→B(상승·레벨). CoM ref도 생성(wbic_jump 추적용).
+  void gen_getup(){
+    mjModel* m=q.m; if(!gu_d) gu_d=mj_makeData(m);
+    int nqm=m->nq, num=q.nu;
+    auto fpos=[&](int L)->Vector3d{ int gg=q.fgid[L]; return Vector3d(gu_d->geom_xpos[3*gg],gu_d->geom_xpos[3*gg+1],gu_d->geom_xpos[3*gg+2]-q.fr[L]); };
+    auto ikfeet=[&](Vector3d* tg){
+      for(int it=0;it<200;it++){ mj_kinematics(m,gu_d);
+        for(int L=0;L<4;L++){ Vector3d e=tg[L]-fpos(L); if(e.norm()<1e-4) continue;
+          int gg=q.fgid[L]; std::vector<double> jb(3*m->nv); mjtNum p[3]={gu_d->geom_xpos[3*gg],gu_d->geom_xpos[3*gg+1],gu_d->geom_xpos[3*gg+2]};
+          mj_jac(m,gu_d,jb.data(),nullptr,p,m->geom_bodyid[gg]);
+          Matrix3d Jl; for(int r=0;r<3;r++)for(int c=0;c<3;c++) Jl(r,c)=jb[r*m->nv+q.legqv[L][c]];
+          Vector3d dqi=0.5*Jl.transpose()*(Jl*Jl.transpose()+1e-4*Matrix3d::Identity()).ldlt().solve(e);
+          for(int c=0;c<3;c++) gu_d->qpos[q.legqp[L][c]]+=dqi[c]; } }
+    };
+    VectorXd qsf(nqm); for(int i=0;i<nqm;i++) qsf[i]=q.d->qpos[i];   // 현재 sit qpos
+    // ★서기 관절 config(getup 시점 q.q_home은 sit이라 별도 계산): update_stand_qhome(LUT), 후 복원
+    VectorXd qhome_save=q.q_home; Vector3d comref_save=q.com_ref;
+    q.update_stand_qhome(q.base_z0); VectorXd qstand_j=q.q_home;
+    q.q_home=qhome_save; q.com_ref=comref_save;
+    for(int i=0;i<nqm;i++) gu_d->qpos[i]=qsf[i];
+    gu_d->qpos[2]=q.base_z0; gu_d->qpos[3]=1; gu_d->qpos[4]=0; gu_d->qpos[5]=0; gu_d->qpos[6]=0;
+    for(int j=0;j<num;j++) gu_d->qpos[7+j]=qstand_j[j];
+    mj_forward(m,gu_d);
+    Vector3d foot_stand[4]; for(int L=0;L<4;L++) foot_stand[L]=fpos(L);
+    double base_stand_x=gu_d->qpos[0];
+    for(int i=0;i<nqm;i++) gu_d->qpos[i]=qsf[i]; mj_forward(m,gu_d);
+    Vector3d foot_sit[4]; for(int L=0;L<4;L++) foot_sit[L]=fpos(L);
+    Vector3d base_sit(gu_d->qpos[0],gu_d->qpos[1],gu_d->qpos[2]);
+    double ank_sit[4],ank_st[4]; for(int L=0;L<4;L++){ ank_sit[L]=qsf[q.legqp[L][3]]; ank_st[L]=qstand_j[q.legqp[L][3]-7]; }
+    int NG=45,NA1=35,NA2=35,NB=90,N=NG+NA1+NA2+NB; getup_dt=0.01;
+    double GX=base_stand_x, GZ=0.20, LEAN=0.10;
+    double qsit_q[4]={qsf[3],qsf[4],qsf[5],qsf[6]}, q_lean[4]={std::cos(LEAN/2),0,std::sin(LEAN/2),0}, q_id[4]={1,0,0,0};
+    auto lp=[&](double a,double b,double t){ return a+(b-a)*std::max(0.0,std::min(1.0,t)); };
+    auto bprof=[&](int k,double& bx,double& bz,double* oq){
+      if(k<NG){ double t=(k+1.0)/NG; bx=lp(base_sit[0],GX,t); bz=lp(base_sit[2],GZ,t); gu_slerp(qsit_q,q_lean,t,oq); }
+      else if(k<NG+NA1+NA2){ bx=GX; bz=GZ; for(int i=0;i<4;i++) oq[i]=q_lean[i]; }
+      else{ double t=(k-NG-NA1-NA2)/(double)NB; bx=lp(GX,base_stand_x,t); bz=lp(GZ,q.base_z0,t); gu_slerp(q_lean,q_id,t,oq); } };
+    std::vector<VectorXd> tq;
+    getup_ph.clear();
+    for(int k=0;k<N;k++){
+      int ph=(k<NG+NA1)?0:((k<NG+NA1+NA2)?1:2); double bx,bz,oq[4]; bprof(k,bx,bz,oq);
+      gu_d->qpos[0]=bx; gu_d->qpos[1]=0; gu_d->qpos[2]=bz; for(int i=0;i<4;i++) gu_d->qpos[3+i]=oq[i];
+      Vector3d tg[4];
+      for(int L=0;L<4;L++){
+        if(L>=2) tg[L]=foot_stand[L];
+        else if(L==0){ double s=(k<NG)?0.0:((k<NG+NA1)?std::min(1.0,(k-NG)/(double)NA1):1.0); tg[L]=foot_sit[L]+(foot_stand[L]-foot_sit[L])*s; }
+        else { double s=(k<NG+NA1)?0.0:((k<NG+NA1+NA2)?std::min(1.0,(k-NG-NA1)/(double)NA2):1.0); tg[L]=foot_sit[L]+(foot_stand[L]-foot_sit[L])*s; } }
+      for(int L=0;L<4;L++) gu_d->qpos[q.legqp[L][3]]=lp(ank_sit[L],ank_st[L],(k+1.0)/N);
+      ikfeet(tg);
+      VectorXd qj(num); for(int j=0;j<num;j++) qj[j]=gu_d->qpos[7+j]; tq.push_back(qj); getup_ph.push_back(ph);
+    }
+    getup_q=tq; getup_dqv.assign(N,VectorXd::Zero(num));
+    for(int k=0;k<N;k++){ int kp=std::min(k+1,N-1),km=std::max(k-1,0); double hh=(kp-km)*getup_dt; if(hh>0) getup_dqv[k]=(tq[kp]-tq[km])/hh; }
+    getup_com.assign(N,Vector3d::Zero());
+    for(int k=0;k<N;k++){ double bx,bz,oq[4]; bprof(k,bx,bz,oq);
+      gu_d->qpos[0]=bx; gu_d->qpos[1]=0; gu_d->qpos[2]=bz; for(int i=0;i<4;i++) gu_d->qpos[3+i]=oq[i];
+      for(int j=0;j<num;j++) gu_d->qpos[7+j]=tq[k][j]; for(int i=0;i<m->nv;i++) gu_d->qvel[i]=0; mj_forward(m,gu_d);
+      getup_com[k]=Vector3d(gu_d->subtree_com[0],gu_d->subtree_com[1],gu_d->subtree_com[2]); }
+    getup_comv.assign(N,Vector3d::Zero()); getup_acom.assign(N,Vector3d::Zero());
+    for(int k=0;k<N;k++){ int kp=std::min(k+1,N-1),km=std::max(k-1,0); double hh=(kp-km)*getup_dt; if(hh>0) getup_comv[k]=(getup_com[kp]-getup_com[km])/hh; }
+    for(int k=0;k<N;k++){ int kp=std::min(k+1,N-1),km=std::max(k-1,0); double hh=(kp-km)*getup_dt; if(hh>0) getup_acom[k]=(getup_comv[kp]-getup_comv[km])/hh; }
+    getup_N=N;
+    std::printf("[getup] C++ 생성 N=%d (sit z=%.3f→stand z=%.3f, CoM x %.3f→%.3f)\n", N, base_sit[2], q.base_z0, getup_com[0][0], getup_com.back()[0]);
+  }
   // ★앉기→서기 스크립트 기립(앞다리 굽혀 앞발 들어 폴볼트 차단 + 뒷다리 박차 extend). 앉기에서만 발동.
   bool was_sit=false; double sit_getup_t0=-1;
   bool sit_init=false, sit_from_below=false;   // ★sit 진입 방향 1회 latch: 눕기 등 아래서 진입 시 0.32 crouch 오버슈트 없이 현재 자세서 곧바로 haunch로 morph
@@ -326,7 +401,7 @@ struct TrotCtrl {
       }
       // ★개-앉기 기립: offline gather 궤적(/tmp/getup_traj.txt) 추종. phaseA(gather+뒷발착지)=PD로 CoM 전진 → phaseB=정상 wbic 상승 인계.
       if(mode=="stand_up" && haunch_ready){
-        if(getup_k<0){ load_getup("/tmp/getup_traj.txt"); getup_k=0; getup_kt=0; }
+        if(getup_k<0){ gen_getup(); getup_k=0; getup_kt=0; }   // ★C++ 자립 생성(구 load_getup Python파일 의존 제거). 현재 sit qpos서 gather 궤적 생성
         if(getup_N>0 && getup_ph[getup_k]<2){                                // phaseA: 궤적 프레임 PD추종(중력보상 + 속도 피드포워드)
           for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_TRAJ_KP*(getup_q[getup_k][j]-d->qpos[7+j])+GETUP_TRAJ_KD*(getup_dqv[getup_k][j]-d->qvel[6+j]);
             d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }

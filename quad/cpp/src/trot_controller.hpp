@@ -1,6 +1,7 @@
 // TrotCtrl — mode_trot 핵심경로 1틱 제어(설정/스윙/MPC/WBIC → d->ctrl). trot_sim(헤드리스)·trot_view(뷰어) 공유.
 #pragma once
 #include "quad_control.hpp"
+#include "terrain_map.hpp"   // ★P1: footScore nudge용 로컬 elevation map
 #include <vector>
 #include <array>
 #include <map>
@@ -51,6 +52,9 @@ struct TrotCtrl {
   bool perceptive=true;             // ★perceptive: 스윙 착지 XY 아래 지형높이를 mj_ray로 샘플→착지 z를 지형에 맞춤(계단/험지). off=blind(평지 가정). PERCEPTIVE=0으로 끔
   double PCV_CLR=0.04;              // ★perceptive 상향 스텝 시 추가 스윙 클리어런스(up-step 높이×비율만큼 apex↑, 라이저 헛디딤 방지)
   double com_h0=0.52;               // ★평지 위 CoM 명목높이(arming서 캡처). perceptive 몸통높이 목표=지형높이+com_h0
+  // ★P1 footScore nudge: Raibert 발타깃(pe_xy)을 반경내 최고 footScore 셀로 당김. 스윙시작 1회 계산·홀드(채터 방지). env FOOT_NUDGE/GUI.
+  MjRayTerrainMap tmap; bool foot_nudge=getenv("FOOT_NUDGE")!=nullptr; double nudge_r=0.12;
+  Vector2d nudge_off[4]={Vector2d::Zero(),Vector2d::Zero(),Vector2d::Zero(),Vector2d::Zero()};   // ★오프셋(절대타깃 동결 아님)=Raibert 연속 밸런스 피드백 보존
   double _bterr_s=0.0;              // ★슬루된 지형높이(4hip평균을 부드럽게) → MPC x_ref[5]·WBIC z-task 양쪽 일관 공급
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
   std::string mode="move";
@@ -251,6 +255,7 @@ struct TrotCtrl {
   void control(){
     mjModel*m=q.m; mjData*d=q.d; int nv=q.nv; double dt=m->opt.timestep;
     double t=d->time; int nu=q.nu;
+    if(foot_nudge){ static long _mk=0; if(_mk++ % 50 == 0){ tmap.foot_r=q.fr[0]; tmap.update(m,d,d->qpos[0],d->qpos[1],(uint64_t)(t*1e9)); } }  // ★맵 rate(~20Hz) 갱신, 1kHz 밖
     // ── 모드 dispatch(배포용): move 외 = 서기/눕기/getup/off ──
     if(mode!="sit") q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt);   // ★nose-up 부드럽게 해제(리셋 아닌 슬루=언폴드 중 뒷다리 펴짐과 함께 nose-up 풀림)
     if(mode!="sit") sit_init=false;                                          // ★sit 이탈=진입방향 latch 리셋(다음 진입서 재판정)
@@ -519,6 +524,12 @@ struct TrotCtrl {
       Vector2d tw=Weff*gp_Tst*Vector2d(-r_xy[1],r_xy[0]);          // ★선회 접선 발배치(yaw) — 없으면 회전시 표류·붕괴
       bool frontleg=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");  // ★앞다리=앞몸통방향(허리반영)
       Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw;
+      if(foot_nudge){   // ★footScore nudge: 스윙시작(!have_prev) 1회 오프셋 계산·홀드. 오프셋은 Raibert 연속타깃에 더함=밸런스 피드백 보존(절대동결 금지)
+        if(!have_prev[i]){ double bx,by;
+          if(tmap.bestFoot(pe_xy[0],pe_xy[1],nudge_r,bx,by)){ Vector2d off(bx-pe_xy[0],by-pe_xy[1]);
+            double n=off.norm(); if(n>nudge_r) off*=nudge_r/n; nudge_off[i]=off; }   // 반경 캡
+          else nudge_off[i]=Vector2d::Zero(); }                  // 반경내 유효셀 없음(큰 갭)=nudge 안 함
+        pe_xy+=nudge_off[i]; }
       double land_z=gz[i];                                          // ★기본=평지 참조(foot_gz0)
       if(perceptive){ double tz=q.terrain_z(pe_xy[0],pe_xy[1]); if(tz>-50.0) land_z=gz[i]+tz; }  // ★착지 z=평지gz+지형높이(Python 동일). 평지 tz=0=무변화
       Vector3d p_end(pe_xy[0],pe_xy[1],land_z);

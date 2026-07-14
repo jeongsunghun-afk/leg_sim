@@ -55,6 +55,7 @@ def main():
     dt0 = m.opt.timestep
     SLAT = int(round(float(os.environ.get('SENSE_LAT_MS', '0')) / 1000 / dt0))  # 센서→제어 지연[step]
     ALAT = int(round(float(os.environ.get('ACT_LAT_MS', '0')) / 1000 / dt0))    # 제어→구동 지연[step]
+    LCOMP = int(round(float(os.environ.get('LAT_COMP_MS', '0')) / 1000 / dt0))  # ★지연보상 예측[step]
     sense_buf = deque(); act_buf = deque()
     iface = make_interface(args.backend, c)
     z_home = float(c.com_ref[2]); body_h = z_home
@@ -71,6 +72,7 @@ def main():
                          use_accel=os.environ.get('EST_ACCEL', '0') == '1',
                          contact_height=os.environ.get('EST_NOCH') is None)  # 접촉높이(기본 on)
     est.reset(d.qpos[0:3])
+    dpred = mujoco.MjData(m) if (LCOMP > 0 and os.environ.get('LAT_COMP_KIN') is None) else None  # 롤아웃 scratch
     est_perr = est_verr = 0.0
     def est_reset():
         est.reset(d.qpos[0:3])
@@ -116,15 +118,32 @@ def main():
             est_verr = float(np.linalg.norm(est.v - d.qvel[0:3]))   # GT 대비 속도오차[m/s]
         if off:
             cmd_tau = np.zeros(m.nu)                    # 전원 off = limp
-        elif args.est_ctrl and args.backend == 'sim':  # ⑤' 폐루프 검증: 추정 base로 제어, 물리는 GT
-            gp, gv = d.qpos[0:3].copy(), d.qvel[0:3].copy()
+        elif args.est_ctrl and args.backend == 'sim':  # ⑤' 폐루프 검증: 지연·추정 제어상태로 제어, 물리는 GT
             _pf = os.environ.get('EST_PERFECT')
-            ep = (gp.copy() if (_pf or os.environ.get('EST_POSGT')) else est.p.copy())  # 진단: 위치 GT
-            ev = gv if (_pf or os.environ.get('EST_VELGT')) else est.v                  # 진단: 속도 GT
-            if os.environ.get('EST_ZGT'): ep = ep.copy(); ep[2] = gp[2]                 # 진단: z(높이)만 GT
-            d.qpos[0:3] = ep; d.qvel[0:3] = ev; mujoco.mj_forward(m, d)
-            c.control(dt)                              # tau ← 추정 base(드리프트 포함)
-            d.qpos[0:3] = gp; d.qvel[0:3] = gv; mujoco.mj_forward(m, d)   # 물리는 GT 복원
+            # 컨트롤러가 보는 '제어 상태'(실로봇 동일): base=추정기(지연센서) · attitude/gyro·관절=지연센서 st
+            cbp = est.p.copy(); cbv = est.v.copy()
+            cq, cdq = st.q.copy(), st.dq.copy(); cquat, cgyro = st.quat.copy(), st.gyro.copy()
+            if _pf or os.environ.get('EST_POSGT'): cbp = d.qpos[0:3].copy()   # 진단
+            if _pf or os.environ.get('EST_VELGT'): cbv = d.qvel[0:3].copy()
+            if os.environ.get('EST_ZGT'): cbp[2] = d.qpos[2]
+            if LCOMP > 0 and dpred is not None:        # ★지연보상2: 모델 롤아웃(동역학+in-flight 토크로 전진)
+                dpred.qpos[0:3] = cbp; dpred.qpos[3:7] = cquat; dpred.qpos[7:] = cq
+                dpred.qvel[0:3] = cbv; dpred.qvel[3:6] = cgyro; dpred.qvel[6:] = cdq
+                tau_hold = act_buf[-1] if act_buf else np.zeros(m.nu)   # in-flight(마지막 명령) 유지
+                for _ in range(LCOMP):
+                    dpred.ctrl[:] = tau_hold; mujoco.mj_step(m, dpred)
+                cbp = dpred.qpos[0:3].copy(); cquat = dpred.qpos[3:7].copy(); cq = dpred.qpos[7:].copy()
+                cbv = dpred.qvel[0:3].copy(); cgyro = dpred.qvel[3:6].copy(); cdq = dpred.qvel[6:].copy()
+            elif LCOMP > 0:                            # ★지연보상1: 속도 외삽(kinematic, dpred 없을때)
+                tt = LCOMP * dt0
+                cbp = cbp + cbv * tt; cq = cq + cdq * tt
+                mujoco.mju_quatIntegrate(cquat, cgyro, tt)
+            sqp, sqv = d.qpos.copy(), d.qvel.copy()    # GT(물리) 저장
+            d.qpos[0:3] = cbp; d.qpos[3:7] = cquat; d.qpos[7:] = cq
+            d.qvel[0:3] = cbv; d.qvel[3:6] = cgyro; d.qvel[6:] = cdq
+            mujoco.mj_forward(m, d)
+            c.control(dt)                              # tau ← (예측된) 제어상태
+            d.qpos[:] = sqp; d.qvel[:] = sqv; mujoco.mj_forward(m, d)   # 물리는 GT 복원
             cmd_tau = d.ctrl.copy()
         else:
             c.control(dt)                              # ⑤ WBIC → d.ctrl (tau)

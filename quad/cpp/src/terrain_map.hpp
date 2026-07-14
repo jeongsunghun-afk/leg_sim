@@ -57,7 +57,9 @@ struct MjRayTerrainMap {
   // ★점접촉(sphere 발) 주의: 02_Leg 발=점접촉(발바닥 패치 없음). footScore=패치 밀착이 아니라 "점 지지 안전".
   //   → margin = sphere 반경(foot_r) + 발배치 불확실성(σ_place). σ_place는 sim2real 특성화(latency/노이즈 발끝오차, RPET §6)서 근거.
   //   가중: edgeSDF 지배(굴러떨어짐/갭 회피), slope 보조(미끄러짐), roughness 저비중(패치 밀착 무의미, 뾰족돌기/구덩이만).
-  double foot_r=0.05, placement_margin=0.05;     // margin = foot_r + placement_margin
+  double foot_r=0.05, placement_margin=0.03;     // margin = foot_r + placement_margin.
+  // ★placement_margin=σ_place 근거화(§6, 2026-07-14): 배포노이즈+지연5ms EST_CTRL서 발배치오차 측정
+  //   = base수평위치오차(~0.7cm) + vel오차×T_sw(~0.9cm) + 자세오차×reach(~0.3cm) ≈ 1.3cm RMS → 2σ≈0.03m.
   double w1=0.4, w2=0.2, w3=0.4;                 // (slope, roughness, edge) — 점접촉이라 edge/ slope 위주
   inline double margin() const { return foot_r + placement_margin; }
   int NX=0, NY=0;

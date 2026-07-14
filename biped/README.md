@@ -21,8 +21,13 @@ cd cpp && ./build/biped_sim ../biped_from_quad.mjcf 0.15 15   # 헤드리스 폐
 ./record_biped.sh               # GUI + OBS
 ```
 **GUI**(teleop_gui_biped): **좌스틱=전후(vx)/측방(vy) · 우스틱=선회(wz)** (우클릭 고정) ·
-vx/vy/wz·몸통높이 슬라이더 · **Stand / Walk / RESET**. env=`proxddp`(런처 자동).
+vx/vy/wz·몸통높이 슬라이더 · 버튼 **RESET / Off 전원 / Stand 서기 / Walk 이동**(17-DOF 순서·테마).
+**Off 전원**=모터 토크차단(limp, 실HW=motor disable)·재투입=Stand. env=`proxddp`(런처 자동).
 Python·C++ 어느 컨트롤러든 **같은 GUI·JSON 채널**(/tmp/biped_cmd.json)로 조종.
+
+## 실배포 (실모터 HW) — `deploy/`
+컨트롤러는 순수 토크 출력 → 플랜트만 교체(`RobotInterface`: sim↔실모터). `python deploy/biped_deploy.py --backend sim|hw`.
+`deploy/robot_interface.py`(LowCmd/LowState SDK 규약)·`biped_deploy.py`(배포 루프)·`README.md`(A~E 체크리스트). 상세=`deploy/README.md`.
 
 ## 파일 (활성)
 **Python**

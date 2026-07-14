@@ -136,6 +136,14 @@ with dpg.theme() as _dark:
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (66, 74, 104))
         dpg.add_theme_color(dpg.mvThemeCol_Text, (220, 224, 235))
         dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+with dpg.theme() as _stop:                 # RESET·Off 전원 = 빨강(17-DOF 규약)
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (170, 45, 45))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (210, 65, 65))
+with dpg.theme() as _walk:                  # Walk 이동 = 초록
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 120, 70))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 160, 95))
 
 with dpg.window(tag='main'):
     dpg.add_text('biped teleop  —  MPC + WBIC (event-DCM)', color=(150, 200, 255))
@@ -157,10 +165,17 @@ with dpg.window(tag='main'):
             dpg.add_text('몸통 높이 [m]')
             dpg.add_slider_float(tag='h_sl', default_value=H_DEF, min_value=H_MIN, max_value=H_MAX, width=180, callback=on_height)
     dpg.add_spacer(height=8)
-    with dpg.group(horizontal=True):
-        dpg.add_button(label='  Stand (제자리)  ', callback=lambda: set_mode('stand'))
-        dpg.add_button(label='  Walk (보행)  ', callback=lambda: set_mode('walk'))
-        dpg.add_button(label='  RESET  ', callback=lambda: set_mode('reset'))
+    dpg.add_text('모션', color=(170, 175, 195))
+    with dpg.group(horizontal=True):   # ★버튼 순서(17-DOF 규약): RESET → Off전원 → Stand서기 → Walk이동
+        _rb = dpg.add_button(label='RESET', width=90, callback=lambda: set_mode('reset'))
+        dpg.bind_item_theme(_rb, _stop)
+        _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
+        dpg.bind_item_theme(_ob, _stop)
+        dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
+        _wb = dpg.add_button(label='Walk 이동', width=110, callback=lambda: set_mode('walk'))
+        dpg.bind_item_theme(_wb, _walk)
+    dpg.add_text('복구 순서: 전원(Off) → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
+                 color=(150, 155, 175))
     dpg.add_separator()
     dpg.add_text('-', tag='state', color=(150, 220, 150))
 

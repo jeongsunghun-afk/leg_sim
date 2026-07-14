@@ -3,7 +3,7 @@
 GUI(teleop_gui_biped.py)가 /tmp/biped_cmd.json 발행 → 이 프로세스가 소비(mature quad CMDFILE 방식).
 상태는 /tmp/biped_state.json 발행(GUI 오버레이용). 낙상 시 자동 리셋.
 실행: python biped_run.py        (뷰어 ON)  ·  헤드리스: VIEW=0 python biped_run.py
-명령 포맷: {"v":전진m/s, "body_h":몸통높이m, "mode":"stand"|"walk"|"stop"}
+명령 포맷: {"v":전진m/s, "vy":좌우, "w":선회, "body_h":몸통높이m, "mode":"stand"|"walk"|"off"|"reset"}
 """
 import os, time, json, numpy as np, mujoco, mujoco.viewer
 import biped_mpc_wbic as BM
@@ -25,7 +25,7 @@ def main():
     c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
     m, d = c.m, c.d; dt = m.opt.timestep
     z_home = float(c.com_ref[2])
-    mode, body_h = 'stand', z_home
+    mode, body_h, prev_mode = 'stand', z_home, 'stand'
     view = os.environ.get('VIEW', '1') != '0'
     viewer = mujoco.viewer.launch_passive(m, d) if view else None
     rt = os.environ.get('RT', '1') != '0'                  # 실시간 페이싱(뷰어 자연스러움·테스트 정확)
@@ -39,17 +39,24 @@ def main():
             if cmd:
                 mode = cmd.get('mode', mode)
                 body_h = float(cmd.get('body_h', body_h))
-                if mode == 'reset':                        # ★RESET: 초기 자세로 리셋
+                if mode == 'reset':                        # ★RESET: 초기 자세로 리셋(모터 재활성)
                     c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
                     mode = 'stand'
+                if prev_mode == 'off' and mode != 'off':    # ★전원 재투입(Off→Stand/Walk): 낙상 자세서 리셋 후 기립
+                    c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
+                prev_mode = mode
                 walking = mode == 'walk'
                 c.vx_cmd = float(cmd.get('v', 0.0))  if walking else 0.0
                 c.wz_cmd = float(cmd.get('w', 0.0))  if walking else 0.0   # ★선회
                 c.vy_cmd = float(cmd.get('vy', 0.0)) if walking else 0.0   # ★좌우
                 c.com_ref[2] = body_h                      # 몸통높이 라이브 조절(crouch)
-        c.control(dt); mujoco.mj_step(m, d); k += 1
+        if mode == 'off':                                  # ★모터 전원 off = 토크 0(limp). 실HW=motor disable
+            d.ctrl[:] = 0.0
+        else:
+            c.control(dt)
+        mujoco.mj_step(m, d); k += 1
         tilt = np.hypot(*base_rpy(d.qpos[3:7])[:2])
-        if d.qpos[2] < 0.2 or tilt > 45:                   # 낙상 → 자동 리셋
+        if mode != 'off' and (d.qpos[2] < 0.2 or tilt > 45):   # 낙상 → 자동 리셋 (off는 전원차단이라 리셋 안함)
             if viewer is not None: time.sleep(0.3)
             c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
         if k % 20 == 0:                                    # 상태 발행

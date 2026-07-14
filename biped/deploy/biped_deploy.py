@@ -1,0 +1,109 @@
+"""biped 배포 러너 — 컨트롤러(MPC+WBIC)를 RobotInterface 통해 구동.
+
+플랜트만 교체:  --backend sim (기본, MuJoCo)  /  --backend hw (실모터, 스텁)
+GUI(teleop_gui_biped)와 동일 JSON 채널(/tmp/biped_cmd.json) 사용 → sim/실 조종 동일.
+배포 루프(mature quad와 동형):
+    st = iface.read()  →  iface.apply_state(d, st)  →  [GUI 명령 반영]  →  c.control(dt)
+    →  LowCmd(tau=d.ctrl)  →  iface.write(cmd)         # sim=mj_step / HW=setTorqueRef
+
+실행:
+  sim 검증 : python biped_deploy.py --backend sim  [--view]      # biped_run과 동일 결과
+  실배포   : python biped_deploy.py --backend hw                # HardwareInterface 구현 후
+"""
+from __future__ import annotations
+import os, sys, time, json, argparse, numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # biped/
+import biped_mpc_wbic as BM
+from biped_wbic import base_rpy
+from robot_interface import SimInterface, HardwareInterface, LowCmd
+
+CMD   = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
+STATE = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
+
+
+def read_cmd():
+    try:
+        with open(CMD) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def make_interface(backend, c):
+    if backend == 'sim':
+        return SimInterface(c.m, c.d)
+    if backend == 'hw':
+        return HardwareInterface(BM.BS.BW.MJCF)   # ★NotImplementedError까지 = SDK 연결 대기
+    raise ValueError(backend)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--backend', default='sim', choices=['sim', 'hw'])
+    ap.add_argument('--view', action='store_true')
+    ap.add_argument('--T', type=float, default=1e9)
+    args = ap.parse_args()
+
+    c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
+    m, d = c.m, c.d; dt = m.opt.timestep
+    iface = make_interface(args.backend, c)
+    z_home = float(c.com_ref[2]); body_h = z_home
+    mode, prev_mode = 'stand', 'stand'
+
+    viewer = None
+    if args.view:
+        import mujoco.viewer
+        viewer = mujoco.viewer.launch_passive(m, d)
+    print(f"biped_deploy · backend={args.backend} · CMD={CMD} · 기본높이 {z_home:.3f}")
+
+    k = 0; t0 = time.perf_counter()
+    while ((viewer is None) or viewer.is_running()) and k*dt < args.T:
+        st = iface.read()                              # ① 센서 → LowState
+        iface.apply_state(d, st)                       # ② 측정 주입(HW만 실효, sim=no-op)
+        if k % 20 == 0:                                # ③ GUI 명령 폴링(50Hz)
+            cmd = read_cmd()
+            if cmd:
+                mode = cmd.get('mode', mode); body_h = float(cmd.get('body_h', body_h))
+                if mode == 'reset':
+                    c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0; mode = 'stand'
+                if prev_mode == 'off' and mode != 'off':   # 전원 재투입
+                    c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
+                prev_mode = mode
+                walking = mode == 'walk'
+                c.vx_cmd = float(cmd.get('v', 0.0))  if walking else 0.0
+                c.wz_cmd = float(cmd.get('w', 0.0))  if walking else 0.0
+                c.vy_cmd = float(cmd.get('vy', 0.0)) if walking else 0.0
+                c.com_ref[2] = body_h
+        off = (mode == 'off')                          # ④ 모터 on/off
+        iface.enable_motors(not off)
+        if off:
+            iface.write(LowCmd())                      # tau=0(limp) + step
+        else:
+            c.control(dt)                              # ⑤ WBIC → d.ctrl (tau)
+            iface.write(LowCmd(tau=d.ctrl.copy()))     # ⑥ 토크 명령 → 플랜트
+        k += 1
+        tilt = np.hypot(*base_rpy(d.qpos[3:7])[:2])
+        if not off and (d.qpos[2] < 0.2 or tilt > 45):  # 낙상 자동리셋(sim; HW는 안전정지로 교체)
+            if viewer is not None: time.sleep(0.3)
+            c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
+        if k % 20 == 0:
+            vx_act = float((c.Jc_cache @ d.qvel)[0]) if hasattr(c, 'Jc_cache') else 0.0
+            yaw = float(base_rpy(d.qpos[3:7])[2])
+            try:
+                tmp = STATE + '.tmp'
+                with open(tmp, 'w') as f:
+                    json.dump({'mode': mode, 'base_z': float(d.qpos[2]), 'vx_cmd': float(c.vx_cmd),
+                               'vx_act': vx_act, 'wz_cmd': float(c.wz_cmd), 'yaw': yaw,
+                               'tilt': float(tilt), 'x': float(d.qpos[0]), 'y': float(d.qpos[1])}, f)
+                os.replace(tmp, STATE)
+            except Exception:
+                pass
+        if viewer is not None and k % 8 == 0:
+            viewer.sync()
+        lag = t0 + k*dt - time.perf_counter()          # 실시간 페이싱
+        if lag > 0:
+            time.sleep(lag)
+
+
+if __name__ == '__main__':
+    main()

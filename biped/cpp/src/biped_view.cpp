@@ -54,7 +54,7 @@ int main(int argc,char**argv){
   if(!m){ std::fprintf(stderr,"모델 로드 실패: %s\n",err); return 1; }
   mjData* d=mj_makeData(m); gM=m;
   BipedControl c(m,d); c.reset();
-  std::string mode = getenv("MODE")?getenv("MODE"):"stand"; double body_h=c.com_ref_z;
+  std::string mode = getenv("MODE")?getenv("MODE"):"stand", prev_mode=mode; double body_h=c.com_ref_z;
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
   GLFWwindow* win=glfwCreateWindow(1100,820,"biped C++ (MPC+WBIC)",NULL,NULL);
@@ -76,15 +76,20 @@ int main(int argc,char**argv){
       if(f){ std::stringstream ss; ss<<f.rdbuf(); std::string cj=ss.str();
         mode=json_str(cj,"mode",mode); body_h=json_get(cj,"body_h",body_h);
         if(mode=="reset"){ c.reset(); c.com_ref_z=body_h; mode="stand"; wall0=std::chrono::steady_clock::now(); sim0=d->time; }
+        if(prev_mode=="off" && mode!="off"){ c.reset(); c.com_ref_z=body_h; wall0=std::chrono::steady_clock::now(); sim0=d->time; }  // ★전원 재투입: 낙상서 리셋 후 기립
+        prev_mode=mode;
         bool walk=(mode=="walk");
         c.vx_cmd=walk?json_get(cj,"v",0):0; c.wz_cmd=walk?json_get(cj,"w",0):0; c.vy_cmd=walk?json_get(cj,"vy",0):0;
         c.com_ref_z=body_h; } }
     // 실시간 페이싱
     double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-wall0).count();
     double target=sim0+wall; int guard=0;
+    bool off=(mode=="off");                              // ★모터 전원 off = 토크 0(limp). 실HW=motor disable
     while(d->time<target && guard++<60){
-      c.control(dt); mj_step(m,d);
-      if(d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋
+      if(off){ for(int i=0;i<m->nu;i++) d->ctrl[i]=0.0; }
+      else c.control(dt);
+      mj_step(m,d);
+      if(!off && d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋(off는 제외)
     }
     if(frame%3==0) publish_state(m,d,c,mode,STATE_PUB);
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);

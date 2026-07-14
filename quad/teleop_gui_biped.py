@@ -10,9 +10,9 @@ import dearpygui.dearpygui as dpg
 
 CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
 STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
-VMAX   = 0.2          # 전진 상한[m/s] (안정 저속)
-VY_MAX = 0.12         # 좌우 상한[m/s] (측방=marginal, 낮게)
-WZ_MAX = 0.15         # 선회 상한[rad/s] (gentle)
+VMAX   = 0.2          # 전진 상한[m/s] (로버스트 저속)
+VY_MAX = 0.06         # 좌우 상한[m/s] (★측방=점발 marginal, 실안정범위로 캡. quad도 측방보행X)
+WZ_MAX = 0.05         # 선회 상한[rad/s] (★점발 안정=~1°/s 완만한 코스보정만. 급선회=RL 몫)
 H_MIN, H_MAX, H_DEF = 0.44, 0.52, 0.483
 
 

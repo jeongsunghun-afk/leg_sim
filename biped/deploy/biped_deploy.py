@@ -51,6 +51,11 @@ def main():
     c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
     m, d = c.m, c.d; dt = m.opt.timestep
     NOISE = float(os.environ.get('NOISE', '0')); np.random.seed(0)   # 센서 노이즈 배율(재현용 시드)
+    from collections import deque
+    dt0 = m.opt.timestep
+    SLAT = int(round(float(os.environ.get('SENSE_LAT_MS', '0')) / 1000 / dt0))  # 센서→제어 지연[step]
+    ALAT = int(round(float(os.environ.get('ACT_LAT_MS', '0')) / 1000 / dt0))    # 제어→구동 지연[step]
+    sense_buf = deque(); act_buf = deque()
     iface = make_interface(args.backend, c)
     z_home = float(c.com_ref[2]); body_h = z_home
     mode, prev_mode = 'stand', 'stand'
@@ -84,6 +89,9 @@ def main():
             st.dq = st.dq + np.random.normal(0, NOISE*0.05, 8)    # 관절속도 σ≈0.05
             st.gyro = st.gyro + np.random.normal(0, NOISE*0.02, 3)# 자이로 σ≈0.02rad/s
             st.acc = st.acc + np.random.normal(0, NOISE*0.5, 3)   # 가속도 σ≈0.5m/s²
+        sense_buf.append(st)                           # ★센서→제어 지연(링버퍼): 지연된 상태로 추정·제어
+        while len(sense_buf) > SLAT + 1: sense_buf.popleft()
+        st = sense_buf[0]                              # SLAT step 전 상태(warmup=가장 오래된 것)
         iface.apply_state(d, st)                       # ② 측정 주입(HW만 실효, sim=no-op)
         if k % 20 == 0:                                # ③ GUI 명령 폴링(50Hz)
             cmd = read_cmd()
@@ -107,7 +115,7 @@ def main():
             est_perr = float(np.linalg.norm(est.p - d.qpos[0:3]))   # GT 대비 위치오차[m] (sim만 의미)
             est_verr = float(np.linalg.norm(est.v - d.qvel[0:3]))   # GT 대비 속도오차[m/s]
         if off:
-            iface.write(LowCmd())                      # tau=0(limp) + step
+            cmd_tau = np.zeros(m.nu)                    # 전원 off = limp
         elif args.est_ctrl and args.backend == 'sim':  # ⑤' 폐루프 검증: 추정 base로 제어, 물리는 GT
             gp, gv = d.qpos[0:3].copy(), d.qvel[0:3].copy()
             _pf = os.environ.get('EST_PERFECT')
@@ -117,10 +125,13 @@ def main():
             d.qpos[0:3] = ep; d.qvel[0:3] = ev; mujoco.mj_forward(m, d)
             c.control(dt)                              # tau ← 추정 base(드리프트 포함)
             d.qpos[0:3] = gp; d.qvel[0:3] = gv; mujoco.mj_forward(m, d)   # 물리는 GT 복원
-            iface.write(LowCmd(tau=d.ctrl.copy()))
+            cmd_tau = d.ctrl.copy()
         else:
             c.control(dt)                              # ⑤ WBIC → d.ctrl (tau)
-            iface.write(LowCmd(tau=d.ctrl.copy()))     # ⑥ 토크 명령 → 플랜트
+            cmd_tau = d.ctrl.copy()
+        act_buf.append(cmd_tau)                        # ★제어→구동 지연(링버퍼): ALAT step 전 토크 인가
+        while len(act_buf) > ALAT + 1: act_buf.popleft()
+        iface.write(LowCmd() if off else LowCmd(tau=act_buf[0]))   # ⑥ 토크 명령 → 플랜트
         k += 1
         tilt = np.hypot(*base_rpy(d.qpos[3:7])[:2])
         if not off and (d.qpos[2] < 0.2 or tilt > 45):  # 낙상 자동리셋(sim; HW는 안전정지로 교체)

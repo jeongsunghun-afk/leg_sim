@@ -18,3 +18,7 @@ message(STATUS "eigen: ${EIGEN_INCLUDE} · eiquadprog: ${EIQP_LIB}")
 add_executable(biped_mpc_parity src/biped_mpc_parity.cpp)
 target_include_directories(biped_mpc_parity PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE})
 target_link_libraries(biped_mpc_parity PRIVATE ${EIQP_LIB})
+
+add_executable(biped_wbic_parity src/biped_wbic_parity.cpp)
+target_include_directories(biped_wbic_parity PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE})
+target_link_libraries(biped_wbic_parity PRIVATE ${EIQP_LIB})

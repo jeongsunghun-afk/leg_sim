@@ -77,31 +77,31 @@
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">02_Leg · Perception → Planning → Control · 설계 검토</div>
-  <span class="status">제안 (미구현) — 기존 A 파이프라인 확장</span>
+  <div class="eyebrow">02_Leg · TRG-planner → TAMOLS → WBC · 설계 검토</div>
+  <span class="status">보유: elevation map · <b>TRG-planner</b>(nav) &nbsp;|&nbsp; 제안: TAMOLS(로컬) · TSID(추종)</span>
   <h1>Perceptive Navigation → Locomotion 파이프라인</h1>
-  <p class="sub"><b class="nav">Navigation</b>이 통행가능 경로를 속도/목표 명령으로 내면, <b class="plan">TAMOLS</b>(지형인지 base+발판 최적화)가 로컬 지형에서 궤적·발판을 풀고, <b class="wbic">하위 전신제어기</b>(1 kHz)가 추종한다. 모든 지형 추론은 <b class="percept">elevation map</b>(이미 개발됨) 하나에서 나온다. ★두 관건: (1) nav↔제어는 얇은 velocity라 통합점은 perception 심(seam) 하나 · (2) <b>하위 제어기 TSID vs WBIC은 TAMOLS가 GRF를 정밀하게 내는지가 가른다</b>.</p>
+  <p class="sub"><b class="nav">TRG-planner</b>(Traversal Risk Graph, KAIST · 전역 경로)가 저위험·최단 경로를 내면, <b class="plan">TAMOLS</b>(지형인지 base+발판 최적화)가 로컬 지형에서 궤적·발판을 풀고, <b class="wbic">하위 전신제어기</b>(1 kHz)가 추종한다. 모든 지형 추론은 <b class="percept">elevation map</b>(이미 개발됨) 하나에서 나온다 — TRG의 traversal-risk와 TAMOLS의 foothold-score가 <b>같은 맵에서</b> 파생. ★두 관건: (1) nav↔제어는 얇은 velocity라 통합점은 perception 심(seam) 하나 · (2) <b>하위 제어기 TSID vs WBIC은 TAMOLS가 GRF를 정밀하게 내는지가 가른다</b>.</p>
 </header>
 
 <section id="stack">
   <h2>1 · 전체 스택 <span class="dim">perception은 옆에서 공급 · 제어는 위→아래</span></h2>
 
   <div class="flow">
-    <div class="stage percept"><span class="tag">수십 Hz</span><span class="n">P</span><span class="t">Perception — Elevation Map <span class="dim">(이미 개발)</span></span><div class="d">로봇중심/odom 스크롤 grid map + 파생 레이어(filtered·slope·edgeSDF·footScore) → nav·planner 공유</div></div>
-    <div class="arrow">│ &nbsp;<span class="dim">grid map 공유 (nav 코스트맵 + planner 지형비용, 같은 소스)</span></div>
+    <div class="stage percept"><span class="tag">수십 Hz · 보유</span><span class="n">P</span><span class="t">Perception — Elevation Map</span><div class="d">로봇중심/odom 스크롤 grid map + 파생 레이어(filtered·slope·edgeSDF·footScore) → TRG·TAMOLS 공유</div></div>
+    <div class="arrow">│ &nbsp;<span class="dim">같은 grid map — TRG의 traversal-risk(안정성·도달성) + TAMOLS의 foothold-score가 한 소스서 파생 → 의도 정합</span></div>
 
-    <div class="stage nav"><span class="rate">1–10 Hz</span><span class="n">N</span><span class="t">Navigation — 전역 경로/코스트맵</span><div class="d">map traversability → 경로 → 로컬 목표. <b>지형/발판은 모름</b> (planner가 전담)</div></div>
-    <div class="arrow">↓ &nbsp;<b>velocity / local-goal 명령</b> &nbsp;<span class="dim">(vx, vy, vyaw) = SportClient.Move — 기존 조이스틱 자리</span></div>
+    <div class="stage nav"><span class="rate">보유 · 기반</span><span class="n">N</span><span class="t">TRG-planner — Traversal Risk Graph (전역 경로)</span><div class="d">노드=지형 안정성·도달성 · 엣지=traversal-risk 가중 · wavefront 전파·계층관리·실시간 → 저위험·최단 <b>경로</b>. KAIST Urban Robotics Lab, RA-L 2025. <b>발판·동역학은 모름</b>(TAMOLS가 전담)</div></div>
+    <div class="arrow">↓ &nbsp;<b>경로 → (path-follower) → velocity / local-goal</b> &nbsp;<span class="dim">(vx, vy, vyaw) = SportClient.Move — 기존 조이스틱 자리</span></div>
 
-    <div class="stage plan"><span class="rate">~수십 Hz</span><span class="n">T</span><span class="t">TAMOLS — 지형인지 base+발판 최적화</span><div class="d">축소모델(SRBD base + 기구학 발판 + 지형비용) · submap 소비 · gait 타이밍은 주어짐 · A의 SRBD-MPC+Raibert를 대체</div></div>
+    <div class="stage plan"><span class="rate">~수십 Hz · 제안</span><span class="n">T</span><span class="t">TAMOLS — 지형인지 base+발판 최적화</span><div class="d">축소모델(SRBD base + 기구학 발판 + 지형비용) · submap 소비 · gait 타이밍은 주어짐 · A의 SRBD-MPC+Raibert를 대체</div></div>
     <div class="arrow">↓ &nbsp;<b>base 궤적 + 발판</b> &nbsp;<span class="dim">(+ GRF? — 하위제어기 종류를 가름)</span></div>
 
-    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">C</span><span class="t">하위 전신제어기 — TSID / WBIC <span class="dim">(§2에서 결정)</span></span><div class="d">모션추종(TSID·기본) 또는 GRF추종(WBIC) · 단일 QP + w_lam 스위치 → τ = M q<sup>¨</sup>+h−J<sup>T</sup>λ → d->ctrl[17]</div></div>
+    <div class="stage wbic"><span class="rate">1 kHz · 제안</span><span class="n">C</span><span class="t">하위 전신제어기 — TSID / WBIC <span class="dim">(§2에서 결정)</span></span><div class="d">모션추종(TSID·기본) 또는 GRF추종(WBIC) · 단일 QP + w_lam 스위치 → τ = M q<sup>¨</sup>+h−J<sup>T</sup>λ → d->ctrl[17]</div></div>
     <div class="arrow">↓</div>
     <div class="stage"><span class="n">R</span><span class="t">02_Leg (MuJoCo / 실기)</span><div class="d">토크 적용 → 상태 → 추정기(leg-odometry+ZUPT) → 다음 틱</div></div>
   </div>
 
-  <p class="dim">역할 분담: <b style="color:var(--nav)">nav</b>=어디로(전역, 지형무지) · <b style="color:var(--plan)">TAMOLS</b>=어떻게 밟고 갈지(로컬, 지형인지) · <b style="color:var(--wbic)">하위제어기</b>=토크 실현. ★핵심: nav는 velocity만 내므로 지형을 몰라도 되고, planner가 로컬 지형을 전담 → 층 경계가 깨끗함.</p>
+  <p class="dim">역할 분담: <b style="color:var(--nav)">TRG</b>=어디로(전역 경로, traversal-risk) · <b style="color:var(--plan)">TAMOLS</b>=어떻게 밟고 갈지(로컬, 발판·동역학) · <b style="color:var(--wbic)">하위제어기</b>=토크 실현. ★TRG와 TAMOLS는 <b>경쟁이 아니라 다른 층</b>(전역 경로 ↔ 로컬 모션) — 둘 다 같은 elevation map을 쓰지만 TRG는 traversal-risk 그래프, TAMOLS는 foothold 최적화. nav는 경로(→velocity)만 내므로 발판/동역학을 몰라도 됨 → 층 경계가 깨끗함.</p>
 </section>
 
 <section id="lowlevel">
@@ -181,7 +181,7 @@
     <div class="step"><div class="num">1</div><div><div class="b"><code>terrain_z()</code> 백엔드만 실맵으로 스왑</div><div class="x">현 컨트롤러(Raibert + 높이 적응)가 실 elevation map 위에서 보행. 가장 저위험 첫 통합 — perception→controller 심이 살아있음을 증명.</div></div></div>
     <div class="step"><div class="num">2</div><div><div class="b">footScore nudge — "가난한 자의 TAMOLS"</div><div class="x">Raibert 타깃을 반경 내 최고 점수 셀로 살짝 당김. 옵티마이저 없이 발판 품질↑. 저비용 중간 이득.</div></div></div>
     <div class="step"><div class="num">3</div><div><div class="b">TAMOLS가 <code>submap()</code> 소비 → base+발판 최적화</div><div class="x">레퍼런스층을 TAMOLS로 교체(WBIC 유지). 앞 2단계가 심을 검증했으니 planner 교체만 남음. 갭/스텝에서 Raibert 초월.</div></div></div>
-    <div class="step"><div class="num">4</div><div><div class="b">Navigation을 velocity/goal 명령원으로 접속</div><div class="x">TAMOLS가 이미 속도명령을 먹으므로 <b>trivial</b> — 조이스틱 자리에 nav를 꽂는 것. (그래서 nav를 먼저 만들지 않는다.)</div></div></div>
+    <div class="step"><div class="num">4</div><div><div class="b">TRG-planner를 path-follower로 접속</div><div class="x">TRG(보유) 전역경로 → path-follower → velocity. TAMOLS가 이미 속도명령을 먹으므로 <b>trivial</b> — 조이스틱 자리에 TRG를 꽂는 것. (그래서 nav를 먼저 만들지 않는다.)</div></div></div>
   </div>
   <p class="dim">병행: sim 백엔드(mj_ray→grid)에 <b>노이즈·지연·occlusion 주입</b> → 상태지연 특성화처럼 "맵 열화가 발판을 얼마나 망가뜨리나"를 하드웨어 전에 규명 (sim/real 인터페이스 동일 유지).</p>
 </section>
@@ -195,7 +195,7 @@
       <tr><td class="p">발 배치</td><td class="now">Raibert 휴리스틱 + 높이 적응 (반응적)</td><td class="new">TAMOLS 최적화 (예측적·지형비용)</td></tr>
       <tr><td class="p">base 계획</td><td class="now">Di Carlo SRBD-MPC 50 Hz</td><td class="new">TAMOLS가 base+발판 통합 (SRBD-MPC 대체)</td></tr>
       <tr><td class="p">추종</td><td class="now">WBIC (GRF추종, MPC λ 필요)</td><td class="new">TSID (모션추종) — TAMOLS가 GRF 안 내면 · wbic_jump 골격 재사용</td></tr>
-      <tr><td class="p">명령원</td><td class="now">조이스틱/GUI (vx,vy,vyaw)</td><td class="new">Navigation (동일 인터페이스)</td></tr>
+      <tr><td class="p">명령원</td><td class="now">조이스틱/GUI (vx,vy,vyaw)</td><td class="new">TRG-planner 전역경로 → path-follower (동일 velocity 인터페이스)</td></tr>
       <tr><td class="p">모델 무게</td><td class="now">SRBD (가벼움)</td><td class="new">SRBD base+발판 (축소) — ★full-dyn OCP가 막혔던 ill-conditioning 우회</td></tr>
     </tbody>
   </table></div>
@@ -203,16 +203,16 @@
 </section>
 
 <section id="pending">
-  <h2>7 · 레퍼런스 받으면 확정할 것</h2>
+  <h2>7 · 확정할 것 <span class="dim">(TRG=확인됨 · 나머지는 TAMOLS/맵 사양 대기)</span></h2>
   <ul>
-    <li>★<b>TAMOLS가 per-foot GRF를 정밀하게 노출하는가</b> — 하위제어기 결정(있으면 WBIC 겸용, 없으면 TSID 기본). 최우선 확인.</li>
-    <li><b>출력 타입/메시지</b> — grid_map(ROS) / costmap / 서비스 쿼리 중 무엇 → 어댑터 형태 결정</li>
-    <li><b>프레임 규약</b> — odom/base/world 중 무엇에, 드리프트 처리(로봇중심 스크롤 여부)</li>
-    <li><b>rate · latency · 기존 레이어</b> — footScore/edgeSDF를 perception이 이미 주는지, 아니면 맵 노드에서 우리가 뽑을지</li>
+    <li><span class="new">✔ nav 층</span> = <b>TRG-planner</b>(Traversal Risk Graph, KAIST RA-L 2025) — 전역 경로. path-follower로 velocity 변환해 로컬층 구동.</li>
+    <li>★<b>TAMOLS가 per-foot GRF/센트로이달을 정밀하게 노출하는가</b> — 하위제어기 결정(있으면 WBIC/센트로이달추종, 없으면 TSID 기본). 최우선.</li>
+    <li><b>TRG↔TAMOLS 맵 정합</b> — TRG traversal-risk와 TAMOLS foothold-score가 같은 elevation map/프레임/타임스탬프서 파생되는지 (의도 불일치 방지).</li>
+    <li><b>맵 출력 타입</b> — grid_map(ROS)일 가능성 높음 → <code>TerrainMap</code> 어댑터 확정. 프레임(odom 스크롤) · latency · 기존 레이어(footScore/edgeSDF 유무).</li>
   </ul>
 </section>
 
 <footer>
-  ★이 문서는 <b>설계 검토(제안)</b> — 구현된 것은 A 파이프라인(<code>pipeline.html</code>)뿐. TAMOLS = Grandia·Jenelten·Hutter, "Perceptive Locomotion through Nonlinear Trajectory Optimization"(T-RO 2023). 통합 심 = 기존 <code>terrain_z()</code> · 추종 = 기존 <code>wbic_track</code>. 프레임/지연 처리는 sim2real 추정·지연 작업(<code>sim2real_checklist_17dof.html</code>)의 연장선.
+  ★<b>보유</b>: elevation map · TRG-planner(nav). <b>제안</b>: TAMOLS(로컬) · TSID(추종). 구현·배포된 로컬제어는 A 파이프라인(<code>pipeline.html</code>). · <b>TRG-planner</b> = D.Lee·Nahrendra·Oh·Yu·H.Myung, KAIST Urban Robotics Lab, RA-L 2025(ICRA 2023 Quadruped Challenge 우승 전역플래너) · <b>TAMOLS</b> = Grandia·Jenelten·Hutter, T-RO 2023. 통합 심 = 기존 <code>terrain_z()</code> · 프레임/지연 = sim2real 작업(<code>sim2real_checklist_17dof.html</code>)의 연장선.
 </footer>
 </div>

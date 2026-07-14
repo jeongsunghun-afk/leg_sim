@@ -97,6 +97,22 @@ struct MjRayTerrainMap {
   bool   valid(double x,double y) const { const Submap* s=map(); return s? s->validAt(x,y) : false; }
   float  footScore(double x,double y) const { const Submap* s=map(); return s? s->score(x,y) : 0.f; }
 
+  // ★③ 발판 선택(밸런스-인지): 도달반경 R 내 유효셀 중 footScore 높고 Raibert 밸런스타깃(rx,ry)에 가까운 것 선택.
+  //   J = footScore − w_bal·(정규화 거리²). 유효셀 없으면(반경 밖 갭) false=nudge 안 함.
+  bool selectFoot(double rx,double ry,double R,double w_bal,double& bx,double& by) const {
+    const Submap* s=map(); if(!s){ bx=rx; by=ry; return false; }
+    double fi,fj; if(!s->cell(rx,ry,fi,fj)){ bx=rx; by=ry; return false; }
+    int Rc=(int)std::ceil(R/s->res), ci=(int)(fi+0.5), cj=(int)(fj+0.5);
+    double bestJ=-1e18; bool found=false; bx=rx; by=ry;
+    for(int dj=-Rc;dj<=Rc;dj++) for(int di=-Rc;di<=Rc;di++){
+      int i=ci+di, j=cj+dj; if(i<0||j<0||i>=s->nx||j>=s->ny) continue;
+      double dd=(di*di+dj*dj)*s->res*s->res; if(dd>R*R) continue;
+      if(!s->valid[(size_t)j*s->nx+i]) continue;
+      double J=s->footScore.at(i,j) - w_bal*dd/(R*R);
+      if(J>bestJ){ bestJ=J; bx=s->ox+i*s->res; by=s->oy+j*s->res; found=true; }
+    }
+    return found;
+  }
   // ★P1 nudge용: (x,y) 주변 반경 r 내 footScore 최고 셀 → (bx,by). 없으면 입력 유지.
   bool bestFoot(double x,double y,double r,double& bx,double& by) const {
     const Submap* s=map(); if(!s){ bx=x; by=y; return false; }

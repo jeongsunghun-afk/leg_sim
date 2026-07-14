@@ -17,6 +17,9 @@ VX=0.15 python3 biped_view.py    # 저속 보행
 # 헤드리스 (튜닝·검증)
 VIEW=0 T=25 python3 biped_run.py
 
+# C++ 컨트롤러 + 같은 GUI 조종
+./run_gui_cpp.sh                 # C++ 뷰어(biped_view) + GUI
+
 # OBS 녹화와 함께
 ./record_biped.sh                # GUI + OBS 동시 실행
 ```

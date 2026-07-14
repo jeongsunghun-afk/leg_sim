@@ -30,3 +30,11 @@ target_include_directories(biped_sim PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${
 target_link_libraries(biped_sim PRIVATE ${EIQP_LIB} ${MUJOCO_LIB})
 target_link_directories(biped_sim PRIVATE ${ENV_PREFIX}/lib)
 set_target_properties(biped_sim PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
+
+find_path(GLFW_INCLUDE GLFW/glfw3.h PATHS ${ENV_PREFIX}/include /usr/include)
+find_library(GLFW_LIB glfw PATHS ${ENV_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib)
+add_executable(biped_view src/biped_view.cpp)
+target_include_directories(biped_view PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${MUJOCO_INCLUDE} ${GLFW_INCLUDE})
+target_link_libraries(biped_view PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} ${GLFW_LIB})
+target_link_directories(biped_view PRIVATE ${ENV_PREFIX}/lib)
+set_target_properties(biped_view PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)

@@ -1,0 +1,197 @@
+<title>RL 파쿠르 정책 파이프라인 &amp; MPC/OCP 구조 대조 (RobotSW_IsaacLab)</title>
+<style>
+  :root{
+    --bg:#eceef3; --surface:#ffffff; --surface2:#f5f6fa; --ink:#191d27; --muted:#5a6474;
+    --line:#e0e4ec; --accent:#3a4150;
+    --rl:#b5286a; --rl-soft:#f7e2ed; --pd:#0d7a8a; --pd-soft:#daeef2;
+    --mpc:#455ad1; --mpc-soft:#e7eafb; --ocp:#7a49c0; --ocp-soft:#ece2f8;
+    --ok:#2c8a58;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#11141a;--surface:#191d25;--surface2:#151920;--ink:#e6eaf2;--muted:#98a2b3;
+      --line:#28303b;--accent:#c3ccda;--rl:#ec7fb2;--rl-soft:#311824;--pd:#4fc4d8;--pd-soft:#10262c;
+      --mpc:#8b9bf6;--mpc-soft:#1e2438;--ocp:#b79bf0;--ocp-soft:#221a34;--ok:#5fc98c;}
+  }
+  :root[data-theme="light"]{--bg:#eceef3;--surface:#ffffff;--surface2:#f5f6fa;--ink:#191d27;--muted:#5a6474;--line:#e0e4ec;--accent:#3a4150;--rl:#b5286a;--rl-soft:#f7e2ed;--pd:#0d7a8a;--pd-soft:#daeef2;--mpc:#455ad1;--mpc-soft:#e7eafb;--ocp:#7a49c0;--ocp-soft:#ece2f8;--ok:#2c8a58;}
+  :root[data-theme="dark"]{--bg:#11141a;--surface:#191d25;--surface2:#151920;--ink:#e6eaf2;--muted:#98a2b3;--line:#28303b;--accent:#c3ccda;--rl:#ec7fb2;--rl-soft:#311824;--pd:#4fc4d8;--pd-soft:#10262c;--mpc:#8b9bf6;--mpc-soft:#1e2438;--ocp:#b79bf0;--ocp-soft:#221a34;--ok:#5fc98c;}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:15px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 22px 90px}
+  header.hero{padding:44px 0 20px;border-bottom:1px solid var(--line);margin-bottom:26px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:10px}
+  h1{font-size:29px;line-height:1.15;margin:0 0 8px;letter-spacing:-.01em;text-wrap:balance;font-weight:680}
+  .sub{color:var(--muted);max-width:72ch}
+  .sub b.rl{color:var(--rl)} .sub b.mpc{color:var(--mpc)} .sub b.ocp{color:var(--ocp)}
+  .note-nb{margin-top:12px;font-size:13px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:9px 13px}
+  section{margin-top:38px;scroll-margin-top:20px}
+  h2{font-size:20px;margin:0 0 14px;letter-spacing:-.005em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 9px;border-radius:6px;letter-spacing:.03em}
+  .chip.rl{color:var(--rl);background:var(--rl-soft)} .chip.mpc{color:var(--mpc);background:var(--mpc-soft)} .chip.ocp{color:var(--ocp);background:var(--ocp-soft)}
+  h3{font-size:14px;margin:18px 0 7px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+  p{margin:8px 0} code{font-family:var(--mono);font-size:.85em;background:var(--surface2);padding:1px 5px;border-radius:4px;white-space:nowrap}
+  var,.v{font-family:var(--mono);font-style:normal;color:var(--ink)}
+
+  .flow{display:flex;flex-direction:column;gap:0;align-items:stretch;margin:6px 0}
+  .flowlabel{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em;margin:14px 0 4px;color:var(--muted)}
+  .flowlabel.rl{color:var(--rl)} .flowlabel.train{color:var(--ok)}
+  .stage{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 16px;position:relative}
+  .stage .n{font-family:var(--mono);font-weight:700;color:var(--muted);font-size:12px;margin-right:8px}
+  .stage .t{font-weight:650} .stage .d{color:var(--muted);font-size:13px;font-family:var(--mono);margin-top:3px;overflow-x:auto}
+  .arrow{align-self:center;color:var(--muted);font-size:15px;line-height:1;padding:5px 0;font-family:var(--mono)}
+  .stage.rl{border-color:var(--rl);border-left-width:4px} .stage.rl .n{color:var(--rl)}
+  .stage.pd{border-color:var(--pd);border-left-width:4px} .stage.pd .n{color:var(--pd)}
+  .stage.train{border-color:var(--ok);border-left-width:4px;border-style:dashed} .stage.train .n{color:var(--ok)}
+  .rate{position:absolute;top:12px;right:14px;font-family:var(--mono);font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px}
+  .stage.rl .rate{color:var(--rl);background:var(--rl-soft)} .stage.pd .rate{color:var(--pd);background:var(--pd-soft)} .stage.train .rate{color:var(--ok);background:var(--surface2)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 20px 18px;margin-top:12px}
+  .card.rl{border-top:3px solid var(--rl)}
+  .eq{font-family:var(--mono);font-size:13.5px;background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin:8px 0;overflow-x:auto;line-height:1.7;white-space:nowrap}
+  .eq .lbl{color:var(--muted);user-select:none}
+  sub,sup{font-size:.72em}
+  .dim{color:var(--muted);font-family:var(--mono);font-size:12px}
+
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--surface);margin-top:10px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px}
+  thead th{position:sticky;top:0;background:var(--surface2);text-align:left;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:9px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:8px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  td.p{font-family:var(--mono);color:var(--ink);font-weight:600;white-space:nowrap}
+  td.mean{color:var(--muted)} td.d{font-family:var(--mono);color:var(--muted);white-space:nowrap}
+  th.rl{color:var(--rl)} th.mpc{color:var(--mpc)} th.ocp{color:var(--ocp)}
+  td.axis{font-weight:650;color:var(--ink);white-space:nowrap}
+  ul{margin:6px 0;padding-left:20px} li{margin:4px 0}
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">RobotSW_IsaacLab · Go2-Parkour-Direct-v0 · RMA MLP teacher-student</div>
+  <h1>RL 파쿠르 정책 파이프라인 &amp; MPC/OCP 구조 대조</h1>
+  <p class="sub"><b class="rl">RL 정책</b>은 최적화를 <b>오프라인(PPO 50k iter)</b>에 몰아넣어 네트워크 가중치로 <b>상각(amortize)</b>한다 —
+  런타임은 값싼 <b>MLP 순전파(forward pass)</b>다. 반면 <b class="mpc">A(MPC+WBIC)</b>·<b class="ocp">B·C(OCP)</b>는
+  매 틱 <b>온라인으로 최적화 문제를 푼다</b>. 그럼에도 셋 다 <b>계획(50 Hz급) → 저수준 추종(≥200 Hz)</b>의 <b>2-레이트</b> 골격을 공유한다.</p>
+  <div class="note-nb">이 문서의 RL 대상 = 클론한 <code>RobotSW_IsaacLab</code> 포크의 파쿠르 태스크(<code>direct/parkour</code>). 정책=<b>ActorCriticRMA</b>(피드포워드 MLP, <b>비순환·LSTM 아님</b>) + 지형/이력 인코더 + RMA teacher-student. A/B/C 정의는 <code>pipeline.html</code>(A)·<code>pipeline_bc.html</code>(B·C) 참조.</div>
+</header>
+
+<section id="pipeline">
+  <h2><span class="chip rl">RL</span> 1 · 파쿠르 정책 파이프라인 <span class="dim">Go2 12-DOF · 물리 200 Hz · decimation 4 → 정책 50 Hz</span></h2>
+  <p>MPC/OCP가 "무거운 계획기 + 가벼운 추종기"를 <b>매 틱 새로 푸는</b> 것과 달리, RL은 그 계획기를 <b>학습된 MLP로 대체</b>한다. 관측→관절 위치 잔차(residual)를 내는 정책을 50 Hz로 추론하고, 고정 게인 <b>PD</b>가 200 Hz로 토크를 만든다.</p>
+
+  <div class="flowlabel rl">런타임(배포) — 관측 → 정책(MLP) → PD → 토크</div>
+  <div class="flow">
+    <div class="stage"><span class="n">obs</span><span class="t">관측 조립</span><div class="d">proprio(42) + height-scan(187) + priv_explicit(6) + priv_latent(37) + history(10×42)</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage rl"><span class="n">enc</span><span class="t">인코더</span><div class="d">scan MLP[128,64,32]→<b>32</b> · history 1D-CNN→<b>20</b>(배포=학생) · <span class="dim">est MLP[128,64]→v̂(3)</span></div></div>
+    <div class="arrow">↓ &nbsp;<span class="dim">actor 입력 = [proprio 42 · priv_explicit 6 · latent 20 · scan_latent 32] = 100</span></div>
+    <div class="stage rl"><span class="rate">50 Hz</span><span class="n">π</span><span class="t">Actor MLP · act_inference</span><div class="d">[512,256,128] ELU → <b>a ∈ R¹²</b> (관절별 위치 잔차)</div></div>
+    <div class="arrow">↓ &nbsp;<span class="dim">q<sub>tgt</sub> = 0.25·a + q<sub>default</sub> &nbsp;(action_scale=0.25)</span></div>
+    <div class="stage pd"><span class="rate">200 Hz</span><span class="n">PD</span><span class="t">관절 PD (내부 4틱)</span><div class="d">τ = K<sub>p</sub>(q<sub>tgt</sub>−q) − K<sub>d</sub>q<sup>˙</sup> &nbsp;(K<sub>p</sub>=25, K<sub>d</sub>=0.5, τ clip 23.5) → d.ctrl[12]</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage"><span class="n">step</span><span class="t">물리 스텝 ×4</span><div class="d">Isaac/MuJoCo 200 Hz 적분 → 다음 관측</div></div>
+  </div>
+
+  <div class="flowlabel train">오프라인 학습 — 여기서 "최적화"가 일어난다 (배포엔 없음)</div>
+  <div class="flow">
+    <div class="stage train"><span class="n">env</span><span class="t">병렬 롤아웃 + 도메인 랜덤화</span><div class="d">수천 env · 마찰/질량/CoM/게인 DR · 지형(계단·간극·경사) · 24 step/env</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage train"><span class="n">PPO</span><span class="t">PPOParkour (rsl_rl)</span><div class="d">clip 0.2 · GAE(γ0.99,λ0.95) · adaptive KL 0.01 · lr 2e−4 · 5 epoch · 50k iter</div></div>
+    <div class="arrow">↓ &nbsp;<span class="dim">RMA distillation</span></div>
+    <div class="stage train"><span class="n">DAgger</span><span class="t">teacher → student 회귀</span><div class="d">priv_reg = ‖priv_latent − hist_latent.detach()‖₂ · est: MSE(v̂, v<sub>true</sub>)</div></div>
+    <div class="arrow">↓</div>
+    <div class="stage train"><span class="n">out</span><span class="t">가중치 동결</span><div class="d">→ 위 런타임의 actor+scan_enc+history_enc (특권정보 없이 배포)</div></div>
+  </div>
+  <p class="dim">핵심 대응: MPC의 <b>MPC 계획 단계</b> ↔ RL의 <b>actor MLP</b>(단, 온라인 QP vs 오프라인 학습) · MPC의 <b>WBIC/TSID 추종</b> ↔ RL의 <b>PD</b>(단, 전신 QP vs 고정 게인 SISO).</p>
+</section>
+
+<section id="policy">
+  <h2><span class="chip rl">RL</span> 2 · 정책 구조 — ActorCriticRMA (MLP, 비순환)</h2>
+  <div class="card rl">
+    <p>LSTM/GRU가 <b>아니다</b>(<code>is_recurrent = False</code>). 시간 맥락은 순환 상태가 아니라 <b>고정 길이 이력(10×42)에 대한 1D-CNN 인코더</b>로 처리한다. rsl_rl 라이브러리에 <code>ActorCriticRecurrent</code>(LSTM/GRU)가 있으나 파쿠르 config는 이를 인스턴스화하지 않는다.</p>
+
+    <h3>관측 그룹 → 소비처</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>그룹</th><th>차원</th><th>내용</th><th>쓰는 곳</th></tr></thead>
+      <tbody>
+        <tr><td class="p">policy</td><td class="d">42</td><td class="mean">proprio: 명령·중력방향·관절 q/dq·직전 action</td><td class="mean">actor · critic · history</td></tr>
+        <tr><td class="p">scan</td><td class="d">187</td><td class="mean">height-scan(지형 높이 샘플)</td><td class="mean">scan 인코더 → 32</td></tr>
+        <tr><td class="p">priv_explicit</td><td class="d">6</td><td class="mean">base 선속도·각속도(스케일)</td><td class="mean">actor 직접 · <b>estimator가 추정</b></td></tr>
+        <tr><td class="p">priv_latent</td><td class="d">37</td><td class="mean">마찰·발마찰·질량·CoM·관절 게인비</td><td class="mean">priv 인코더(교사) → 20</td></tr>
+        <tr><td class="p">history</td><td class="d">10×42</td><td class="mean">proprio 이력</td><td class="mean">1D-CNN(학생) → 20</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>네트워크</h3>
+    <div class="eq"><span class="lbl">actor = </span>MLP([512,256,128], ELU) &nbsp;입력 100 → <b>a ∈ R¹²</b> &nbsp;<span class="lbl">· log_std 학습 파라미터(init 1.0)</span></div>
+    <div class="eq"><span class="lbl">critic = </span>MLP([512,256,128], ELU) &nbsp;입력 <b>272</b>(policy+scan+priv_explicit+priv_latent, 특권 전체) → V &nbsp;<span class="lbl">· actor와 층 공유 없음</span></div>
+    <div class="eq"><span class="lbl">scan_enc </span>187→[128,64,32] &nbsp;&nbsp;<span class="lbl">priv_enc </span>37→[64,<b>20</b>] &nbsp;&nbsp;<span class="lbl">hist_enc </span>Conv1d(10×42)→<b>20</b> &nbsp;&nbsp;<span class="lbl">estimator </span>[128,64]→v̂(3)</div>
+
+    <h3>Teacher → Student (RMA)</h3>
+    <ul>
+      <li><b>교사 경로</b>(학습): priv_latent(37) → priv_enc → 20-latent. 특권정보(마찰·질량…)를 직접 봄.</li>
+      <li><b>학생 경로</b>(배포): proprio 이력 → CNN → 20-latent. <b>특권정보 없이</b> 같은 latent를 추론.</li>
+      <li><b>distillation</b>: <code>priv_reg = ‖priv_latent − hist_latent.detach()‖₂</code> (스케줄 계수) — 학생을 교사에 회귀.</li>
+      <li><b>estimator</b>: proprio로 base 선속도 v̂를 추정, 학습 후 실제 priv_explicit을 대체(<code>train_with_estimated_states</code>).</li>
+    </ul>
+    <p class="dim">변형(전부 여전히 MLP RMA): <b>MoE</b>(6 experts, gating[128]) · <b>SPO</b> surrogate · <b>LCP</b> gradient penalty · <b>Symmetry</b> 좌우증강 · <b>AMP</b>(모방, discriminator) · <b>Lidar/Voxel</b>(별도 인코더). <b>순환 정책은 어느 변형에도 없음.</b></p>
+  </div>
+</section>
+
+<section id="contrast">
+  <h2>3 · RL vs A(MPC+WBIC) vs B·C(OCP) — 구조 대조</h2>
+  <p>세 방식 모두 <b>계획 → 저수준 추종</b> 2-레이트지만, "계획을 <b>언제·어떻게</b> 얻는가"가 근본적으로 다르다.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>축</th><th class="rl">RL 파쿠르</th><th class="mpc">A · MPC+WBIC</th><th class="ocp">B·C · OCP</th></tr></thead>
+    <tbody>
+      <tr><td class="axis">최적화 시점</td><td class="mean"><b>오프라인</b>(학습). 런타임=순전파</td><td class="mean"><b>온라인</b> 매 틱 QP</td><td class="mean"><b>온라인</b> 매 사이클 DDP</td></tr>
+      <tr><td class="axis">동역학 모델</td><td class="mean"><b>모델프리</b>(sim 롤아웃이 암묵 모델)</td><td class="mean">SRBD 볼록 선형화(명시)</td><td class="mean">중심동역학 / 전신 강체(명시)</td></tr>
+      <tr><td class="axis">"계획기" 정체</td><td class="mean">actor MLP [512,256,128]</td><td class="mean">Convex MPC QP (N=14 호라이즌)</td><td class="mean">aligator ProxDDP (T=50)</td></tr>
+      <tr><td class="axis">"추종기" 정체</td><td class="mean"><b>고정 게인 PD</b>(SISO, K<sub>p</sub>25)</td><td class="mean">WBIC 전신 QP</td><td class="mean">TSID QP(B) / Riccati(C)</td></tr>
+      <tr><td class="axis">정책 출력</td><td class="mean">관절 위치 잔차 12(×0.25+q<sub>def</sub>)</td><td class="mean">발별 GRF 4×3(world)</td><td class="mean">힘+가속(B) / 토크(C)</td></tr>
+      <tr><td class="axis">최종 토크</td><td class="mean">PD가 생성</td><td class="mean">τ=M q̈+h−Jᵀλ</td><td class="mean">HQP(B) / OCP 직접+Riccati(C)</td></tr>
+      <tr><td class="axis">레이트</td><td class="mean">정책 50 Hz · PD 200 Hz</td><td class="mean">MPC 50 Hz · WBIC 1 kHz</td><td class="mean">OCP ~20–30 Hz · 추종 1 kHz</td></tr>
+      <tr><td class="axis">지형 인지</td><td class="mean"><b>학습된</b> height-scan/lidar 인코더(E2E)</td><td class="mean">Raibert에 terrain_z 휴리스틱</td><td class="mean">평지 가정(지각 계획 없음)</td></tr>
+      <tr><td class="axis">게이트</td><td class="mean"><b>보상에서 창발</b>(스케줄 없음)</td><td class="mean">명시 게이트 스케줄러</td><td class="mean">명시 trot 스케줄</td></tr>
+      <tr><td class="axis">제약 처리</td><td class="mean"><b>소프트</b>(보상 페널티, 보장 없음)</td><td class="mean"><b>하드</b>(마찰추·토크 QP 제약)</td><td class="mean"><b>하드</b>(box·마찰추·착지)</td></tr>
+      <tr><td class="axis">강건성 원천</td><td class="mean">도메인 랜덤화 + RMA 온라인 적응</td><td class="mean">모델 기반 피드백 + 재계획</td><td class="mean">모델 기반 피드백 + 재계획</td></tr>
+      <tr><td class="axis">튜닝 대상</td><td class="mean">보상항·DR 범위·네트워크</td><td class="mean">Q·R 가중·게인</td><td class="mean">cost 가중·게인</td></tr>
+      <tr><td class="axis">실시간성</td><td class="mean"><b>매우 가벼움</b>(순전파)</td><td class="mean">실시간 1 kHz(배포 본선)</td><td class="mean">비실시간(solve 병목)</td></tr>
+      <tr><td class="axis">검증</td><td class="mean">Isaac 학습·sim2real(포크)</td><td class="mean">17-DOF 배포 본선</td><td class="mean">연구용 정량검증</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note-nb">한 줄 요약: <b>RL은 오프라인 학습으로 "계획+지각+게이트"를 하나의 MLP에 상각</b>하고 저수준은 값싼 PD에 맡긴다. <b>MPC/OCP는 매 틱 명시 모델로 최적화를 풀되</b> 대신 지각·게이트를 손으로 설계한다. 하이브리드 전략(<code>MPC_RL_하이브리드_전략_리포트.md</code>)은 이 둘을 결합 — MPC를 교사/안전필터/레퍼런스로 쓰는 5패턴.</div>
+</section>
+
+<section id="io">
+  <h2>4 · RL 입출력 &amp; 개념 매핑</h2>
+  <div class="scroll"><table class="io">
+    <thead><tr><th></th><th class="rl">RL 변수</th><th>차원</th><th>정의</th></tr></thead>
+    <tbody>
+      <tr><td class="mean" rowspan="5"><b>입력</b></td><td class="p">policy</td><td class="d">42</td><td class="mean">proprio(명령·중력·q·dq·prev_action)</td></tr>
+      <tr><td class="p">scan</td><td class="d">187</td><td class="mean">height-scan 지형 샘플</td></tr>
+      <tr><td class="p">priv_explicit</td><td class="d">6</td><td class="mean">base 선/각속도(배포 시 estimator 추정)</td></tr>
+      <tr><td class="p">priv_latent</td><td class="d">37</td><td class="mean">마찰·질량·CoM·게인(학습 전용 특권)</td></tr>
+      <tr><td class="p">history</td><td class="d">10×42</td><td class="mean">proprio 이력(학생 CNN 입력)</td></tr>
+      <tr><td class="mean"><b>출력</b></td><td class="p">action</td><td class="d">12</td><td class="mean">관절 위치 잔차 → q<sub>tgt</sub>=0.25·a+q<sub>def</sub> → PD → τ</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>역할 매핑 (같은 자리, 다른 방식)</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>역할</th><th class="rl">RL</th><th class="mpc">A(MPC+WBIC)</th></tr></thead>
+    <tbody>
+      <tr><td class="axis">상위 계획</td><td class="mean">actor MLP → 관절 위치 잔차</td><td class="mean">MPC QP → GRF</td></tr>
+      <tr><td class="axis">저수준 실현</td><td class="mean">PD (K<sub>p</sub>,K<sub>d</sub>)</td><td class="mean">WBIC 전신 QP → τ</td></tr>
+      <tr><td class="axis">상태 추정</td><td class="mean">estimator MLP(v̂) + RMA latent</td><td class="mean">직접 상태 읽기(MuJoCo)</td></tr>
+      <tr><td class="axis">지형 반영</td><td class="mean">scan 인코더(학습)</td><td class="mean">terrain_z → Raibert/x_ref</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>
+  RL 소스: <code>RobotSW_IsaacLab/source/isaaclab_tasks/.../direct/parkour/</code> — 정책 <code>rsl_rl/rsl_rl/modules/actor_critic_parkour.py</code>(ActorCriticRMA)·알고리즘 <code>algorithms/ppo_parkour.py</code>(PPOParkour)·config <code>agents/rsl_rl_ppo_cfg.py</code>·env <code>parkour_env_cfg.py</code>(decimation 4·action_scale 0.25·dt 1/200). 대조: <code>pipeline.html</code>(A) · <code>pipeline_bc.html</code>(B·C) · 하이브리드 <code>MPC_RL_하이브리드_전략_리포트.md</code>.
+</footer>
+</div>

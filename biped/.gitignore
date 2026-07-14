@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+renders/
+*.log
+MUJOCO_LOG.TXT

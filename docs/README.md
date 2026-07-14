@@ -10,6 +10,7 @@
 | **[params.html](params.html)** | 파라미터 값 **전체** + Python↔C++ 파리티 + 튕김조절 | 아티팩트 |
 | **[pipeline.html](pipeline.html)** | **A** — MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수(배포) | 아티팩트 |
 | **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구) | 아티팩트 |
+| **[pipeline_rl.html](pipeline_rl.html)** | **RL** — RGA `RobotSW_IsaacLab` 파쿠르 정책(RMA MLP teacher-student, 비순환) 파이프라인 + A/B·C(MPC/OCP) 대조 | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
 | [RECORDING.md](RECORDING.md) | 화면 녹화 가이드(NVENC/OBS) | md |
 | [DEVLOG.md](DEVLOG.md) | 개발일지 + 참조 메모(연대기) | md |
@@ -43,6 +44,7 @@
 | 문서 | 내용 | 상태 |
 |---|---|---|
 | **[MPC_RL_하이브리드_전략_리포트.md](MPC_RL_하이브리드_전략_리포트.md)** | MPC/RL 하이브리드 5패턴(A=MPC교사·B=계층·C=주입·D=안전필터·E=샘플링prior) + R.pet 로드맵(H0~H3) + **§9 crocoddyl/aligator 실시간화**(RTI·호라이즌다이어트·모델계층화) + 6-DoF머리. ★**다음단계=crocoddyl C++ 실시간 OCP**의 전략 근거. | 전략·설계 |
+| **[roadmap_hybrid.html](roadmap_hybrid.html)** | 위 리포트의 **실행판** — RGA `RobotSW_IsaacLab` 실측 반영. 패턴별 적용성·sim2sim 왕복 파이프라인·Phase 0~4 우선순위(Go2로 브리지 검증→R_Skeleton 하이브리드). R_Skeleton=velocity-command·RMA 확인. | 아티팩트 |
 | **[RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)** | 6-DoF 머리(목) 체인 추가 → 예측형 시선 안정화·반작용 질량 협조·시선/균형 중재. 단계 **G0(23-DoF 모델)→G1(반응층 기준선)→G2(WBIC gaze task)→G3(예측 ff, lite/full)→G4(반작용 질량)→G5(중재)**. 착수순서 G0→G1→G2(기존 스택 3주 데모). | 설계완료·미착수 |
 | RPET_ALIGATOR_MPC.md | (위 문서가 참조하는 Phase 0–3 로드맵 — aligator OCP) | 참조·아직 없음 |
 

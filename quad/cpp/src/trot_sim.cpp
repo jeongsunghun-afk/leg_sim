@@ -2,6 +2,7 @@
 // 대상: standalone 평지 trot (DETECT=0 순수스케줄). 검증: falls=0 + 전진거리·tilt를 Python과 비교.
 #include "trot_controller.hpp"
 #include "state_estimator.hpp"   // ★sim2real: leg-odometry 상태추정기(EST_TEST서 정확도 검증)
+#include "terrain_map.hpp"       // ★TAMOLS P0: 로컬 elevation map + footScore (TMAP_DUMP 헤드리스 검증)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -90,6 +91,7 @@ int main(int argc,char**argv){
   if(getenv("ALIP") && !strcmp(getenv("ALIP"),"0")) ctrl.ALIP=false;
   if(getenv("POS_HOLD") && !strcmp(getenv("POS_HOLD"),"0")) ctrl.POS_HOLD=false;
   mjModel*m=q.m; mjData*d=q.d; double dt=m->opt.timestep;
+  MjRayTerrainMap tmap; bool TMAPDUMP=getenv("TMAP_DUMP")!=nullptr;   // ★TAMOLS P0 헤드리스 검증: 로컬 elevation map+footScore 덤프
   if(getenv("DBG")) std::printf("[dbg] nu=%d leg_dof=[%d %d %d %d] standing_z=%.5f com_ref=[%.5f %.5f %.5f]\n",
       q.nu,q.leg_dof[0],q.leg_dof[1],q.leg_dof[2],q.leg_dof[3],d->qpos[2],q.com_ref[0],q.com_ref[1],q.com_ref[2]);
 
@@ -128,6 +130,8 @@ int main(int argc,char**argv){
   std::vector<std::vector<double>> sring(Lsense+1, std::vector<double>(_fsz,0.0));   // 센서 지연 링
   std::vector<std::vector<double>> cring(Lact+1, std::vector<double>(m->nu,0.0));    // 구동 지연 링
   for(int step=0; step<STEPS; step++){
+    if(TMAPDUMP && step%50==0){ double cx=getenv("TMAP_CX")?atof(getenv("TMAP_CX")):d->qpos[0], cy=getenv("TMAP_CY")?atof(getenv("TMAP_CY")):d->qpos[1];
+      tmap.update(m,d,cx,cy,(uint64_t)(d->time*1e9)); }   // 맵 rate 갱신(로봇 위치 또는 TMAP_CX/CY 지정 중심)
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     if(ESTCTRL){
@@ -238,5 +242,18 @@ int main(int argc,char**argv){
       ecnt, std::sqrt(epx/ecnt),std::sqrt(epy/ecnt),std::sqrt(epz/ecnt), std::sqrt(evx/ecnt),std::sqrt(evy/ecnt),std::sqrt(evz/ecnt));
     std::printf("    ★pos는 적분 드리프트 누적(실기 동일, 절대위치 안 씀) · vel/자세가 제어핵심. 추정 base 최종=[%.3f,%.3f,%.3f] vs true=[%.3f,%.3f,%.3f]\n",
       est.p[0],est.p[1],est.p[2], d->qpos[0],d->qpos[1],d->qpos[2]); }
+  if(TMAPDUMP){ const Submap* sm=tmap.map();
+    if(sm){ float mn=1e9f,mx=-1e9f; double sum=0; int nvv=0, tot=sm->nx*sm->ny;
+      for(int k=0;k<tot;k++){ if(!sm->valid[k]) continue; float fs=sm->footScore.d[k]; mn=std::min(mn,fs); mx=std::max(mx,fs); sum+=fs; nvv++; }
+      float ez0=1e9f,ez1=-1e9f; for(int k=0;k<tot;k++){ if(!sm->valid[k]) continue; float e=sm->elevation.d[k]; ez0=std::min(ez0,e); ez1=std::max(ez1,e); }
+      std::printf("\n[TMAP] center=(%.2f,%.2f) res=%.3f %dx%d · margin=%.3f(foot_r%.2f+σ%.2f) · elevation %.3f~%.3f(Δ%.3f)\n",
+        sm->ox+sm->nx*sm->res*0.5, sm->oy+sm->ny*sm->res*0.5, sm->res, sm->nx, sm->ny, tmap.margin(), tmap.foot_r, tmap.placement_margin, ez0, ez1, ez1-ez0);
+      std::printf("[TMAP] footScore valid=%d/%d min=%.2f max=%.2f mean=%.2f (1=발판적합·0=부적합·엣지/경사서↓)\n", nvv,tot,mn,mx, nvv?sum/nvv:0.0);
+      std::printf("[TMAP] footScore 맵 (#>0.8 +>0.5 .>0.2 (공백)≤0.2/무효):\n"); int st=std::max(1,sm->ny/28);
+      for(int j=sm->ny-1;j>=0;j-=st){ std::printf("    ");
+        for(int i=0;i<sm->nx;i+=st){ if(!sm->valid[(size_t)j*sm->nx+i]){ std::printf(" "); continue; }
+          float fs=sm->footScore.at(i,j); std::printf("%c", fs>0.8f?'#':(fs>0.5f?'+':(fs>0.2f?'.':' '))); }
+        std::printf("\n"); } }
+    else std::printf("[TMAP] map 미생성(TMAP_DUMP인데 update 안됨)\n"); }
   mj_deleteData(d); mj_deleteModel(m); return 0;
 }

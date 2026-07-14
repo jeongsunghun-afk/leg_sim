@@ -2,6 +2,7 @@
 //   마우스: 좌드래그=회전 우드래그=이동 휠=줌.  키보드: ↑↓=전진속도 ←→=선회 space=정지 backspace=리셋.
 #include "trot_controller.hpp"
 #include "state_estimator.hpp"   // ★sim2real: leg-odometry 추정기(뷰어 추정상태 제어 + GT비교 시각화)
+#include "terrain_map.hpp"       // ★TAMOLS P0: 로컬 elevation map(mj_ray→격자) + footScore 시각화
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -142,6 +143,8 @@ int main(int argc,char**argv){
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
   double est_perr=0, est_verr=0;   // 최신 추정오차(HUD 표시)
   double est_quat[4]={1,0,0,0};    // 최신 추정(측정) 방위 — 고스트 헤딩 화살표용
+  // ★TAMOLS P0: 로컬 elevation map(mj_ray→격자). GUI '지형맵' 토글(tmap_on) 또는 env TERRAIN_MAP=1. 맵 rate로만 갱신(1kHz 밖).
+  MjRayTerrainMap tmap; bool tmap_on=getenv("TERRAIN_MAP")!=nullptr;
   // ★sim2real 지연(latency) — env SENSE_LAT_MS(센서→추정 지연=고스트 lag)·ACT_LAT_MS(제어→구동 지연, 폐루프만). 고정 링버퍼(L=0=지연없음).
   double SLAT=getenv("SENSE_LAT_MS")?atof(getenv("SENSE_LAT_MS")):0.0, ALAT=getenv("ACT_LAT_MS")?atof(getenv("ACT_LAT_MS")):0.0;
   int Lsense=(int)std::lround(SLAT*1e-3/m->opt.timestep), Lact=(int)std::lround(ALAT*1e-3/m->opt.timestep);
@@ -155,7 +158,7 @@ int main(int argc,char**argv){
   if(!win){ std::fprintf(stderr,"창 생성 실패(DISPLAY?)\n"); glfwTerminate(); return 1; }
   glfwMakeContextCurrent(win); glfwSwapInterval(1);
   mjv_defaultCamera(&cam); mjv_defaultOption(&opt); mjv_defaultScene(&scn); mjr_defaultContext(&con);
-  mjv_makeScene(m,&scn,2000); mjr_makeContext(m,&con,mjFONTSCALE_150);
+  mjv_makeScene(m,&scn,8000); mjr_makeContext(m,&con,mjFONTSCALE_150);   // ★8000: terrain map 격자 오버레이 여유
   cam.distance=2.2; cam.elevation=-20; cam.azimuth=135; cam.lookat[2]=0.35;
   opt.flags[mjVIS_CONTACTFORCE]=1;
   glfwSetMouseButtonCallback(win,mouse_btn);   // 마우스 카메라만(키보드 제어 삭제, GUI로 조작)
@@ -255,6 +258,18 @@ int main(int argc,char**argv){
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);
     cam.lookat[0]=d->qpos[0]; cam.lookat[1]=d->qpos[1];   // 로봇 추적
     mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);
+    if(tmap_on){   // ★TAMOLS P0: 로컬 elevation map 갱신(맵 rate, ~20프레임마다=1kHz 밖) + footScore 격자 오버레이
+      { static long _tk=0; if(_tk++ % 20 == 0) tmap.update(m,d,d->qpos[0],d->qpos[1],(uint64_t)(d->time*1e9)); }
+      const Submap* sm=tmap.map();
+      if(sm){ mjtNum sz[3]={(mjtNum)(sm->res*0.45),(mjtNum)(sm->res*0.45),0.006};   // 셀=얇은 평판(초록=발판적합 / 빨강=부적합, z=지형높이)
+        for(int j=0;j<sm->ny && scn.ngeom<scn.maxgeom-8;j++) for(int i=0;i<sm->nx && scn.ngeom<scn.maxgeom-8;i++){
+          if(!sm->valid[(size_t)j*sm->nx+i]) continue;
+          float fs=sm->footScore.at(i,j);
+          float rgba[4]={1.0f-fs, 0.30f+0.55f*fs, 0.12f, 0.5f};
+          mjtNum p[3]={sm->ox+i*sm->res, sm->oy+j*sm->res, sm->elevation.at(i,j)+0.004};
+          mjvGeom* g=&scn.geoms[scn.ngeom]; mjv_initGeom(g,mjGEOM_BOX,sz,p,NULL,rgba); g->category=mjCAT_DECOR; scn.ngeom++;
+        } }
+    }
     if(est_on && scn.ngeom+4<=scn.maxgeom){   // ★GT↔추정 비교: 로봇 위로 띄운 마커쌍(초록=참 base / 주황=추정 base) — 정지 시 겹치고, 드리프트하면 수평 이격
       const double H=0.35;                     // 몸통 위 띄움 높이(메시에 안 묻히게)
       mjtNum bz=d->qpos[2];

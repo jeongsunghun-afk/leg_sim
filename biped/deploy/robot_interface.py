@@ -51,6 +51,54 @@ class LowCmd:
     kd:     np.ndarray = field(default_factory=lambda: np.zeros(N_JOINT))
 
 
+class StateEstimator:
+    """leg-odometry 상태추정 — IMU(자세·각속도) + 관절엔코더(q,dq) + 접촉 → base pose/vel.
+    ★절대 base(GPS/모캡) 안 씀 = 실로봇과 동일. **센서만으로 full state 복원**.
+
+    원리(stance 발 정지 가정): 접촉발이 지면서 미끄러지지 않으면 그 발의 world 속도=0.
+      다리 운동학으로 '몸통 기준 발 속도'를 알면 역산: v_base = −(ω×R·p_foot + R·v_foot).
+      여러 stance 발 평균 + 저역통과(alpha) → base 선속도, 적분 → base 위치(드리프트=실기와 동일).
+      base 자세=IMU quat 직접, base 각속도=gyro 직접(추정 불필요).
+    state_estimator.hpp(quad C++) MuJoCo Python 포팅. 발 개수 무관(foot_geom 길이)."""
+
+    def __init__(self, m, foot_geom, foot_rad, dt):
+        import mujoco
+        self._mj = mujoco
+        self.m = m
+        self.ed = mujoco.MjData(m)          # 상대 운동학용 scratch(base 원점·단위자세)
+        self.foot_geom = list(foot_geom); self.foot_rad = list(foot_rad); self.dt = dt
+        self.p = np.zeros(3); self.v = np.zeros(3)
+
+    def reset(self, p0):
+        self.p = np.array(p0, float); self.v = np.zeros(3)
+
+    def hold(self):
+        """정지(stance 없음/미보행): 속도 0 유지(드리프트 억제). 17-DOF와 동일."""
+        self.v[:] = 0.0
+
+    def estimate(self, qj, dqj, quat_wxyz, gyro, contacts, alpha=0.4):
+        mj, m, ed = self._mj, self.m, self.ed
+        ed.qpos[:] = 0.0; ed.qpos[3] = 1.0          # base 원점·단위자세 → 순수 다리 운동학
+        ed.qpos[7:] = qj
+        ed.qvel[:] = 0.0; ed.qvel[6:] = dqj
+        mj.mj_forward(m, ed)
+        Rm = np.zeros(9); mj.mju_quat2Mat(Rm, np.asarray(quat_wxyz, float)); R = Rm.reshape(3, 3)
+        omw = R @ np.asarray(gyro, float)           # 동체 각속도 → world
+        jacp = np.zeros((3, m.nv)); vbs = []
+        for k, g in enumerate(self.foot_geom):
+            if not contacts[k]:
+                continue                             # stance 발만(swing 발은 지면 안 정지)
+            gp = ed.geom_xpos[g].copy()
+            pfb = gp.copy(); pfb[2] -= self.foot_rad[k]          # 발 접촉점(base frame, 반경 보정)
+            mj.mj_jac(m, ed, jacp, None, gp, m.geom_bodyid[g])
+            vfb = jacp @ ed.qvel                                 # 발 속도(관절 기여, base frame)
+            vbs.append(-(np.cross(omw, R @ pfb) + R @ vfb))      # 발 정지 → base world 속도
+        if vbs:
+            self.v = (1 - alpha) * self.v + alpha * np.mean(vbs, axis=0)   # 접촉 평균 + 저역통과
+        self.p = self.p + self.v * self.dt                       # 위치 적분(드리프트 허용)
+        return self.p.copy(), self.v.copy()
+
+
 class RobotInterface(ABC):
     """플랜트 추상화. 컨트롤러↔모터 사이 경계(SDK LowCmd/LowState)."""
     JOINT_NAMES = JOINT_NAMES
@@ -146,37 +194,40 @@ class HardwareInterface(RobotInterface):
     def __init__(self, mjcf, dt=0.002):
         import mujoco
         self._mj = mujoco
-        self.m = mujoco.MjModel.from_xml_path(mjcf)   # 동역학 모델(상태추정 FK용)
+        self.m = mujoco.MjModel.from_xml_path(mjcf)   # 동역학 모델(상태추정 FK·WBIC 재사용)
         self._dt = dt
         self.motors_on = False
-        # self.bus = MotorBus(...)      # TODO: 실 SDK 핸들
+        sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in FOOT_NAMES]
+        rad = [float(self.m.geom_size[g][0]) for g in sph]
+        self.est = StateEstimator(self.m, sph, rad, dt)   # ★센서만으로 base 복원(leg-odometry)
+        # self.bus = MotorBus(...)      # TODO: 실 SDK 핸들(CAN/EtherCAT/DDS)
         # self.imu = ImuDriver(...)
-        # self.est = BaseEstimator(self.m)   # leg-odometry + IMU
         raise NotImplementedError(
             "HardwareInterface: 실모터 SDK 연결 필요. deploy/README.md의 A~D 채우기.\n"
-            "  - read(): 모터 인코더 q/dq + IMU quat/gyro → LowState\n"
-            "  - apply_state(): 측정 주입 + base 상태추정(leg-odometry EKF)\n"
+            "  - read(): 모터 인코더 q/dq + IMU quat/gyro + 접촉 → LowState (아래 TODO)\n"
             "  - write(): tau → setTorqueRef (slew-rate·한계 클램프)\n"
-            "  - enable_motors(): 모터 enable/disable (Off 전원)")
+            "  - enable_motors(): 모터 enable/disable (Off 전원)\n"
+            "  ★base 위치/선속도는 apply_state의 StateEstimator가 센서만으로 복원(구현 완료).")
 
     def dt(self):
         return self._dt
 
-    def read(self) -> LowState:            # TODO: bus/imu 폴링
+    def read(self) -> LowState:            # TODO: bus/imu 폴링 → LowState(q,dq,quat,gyro,foot_contact)
         raise NotImplementedError
 
     def apply_state(self, d, st: LowState) -> None:
-        # 측정 관절 + IMU 자세/각속도를 모델에 주입
+        # ① 측정 관절 + IMU 자세/각속도를 모델에 주입
         d.qpos[7:] = st.q
         d.qvel[6:] = st.dq
         d.qpos[3:7] = st.quat
         d.qvel[3:6] = st.gyro
-        # ★base 위치/선속도 = 상태추정기 결과(없으면 WBIC CoM task 부정확)
-        d.qpos[0:3] = st.base_pos
-        d.qvel[0:3] = st.base_vel
+        # ② ★base 위치/선속도 = leg-odometry 추정(센서만, 절대 base 불필요). WBIC CoM/속도 task가 사용.
+        self.est.estimate(st.q, st.dq, st.quat, st.gyro, st.foot_contact)
+        d.qpos[0:3] = self.est.p
+        d.qvel[0:3] = self.est.v
         self._mj.mj_forward(self.m, d)
 
-    def write(self, cmd: LowCmd) -> None:  # TODO: setTorqueRef
+    def write(self, cmd: LowCmd) -> None:  # TODO: setTorqueRef(cmd.tau), slew-rate·한계 클램프
         raise NotImplementedError
 
     def enable_motors(self, on: bool) -> None:  # TODO: motor enable/disable

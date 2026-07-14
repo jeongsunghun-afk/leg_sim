@@ -195,9 +195,13 @@ while dpg.is_dearpygui_running():
     try:
         with open(STATE) as f:
             st = json.load(f)
-        dpg.set_value('state', 'mode=%s  높이%.2f  vx%+.2f vy%+.2f wz%+.2f  yaw%+.0f°  tilt%.1f°  (%+.1f,%+.1f)'
-                      % (st['mode'], st['base_z'], st['vx_cmd'], pub.cmd['vy'], st.get('wz_cmd', 0),
-                         st.get('yaw', 0), st['tilt'], st['x'], st.get('y', 0)))
+        line = ('mode=%s  높이%.2f  vx%+.2f vy%+.2f wz%+.2f  yaw%+.0f°  tilt%.1f°  (%+.1f,%+.1f)'
+                % (st['mode'], st['base_z'], st['vx_cmd'], pub.cmd['vy'], st.get('wz_cmd', 0),
+                   st.get('yaw', 0), st['tilt'], st['x'], st.get('y', 0)))
+        if 'est_perr' in st:                       # biped_deploy 실행 시 = leg-odometry 추정오차(GT 대비)
+            line += '\n추정(leg-odom) 오차: pos %.1fcm  vel %.3fm/s   EST(%+.2f,%+.2f)' % (
+                st['est_perr']*100, st['est_verr'], st.get('est_x', 0), st.get('est_y', 0))
+        dpg.set_value('state', line)
     except Exception:
         dpg.set_value('state', '(biped_run.py 대기중…)')
     dpg.render_dearpygui_frame()

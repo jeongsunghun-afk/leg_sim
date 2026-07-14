@@ -27,7 +27,9 @@ Python·C++ 어느 컨트롤러든 **같은 GUI·JSON 채널**(/tmp/biped_cmd.js
 
 ## 실배포 (실모터 HW) — `deploy/`
 컨트롤러는 순수 토크 출력 → 플랜트만 교체(`RobotInterface`: sim↔실모터). `python deploy/biped_deploy.py --backend sim|hw`.
-`deploy/robot_interface.py`(LowCmd/LowState SDK 규약)·`biped_deploy.py`(배포 루프)·`README.md`(A~E 체크리스트). 상세=`deploy/README.md`.
+**★상태추정기(leg-odometry, 17-DOF와 동일 계보)**: 센서만(관절 q/dq + IMU + 접촉)으로 base pose/vel 복원 →
+HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GUI 표시). `--est-ctrl`=폐루프 검증.
+`deploy/robot_interface.py`(LowCmd/LowState·StateEstimator)·`biped_deploy.py`(배포 루프)·`README.md`(A~E 체크리스트). 상세=`deploy/README.md`.
 
 ## 파일 (활성)
 **Python**

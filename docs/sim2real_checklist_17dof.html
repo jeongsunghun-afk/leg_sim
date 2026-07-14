@@ -75,7 +75,7 @@
 <table>
 <tr><th>항목</th><th>현재 sim</th><th>실기</th><th>조치</th></tr>
 <tr><td class="k">상태추정 <span class="ok">구현됨</span></td><td>leg-odometry(IMU자세+엔코더+접촉, stance발 정지가정, ZUPT). 뷰어 GT↔추정 비교(개루프 고스트)+EST_CTRL 폐루프</td><td>동일 추정기 실기 재사용(절대위치 안 씀)</td><td>센서 노이즈 주입(GYRO/QUAT/ENC)·배포속도 falls=0 확증(run은 전복=안전속도~1.1)</td></tr>
-<tr><td class="k">센서/제어 지연 <span class="star">★</span></td><td>0 (latency 없음)</td><td>수 ms 지연(버스·연산)</td><td><b>latency 모델 추가 = 다음 작업</b>(게인 재튜닝 최대원인). 센서→추정/제어 + 제어→구동 링버퍼</td></tr>
+<tr><td class="k">센서/제어 지연 <span class="ok">구현됨</span></td><td>SENSE_LAT_MS(센서→추정/제어)·ACT_LAT_MS(제어→구동) 링버퍼</td><td>수 ms 지연(버스·연산)</td><td><b>★총 루프 예산 ~12ms</b>: 센서=구동 합산 시 각 6ms까지 falls=0(7ms↑ 붕괴)·단일 채널만이면 ~10ms까지. 넘으면 게인 재튜닝(강성↓)/지연보상. 게인 재튜닝 최대원인 확증</td></tr>
 <tr><td class="k">발 컴플라이언스</td><td>강체 sphere</td><td>고무패드</td><td>접촉 강성/감쇠 모델</td></tr>
 <tr><td class="k"><span class="star">★</span>perceptive 지형인지</td><td>MuJoCo <code>mj_ray</code> 하향캐스트(=이상적 elevation)</td><td>실 depth/LiDAR elevation-map (노이즈·occlusion·지연)</td><td><code>terrain_z()</code> 백엔드만 교체(인터페이스 동일). 착지높이·몸통높이 적응 로직 불변</td></tr>
 <tr><td class="k">제어 주파수</td><td>WBIC 1kHz · MPC 50Hz</td><td>실기 가능한지 확인</td><td>C++ 1kHz 실증(실시간 4~5배) <span class="ok">확인됨</span></td></tr>

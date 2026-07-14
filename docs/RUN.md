@@ -71,7 +71,9 @@ cd simulation/quad && bash gen_jump.sh 0.6      # 전방 점프 궤적 생성(VX
 EST_CTRL=1 GYRO_N=0.02 QUAT_N=0.01 ENCQ_N=0.001 ENCDQ_N=0.01 ./build/trot_sim ../mjcf/quad_real_17dof_waist_sphere.mjcf 6000
 #   ★EST_CTRL=폐루프(제어에 추정상태 사용, 실기 동일구조) — 헤드리스 특성화용. 배포속도 walk0.6/trot1.2 falls=0, run2.0은 전복(안전속도~1.1).
 #   센서노이즈 env: GYRO_N[rad/s]·QUAT_N[rad]·ENCQ_N[rad]·ENCDQ_N[rad/s] (0=완벽센서).
+#   센서/구동 지연 env: SENSE_LAT_MS(센서→추정/제어)·ACT_LAT_MS(제어→구동). 뷰어 HUD·헤드리스 [LATENCY] 로그.
 ```
+- ★**지연 특성화**(EST_CTRL 폐루프, 배포노이즈): **총 루프 예산 ~12ms** — 센서=구동 합산 시 각 **6ms까지 falls=0**(7ms↑ 붕괴), 단일 채널만이면 ~10ms. 넘으면 게인 재튜닝(강성↓)/지연보상 필요. 뷰어는 개루프라 지연=고스트 lag만(보행 안정 유지).
 
 ## 게이트·모드 요약
 - **gait**: walk(순차 3~4발지지·정적안정·~0.6) / trot(대각 2지지·~1.4) / run(고속trot T0.40·~2.0).

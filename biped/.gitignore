@@ -3,3 +3,4 @@ __pycache__/
 renders/
 *.log
 MUJOCO_LOG.TXT
+cpp/build/

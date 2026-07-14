@@ -292,6 +292,24 @@ device.initializeJoints(
 )
 device.changeCamera(1.0, 60, -15, [0.6, -0.2, 0.5])
 
+# ★① 지형인지 발판: 전역 heightmap을 mj_ray로 생성 → MPC 주입. 발판 z=지형높이, Raibert 발판이 갭(무효)이면
+#   반경내 최근접 유효셀로 xy 이동(갭 회피) → OCP가 base 협조 최적화. HEIGHTMAP=1로 켬(미설정=평지 baseline).
+if _os.environ.get("HEIGHTMAP","0") != "0":
+    _hres = float(_os.environ.get("HM_RES","0.05")); _hox = -0.6; _hoy = -1.0; _hnx = 180; _hny = 40
+    _hm = np.full((_hnx, _hny), np.nan, dtype=np.float32)
+    _gg = np.array([0,0,1,0,0,0], dtype=np.uint8)   # group2(지형)만 — terrain_z와 동일 마스킹
+    _vec = np.array([0.0,0.0,-1.0]); _gid = np.zeros(1, dtype=np.int32); _nval = 0
+    for _i in range(_hnx):
+        for _j in range(_hny):
+            _pnt = np.array([_hox+_i*_hres, _hoy+_j*_hres, 2.0])
+            _dist = _mj.mj_ray(device.m, device.d, _pnt, _vec, _gg, 1, -1, _gid)
+            if _dist >= 0 and _gid[0] >= 0:
+                _hm[_i,_j] = 2.0 - _dist; _nval += 1
+    mpc.setHeightmap(_hm, _hres, _hox, _hoy)
+    if _os.environ.get("HM_SEARCH"): mpc.hm_search = float(_os.environ.get("HM_SEARCH"))
+    print("[HEIGHTMAP] %dx%d res%.2f valid=%d/%d elev %.2f~%.2f 주입"
+          % (_hnx,_hny,_hres,_nval,_hnx*_hny, np.nanmin(_hm) if _nval else 0, np.nanmax(_hm) if _nval else 0), flush=True)
+
 q_meas, v_meas = device.measureState()
 x_measured = np.concatenate([q_meas, v_meas])
 

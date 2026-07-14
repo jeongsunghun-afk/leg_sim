@@ -160,6 +160,8 @@
       <li><b>파생 레이어</b>(edgeSDF·footScore·slope)는 <b>맵 노드에서 맵 갱신율에 1회</b> 계산 — 1 kHz 루프 밖 (grid_map 필터 체인)</li>
     </ul>
     <p class="dim">두 소비자(현 컨트롤러·TAMOLS)가 같은 계약을 공유 → nav든 planner든 붙는 곳이 하나로 수렴.</p>
+    <p class="p" style="border-left:3px solid var(--wbic);padding-left:11px;margin-top:14px"><b>⚠ 점접촉(sphere 발) 주의</b>: 02_Leg 발=<b>점접촉</b>(발바닥 패치 없음) → footScore는 "패치 밀착"이 아니라 <b>"점 지지 안전"</b>. margin = <b>sphere 반경 + 발배치 불확실성 σ<sub>place</sub></b>(σ는 sim2real latency/노이즈 발끝오차서 근거) · <b>edgeSDF 지배</b>(굴러떨어짐/갭 회피)·slope 보조·roughness 저비중(패치 밀착 무의미).</p>
+    <p class="p" style="border-left:3px solid var(--plan);padding-left:11px"><b>⚠ 게이트 무관</b>: terrain map·footScore·TAMOLS는 발배치 층이라 <b>walk·trot·run·stairs 전부 적용</b>. 오히려 불연속 지형(디딤돌·계단)은 정적안정·정밀배치인 <b>walk/stairs가 본선</b>, trot은 완만 지형용.</p>
   </div>
 </section>
 
@@ -176,8 +178,9 @@
 </section>
 
 <section id="rollout">
-  <h2><span class="chip plan">ROLLOUT</span> 5 · 점진 통합 <span class="dim">각 단계가 독립 검증 · nav는 마지막</span></h2>
+  <h2><span class="chip plan">ROLLOUT</span> 5 · 점진 통합 <span class="dim">각 단계가 독립 검증 · nav는 마지막 · ★P0 진행중</span></h2>
   <div class="card">
+    <div class="step"><div class="num">0</div><div><div class="b"><span style="color:var(--ok)">✔ 진행중</span> — 로컬 2.5D elevation grid (sim 백엔드)</div><div class="x"><code>terrain_map.hpp</code>: MjRayTerrainMap(mj_ray→로봇중심 격자 + 레이어 5종 + 더블버퍼 + bestFoot). 헤드리스 <code>TMAP_DUMP</code> 검증=stepping서 footScore 정확(돌=적합·갭=무효·엣지=하락). 점접촉 margin=foot_r+σ. 다음=맵 열화스윕(§6)·뷰어 오버레이.</div></div></div>
     <div class="step"><div class="num">1</div><div><div class="b"><code>terrain_z()</code> 백엔드만 실맵으로 스왑</div><div class="x">현 컨트롤러(Raibert + 높이 적응)가 실 elevation map 위에서 보행. 가장 저위험 첫 통합 — perception→controller 심이 살아있음을 증명.</div></div></div>
     <div class="step"><div class="num">2</div><div><div class="b">footScore nudge — "가난한 자의 TAMOLS"</div><div class="x">Raibert 타깃을 반경 내 최고 점수 셀로 살짝 당김. 옵티마이저 없이 발판 품질↑. 저비용 중간 이득.</div></div></div>
     <div class="step"><div class="num">3</div><div><div class="b">TAMOLS가 <code>submap()</code> 소비 → base+발판 최적화</div><div class="x">레퍼런스층을 TAMOLS로 교체(WBIC 유지). 앞 2단계가 심을 검증했으니 planner 교체만 남음. 갭/스텝에서 Raibert 초월.</div></div></div>

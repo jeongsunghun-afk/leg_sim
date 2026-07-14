@@ -65,7 +65,8 @@ class StateEstimator:
       ③ IMU accel 융합(선택) — 예측(연속성) + leg-odom 보정(complementary). 발 개수 무관."""
 
     def __init__(self, m, foot_geom, foot_rad, dt,
-                 alpha=0.4, dwell_steps=0, k_anchor=0.0, use_accel=False):
+                 alpha=0.4, dwell_steps=0, k_anchor=0.0, use_accel=False,
+                 contact_height=True, ground_z=0.0):
         import mujoco
         self._mj = mujoco
         self.m = m
@@ -73,6 +74,7 @@ class StateEstimator:
         self.foot_geom = list(foot_geom); self.foot_rad = list(foot_rad); self.dt = dt
         self.alpha = alpha; self.dwell_steps = dwell_steps
         self.k_anchor = k_anchor; self.use_accel = use_accel
+        self.contact_height = contact_height; self.ground_z = ground_z
         self.g_world = np.array([0.0, 0.0, -9.81])
         self.p = np.zeros(3); self.v = np.zeros(3)
         self.dwell = [0] * len(foot_geom)   # 발별 연속 접촉 스텝 수
@@ -115,14 +117,19 @@ class StateEstimator:
             self.v = self.v + (R @ np.asarray(acc, float) + self.g_world) * self.dt   # IMU 예측
         if vbs:
             self.v = (1 - self.alpha) * self.v + self.alpha * np.mean(vbs, axis=0)     # 보정
-        # ── ② 위치: 적분 + 접촉 앵커 보정(드리프트 제거) ──
+        # ── ② 수평위치(xy): 적분(드리프트 허용) + (선택)접촉 앵커 ──
         self.p = self.p + self.v * self.dt
         for k, pfw in pfw_solid:
             if self.anchor[k] is None:
                 self.anchor[k] = self.p + pfw            # 안정 접촉 시작 = 발 world 위치 고정
-            else:
+            elif self.k_anchor > 0:
                 p_meas = self.anchor[k] - pfw            # 앵커 기준 base 위치(비드리프트)
-                self.p = self.p + self.k_anchor * (p_meas - self.p)   # 서서히 보정
+                self.p[:2] = self.p[:2] + self.k_anchor * (p_meas - self.p)[:2]   # xy만
+        # ── ★높이(z): 접촉발이 지면(ground_z)에 있다는 사실로 직접 측정 = 드리프트 없음 ──
+        #    발 접촉점 world z = p_z + pfw_z = ground_z  →  p_z = ground_z − pfw_z. (평지 가정)
+        #    ★z는 절대 관측 가능(발이 땅에 붙음)이라 적분 드리프트 안 함 → 폐루프 안정의 핵심.
+        if self.contact_height and pfw_solid:
+            self.p[2] = self.ground_z - np.mean([pfw[2] for _, pfw in pfw_solid])
         return self.p.copy(), self.v.copy()
 
 

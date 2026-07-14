@@ -46,6 +46,8 @@ def main():
     ap.add_argument('--T', type=float, default=1e9)
     args = ap.parse_args()
 
+    if os.environ.get('K_RETURN'):                 # 진단: 절대 원점복귀 게인 오버라이드
+        BM.BS.K_RETURN = float(os.environ['K_RETURN'])
     c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
     m, d = c.m, c.d; dt = m.opt.timestep
     iface = make_interface(args.backend, c)
@@ -60,7 +62,8 @@ def main():
                          alpha=float(os.environ.get('EST_ALPHA', '0.4')),
                          dwell_steps=int(os.environ.get('EST_DWELL', '15')),
                          k_anchor=float(os.environ.get('EST_ANCHOR', '0.05')),
-                         use_accel=os.environ.get('EST_ACCEL', '0') == '1')
+                         use_accel=os.environ.get('EST_ACCEL', '0') == '1',
+                         contact_height=os.environ.get('EST_NOCH') is None)  # 접촉높이(기본 on)
     est.reset(d.qpos[0:3])
     est_perr = est_verr = 0.0
     def est_reset():
@@ -101,8 +104,10 @@ def main():
             iface.write(LowCmd())                      # tau=0(limp) + step
         elif args.est_ctrl and args.backend == 'sim':  # ⑤' 폐루프 검증: 추정 base로 제어, 물리는 GT
             gp, gv = d.qpos[0:3].copy(), d.qvel[0:3].copy()
-            ep = gp if os.environ.get('EST_PERFECT') else est.p    # harness 검증용: 완벽추정=GT
-            ev = gv if os.environ.get('EST_PERFECT') else est.v
+            _pf = os.environ.get('EST_PERFECT')
+            ep = (gp.copy() if (_pf or os.environ.get('EST_POSGT')) else est.p.copy())  # 진단: 위치 GT
+            ev = gv if (_pf or os.environ.get('EST_VELGT')) else est.v                  # 진단: 속도 GT
+            if os.environ.get('EST_ZGT'): ep = ep.copy(); ep[2] = gp[2]                 # 진단: z(높이)만 GT
             d.qpos[0:3] = ep; d.qvel[0:3] = ev; mujoco.mj_forward(m, d)
             c.control(dt)                              # tau ← 추정 base(드리프트 포함)
             d.qpos[0:3] = gp; d.qvel[0:3] = gv; mujoco.mj_forward(m, d)   # 물리는 GT 복원

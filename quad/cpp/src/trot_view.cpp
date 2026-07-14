@@ -142,6 +142,13 @@ int main(int argc,char**argv){
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
   double est_perr=0, est_verr=0;   // 최신 추정오차(HUD 표시)
   double est_quat[4]={1,0,0,0};    // 최신 추정(측정) 방위 — 고스트 헤딩 화살표용
+  // ★sim2real 지연(latency) — env SENSE_LAT_MS(센서→추정 지연=고스트 lag)·ACT_LAT_MS(제어→구동 지연, 폐루프만). 고정 링버퍼(L=0=지연없음).
+  double SLAT=getenv("SENSE_LAT_MS")?atof(getenv("SENSE_LAT_MS")):0.0, ALAT=getenv("ACT_LAT_MS")?atof(getenv("ACT_LAT_MS")):0.0;
+  int Lsense=(int)std::lround(SLAT*1e-3/m->opt.timestep), Lact=(int)std::lround(ALAT*1e-3/m->opt.timestep);
+  int _fsz=2*(m->nq-7)+11;
+  std::vector<std::vector<double>> sring(Lsense+1, std::vector<double>(_fsz,0.0));
+  std::vector<std::vector<double>> cring(Lact+1, std::vector<double>(m->nu,0.0));
+  long estep=0;
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
   GLFWwindow* win=glfwCreateWindow(1280,900,"17-DOF C++ trot (quad_mpc_wbic_17dof)",NULL,NULL);
@@ -197,31 +204,44 @@ int main(int argc,char**argv){
     double target=sim0+wall*RATE; int guard=0;
     while(d->time < target && guard++ < 60){    // 따라잡기(최대 60스텝/프레임=버스트 상한↓, 점프 히치 후 몰아치기 완화)
       if(est_on){
-        // ★실기 센서(+노이즈)→leg-odometry 추정. 개루프(뷰어 비교)=추정만 갱신하고 제어는 GT / 폐루프(env)=추정상태로 제어
+        // ★실기 센서(+노이즈+지연)→leg-odometry 추정. 개루프(뷰어 비교)=추정만 갱신·제어는 GT / 폐루프(env)=추정상태로 제어
         int NJ=m->nq-7;
-        std::vector<bool> cts(4,false);
-        for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&cc=d->contact[ci]; if((cc.geom1==q.fgid[i]||cc.geom2==q.fgid[i])&&cc.dist<0.002){ cts[i]=true; break; } }
+        // 현재 센서(노이즈) → 지연 링 기록
+        std::vector<bool> cts0(4,false);
+        for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&cc=d->contact[ci]; if((cc.geom1==q.fgid[i]||cc.geom2==q.fgid[i])&&cc.dist<0.002){ cts0[i]=true; break; } }
+        { auto& fr=sring[estep%(int)sring.size()]; int o=0;
+          for(int j=0;j<NJ;j++) fr[o++]=d->qpos[7+j]+ENCQN*_nd(_rng);
+          for(int j=0;j<NJ;j++) fr[o++]=d->qvel[6+j]+ENCDQN*_nd(_rng);
+          double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp);
+          double qq[4]; mju_mulQuat(qq,&d->qpos[3],dqp); for(int a=0;a<4;a++) fr[o++]=qq[a];
+          for(int a=0;a<3;a++) fr[o++]=d->qvel[3+a]+GYRON*_nd(_rng);
+          for(int i=0;i<4;i++) fr[o++]=cts0[i]?1.0:0.0; }
+        // 지연 센서 언팩(SENSE_LAT_MS 전)
+        auto& df=sring[std::max(0L,estep-Lsense)%(long)sring.size()];
         static std::vector<double> qn,dqn; qn.resize(NJ); dqn.resize(NJ);
-        for(int j=0;j<NJ;j++){ qn[j]=d->qpos[7+j]+ENCQN*_nd(_rng); dqn[j]=d->qvel[6+j]+ENCDQN*_nd(_rng); }
-        double gyron[3]; for(int a=0;a<3;a++) gyron[a]=d->qvel[3+a]+GYRON*_nd(_rng);
-        double quatn[4]; { double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp); mju_mulQuat(quatn,&d->qpos[3],dqp); }
-        // ★ZUPT: 정적 모드(서기/앉기/눕기/off)=base 수평이동 없음 → leg-odometry 대신 v=0 고정.
-        //   앉기/눕기/기립 중 발이 미끄러지고 굴러 stance-정지 가정이 깨지면 속도 오추정→적분 표류(뒤로 밀림·복귀불가)하므로, 이동/점프 때만 오도메트리 실행.
+        double quatn[4],gyron[3]; std::vector<bool> cts(4,false);
+        { int o=0; for(int j=0;j<NJ;j++) qn[j]=df[o++]; for(int j=0;j<NJ;j++) dqn[j]=df[o++];
+          for(int a=0;a<4;a++) quatn[a]=df[o++]; for(int a=0;a<3;a++) gyron[a]=df[o++];
+          for(int i=0;i<4;i++) cts[i]=df[o++]>0.5; }
+        // ★ZUPT: 정적 모드(서기/앉기/눕기/off)=base 수평이동 없음 → 오도메트리 대신 v=0(발 미끄러짐 오추정→표류 차단). 이동/점프만 오도메트리.
         bool locomoting = (ctrl.mode=="move" || ctrl.mode=="jump");
         if(locomoting) est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
-        else           est.v.setZero();   // ZUPT(적분 안 함 → p 유지, 표류 없음)
-        for(int a=0;a<4;a++) est_quat[a]=quatn[a];   // 추정(측정) 방위 저장 → 고스트 헤딩 화살표
+        else           est.v.setZero();
+        for(int a=0;a<4;a++) est_quat[a]=quatn[a];   // 추정(측정) 방위 → 고스트 헤딩 화살표
         est_perr=std::sqrt(std::pow(est.p[0]-d->qpos[0],2)+std::pow(est.p[1]-d->qpos[1],2)+std::pow(est.p[2]-d->qpos[2],2));
         est_verr=std::sqrt(std::pow(est.v[0]-d->qvel[0],2)+std::pow(est.v[1]-d->qvel[1],2)+std::pow(est.v[2]-d->qvel[2],2));
-        if(est_ctrl && d_est){       // 폐루프(env EST_CTRL): 컨트롤러=추정상태, 토크=참 상태 적용
+        if(est_ctrl && d_est){       // 폐루프(env EST_CTRL): 컨트롤러=추정상태, 토크(구동지연)=참 상태 적용
           for(int a=0;a<3;a++){ d_est->qpos[a]=est.p[a]; d_est->qvel[a]=est.v[a]; }
           for(int a=0;a<4;a++) d_est->qpos[3+a]=quatn[a];
           for(int a=0;a<3;a++) d_est->qvel[3+a]=gyron[a];
           for(int j=0;j<NJ;j++){ d_est->qpos[7+j]=qn[j]; d_est->qvel[6+j]=dqn[j]; }
           d_est->time=d->time; mj_forward(m,d_est);
           q.d=d_est; ctrl.control(); q.d=d;
-          mju_copy(d->ctrl,d_est->ctrl,m->nu);
+          { auto& cf=cring[estep%(int)cring.size()]; for(int i=0;i<m->nu;i++) cf[i]=d_est->ctrl[i]; }
+          auto& dc=cring[std::max(0L,estep-Lact)%(long)cring.size()];
+          for(int i=0;i<m->nu;i++) d->ctrl[i]=dc[i];
         } else { ctrl.control(); }   // 개루프: 제어는 GT(보행 안정), 추정기는 고스트용으로만 병행
+        estep++;
       } else { ctrl.control(); }
       mj_step(m,d);
       double td=ctrl.tiltdeg(); max_tilt=std::max(max_tilt,td);
@@ -258,13 +278,13 @@ int main(int argc,char**argv){
       }
     }
     mjr_render(vp,&scn,&con);
-    char hud[320];
+    char hud[384];
     // ★HUD는 MuJoCo 오버레이(ASCII 전용 비트맵 폰트)라 한글 불가 → 영문 표기
     if(est_on)
-      std::snprintf(hud,320,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\n%s  [green=GT  orange=EST]\nest err  pos=%.3f m  vel=%.3f m/s  noise=%s",
+      std::snprintf(hud,384,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\n%s  [green=GT  orange=EST]\nest err  pos=%.3f m  vel=%.3f m/s  noise=%s\nlatency sense=%.0fms act=%.0fms",
                     ctrl.V,ctrl.WZ,d->qpos[2],ctrl.tiltdeg(),d->qpos[0],falls,
                     est_ctrl?"EST-CTRL closed-loop (stress)":"estimator open-loop (GT ctrl)",
-                    est_perr,est_verr,(GYRON>0||QUATN>0||ENCQN>0||ENCDQN>0)?"ON":"off");
+                    est_perr,est_verr,(GYRON>0||QUATN>0||ENCQN>0||ENCDQN>0)?"ON":"off",SLAT,ALAT);
     else
       std::snprintf(hud,320,"cmd V=%.2f  WZ=%.2f m/s\nactual z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\nstate: GT (ground truth) control\nmouse: rotate/zoom  |  control via GUI",
                     ctrl.V,ctrl.WZ,d->qpos[2],ctrl.tiltdeg(),d->qpos[0],falls);

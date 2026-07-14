@@ -120,18 +120,36 @@ int main(int argc,char**argv){
   std::mt19937 _rng(2024); std::normal_distribution<double> _nd(0.0,1.0);
   double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
+  // ★sim2real 지연(latency): 센서→추정/제어 지연(SENSE_LAT_MS) + 제어→구동 지연(ACT_LAT_MS). 실기 버스·연산 지연 모델(게인 재튜닝 최대원인).
+  //   고정 링버퍼(무한루프 무증가). L=0이면 인덱스 항상 현재=지연 없음(회귀無).
+  double SLAT=getenv("SENSE_LAT_MS")?atof(getenv("SENSE_LAT_MS")):0.0, ALAT=getenv("ACT_LAT_MS")?atof(getenv("ACT_LAT_MS")):0.0;
+  int Lsense=(int)std::lround(SLAT*1e-3/dt), Lact=(int)std::lround(ALAT*1e-3/dt);
+  int _fsz=2*(m->nq-7)+11;   // 센서 프레임: qn[NJ]·dqn[NJ]·quat[4]·gyro[3]·cts[4]
+  std::vector<std::vector<double>> sring(Lsense+1, std::vector<double>(_fsz,0.0));   // 센서 지연 링
+  std::vector<std::vector<double>> cring(Lact+1, std::vector<double>(m->nu,0.0));    // 구동 지연 링
   for(int step=0; step<STEPS; step++){
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     if(ESTCTRL){
-      // ★Phase2/3: 실기 센서(+노이즈)→추정→d_est(base=추정 · 자세·gyro·관절=노이즈 측정)→컨트롤러 계산→토크 실기 적용
+      // ★Phase2/3/4: 실기 센서(+노이즈+지연)→추정→d_est(base=추정 · 자세·gyro·관절=측정)→컨트롤러 계산→토크(지연) 실기 적용
       int NJ=m->nq-7;
-      std::vector<bool> cts(4,false);
-      for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
+      // ── 현재 센서 측정(노이즈) → 지연 링에 기록 ──
+      std::vector<bool> cts0(4,false);
+      for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts0[i]=true; break; } }
+      { auto& fr=sring[step%(int)sring.size()]; int o=0;
+        for(int j=0;j<NJ;j++) fr[o++]=d->qpos[7+j]+ENCQN*_nd(_rng);
+        for(int j=0;j<NJ;j++) fr[o++]=d->qvel[6+j]+ENCDQN*_nd(_rng);
+        double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp);
+        double qq[4]; mju_mulQuat(qq,&d->qpos[3],dqp); for(int a=0;a<4;a++) fr[o++]=qq[a];
+        for(int a=0;a<3;a++) fr[o++]=d->qvel[3+a]+GYRON*_nd(_rng);
+        for(int i=0;i<4;i++) fr[o++]=cts0[i]?1.0:0.0; }
+      // ── 지연된 센서 프레임 언팩(SENSE_LAT_MS 전) ──
+      auto& df=sring[std::max(0,step-Lsense)%(int)sring.size()];
       static std::vector<double> qn,dqn; qn.resize(NJ); dqn.resize(NJ);
-      for(int j=0;j<NJ;j++){ qn[j]=d->qpos[7+j]+ENCQN*_nd(_rng); dqn[j]=d->qvel[6+j]+ENCDQN*_nd(_rng); }
-      double gyron[3]; for(int c=0;c<3;c++) gyron[c]=d->qvel[3+c]+GYRON*_nd(_rng);
-      double quatn[4]; { double dqp[4]={1,0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng),0.5*QUATN*_nd(_rng)}; mju_normalize4(dqp); mju_mulQuat(quatn,&d->qpos[3],dqp); }
+      double quatn[4],gyron[3]; std::vector<bool> cts(4,false);
+      { int o=0; for(int j=0;j<NJ;j++) qn[j]=df[o++]; for(int j=0;j<NJ;j++) dqn[j]=df[o++];
+        for(int a=0;a<4;a++) quatn[a]=df[o++]; for(int a=0;a<3;a++) gyron[a]=df[o++];
+        for(int i=0;i<4;i++) cts[i]=df[o++]>0.5; }
       est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
       if(d->time>1.0){ epx+=std::pow(est.p[0]-d->qpos[0],2); epy+=std::pow(est.p[1]-d->qpos[1],2); epz+=std::pow(est.p[2]-d->qpos[2],2);
         evx+=std::pow(est.v[0]-d->qvel[0],2); evy+=std::pow(est.v[1]-d->qvel[1],2); evz+=std::pow(est.v[2]-d->qvel[2],2); ecnt++; }
@@ -141,7 +159,10 @@ int main(int argc,char**argv){
       for(int j=0;j<NJ;j++){ d_est->qpos[7+j]=qn[j]; d_est->qvel[6+j]=dqn[j]; }
       d_est->time=d->time; mj_forward(m,d_est);
       q.d=d_est; ctrl.control(); q.d=d;
-      mju_copy(d->ctrl,d_est->ctrl,m->nu);
+      // ── 구동 지연: 계산된 토크를 링에 기록 → 지연된 토크(ACT_LAT_MS 전) 적용 ──
+      { auto& cf=cring[step%(int)cring.size()]; for(int i=0;i<m->nu;i++) cf[i]=d_est->ctrl[i]; }
+      auto& dc=cring[std::max(0,step-Lact)%(int)cring.size()];
+      for(int i=0;i<m->nu;i++) d->ctrl[i]=dc[i];
     } else { ctrl.control(); }
     mj_step(m,d);
     if(ESTTEST && !ESTCTRL){
@@ -210,6 +231,8 @@ int main(int argc,char**argv){
     for(int i=0;i<m->nq;i++) fprintf(f,"%.8f ",d->qpos[i]); fclose(f);
     std::printf("[dump] qpos → %s (nq=%d)\n", getenv("DUMP_QPOS"), m->nq); }
   if(d_est) mj_deleteData(d_est);
+  if(ESTCTRL && (Lsense>0||Lact>0))
+    std::printf("[LATENCY] 센서지연=%.1fms(%d스텝) · 구동지연=%.1fms(%d스텝)\n", SLAT,Lsense, ALAT,Lact);
   if((ESTTEST||ESTCTRL) && ecnt>0){
     std::printf("[EST%s] leg-odometry 추정오차(RMS, 정착후 %ld스텝): pos xyz=%.3f/%.3f/%.3f m · vel xyz=%.3f/%.3f/%.3f m/s\n", ESTCTRL?"-CTRL":"",
       ecnt, std::sqrt(epx/ecnt),std::sqrt(epy/ecnt),std::sqrt(epz/ecnt), std::sqrt(evx/ecnt),std::sqrt(evy/ecnt),std::sqrt(evz/ecnt));

@@ -56,7 +56,12 @@ def main():
     import mujoco
     sph = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in FOOT_NAMES]
     rad = [float(m.geom_size[g][0]) for g in sph]
-    est = StateEstimator(m, sph, rad, dt); est.reset(d.qpos[0:3])
+    est = StateEstimator(m, sph, rad, dt,                          # 튜닝: env로 오버라이드
+                         alpha=float(os.environ.get('EST_ALPHA', '0.4')),
+                         dwell_steps=int(os.environ.get('EST_DWELL', '15')),
+                         k_anchor=float(os.environ.get('EST_ANCHOR', '0.05')),
+                         use_accel=os.environ.get('EST_ACCEL', '0') == '1')
+    est.reset(d.qpos[0:3])
     est_perr = est_verr = 0.0
     def est_reset():
         est.reset(d.qpos[0:3])
@@ -67,7 +72,7 @@ def main():
         viewer = mujoco.viewer.launch_passive(m, d)
     print(f"biped_deploy · backend={args.backend} · est-ctrl={args.est_ctrl} · CMD={CMD} · 기본높이 {z_home:.3f}")
 
-    k = 0; t0 = time.perf_counter()
+    k = 0; falls = 0; t0 = time.perf_counter()
     while ((viewer is None) or viewer.is_running()) and k*dt < args.T:
         st = iface.read()                              # ① 센서 → LowState
         iface.apply_state(d, st)                       # ② 측정 주입(HW만 실효, sim=no-op)
@@ -87,19 +92,18 @@ def main():
                 c.com_ref[2] = body_h
         off = (mode == 'off')                          # ④ 모터 on/off
         iface.enable_motors(not off)
-        # ── 상태추정(센서만): 관절 q/dq + IMU quat/gyro + 접촉 → base pose/vel ──
+        # ── 상태추정(센서만): 관절 q/dq + IMU quat/gyro/accel + 접촉 → base pose/vel (실로봇 동일, 항상) ──
         if not off:
-            if mode == 'walk':
-                est.estimate(st.q, st.dq, st.quat, st.gyro, st.foot_contact)
-            else:
-                est.hold(); est.p[:] = est.p + est.v * dt   # 정지: 속도0 유지(드리프트 억제)
+            est.estimate(st.q, st.dq, st.quat, st.gyro, st.foot_contact, acc=st.acc)
             est_perr = float(np.linalg.norm(est.p - d.qpos[0:3]))   # GT 대비 위치오차[m] (sim만 의미)
             est_verr = float(np.linalg.norm(est.v - d.qvel[0:3]))   # GT 대비 속도오차[m/s]
         if off:
             iface.write(LowCmd())                      # tau=0(limp) + step
         elif args.est_ctrl and args.backend == 'sim':  # ⑤' 폐루프 검증: 추정 base로 제어, 물리는 GT
             gp, gv = d.qpos[0:3].copy(), d.qvel[0:3].copy()
-            d.qpos[0:3] = est.p; d.qvel[0:3] = est.v; mujoco.mj_forward(m, d)
+            ep = gp if os.environ.get('EST_PERFECT') else est.p    # harness 검증용: 완벽추정=GT
+            ev = gv if os.environ.get('EST_PERFECT') else est.v
+            d.qpos[0:3] = ep; d.qvel[0:3] = ev; mujoco.mj_forward(m, d)
             c.control(dt)                              # tau ← 추정 base(드리프트 포함)
             d.qpos[0:3] = gp; d.qvel[0:3] = gv; mujoco.mj_forward(m, d)   # 물리는 GT 복원
             iface.write(LowCmd(tau=d.ctrl.copy()))
@@ -110,7 +114,7 @@ def main():
         tilt = np.hypot(*base_rpy(d.qpos[3:7])[:2])
         if not off and (d.qpos[2] < 0.2 or tilt > 45):  # 낙상 자동리셋(sim; HW는 안전정지로 교체)
             if viewer is not None: time.sleep(0.3)
-            c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0; est_reset()
+            c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0; est_reset(); falls += 1
         if k % 20 == 0:
             vx_act = float((c.Jc_cache @ d.qvel)[0]) if hasattr(c, 'Jc_cache') else 0.0
             yaw = float(base_rpy(d.qpos[3:7])[2])
@@ -130,9 +134,13 @@ def main():
                   f"  GT xy=({d.qpos[0]:+.2f},{d.qpos[1]:+.2f}) EST xy=({est.p[0]:+.2f},{est.p[1]:+.2f})")
         if viewer is not None and k % 8 == 0:
             viewer.sync()
+        if viewer is None:                             # 헤드리스=최대속(페이싱 생략, 스윕용)
+            continue
         lag = t0 + k*dt - time.perf_counter()          # 실시간 페이싱
         if lag > 0:
             time.sleep(lag)
+    print(f"[요약] backend={args.backend} est-ctrl={args.est_ctrl} T={k*dt:.1f}s "
+          f"falls={falls}  최종 est err pos={est_perr*100:.1f}cm vel={est_verr:.3f}m/s")
 
 
 if __name__ == '__main__':

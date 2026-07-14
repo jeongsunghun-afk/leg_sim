@@ -59,24 +59,34 @@ class StateEstimator:
       다리 운동학으로 '몸통 기준 발 속도'를 알면 역산: v_base = −(ω×R·p_foot + R·v_foot).
       여러 stance 발 평균 + 저역통과(alpha) → base 선속도, 적분 → base 위치(드리프트=실기와 동일).
       base 자세=IMU quat 직접, base 각속도=gyro 직접(추정 불필요).
-    state_estimator.hpp(quad C++) MuJoCo Python 포팅. 발 개수 무관(foot_geom 길이)."""
+    state_estimator.hpp(quad C++) 계보 + ★강건화(점발 biped 폐루프용):
+      ① 접촉 dwell 게이팅 — 착지/이지 과도(velocity 스파이크=폐루프 붕괴 주범) 제거, 안정 접촉발만 사용.
+      ② 접촉 앵커 위치보정 — 안정 접촉발의 world 위치 고정 → 드리프트 제거(적분만 하던 위치를 stance마다 앵커).
+      ③ IMU accel 융합(선택) — 예측(연속성) + leg-odom 보정(complementary). 발 개수 무관."""
 
-    def __init__(self, m, foot_geom, foot_rad, dt):
+    def __init__(self, m, foot_geom, foot_rad, dt,
+                 alpha=0.4, dwell_steps=0, k_anchor=0.0, use_accel=False):
         import mujoco
         self._mj = mujoco
         self.m = m
         self.ed = mujoco.MjData(m)          # 상대 운동학용 scratch(base 원점·단위자세)
         self.foot_geom = list(foot_geom); self.foot_rad = list(foot_rad); self.dt = dt
+        self.alpha = alpha; self.dwell_steps = dwell_steps
+        self.k_anchor = k_anchor; self.use_accel = use_accel
+        self.g_world = np.array([0.0, 0.0, -9.81])
         self.p = np.zeros(3); self.v = np.zeros(3)
+        self.dwell = [0] * len(foot_geom)   # 발별 연속 접촉 스텝 수
+        self.anchor = [None] * len(foot_geom)  # 발별 world 앵커(안정 접촉 시 고정)
 
     def reset(self, p0):
         self.p = np.array(p0, float); self.v = np.zeros(3)
+        self.dwell = [0] * len(self.foot_geom); self.anchor = [None] * len(self.foot_geom)
 
     def hold(self):
-        """정지(stance 없음/미보행): 속도 0 유지(드리프트 억제). 17-DOF와 동일."""
+        """정지(미보행): 속도 0 유지(드리프트 억제)."""
         self.v[:] = 0.0
 
-    def estimate(self, qj, dqj, quat_wxyz, gyro, contacts, alpha=0.4):
+    def estimate(self, qj, dqj, quat_wxyz, gyro, contacts, acc=None):
         mj, m, ed = self._mj, self.m, self.ed
         ed.qpos[:] = 0.0; ed.qpos[3] = 1.0          # base 원점·단위자세 → 순수 다리 운동학
         ed.qpos[7:] = qj
@@ -84,18 +94,35 @@ class StateEstimator:
         mj.mj_forward(m, ed)
         Rm = np.zeros(9); mj.mju_quat2Mat(Rm, np.asarray(quat_wxyz, float)); R = Rm.reshape(3, 3)
         omw = R @ np.asarray(gyro, float)           # 동체 각속도 → world
-        jacp = np.zeros((3, m.nv)); vbs = []
+        # ── ① dwell 갱신: 착지=카운트↑, 이지=리셋. 안정 접촉(dwell≥임계)만 신뢰 ──
+        jacp = np.zeros((3, m.nv)); vbs = []; pfw_solid = []
         for k, g in enumerate(self.foot_geom):
-            if not contacts[k]:
-                continue                             # stance 발만(swing 발은 지면 안 정지)
+            if contacts[k]:
+                self.dwell[k] += 1
+            else:
+                self.dwell[k] = 0; self.anchor[k] = None
+            if not contacts[k] or self.dwell[k] < self.dwell_steps:
+                continue                             # 과도(touchdown/liftoff) 스킵 = 스파이크 제거
             gp = ed.geom_xpos[g].copy()
             pfb = gp.copy(); pfb[2] -= self.foot_rad[k]          # 발 접촉점(base frame, 반경 보정)
             mj.mj_jac(m, ed, jacp, None, gp, m.geom_bodyid[g])
             vfb = jacp @ ed.qvel                                 # 발 속도(관절 기여, base frame)
-            vbs.append(-(np.cross(omw, R @ pfb) + R @ vfb))      # 발 정지 → base world 속도
+            pfw = R @ pfb                                        # 발 오프셋(world)
+            vbs.append(-(np.cross(omw, pfw) + R @ vfb))          # 발 정지 → base world 속도
+            pfw_solid.append((k, pfw))
+        # ── ③ 속도: (선택)accel 예측 + dwell-gated leg-odom 보정 ──
+        if self.use_accel and acc is not None:
+            self.v = self.v + (R @ np.asarray(acc, float) + self.g_world) * self.dt   # IMU 예측
         if vbs:
-            self.v = (1 - alpha) * self.v + alpha * np.mean(vbs, axis=0)   # 접촉 평균 + 저역통과
-        self.p = self.p + self.v * self.dt                       # 위치 적분(드리프트 허용)
+            self.v = (1 - self.alpha) * self.v + self.alpha * np.mean(vbs, axis=0)     # 보정
+        # ── ② 위치: 적분 + 접촉 앵커 보정(드리프트 제거) ──
+        self.p = self.p + self.v * self.dt
+        for k, pfw in pfw_solid:
+            if self.anchor[k] is None:
+                self.anchor[k] = self.p + pfw            # 안정 접촉 시작 = 발 world 위치 고정
+            else:
+                p_meas = self.anchor[k] - pfw            # 앵커 기준 base 위치(비드리프트)
+                self.p = self.p + self.k_anchor * (p_meas - self.p)   # 서서히 보정
         return self.p.copy(), self.v.copy()
 
 
@@ -137,6 +164,11 @@ class SimInterface(RobotInterface):
         self.sph = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in FOOT_NAMES]
         self.fbody = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]
+        # IMU/GT 센서 주소(있으면 sensordata 사용=진짜 센서만, 없으면 d 직접 fallback)
+        def _sadr(nm):
+            i = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, nm)
+            return int(m.sensor_adr[i]) if i >= 0 else -1
+        self._s = {k: _sadr(k) for k in ('imu_gyro', 'imu_acc', 'imu_quat', 'gt_pos', 'gt_vel')}
 
     def dt(self):
         return self.m.opt.timestep
@@ -144,14 +176,20 @@ class SimInterface(RobotInterface):
     def read(self) -> LowState:
         d, m = self.d, self.m
         st = LowState()
-        st.q[:]  = d.qpos[7:]
+        st.q[:]  = d.qpos[7:]                       # 엔코더(실센서)
         st.dq[:] = d.qvel[6:]
         st.tau[:] = d.ctrl[:]
-        st.quat[:] = d.qpos[3:7]
-        st.gyro[:] = d.qvel[3:6]
-        st.base_pos[:] = d.qpos[0:3]
-        st.base_vel[:] = d.qvel[0:3]
-        # 발 접촉(수직력>임계) — sim 진실
+        s = self._s
+        if s['imu_quat'] >= 0:                      # ★진짜 IMU 센서(sensordata) 사용
+            st.quat[:] = d.sensordata[s['imu_quat']:s['imu_quat']+4]
+            st.gyro[:] = d.sensordata[s['imu_gyro']:s['imu_gyro']+3]
+            st.acc[:]  = d.sensordata[s['imu_acc']:s['imu_acc']+3]
+            st.base_pos[:] = d.sensordata[s['gt_pos']:s['gt_pos']+3]   # GT(검증 전용)
+            st.base_vel[:] = d.sensordata[s['gt_vel']:s['gt_vel']+3]
+        else:                                        # 센서 없는 옛 모델 fallback
+            st.quat[:] = d.qpos[3:7]; st.gyro[:] = d.qvel[3:6]
+            st.base_pos[:] = d.qpos[0:3]; st.base_vel[:] = d.qvel[0:3]
+        # 발 접촉(수직력>임계) — 실기=힘센서/추정, sim=접촉 진실
         for i in range(2):
             f = 0.0
             for ci in range(d.ncon):
@@ -222,7 +260,7 @@ class HardwareInterface(RobotInterface):
         d.qpos[3:7] = st.quat
         d.qvel[3:6] = st.gyro
         # ② ★base 위치/선속도 = leg-odometry 추정(센서만, 절대 base 불필요). WBIC CoM/속도 task가 사용.
-        self.est.estimate(st.q, st.dq, st.quat, st.gyro, st.foot_contact)
+        self.est.estimate(st.q, st.dq, st.quat, st.gyro, st.foot_contact, acc=st.acc)
         d.qpos[0:3] = self.est.p
         d.qvel[0:3] = self.est.v
         self._mj.mj_forward(self.m, d)

@@ -10,15 +10,28 @@
                                     ▲ base pose/vel = StateEstimator(leg-odometry, 센서만)
 ```
 
-## ★상태추정기 (leg-odometry) — 센서만으로 full state
-`StateEstimator`(robot_interface.py) = **17-DOF quad와 동일 계보**(state_estimator.hpp Python 포팅).
-절대 base(GPS/모캡) **안 씀** = 실로봇 동일. **센서만**(관절 q/dq + IMU quat/gyro + 발 접촉) →
-base 위치·선속도 복원. HardwareInterface.apply_state가 자동 사용 → HW는 **센서만 붙이면 full state**.
-- 원리: stance 발 정지 가정 → `v_base = −(ω×R·p_foot + R·v_foot)` 평균 + 저역통과(α=0.4), 적분→위치.
-- 자세=IMU quat 직접, 각속도=gyro 직접. 위치=속도 적분이라 **드리프트 존재**(실기와 동일, 절대보정 없음).
-- 검증(sim, 병행 개루프): walk 0.15 6s = **속도오차 0.01~0.04 m/s(양호)·위치오차 ~10cm(≈12% 드리프트)**.
-- 폐루프(`--est-ctrl`, 추정값으로 제어): ~6s 안정 후 드리프트 → 점발 biped는 순수 leg-odom만으론 marginal.
-  ★실배포 강건화 = **IMU accel 융합 EKF + 접촉이벤트 위치보정**(D 참조). quad(4발 안정)는 폐루프 OK.
+## ★상태추정기 (leg-odometry) — 센서만으로 full state (관찰자로는 유효)
+`StateEstimator`(robot_interface.py) = **17-DOF quad와 동일 계보**(state_estimator.hpp Python 포팅) + IMU 센서(MJCF).
+절대 base(GPS/모캡) **안 씀** = 실로봇 동일. **센서만**(관절 q/dq + IMU quat/gyro/accel + 발 접촉) → base 위치·선속도 복원.
+- 원리: stance 발 정지 가정 → `v_base = −(ω×R·p_foot + R·v_foot)` 평균 + 저역통과(α), 적분→위치.
+- 자세=IMU quat 직접, 각속도=gyro 직접. 위치=속도 적분이라 **드리프트 존재**(절대보정 없음, 실기와 동일).
+- 개루프(관찰자) 검증: 속도추정 steady 구간 양호(~0.01~0.05 m/s), 위치는 완만 드리프트. **모니터·sim2real 갭 정량·RL 관측 입력엔 유효.**
+
+## ★★결정적 발견 — 점발 biped 폐루프(MPC×추정)는 고전 방식으로 비성립
+`--est-ctrl`(추정 base로 제어, 물리는 GT) 20s 스윕 결과, **어떤 튜닝도 폐루프를 못 살림**:
+
+| 설정 | 20s 낙상수 |
+|---|---|
+| **완벽추정(=GT)** | **0** (harness·컨트롤러 정상 확인) |
+| leg-odom α0.2 (최선) | 45 (≈0.4s마다 낙상) |
+| leg-odom α0.4 기본 | 98 |
+| + IMU accel 융합 | 133 (악화) |
+| + 접촉앵커 dwell | 327 (악화) |
+
+**결론**: 점발 biped는 **base 속도추정 오차에 근본 과민** → 고전 leg-odom(+EKF/앵커 시도 포함) 폐루프 제어 **성립 불가**.
+이는 튜닝 문제 아님(완벽추정=0 vs 최선=45). **선회·측방이 "RL 몫"인 것과 동일한 점발 근본 취약성.**
+→ **실 점발 biped 배포 = RL 정책 필수**(추정 노이즈+점발 불안정을 end-to-end 학습). 고전 스택+추정기 볼트온으론 배포 불가.
+(quad 4발은 넓은 지지면이라 같은 추정기로 폐루프 OK — biped와의 결정적 차이.) 상세 기록=메모리 biped-mpc-reimpl.
 
 ## 실행
 ```bash
@@ -53,12 +66,12 @@ GUI 상태줄 = `추정(leg-odom) 오차: pos …cm  vel …m/s` (GT 대비, bip
 - [ ] quat(base 자세)·gyro(각속도)·acc 스트림. **좌표계 = base body-frame** 정렬(축 부호).
 - [ ] IMU→base 링크 오프셋 보정. 지연[ms] 측정(WBIC 안정성 영향).
 
-### C. base 상태추정 (`apply_state`) — ★leg-odometry 구현 완료, 강건화가 실배포 관건
+### C. base 상태추정 (`apply_state`) — ★leg-odometry 구현(관찰자 유효), 폐루프는 RL 몫으로 판명
 - [x] **leg-odometry `StateEstimator` 구현**(위 섹션). HardwareInterface.apply_state가 센서만으로 base 복원.
-- [x] sim 검증(개루프 병행): 속도오차 양호·위치 드리프트 ~12%(절대보정 없음, 실기와 동일).
-- [ ] ★실배포 강건화: **IMU accel 융합 EKF**(위치 드리프트↓) + **접촉이벤트 기반 위치보정**(발 착지 시 앵커).
-      점발 biped는 순수 leg-odom 폐루프가 ~6s marginal(`--est-ctrl` 실측) → 실기 전 강건화 필수.
-- [ ] 접촉 검출 정확도(발 힘센서/추정)가 추정 품질 좌우 — swing 발 오검출 시 속도 튐.
+- [x] IMU 센서(MJCF gyro/accel/quat) + 개루프 관찰자 검증 + `--est-ctrl` 폐루프 스윕.
+- [x] **★판명: 고전 폐루프 비성립**(위 표). 완벽추정=0낙상 vs 최선 leg-odom=45낙상/20s. EKF·앵커·accel 모두 악화.
+- [ ] ~~고전 추정기 강건화~~ → **폐루프 강건성은 RL 정책이 담당**(추정 노이즈 흡수 end-to-end). ref_lib 핸드오프 경로.
+- [x] 접촉 검출 정확도(발 힘센서/추정)가 추정 품질 좌우 — swing 발 오검출 시 속도 튐(실배포 시 힘센서 권장).
 
 ### D. 안전 (`write`/`enable_motors`)
 - [ ] 토크 **slew-rate 제한**·관절각/속도 한계 클램프(발산 시 폭주 방지).

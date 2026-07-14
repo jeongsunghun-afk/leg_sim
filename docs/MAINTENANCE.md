@@ -58,4 +58,5 @@ cd simulation/quad/cpp
   - `pipeline_bc.html` → https://claude.ai/code/artifact/0aedd22e-f124-43a4-908c-11fda4823d49
   - `pipeline.html` → https://claude.ai/code/artifact/952aa996-03ec-4264-9145-e519688dc893
   - `sim2real_checklist_17dof.html` → https://claude.ai/code/artifact/8b8d0604-d8b5-4bb8-8899-b4c15d847fba
+  - `pipeline_nav.html`(nav+TAMOLS perceptive 설계 제안) → https://claude.ai/code/artifact/5154b638-0a7c-4eea-82b8-34b00d6c72e7
   - `params.html` → (URL 미기록 — 다음 재배포 시 발급되는 URL을 여기 기록할 것)

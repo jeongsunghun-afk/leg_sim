@@ -32,7 +32,7 @@
 | `quad/offline/jump/` · `offline/getup/` | 오프라인 궤적(점프 OCP·기립 gather) 생성 파이프라인 |
 | `quad/tools/` | 모델 빌드(build_real_quad_17dof·gen_sphere_17dof·plot_perfoot) |
 | `quad/research/quad_mpc_wbic.py` + `teleop_gui.py` | 14-DOF(구 본선, 연구) |
-| `biped/` | 초기 biped phase(README·mjcf·urdf, 브랜치 biped-wbic-mpc) |
+| `biped/` | **뒷다리 2족 보행**(MPC+WBIC event-DCM·base-frame·GUI). Python+**C++ 배포**(cpp/, 파리티 1e-11). 실행 `biped/run_gui_biped.sh`(Py)·`run_gui_cpp.sh`(C++). 상세=`biped/README.md`·메모리 biped-mpc-reimpl |
 | `simple_mpc/` | 구조 B/C(FullDynamics·Centroidal, marginal 연구) |
 | `gait_sim/` | ★구 gait_sim 연구노트(v13/v14 다수 md) — 히스토리, 아카이브 후보 |
 

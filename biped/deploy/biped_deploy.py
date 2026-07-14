@@ -50,6 +50,7 @@ def main():
         BM.BS.K_RETURN = float(os.environ['K_RETURN'])
     c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
     m, d = c.m, c.d; dt = m.opt.timestep
+    NOISE = float(os.environ.get('NOISE', '0')); np.random.seed(0)   # 센서 노이즈 배율(재현용 시드)
     iface = make_interface(args.backend, c)
     z_home = float(c.com_ref[2]); body_h = z_home
     mode, prev_mode = 'stand', 'stand'
@@ -78,6 +79,11 @@ def main():
     k = 0; falls = 0; t0 = time.perf_counter()
     while ((viewer is None) or viewer.is_running()) and k*dt < args.T:
         st = iface.read()                              # ① 센서 → LowState
+        if NOISE > 0:                                  # ★실 센서 노이즈 주입(배포 강건성 스트레스)
+            st.q = st.q + np.random.normal(0, NOISE*0.005, 8)     # 엔코더 σ≈0.005rad·NOISE
+            st.dq = st.dq + np.random.normal(0, NOISE*0.05, 8)    # 관절속도 σ≈0.05
+            st.gyro = st.gyro + np.random.normal(0, NOISE*0.02, 3)# 자이로 σ≈0.02rad/s
+            st.acc = st.acc + np.random.normal(0, NOISE*0.5, 3)   # 가속도 σ≈0.5m/s²
         iface.apply_state(d, st)                       # ② 측정 주입(HW만 실효, sim=no-op)
         if k % 20 == 0:                                # ③ GUI 명령 폴링(50Hz)
             cmd = read_cmd()

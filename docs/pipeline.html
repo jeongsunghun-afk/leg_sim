@@ -189,10 +189,11 @@
     <div class="arrow">↓ &nbsp;<span class="dim">crouch 중 백그라운드 스레드(std::async) — 1 kHz 루프 안 멈춤</span></div>
     <div class="stage mpc"><span class="rate">별도 스레드</span><span class="n">OCP</span><span class="t">aligator SolverProxDDP · jump_solver</span><div class="d">3상(push·flight·land) · 하드 <b>토크 BoxConstraint</b>·마찰추 · CoM ref 생성 · ~331 ms(캐시된 solve, warmup 예열)</div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">신선 궤적(q·dq·τ·CoM·φ)</span></div>
-    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">track</span><span class="t">wbic_jump (push·land 접촉)</span><div class="d">CoM 가속 피드포워드 + <b>base를 GRF로 닫음</b>(표류보정·실기강건). flight(무접촉)=관절 PD. QP실패 시 τ<sub>ff</sub>+PD fallback</div></div>
+    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">track</span><span class="t">wbic_jump (push·land 접촉)</span><div class="d">CoM 가속 피드포워드 + <b>base를 GRF로 닫음</b>(표류보정·실기강건). 자세=<b>현재 yaw 프레임서 roll/pitch만 레벨</b>(yaw 자유). flight(무접촉)=관절 PD. QP실패 시 τ<sub>ff</sub>+PD fallback</div></div>
     <div class="arrow">↓</div>
     <div class="stage wbic"><span class="n">land</span><span class="t">wbic_stance 착지</span><div class="d">touchdown 감지 → 균형 회복 → stand_up 자가전환</div></div>
   </div>
+  <p class="p"><b>★선회 후 점프</b>: 궤적은 yaw0·원점 프레임 → 발사 시점 <b>현재 CoM·헤딩으로 re-anchor</b>(com_ref = 발사점 + R<sub>z</sub>(발사yaw)·궤적변위, 속도·가속도도 회전) + wbic_jump 자세가 yaw를 안 되당김 → 몸통 돌린 뒤 점프해도 <b>바라보는 방향으로</b> 뛰고 스핀 없음. 직진(yaw0·원점)은 R<sub>z</sub>=단위라 회귀 없음. (걷기 360°선회 근본수정과 동일 원리를 점프에 적용)</p>
 
   <h3>기립(getup) — 기구학 gather → PD/WBIC 하이브리드</h3>
   <div class="flow">

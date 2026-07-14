@@ -62,6 +62,16 @@ cd simulation/quad && bash gen_jump.sh 0.6      # 전방 점프 궤적 생성(VX
 #   J1 OCP(crocoddyl)→J2 변환→/tmp/jump_traj.txt. C++ 점프모드가 crouch→재생(thrust/flight)→wbic 착지.
 #   ★/tmp 휘발성 → 점프 안 될 때 재생성. VX=0.6→~0.14m 전방, apex 0.28m, falls=0.
 ```
+- ★**선회 후 점프**: 몸통 돌린 뒤 점프해도 스핀 없이 **바라보는 방향으로** 뜀. 궤적을 발사 시점 현재 CoM·헤딩 프레임으로 re-anchor + wbic_jump 자세는 roll/pitch만 레벨·yaw 자유(걷기 360°선회 수정과 동일 원리). 직진 점프는 회귀 없음.
+
+## sim2real 상태추정 비교 (뷰어 GT↔추정)
+```bash
+# GUI '모니터 표시' 체크박스 = 추정 base 고스트 표시(개루프: 제어는 GT라 보행 안정 · 초록=GT/주황=추정 + 헤딩 화살표)
+#   추정=leg-odometry(IMU자세+엔코더+접촉, stance발 정지가정). 정적모드(서기/앉기/눕기)=ZUPT로 표류 차단.
+EST_CTRL=1 GYRO_N=0.02 QUAT_N=0.01 ENCQ_N=0.001 ENCDQ_N=0.01 ./build/trot_sim ../mjcf/quad_real_17dof_waist_sphere.mjcf 6000
+#   ★EST_CTRL=폐루프(제어에 추정상태 사용, 실기 동일구조) — 헤드리스 특성화용. 배포속도 walk0.6/trot1.2 falls=0, run2.0은 전복(안전속도~1.1).
+#   센서노이즈 env: GYRO_N[rad/s]·QUAT_N[rad]·ENCQ_N[rad]·ENCDQ_N[rad/s] (0=완벽센서).
+```
 
 ## 게이트·모드 요약
 - **gait**: walk(순차 3~4발지지·정적안정·~0.6) / trot(대각 2지지·~1.4) / run(고속trot T0.40·~2.0).

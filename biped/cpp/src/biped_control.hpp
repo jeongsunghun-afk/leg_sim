@@ -140,9 +140,9 @@ struct BipedControl {
     std::array<int,2> cur={stanceLeg==0?1:0, stanceLeg==1?1:0};
     std::vector<std::array<int,2>> cs(MPC_N,cur);
     std::array<Vector3d,2> fp0={frel[0],frel[1]}; std::vector<std::array<Vector3d,2>> fp(MPC_N,fp0);
-    double cyd=std::cos(yaw_des),syd=std::sin(yaw_des);
-    double vxw=cyd*vx_cmd-syd*vy_cmd, vyw=syd*vx_cmd+cyd*vy_cmd;
-    Matrix<double,13,1> xr; xr<<0,0,yaw_des, cc[0],cc[1],com_ref_z, 0,0,wz_cmd, vxw,vyw,0, -9.81;
+    double ya=base_yaw(), cya=std::cos(ya),sya=std::sin(ya);   // ★속도명령=실제 base yaw(base-relative, 17-DOF yaw_m 방식)
+    double vxw=cya*vx_cmd-sya*vy_cmd, vyw=sya*vx_cmd+cya*vy_cmd;
+    Matrix<double,13,1> xr; xr<<0,0,yaw_des, cc[0],cc[1],com_ref_z, 0,0,wz_cmd, vxw,vyw,0, -9.81;  // 헤딩참조=yaw_des
     return mpc_qp_plan(c,x0,cs,fp,xr);
   }
 
@@ -168,8 +168,8 @@ struct BipedControl {
     yaw_des+=wz_cmd*dt;
     double ya=base_yaw(); double lag=std::atan2(std::sin(yaw_des-ya),std::cos(yaw_des-ya));
     yaw_des=ya+std::min(std::max(lag,-head_lead),head_lead);
-    double cyd=std::cos(yaw_des),syd=std::sin(yaw_des);
-    com0[0]+=(cyd*vx_cmd-syd*vy_cmd)*dt; com0[1]+=(syd*vx_cmd+cyd*vy_cmd)*dt;
+    double cya=std::cos(ya),sya=std::sin(ya);   // ★복귀목표 이동=실제 base yaw 기준(base-relative)
+    com0[0]+=(cya*vx_cmd-sya*vy_cmd)*dt; com0[1]+=(sya*vx_cmd+cya*vy_cmd)*dt;
     int st,sw; double s; step_gait(dt,st,sw,s);
     if(_k%mpc_decim==0) lam=mpc_grf(st);
     _k++;

@@ -145,9 +145,12 @@ class BipedMPCWBIC(BS.BipedStep):
         cur = [1 if i in contacts else 0 for i in range(self.nfeet)]   # 현재 접촉 유지 가정(event-based)
         cs = [cur] * MPC_N
         # x_ref: 자세수평·heading(yaw_des)·wz선회·목표높이·body속도(vx전진·vy좌우)를 world로
-        cyd, syd = np.cos(self.yaw_des), np.sin(self.yaw_des)
-        vx_w = cyd * self.vx_cmd - syd * self.vy_cmd
-        vy_w = syd * self.vx_cmd + cyd * self.vy_cmd
+        # ★속도명령=실제 base yaw 기준(base-relative, 17-DOF yaw_m 방식)·헤딩참조=yaw_des
+        qc = self.d.qpos[3:7]
+        yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
+        cya, sya = np.cos(yaw_act), np.sin(yaw_act)
+        vx_w = cya * self.vx_cmd - sya * self.vy_cmd
+        vy_w = sya * self.vx_cmd + cya * self.vy_cmd
         x_ref = np.array([0, 0, self.yaw_des, com[0], com[1], self.com_ref[2], 0,0, self.wz_cmd, vx_w, vy_w, 0, -9.81])
         return self.mpc_qp_plan(x0, cs, fp, x_ref)
 
@@ -212,9 +215,9 @@ class BipedMPCWBIC(BS.BipedStep):
         yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
         lag = np.arctan2(np.sin(self.yaw_des - yaw_act), np.cos(self.yaw_des - yaw_act))
         self.yaw_des = yaw_act + np.clip(lag, -self.head_lead, self.head_lead)   # ★폭주방지: 실제서 ±lead 이내
-        cyd, syd = np.cos(self.yaw_des), np.sin(self.yaw_des)
-        self.com0[0] += (cyd * self.vx_cmd - syd * self.vy_cmd) * dt   # ★복귀목표를 body속도(vx전진·vy좌우)로 이동
-        self.com0[1] += (syd * self.vx_cmd + cyd * self.vy_cmd) * dt
+        cya, sya = np.cos(yaw_act), np.sin(yaw_act)   # ★속도명령=실제 base yaw 기준(base-relative)
+        self.com0[0] += (cya * self.vx_cmd - sya * self.vy_cmd) * dt   # ★복귀목표를 body속도(vx전진·vy좌우)로 이동
+        self.com0[1] += (sya * self.vx_cmd + cya * self.vy_cmd) * dt
         stance, swing_leg, s = self.step_gait(dt)   # event-based (측방 DCM 동기)
         if self._k % self.mpc_decim == 0:
             self.lam = self.mpc_grf(stance)          # 50Hz MPC (현재 stance 기준)

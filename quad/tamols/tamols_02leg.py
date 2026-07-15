@@ -8,17 +8,28 @@ from .map_processing import process_height_maps
 from .helpers import evaluate_spline_position
 
 
-def add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20, nsamp=4):
-    """★하드 base bound: 스플라인 z∈[zlo,zhi]·|roll|,|pitch|≤rp_max 강제(오버슈트/틸트 원천차단).
-       tracking cost가 전진 담당, 이 bound가 자세/높이 담당 → 소프트 가중 tension 해소."""
+def add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20, yaw_max=0.15, nsamp=4):
+    """★하드 base bound: 스플라인 z∈[zlo,zhi]·|roll|,|pitch|≤rp_max·|yaw|≤yaw_max 강제(오버슈트/틸트/스핀 원천차단).
+       tracking cost가 전진 담당, 이 bound가 자세/높이 담당 → 소프트 가중 tension 해소.
+       ★yaw 미구속 시 갭 전진 강제서 base가 yaw 스핀(100°)으로 퇴화해 도피 → yaw 구속 필수."""
     for phase in range(len(tmls.phase_durations)):
         a_k = tmls.spline_coeffs[phase]; T_k = tmls.phase_durations[phase]
         for tau in np.linspace(0, T_k, nsamp + 1)[1:]:
             s = evaluate_spline_position(tmls, a_k, tau)
-            z = s[2]; roll = s[3]; pitch = s[4]
+            z = s[2]; roll = s[3]; pitch = s[4]; yaw = s[5]
             tmls.prog.AddConstraint(z >= zlo); tmls.prog.AddConstraint(z <= zhi)
             tmls.prog.AddConstraint(roll >= -rp_max); tmls.prog.AddConstraint(roll <= rp_max)
             tmls.prog.AddConstraint(pitch >= -rp_max); tmls.prog.AddConstraint(pitch <= rp_max)
+            tmls.prog.AddConstraint(yaw >= -yaw_max); tmls.prog.AddConstraint(yaw <= yaw_max)
+
+
+def add_base_forward_target(tmls, x_target=0.45):
+    """★갭 크로싱 유도: 최종 base x가 갭 넘어까지 전진하도록 강제(갭 페널티 때문에 옵티마이저가 '안 건너기'를 택하는 것 방지).
+       tracking(ref_vel)만으론 갭 앞에서 멈춤 → 터미널 전진 목표로 건너기 커밋."""
+    phase = len(tmls.phase_durations) - 1
+    a_k = tmls.spline_coeffs[phase]; T_k = tmls.phase_durations[phase]
+    s = evaluate_spline_position(tmls, a_k, T_k)
+    tmls.prog.AddConstraint(s[0] >= x_target)
 
 
 def add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22):
@@ -106,6 +117,9 @@ if __name__ == "__main__":
     setup_costs_and_constraints(tmls)
     add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20)   # ★하드 자세/높이 bound
     add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22)            # ★하드 foot-y bound(대칭 stance)
+    import os as _o
+    if _o.environ.get("GAP", "0") != "0":
+        add_base_forward_target(tmls, x_target=0.45)         # ★갭이면 전진 강제(갭 넘어까지)
     print("\n===== 02_Leg TAMOLS solve =====", flush=True)
     ok = run_single_optimization(tmls)
     print("solve 성공:", ok, flush=True)

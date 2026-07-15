@@ -11,11 +11,14 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <random>
 
 struct DeployLoop {
   BipedEstimator est;
   mjData* dpred=nullptr;
   int sq=-1, sg=-1, SLAT=0, ALAT=0, LCOMP=0, NJ=0, nu=0;
+  double NOISE=0;                                // 센서 노이즈 배율(17-DOF GYRON/ENCQN식)
+  std::mt19937 rng{0}; std::normal_distribution<double> nd{0.0,1.0};   // 재현용 시드
   std::deque<std::vector<double>> sbuf, abuf;   // 센서 스냅샷 / 구동 토크 링버퍼
 
   ~DeployLoop(){ if(dpred) mj_deleteData(dpred); }
@@ -30,6 +33,7 @@ struct DeployLoop {
     SLAT=(int)std::lround(ms("SENSE_LAT_MS")/1000.0/dt);
     ALAT=(int)std::lround(ms("ACT_LAT_MS")/1000.0/dt);
     LCOMP=(int)std::lround(ms("LAT_COMP_MS")/1000.0/dt);
+    NOISE=ms("NOISE");
     if(LCOMP>0) dpred=mj_makeData(m);
   }
   void reset(mjModel* m, mjData* d){
@@ -45,6 +49,10 @@ struct DeployLoop {
     double* gs = sg>=0? &d->sensordata[m->sensor_adr[sg]] : &d->qvel[3];
     for(int a=0;a<4;a++) snap[2*NJ+a]=qs[a];
     for(int a=0;a<3;a++) snap[2*NJ+4+a]=gs[a];
+    if(NOISE>0){                                  // ★센서 노이즈(엔코더 q/dq·자이로). 17-DOF ENCQN/GYRON식
+      for(int j=0;j<NJ;j++){ snap[j]+=NOISE*0.005*nd(rng); snap[NJ+j]+=NOISE*0.05*nd(rng); }
+      for(int a=0;a<3;a++) snap[2*NJ+4+a]+=NOISE*0.02*nd(rng);
+    }
     // ② 센서 지연(링버퍼)
     sbuf.push_back(snap);
     while((int)sbuf.size()>SLAT+1) sbuf.pop_front();

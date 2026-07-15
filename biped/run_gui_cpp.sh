@@ -15,9 +15,9 @@ echo "빌드 확인 중…"
 ( cd "$HERE/cpp"; CONDA_PREFIX=$ENV cmake -B build -S . >/dev/null 2>&1; CONDA_PREFIX=$ENV cmake --build build -j4 >/dev/null 2>&1 ) \
   && echo "✅ 빌드 OK" || { echo "❌ 빌드 실패"; exit 1; }
 
-# 모드: 기본=추정 폐루프(배포). GT=1 → GT 제어.
-if [ "${GT:-0}" = "1" ]; then EST=""; MODEDESC="GT 제어(디버그)"; else EST="EST_CTRL=1"; MODEDESC="추정 폐루프(배포: leg-odom+접촉높이+지연보상)"; fi
-LATENV="SENSE_LAT_MS=${SENSE_LAT_MS:-0} ACT_LAT_MS=${ACT_LAT_MS:-0} LAT_COMP_MS=${LAT_COMP_MS:-0}"
+# 모드: 기본=추정 폐루프(배포, 바이너리 기본 ON). GT=1 → GT 제어.
+if [ "${GT:-0}" = "1" ]; then EST="GT=1"; MODEDESC="GT 제어(디버그)"; else EST="EST_CTRL=1"; MODEDESC="추정 폐루프(배포: leg-odom+접촉높이+지연보상)"; fi
+LATENV="SENSE_LAT_MS=${SENSE_LAT_MS:-0} ACT_LAT_MS=${ACT_LAT_MS:-0} LAT_COMP_MS=${LAT_COMP_MS:-0} NOISE=${NOISE:-0}"
 echo "모드: $MODEDESC"
 
 pkill -f biped_view 2>/dev/null; pkill -f teleop_gui_biped 2>/dev/null; sleep 1

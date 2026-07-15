@@ -57,8 +57,8 @@ int main(int argc,char**argv){
   mjData* d=mj_makeData(m); gM=m;
   BipedControl c(m,d); c.reset();
   std::string mode = getenv("MODE")?getenv("MODE"):"stand", prev_mode=mode; double body_h=c.com_ref_z;
-  // ★배포 폐루프(EST_CTRL=1): 추정(leg-odom+접촉높이)+지연보상. 실HW는 항상 이 경로(센서만).
-  bool est_ctrl = getenv("EST_CTRL")!=nullptr;
+  // ★배포 폐루프 기본 ON: 추정(leg-odom+접촉높이)+지연보상. 실HW는 항상 이 경로(센서만). GT=1로만 GT제어.
+  bool est_ctrl = getenv("GT")==nullptr;
   DeployLoop dl;
   auto est_reset=[&](){ if(est_ctrl) dl.reset(m,d); };
   if(est_ctrl){
@@ -78,7 +78,8 @@ int main(int argc,char**argv){
 
   const char* CMDFILE=getenv("CMDFILE");
   std::string STATE_PUB=getenv("STATE_PUB")?getenv("STATE_PUB"):"/tmp/biped_state.json";
-  double dt=m->opt.timestep; long frame=0;
+  double dt=m->opt.timestep; long frame=0; int falls=0;
+  double est_perr=0, est_verr=0;                        // 추정오차(HUD·고스트용)
   auto wall0=std::chrono::steady_clock::now(); double sim0=d->time;
   while(!glfwWindowShouldClose(win)){
     if(CMDFILE && (frame++ %3==0)){                     // GUI 명령 폴링
@@ -100,11 +101,37 @@ int main(int argc,char**argv){
       else if(est_ctrl) dl.step(m,d,c,dt);                 // ★추정+지연보상 폐루프(배포 경로)
       else c.control(dt);
       mj_step(m,d);
-      if(!off && d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋(off는 제외)
+      if(!off && d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; est_reset(); falls++; wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋(off는 제외)
+    }
+    if(est_ctrl){                                       // GT 대비 추정오차(고스트/HUD)
+      est_perr=std::sqrt(std::pow(dl.est.p[0]-d->qpos[0],2)+std::pow(dl.est.p[1]-d->qpos[1],2)+std::pow(dl.est.p[2]-d->qpos[2],2));
+      est_verr=std::sqrt(std::pow(dl.est.v[0]-d->qvel[0],2)+std::pow(dl.est.v[1]-d->qvel[1],2)+std::pow(dl.est.v[2]-d->qvel[2],2));
     }
     if(frame%3==0) publish_state(m,d,c,mode,STATE_PUB);
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);
-    mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn); mjr_render(vp,&scn,&con);
+    mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);
+    if(est_ctrl && scn.ngeom+6<=scn.maxgeom){           // ★고스트: GT(초록)·추정(주황) base 마커 + 드리프트 이격선(17-DOF 방식)
+      double H=0.35; float grn[4]={0.2f,0.9f,0.3f,0.9f}, org[4]={1.0f,0.55f,0.15f,0.9f};
+      double szG[3]={0.03,0.03,0.03}, szL[3]={0,0,0};
+      mjtNum gtM[3]={d->qpos[0],d->qpos[1],d->qpos[2]+H}, esM[3]={dl.est.p[0],dl.est.p[1],dl.est.p[2]+H};
+      mjtNum gtB[3]={d->qpos[0],d->qpos[1],d->qpos[2]};
+      mjvGeom* g0=&scn.geoms[scn.ngeom]; mjv_initGeom(g0,mjGEOM_SPHERE,szG,gtM,NULL,grn); g0->category=mjCAT_DECOR; scn.ngeom++;
+      mjvGeom* g1=&scn.geoms[scn.ngeom]; mjv_initGeom(g1,mjGEOM_SPHERE,szG,esM,NULL,org); g1->category=mjCAT_DECOR; scn.ngeom++;
+      mjvGeom* g2=&scn.geoms[scn.ngeom]; mjv_initGeom(g2,mjGEOM_LINE,szL,NULL,NULL,org); mjv_connector(g2,mjGEOM_LINE,5,gtM,esM); g2->category=mjCAT_DECOR; scn.ngeom++;
+      mjvGeom* g3=&scn.geoms[scn.ngeom]; mjv_initGeom(g3,mjGEOM_LINE,szL,NULL,NULL,grn); mjv_connector(g3,mjGEOM_LINE,2,gtB,gtM); g3->category=mjCAT_DECOR; scn.ngeom++;
+    }
+    mjr_render(vp,&scn,&con);
+    { char hud[400]; double* q=&d->qpos[3];              // ★오차 HUD (17-DOF trot_view 방식)
+      double roll=std::atan2(2*(q[0]*q[1]+q[2]*q[3]),1-2*(q[1]*q[1]+q[2]*q[2]));
+      double pitch=std::asin(std::max(-1.0,std::min(1.0,2*(q[0]*q[2]-q[3]*q[1]))));
+      if(est_ctrl)
+        std::snprintf(hud,400,"mode=%s  z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\nEST_CTRL (leg-odom + contact-height)  [green=GT  orange=EST]\nest err  pos=%.1f cm  vel=%.3f m/s\nlatency sense=%d act=%d comp=%d step",
+          mode.c_str(),d->qpos[2],std::hypot(roll,pitch)*180/M_PI,d->qpos[0],falls,est_perr*100,est_verr,dl.SLAT,dl.ALAT,dl.LCOMP);
+      else
+        std::snprintf(hud,400,"mode=%s  z=%.3f  tilt=%.1f deg\nx=%+.2f  falls=%d\nGT control (ground truth)\nmouse: rotate/zoom | control via GUI",
+          mode.c_str(),d->qpos[2],std::hypot(roll,pitch)*180/M_PI,d->qpos[0],falls);
+      mjr_overlay(mjFONT_NORMAL,mjGRID_TOPLEFT,vp,est_ctrl?"biped C++ (EST_CTRL: GT vs EST)":"biped C++ (GT control)",hud,&con);
+    }
     glfwSwapBuffers(win); glfwPollEvents();
   }
   mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate();

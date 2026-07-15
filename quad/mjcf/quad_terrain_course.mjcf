@@ -1,15 +1,14 @@
 <mujoco model="terrain_course4">
-  <!-- ★4라인 종합코스(2026-07-15 재구성): gap·stepping을 별도 라인에 분리(같은 라인 연속=간격 다른 정렬속도 요구라 불가).
-       라인 배치(y): +1.2=갭 / −1.2=스테핑(안쪽=도달 쉬움) · +3.6=마찰 / −3.6=완만험지(바깥).
-       각 라인은 단일 장애물 = ③ selectFoot로 각자 정렬속도(walk 0.5)에 건널 수 있음. 조향해 라인 진입. -->
+  <!-- ★4라인 종합코스(2026-07-15): gap·stepping을 별도 라인 분리 + 험지·계단 복원.
+       y=+1.2 갭 / y=-1.2 스테핑(안쪽=도달 쉬움) · y=+3.6 험지 / y=-3.6 계단(바깥). 중앙(y=0)=통로.
+       ③ selectFoot walk 0.5로 각 라인 완주. 조향해 라인 진입. -->
   <include file="quad_real_17dof_waist_sphere.mjcf"/>
   <worldbody>
-    <!-- ── 라인 A (y=+1.2): 갭 GAP (0.32m 갭·0.70폭 발판·높이0.16) ── -->
+    <!-- 라인 A (y=+1.2): 갭 GAP -->
     <geom name="gp0" type="box" group="2" size="0.350 0.700 0.080" pos="1.550 1.200 0.080" rgba="0.48 0.54 0.64 1"/>
     <geom name="gp1" type="box" group="2" size="0.350 0.700 0.080" pos="2.570 1.200 0.080" rgba="0.42 0.48 0.58 1"/>
     <geom name="gp2" type="box" group="2" size="0.350 0.700 0.080" pos="3.590 1.200 0.080" rgba="0.48 0.54 0.64 1"/>
-
-    <!-- ── 라인 B (y=−1.2): 스테핑 STEPPING STONE (0.44m 간격·0.13발판·높이0.13, ±0.22 좌우) ── -->
+    <!-- 라인 B (y=-1.2): 스테핑 STEPPING -->
     <geom name="t0L" type="box" group="2" size="0.130 0.130 0.065" pos="1.200 -0.980 0.065" rgba="0.38 0.55 0.44 1"/>
     <geom name="t0R" type="box" group="2" size="0.130 0.130 0.065" pos="1.200 -1.420 0.065" rgba="0.38 0.55 0.44 1"/>
     <geom name="t1L" type="box" group="2" size="0.130 0.130 0.065" pos="1.640 -0.980 0.065" rgba="0.38 0.55 0.44 1"/>
@@ -22,17 +21,50 @@
     <geom name="t4R" type="box" group="2" size="0.130 0.130 0.065" pos="2.960 -1.420 0.065" rgba="0.38 0.55 0.44 1"/>
     <geom name="t5L" type="box" group="2" size="0.130 0.130 0.065" pos="3.400 -0.980 0.065" rgba="0.38 0.55 0.44 1"/>
     <geom name="t5R" type="box" group="2" size="0.130 0.130 0.065" pos="3.400 -1.420 0.065" rgba="0.38 0.55 0.44 1"/>
-
-    <!-- ── 라인 C (y=+3.6): 마찰 FRICTION (낮은 저마찰 판) ── -->
-    <geom name="f0" type="box" group="2" size="0.600 0.700 0.012" pos="1.800 3.600 0.012" rgba="0.60 0.62 0.66 1" friction="0.50 0.02 0.001" priority="1"/>
-    <geom name="f1" type="box" group="2" size="0.600 0.700 0.012" pos="3.000 3.600 0.012" rgba="0.62 0.72 0.85 1" friction="0.30 0.01 0.0005" priority="1"/>
-    <geom name="f2" type="box" group="2" size="0.600 0.700 0.012" pos="4.200 3.600 0.012" rgba="0.66 0.78 0.90 1" friction="0.20 0.01 0.0005" priority="1"/>
-
-    <!-- ── 라인 D (y=−3.6): 완만 험지 ROUGH (낮은 요철 ~2–3cm) ── -->
-    <geom name="r0" type="box" group="2" size="0.250 0.600 0.025" pos="1.500 -3.600 0.025" rgba="0.55 0.50 0.42 1"/>
-    <geom name="r1" type="box" group="2" size="0.250 0.600 0.030" pos="2.100 -3.520 0.030" rgba="0.58 0.52 0.44 1"/>
-    <geom name="r2" type="box" group="2" size="0.250 0.600 0.020" pos="2.700 -3.680 0.020" rgba="0.55 0.50 0.42 1"/>
-    <geom name="r3" type="box" group="2" size="0.250 0.600 0.030" pos="3.300 -3.560 0.030" rgba="0.58 0.52 0.44 1"/>
-    <geom name="r4" type="box" group="2" size="0.250 0.600 0.025" pos="3.900 -3.620 0.025" rgba="0.55 0.50 0.42 1"/>
+    <!-- 라인 C (y=+3.6): 험지 ROUGH (0.12 요철 그리드, 높이 0.015~0.040) -->
+    <geom name="rg0" type="box" group="2" size="0.120 0.120 0.033" pos="1.200 3.360 0.033" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg1" type="box" group="2" size="0.120 0.120 0.015" pos="1.200 3.600 0.015" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg2" type="box" group="2" size="0.120 0.120 0.038" pos="1.200 3.840 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg3" type="box" group="2" size="0.120 0.120 0.015" pos="1.500 3.360 0.015" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg4" type="box" group="2" size="0.120 0.120 0.038" pos="1.500 3.600 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg5" type="box" group="2" size="0.120 0.120 0.026" pos="1.500 3.840 0.026" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg6" type="box" group="2" size="0.120 0.120 0.038" pos="1.800 3.360 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg7" type="box" group="2" size="0.120 0.120 0.026" pos="1.800 3.600 0.026" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg8" type="box" group="2" size="0.120 0.120 0.019" pos="1.800 3.840 0.019" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg9" type="box" group="2" size="0.120 0.120 0.026" pos="2.100 3.360 0.026" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg10" type="box" group="2" size="0.120 0.120 0.019" pos="2.100 3.600 0.019" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg11" type="box" group="2" size="0.120 0.120 0.040" pos="2.100 3.840 0.040" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg12" type="box" group="2" size="0.120 0.120 0.019" pos="2.400 3.360 0.019" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg13" type="box" group="2" size="0.120 0.120 0.040" pos="2.400 3.600 0.040" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg14" type="box" group="2" size="0.120 0.120 0.022" pos="2.400 3.840 0.022" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg15" type="box" group="2" size="0.120 0.120 0.040" pos="2.700 3.360 0.040" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg16" type="box" group="2" size="0.120 0.120 0.022" pos="2.700 3.600 0.022" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg17" type="box" group="2" size="0.120 0.120 0.033" pos="2.700 3.840 0.033" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg18" type="box" group="2" size="0.120 0.120 0.022" pos="3.000 3.360 0.022" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg19" type="box" group="2" size="0.120 0.120 0.033" pos="3.000 3.600 0.033" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg20" type="box" group="2" size="0.120 0.120 0.015" pos="3.000 3.840 0.015" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg21" type="box" group="2" size="0.120 0.120 0.033" pos="3.300 3.360 0.033" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg22" type="box" group="2" size="0.120 0.120 0.015" pos="3.300 3.600 0.015" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg23" type="box" group="2" size="0.120 0.120 0.038" pos="3.300 3.840 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg24" type="box" group="2" size="0.120 0.120 0.015" pos="3.600 3.360 0.015" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg25" type="box" group="2" size="0.120 0.120 0.038" pos="3.600 3.600 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg26" type="box" group="2" size="0.120 0.120 0.026" pos="3.600 3.840 0.026" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg27" type="box" group="2" size="0.120 0.120 0.038" pos="3.900 3.360 0.038" rgba="0.59 0.53 0.47 1"/>
+    <geom name="rg28" type="box" group="2" size="0.120 0.120 0.026" pos="3.900 3.600 0.026" rgba="0.50 0.45 0.40 1"/>
+    <geom name="rg29" type="box" group="2" size="0.120 0.120 0.019" pos="3.900 3.840 0.019" rgba="0.50 0.45 0.40 1"/>
+    <!-- 라인 D (y=-3.6): 계단 STAIRS (오르막 6단→랜딩→내리막 6단, 단높이 0.025) -->
+    <geom name="sup1" type="box" group="2" size="0.140 0.500 0.025" pos="1.500 -3.600 0.025" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sup2" type="box" group="2" size="0.140 0.500 0.050" pos="1.780 -3.600 0.050" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sup3" type="box" group="2" size="0.140 0.500 0.075" pos="2.060 -3.600 0.075" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sup4" type="box" group="2" size="0.140 0.500 0.100" pos="2.340 -3.600 0.100" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sup5" type="box" group="2" size="0.140 0.500 0.125" pos="2.620 -3.600 0.125" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sup6" type="box" group="2" size="0.140 0.500 0.150" pos="2.900 -3.600 0.150" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sland" type="box" group="2" size="0.500 0.500 0.150" pos="3.480 -3.600 0.150" rgba="0.50 0.42 0.36 1"/>
+    <geom name="sdn1" type="box" group="2" size="0.140 0.500 0.126" pos="4.080 -3.600 0.126" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sdn2" type="box" group="2" size="0.140 0.500 0.101" pos="4.360 -3.600 0.101" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sdn3" type="box" group="2" size="0.140 0.500 0.076" pos="4.640 -3.600 0.076" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sdn4" type="box" group="2" size="0.140 0.500 0.051" pos="4.920 -3.600 0.051" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sdn5" type="box" group="2" size="0.140 0.500 0.026" pos="5.200 -3.600 0.026" rgba="0.60 0.50 0.42 1"/>
+    <geom name="sdn6" type="box" group="2" size="0.140 0.500 0.001" pos="5.480 -3.600 0.001" rgba="0.60 0.50 0.42 1"/>
   </worldbody>
 </mujoco>

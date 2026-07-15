@@ -14,6 +14,8 @@ def setup_02leg_state(tmls: TAMOLSState):
     tmls.foot_radius = 0.018         # sphere 발 반경
     tmls.nominal_height = 0.52       # 배포 base_z0≈0.5234
     tmls.desired_height = 0.52
+    tmls.h_des = 0.52                # ★★base 정렬이 실제 쓰는 목표높이(Go2 기본0.25→base가 0.25로 끌려 요동한 원인)
+    tmls.base_pose_sampling_rate = 3 # ★스플라인 전체 높이구속(기본1=phase시작만 → 중간 요동)
     tmls.l_min = 0.12                # 다리 최소/최대 reach (크라우치~신전)
     tmls.l_max = 0.80
     tmls.min_foot_distance = 0.10

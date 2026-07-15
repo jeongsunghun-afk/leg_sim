@@ -25,3 +25,9 @@ PYTHONPATH=fetch/tamols ../drake_venv/bin/python -m fetch.tamols.tamols_02leg   
 - 정식화: tamols-rl fetch/tamols/{tamols.py, constraints.py(GIAC), costs.py, map_processing.py}
 - 논문: Jenelten et al. TAMOLS, T-RO 2022, arXiv 2206.14049
 - 메모리: perceptive-nav-tamols
+
+## 품질 튜닝 (2026-07-14, 이어서)
+- ★★**핵심 버그 = `h_des`(Go2 기본 0.25)**: base_pose_alignment_cost가 nominal/desired_height가 아니라 `tmls.h_des`를 씀 → base가 0.25로 끌려 요동(0.52→0.03). **`tmls.h_des=0.52`로 수정 → base 추락 해결(0.5~0.8 유지·rpy~0 레벨).**
+- base_pose_sampling_rate 1→3(스플라인 전체 높이구속), costs.py base_alignment 가중 0.01→0.1(★ws costs.py 직접수정, 프로젝트엔 미반영=재적용 필요).
+- ⚠️ **남은 균형문제**: base_alignment 가중↑(0.3)=base 안정하나 전진 안 함 / 가중↓(0.05)=전진하나 z 오버슈트(0.77)+틸트. 비선형 NLP 국소최적이라 노이지. **tracking↔regulation 균형 튜닝 or 하드 높이/자세 bound or 더 나은 초기추정 필요**(후속).
+- ★재적용 시 costs.py 수정: `add_base_pose_alignment_cost`의 `weight = 0.01*...` → `0.1*...`

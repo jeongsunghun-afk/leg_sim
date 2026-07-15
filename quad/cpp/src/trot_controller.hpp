@@ -160,6 +160,26 @@ struct TrotCtrl {
   bool sit_init=false, sit_from_below=false;   // ★sit 진입 방향 1회 latch: 눕기 등 아래서 진입 시 0.32 crouch 오버슈트 없이 현재 자세서 곧바로 haunch로 morph
   bool from_sit=false;   // ★crouch-sit서 기립: 저crouch(≥0.29)라 저-PD 대신 wbic_stance로 매끈 기립(오버슈트 방지)
   double lie_settle=0;   // ★강건 기립: 앉기→눕기 언폴드 후 저크라우치 정착 대기(dwell) 타이머
+  // ★★TAMOLS 재생(perceptive foothold 플래너 추종): base pose/vel 궤적 + 발판 + 접촉스케줄을 로드해
+  //   기존 보행스택(MPC→lam→wbic_track)의 참조를 TAMOLS로 교체(속도/z/yaw + 발판 스윙 + 접촉).
+  std::vector<std::array<double,12>> tam_s;   // 샘플: [t·pose6(x y z r p yw)·vel6]
+  std::vector<std::array<int,4>> tam_c;       // 샘플별 접촉(4)
+  Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
+  double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
+  Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
+  Vector3d tam_ptgt[4]; bool tam_have_ptgt[4]={false,false,false,false};
+  void load_tamols(const char* path){
+    std::ifstream f(path); if(!f){ tam_N=0; tam_loaded=true; std::printf("[tamols] 파일 없음: %s\n",path); return; }
+    tam_s.clear(); tam_c.clear(); std::string tok;
+    f>>tam_N>>tam_dt; f>>tok;                 // N dt, "FOOTHOLDS"
+    for(int L=0;L<4;L++) f>>tam_fh[L][0]>>tam_fh[L][1]>>tam_fh[L][2];
+    f>>tok;                                   // "SAMPLES"
+    for(int k=0;k<tam_N;k++){ double t; std::array<double,12> s; std::array<int,4> c;
+      f>>t; for(int j=0;j<12;j++) f>>s[j];    // t + pose6(x y z r p yw) + vel6(vx vy vz wr wp wy)
+      for(int i=0;i<4;i++) f>>c[i];
+      tam_s.push_back(s); tam_c.push_back(c); }
+    tam_loaded=true; std::printf("[tamols] 로드 N=%d dt=%.4f 발판FL(%.2f,%.2f)\n",tam_N,tam_dt,tam_fh[0][0],tam_fh[0][1]);
+  }
   double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
   double SGU_WALKOUT_V=0.6, SGU_HANDOFF_Z=0.34;   // ★기립 후 전진 트로트로 인계(walk-out)해 균형회복. bz>HANDOFF_Z면 move로 전환
   double SIT_SLEW=0.6; // ★앉기 하강 슬루(rad/s, 작을수록 천천히·충격↓). 기본 JOINT_SLEW(1.5)보다 느리게→충격 완화
@@ -270,6 +290,42 @@ struct TrotCtrl {
       if(sp>0.20) stop_settle=true; else if(sp<0.12) stop_settle=false; }
     else stop_settle=false;
     if(mode!="off") off_settled=false;   // ★off 벗어나면 리셋(다음 off서 다시 완만 하강)
+    // ★★TAMOLS 재생: 궤적(base pose/vel + 발판 + 접촉)을 로드해 보행스택(MPC→lam→wbic_track) 참조로 주입.
+    if(mode=="tamols"){
+      if(!tam_loaded) load_tamols(getenv("TAMOLS_TRAJ")?getenv("TAMOLS_TRAJ"):"/tmp/tamols_traj.txt");
+      if(tam_N<=0){ q.wbic_stance(); armed=false; return; }             // 파일없음=제자리
+      if(tam_t<0){ tam_t0=t; tam_ax=d->qpos[0]; tam_ay=d->qpos[1];      // 진입=현재 위치를 TAMOLS 원점으로 앵커
+        for(int i=0;i<4;i++){ tam_sw_prev[i]=(tam_c[0][i]!=0); tam_have_ptgt[i]=false; }
+        x_ref.setZero(); x_ref[12]=-9.81; com_h0=d->subtree_com[2]; }
+      tam_t=t-tam_t0;
+      int k=std::min((int)(tam_t/tam_dt),tam_N-1); if(k<0)k=0;
+      auto& s=tam_s[k]; auto& cc=tam_c[k];
+      double tgt_x=tam_ax+s[0], tgt_y=tam_ay+s[1];                      // base 위치 피드백(드리프트 보정) + TAMOLS 속도
+      double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
+      double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
+      x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
+      std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
+      double SW_DUR=0.4, sh=0.08;
+      for(int i=0;i<4;i++){ bool contact=(cc[i]!=0);
+        if(contact){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }
+        else { if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=tam_t; tam_sw_prev[i]=false; }  // liftoff 캡처
+          double sprog=tc_clip((tam_t-tam_sw_start[i])/SW_DUR,0.0,1.0);
+          Vector3d p_end(tam_ax+tam_fh[i][0],tam_ay+tam_fh[i][1],tam_fh[i][2]);
+          Vector3d bvel(s[6],s[7],0.0);
+          Vector3d p_tgt=tc_swing_foot(sprog,tam_lift[i],p_end,bvel,sh,SW_DUR,SW_DUR);
+          Vector3d v_tgt=Vector3d::Zero();
+          if(tam_have_ptgt[i]) for(int c=0;c<3;c++) v_tgt[c]=tc_clip((p_tgt[c]-tam_ptgt[i][c])/dt,-1.0,1.0);
+          tam_ptgt[i]=p_tgt; tam_have_ptgt[i]=true; swing[i]={p_tgt,v_tgt}; } }
+      double dmpc=t-mpc_t;
+      if(!st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
+        std::vector<std::array<int,4>> cs(q.mpc.N);
+        for(int kk=0;kk<q.mpc.N;kk++){ int kf=std::min((int)((tam_t+kk*q.mpc.DT)/tam_dt),tam_N-1);
+          for(int i=0;i<4;i++) cs[kk][i]=tam_c[kf][i]; }
+        Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
+      Vector3d lam_use[4]; for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
+      if(!q.wbic_track(st,swing,lam_use)) q.wbic_stance();
+      armed=false; return;
+    }
     bool run_move=(mode=="move")||stop_settle;
     if(!run_move){
       if(mode=="off"){   // ★전원차단: 선 채로 툭 damp(낙하) 대신 바닥(GROUND_Z)까지 완만 PD 하강 후 damp (실로봇=눕고 전원끔)

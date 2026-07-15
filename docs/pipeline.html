@@ -102,7 +102,19 @@
         <li><b>위치 xy</b>=<b>stance-anchored</b>(접촉발을 월드 앵커로 고정 → base=mean(anchor−R·pfb)) + 미끄럼 아웃라이어 재앵커. 앵커가 <b>ZUPT를 대체</b>해 앉기/서기(몸 상하·CoM gather)서도 드리프트 없이 추종.</li>
         <li><b>속도</b>=접촉발 zero-velocity 평균+저역통과, <b>정적/기립 모드=속도 ZUPT</b>(fold 미끄럼 거짓속도 제어 교란 차단).</li>
       </ul>
-      <b>검증</b>: 개루프 고스트 오차 sit↔stand 반복 1.4m→<b>4cm</b>(z 1.7cm), 보행 6cm. <b>표준 대비</b>: 앵커링·접촉속도·ZUPT·미끄럼제거는 표준 기법이나, 정공법은 <b>IMU 가속도 융합 contact-aided InEKF</b>(Bloesch 2013·Hartley 2020) — 현재 결정론적 간이판(가속도 미융합·평지 z 가정)에서 <b>InEKF로 격상 진행 중</b>. xy·yaw 절대 드리프트는 leg-odom 원리적 한계 → exteroception(VoxelSLAM2, <a href="pipeline_nav.html">nav</a>)로 보정.
+      <b>검증</b>: 개루프 고스트 오차 sit↔stand 반복 1.4m→<b>4cm</b>(z 1.7cm), 보행 6cm.
+      <br><br>
+      <b>② 표준 접촉기반 선형 KF</b>(<code>estimate_kf()</code>, <code>EST_KF=1</code> — MIT Cheetah·Bledt 2018) — <b>IMU 가속도 융합</b> 채택:
+      상태 <code>[p, v, 발4위치]</code> 18차, 가속도로 <b>예측</b>(접촉 무관 고속) + 접촉발 상대위치·정지속도·지면z로 <b>보정</b>(칼만이득이 공분산으로 자동 가중, swing발=공분산 거대화로 무시). 가속도 예측이 <b>접촉불량 구간(기립 fold·점프 flight)을 이어줘</b> 속도가 안 튀는 게 핵심 — <b>폐루프 반복 기립을 안정화</b>(2사이클 전복 → 6사이클 tilt 4°). 자세는 IMU 직접(필터 밖).
+      <br><br>
+      <b>InEKF</b>(Hartley 2020, Lie군 자세정합)는 이 선형 KF의 일반화이나 <b>미채택</b> — 우리는 IMU 자세를 직접 써 정확하고(자세를 필터로 감싸면 오히려 지연), 관측불가 모드(<b>절대 xy·yaw 드리프트</b>)는 어떤 필터도 못 잡아 실익이 없다. InEKF 이점(자세 일관성)은 공격적 기동·자이로 바이어스에서 나오므로 실기서 필요시 격상. 절대 xy·yaw는 exteroception(VoxelSLAM2, <a href="pipeline_nav.html">nav</a>)로 보정.
+    </div>
+  </div>
+
+  <div class="stage" style="border-left:4px solid var(--ok);margin-top:10px">
+    <span class="t" style="color:var(--ok)">기동별 배포 방식 — leg-odom 전제(디딘 발=고정)가 지켜지느냐</span>
+    <div class="d" style="margin-top:6px;line-height:1.7">
+      <b>보행(wbic_track)</b>=발 주기접촉=정상영역 → <b>EST 폐루프(KF)</b>. · <b>기립(getup)</b>=fold 미끄럼+base 대이동=전제 깨짐 → rise는 <b>wbic 균형 필수</b>(pure 관절-PD는 GT도 전복), wbic 참조를 <b>절대 xy 비의존</b>(rise=현재 CoM 상대추종)+속도는 KF로 확보. · <b>점프(jump)</b>=이미 발사점 상대(<code>jump_launch_com</code>), flight는 IMU 가속 적분. 공통: 기립·점프는 절대 base 위치 비의존(피드포워드+자기수용감각), 절대량은 균형에 불필요.
     </div>
   </div>
 </section>

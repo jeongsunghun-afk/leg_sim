@@ -10,7 +10,7 @@ import dearpygui.dearpygui as dpg
 
 CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
 STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
-VMAX   = 0.2          # 전진 상한[m/s] (로버스트 저속)
+VMAX   = 0.15         # 전진 상한[m/s] (★안전 하향 0.2→0.15=로버스트 범위. 0.20은 marginal)
 VY_MAX = 0.06         # 좌우 상한[m/s] (★측방=점발 marginal, 실안정범위로 캡. quad도 측방보행X)
 WZ_MAX = 0.30         # 선회 상한[rad/s] (★제자리 선회 안정범위. 실제 turn rate는 head_lead로 ~2.5°/s 포화. 주행중 선회는 marginal=RL)
 H_MIN, H_MAX, H_DEF = 0.44, 0.52, 0.483
@@ -34,9 +34,10 @@ class Pub:
 
 class JoyPad:
     """가상 조이스틱(17-DOF GUI 참조). 좌드래그=축[-1,1]·놓으면 복귀·우클릭=고정."""
-    def __init__(self, tag, size, on_change, x_only=False):
+    def __init__(self, tag, size, on_change, x_only=False, cross_only=False):
         self.tag = tag; self.sz = size; self.R = size * 0.5 - 16; self.c = size / 2
-        self.on_change = on_change; self.x_only = x_only; self.active = False; self.latched = False
+        self.on_change = on_change; self.x_only = x_only; self.cross_only = cross_only
+        self.active = False; self.latched = False
 
     def build(self, label=''):
         with dpg.drawlist(width=self.sz, height=self.sz, tag=self.tag):
@@ -63,6 +64,9 @@ class JoyPad:
         dx = max(-self.R, min(self.R, dx)); dy = max(-self.R, min(self.R, dy))
         if self.x_only:
             dy = 0
+        if self.cross_only:                                 # ★십자(4-way): 우세 축만 = vx·vy 동시 금지(대각 marginal 방지)
+            if abs(dx) >= abs(dy): dy = 0
+            else: dx = 0
         dpg.configure_item(self.tag + '_k', center=[self.c + dx, self.c + dy])
         self.on_change(dx / self.R, -dy / self.R)           # ax 우=+, ay 위=+
 
@@ -120,7 +124,7 @@ def set_mode(mode):
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
 
 
-left  = JoyPad('joyL', 190, on_left)
+left  = JoyPad('joyL', 190, on_left, cross_only=True)   # ★십자만(전후 XOR 측방, 대각 금지)
 right = JoyPad('joyR', 190, on_right, x_only=True)
 
 dpg.create_context()
@@ -151,7 +155,7 @@ with dpg.window(tag='main'):
     with dpg.group(horizontal=True):
         with dpg.group():
             left.build('전후/측방')
-            dpg.add_text('좌: 위아래=전후 · 좌우=측방', color=(120, 130, 150))
+            dpg.add_text('좌: 위아래=전후 · 좌우=측방 (십자=하나씩)', color=(120, 130, 150))
         with dpg.group():
             right.build('선회')
             dpg.add_text('우: 좌우=선회 (제자리 선회 권장·주행중 선회는 marginal)', color=(120, 130, 150))

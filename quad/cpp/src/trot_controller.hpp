@@ -158,6 +158,7 @@ struct TrotCtrl {
   bool was_sit=false; double sit_getup_t0=-1;
   bool sit_init=false, sit_from_below=false;   // ★sit 진입 방향 1회 latch: 눕기 등 아래서 진입 시 0.32 crouch 오버슈트 없이 현재 자세서 곧바로 haunch로 morph
   bool from_sit=false;   // ★crouch-sit서 기립: 저crouch(≥0.29)라 저-PD 대신 wbic_stance로 매끈 기립(오버슈트 방지)
+  double lie_settle=0;   // ★강건 기립: 앉기→눕기 언폴드 후 저크라우치 정착 대기(dwell) 타이머
   double SGU_KICK_T=0.5, SGU_FB_THIGH=-0.55, SGU_FB_CALF=1.20, SGU_SLEW=1.5, SGU_KP=120, SGU_GATHER_Z=0.24, SGU_DONE_TILT=22;
   double SGU_WALKOUT_V=0.6, SGU_HANDOFF_Z=0.34;   // ★기립 후 전진 트로트로 인계(walk-out)해 균형회복. bz>HANDOFF_Z면 move로 전환
   double SIT_SLEW=0.6; // ★앉기 하강 슬루(rad/s, 작을수록 천천히·충격↓). 기본 JOINT_SLEW(1.5)보다 느리게→충격 완화
@@ -418,17 +419,23 @@ struct TrotCtrl {
         if(te>SGU_KICK_T && tiltdeg()<SGU_DONE_TILT && jerr<0.4){ was_sit=false; sit_getup_t0=-1; }  // 수평 저crouch 도달→정상 getup 인계
         armed=false; return;
       }
-      // ★개-앉기 기립: offline gather 궤적(/tmp/getup_traj.txt) 추종. phaseA(gather+뒷발착지)=PD로 CoM 전진 → phaseB=정상 wbic 상승 인계.
+      // ★★강건 기립(앉기→눕기→서기 라우팅): haunch 직접상승은 측방 발산(불안정)이라, 먼저 대칭 저크라우치(눕기자세)로
+      //   언폴드(측방 안정 확인됨)한 뒤 검증된 눕기→서기 상승에 인계. 구 gather(gen_getup) 대체.
       if(mode=="stand_up" && haunch_ready){
-        if(getup_k<0){ gen_getup(); getup_k=0; getup_kt=0; }   // ★C++ 자립 생성(구 load_getup Python파일 의존 제거). 현재 sit qpos서 gather 궤적 생성
-        if(getup_N>0 && getup_ph[getup_k]<2){                                // phaseA: 궤적 프레임 관절-PD추종(중력보상 + 속도 피드포워드). ★phaseB 상승은 균형 필요→wbic 인계(pure PD는 GT도 전복 확인)
-          for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_TRAJ_KP*(getup_q[getup_k][j]-d->qpos[7+j])+GETUP_TRAJ_KD*(getup_dqv[getup_k][j]-d->qvel[6+j]);
-            d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
-          getup_kt+=dt; if(getup_kt>=getup_dt && getup_k<getup_N-1){ getup_kt=0; getup_k++; }
-          armed=false; return;
-        }
-        haunch_ready=false; haunch_fold=0; getup_k=-1;                       // phaseB 진입→ 아래 wbic 상승 인계(균형 필요)
-        ht_cur=std::max(0.20,d->qpos[2]); qhome_h=-1; have_qref=false;
+        double bzg=d->qpos[2]; double LIEZ=GROUND_LIE_Z;                      // 언폴드 목표=대칭 저크라우치(순수 눕기와 동일 자세)
+        if(ht_cur>LIEZ) ht_cur=std::max(LIEZ, ht_cur-GETUP_RATE*dt); else ht_cur=LIEZ;
+        q.update_stand_qhome(ht_cur);                                         // 대칭 crouch config(haunch 아님)
+        for(int i=0;i<4;i++) if(q.leg_dof[i]==4){                             // 눕기와 동일 발/앞다리 오프셋(안정 저자세)
+          q.q_home[q.legqp[i][3]-7]=(i<2)?GROUND_REAR_FOOT:GROUND_FRONT_FOOT;
+          if(i>=2){ q.q_home[q.legqp[i][1]-7]+=GROUND_FRONT_THIGH; q.q_home[q.legqp[i][2]-7]+=GROUND_FRONT_CALF; } }
+        if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
+        for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
+        for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
+          d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+        if(std::abs(ht_cur-LIEZ)<0.02 && tiltdeg()<11) lie_settle+=dt; else lie_settle=0;   // ★정착 대기: 순수 눕기 자세(tilt~9)처럼 완전 정착(dwell)해야 인계(marginal 인계→지연하 전복 방지)
+        if(lie_settle>0.5){                                                    // 저크라우치 안정 정착 → haunch 해제, 검증된 눕기→서기 상승 인계
+          haunch_ready=false; haunch_fold=0; getup_k=-1; from_sit=false; lie_settle=0; ht_cur=bzg; qhome_h=-1; have_qref=false; }
+        else { q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt); armed=false; return; }
       }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
       if(mode=="stand_down" && ht_cur>bz) ht_cur=std::max(GROUND_Z,bz);    // ★눕기=현재높이서 하강(서기 안 거치고 그대로 눕기)
@@ -460,8 +467,8 @@ struct TrotCtrl {
           d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
         armed=false; return; }
       if(!haunch_ready){
-        if(from_sit){ q.com_ref[0]=d->subtree_com[0]; q.com_ref[1]=d->subtree_com[1]; }  // ★기립 rise=현재 CoM 상대추종(절대 xy 비의존→추정 드리프트 무관). 수평은 wbic 속도감쇠가 잡음
-        else { q.com_ref[0]=stand_ax; q.com_ref[1]=stand_ay; }              // 정상 서기=멈춘 위치 절대 홀드(홈 x=0 빨려감 방지)
+        if(from_sit){ q.com_ref[0]=d->subtree_com[0]; q.com_ref[1]=d->subtree_com[1]; }  // ★기립 rise=현재 CoM 상대추종(절대 xy 비의존→추정 드리프트 무관)
+        else { q.com_ref[0]=stand_ax; q.com_ref[1]=stand_ay; }              // 정상 서기=멈춘 위치 절대 홀드
       }
       have_qref=false; q.wbic_stance(); armed=false; return;                // 서기(높이충분)=wbic_stance
     }

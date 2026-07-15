@@ -141,6 +141,7 @@ int main(int argc,char**argv){
   // 센서노이즈(현실 프리셋 = GUI '센서 노이즈' 체크 시). env로도 덮어씀. 0=완벽센서.
   double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
+  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_KF")!=nullptr;   // ★표준 접촉KF(IMU가속도융합). 폐루프 기립 안정. 미설정=stance-anchored
   double est_perr=0, est_verr=0;   // 최신 추정오차(HUD 표시)
   double est_quat[4]={1,0,0,0};    // 최신 추정(측정) 방위 — 고스트 헤딩 화살표용
   // ★TAMOLS P0: 로컬 elevation map(mj_ray→격자). GUI '지형맵' 토글(tmap_on) 또는 env TERRAIN_MAP=1. 맵 rate로만 갱신(1kHz 밖).
@@ -193,7 +194,8 @@ int main(int argc,char**argv){
         ctrl.body_h = json_get(c,"body_h",ctrl.body_h);         // 서기 높이 슬라이더
         { bool er=json_bool(c,"viz",est_on) || est_ctrl;        // ★추정 고스트 = 기존 '모니터 표시(viz)' 체크박스 (개루프, 보행 GT제어라 안정). 폐루프(env)면 항상 on
           if(er && !est_on) est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));  // 켤 때 현재 참 base로 초기화(스테일 드리프트 방지)
-          est_on=er; }
+          est_on=er;
+          tmap_on = json_bool(c,"viz",tmap_on) || getenv("TERRAIN_MAP")!=nullptr; }   // ★footScore 격자 오버레이도 '모니터 표시(viz)' 체크박스에 연동(env TERRAIN_MAP도 유효)
         double rt=json_get(c,"rate",RATE); if(rt>0) RATE=rt;
         long rseq=(long)json_get(c,"reset_seq",reset_seen);     // ★RESET 버튼(상승엣지): mj_resetData+crouch_home+상태초기화
         if(reset_seen<0) reset_seen=rseq;                       //   첫폴링=동기화(시작리셋 방지)
@@ -226,10 +228,11 @@ int main(int argc,char**argv){
         { int o=0; for(int j=0;j<NJ;j++) qn[j]=df[o++]; for(int j=0;j<NJ;j++) dqn[j]=df[o++];
           for(int a=0;a<4;a++) quatn[a]=df[o++]; for(int a=0;a<3;a++) gyron[a]=df[o++];
           for(int i=0;i<4;i++) cts[i]=df[o++]>0.5; }
-        // ★ZUPT: 정적 모드(서기/앉기/눕기/off)=base 수평이동 없음 → 오도메트리 대신 v=0(발 미끄러짐 오추정→표류 차단). 이동/점프만 오도메트리.
-        bool locomoting = (ctrl.mode=="move" || ctrl.mode=="jump");
-        if(locomoting) est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
-        else           est.v.setZero();
+        // ★상태추정: EST_KF=표준 접촉KF(IMU가속도 융합, 폐루프 기립 안정) / 기본=stance-anchored(위치 앵커+z기구학, 속도 정적ZUPT)
+        if(ESTKF){ double aw[3]={d->qacc[0]+ACCN*_nd(_rng),d->qacc[1]+ACCN*_nd(_rng),d->qacc[2]+ACCN*_nd(_rng)};
+          est.estimate_kf(m, qn.data(), dqn.data(), quatn, gyron, aw, _efg, _efr, cts, m->opt.timestep); }
+        else { est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
+          if(!(ctrl.mode=="move"||ctrl.mode=="jump")) est.v.setZero(); }   // 정적/기립=속도 ZUPT(위치는 앵커라 유지)
         for(int a=0;a<4;a++) est_quat[a]=quatn[a];   // 추정(측정) 방위 → 고스트 헤딩 화살표
         est_perr=std::sqrt(std::pow(est.p[0]-d->qpos[0],2)+std::pow(est.p[1]-d->qpos[1],2)+std::pow(est.p[2]-d->qpos[2],2));
         est_verr=std::sqrt(std::pow(est.v[0]-d->qvel[0],2)+std::pow(est.v[1]-d->qvel[1],2)+std::pow(est.v[2]-d->qvel[2],2));

@@ -421,13 +421,13 @@ struct TrotCtrl {
       // ★개-앉기 기립: offline gather 궤적(/tmp/getup_traj.txt) 추종. phaseA(gather+뒷발착지)=PD로 CoM 전진 → phaseB=정상 wbic 상승 인계.
       if(mode=="stand_up" && haunch_ready){
         if(getup_k<0){ gen_getup(); getup_k=0; getup_kt=0; }   // ★C++ 자립 생성(구 load_getup Python파일 의존 제거). 현재 sit qpos서 gather 궤적 생성
-        if(getup_N>0 && getup_ph[getup_k]<2){                                // phaseA: 궤적 프레임 PD추종(중력보상 + 속도 피드포워드)
+        if(getup_N>0 && getup_ph[getup_k]<2){                                // phaseA: 궤적 프레임 관절-PD추종(중력보상 + 속도 피드포워드). ★phaseB 상승은 균형 필요→wbic 인계(pure PD는 GT도 전복 확인)
           for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_TRAJ_KP*(getup_q[getup_k][j]-d->qpos[7+j])+GETUP_TRAJ_KD*(getup_dqv[getup_k][j]-d->qvel[6+j]);
             d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
           getup_kt+=dt; if(getup_kt>=getup_dt && getup_k<getup_N-1){ getup_kt=0; getup_k++; }
           armed=false; return;
         }
-        haunch_ready=false; haunch_fold=0; getup_k=-1;                       // phaseB 진입(또는 궤적 없음)→ 아래 정상 getup(wbic 상승)으로 인계
+        haunch_ready=false; haunch_fold=0; getup_k=-1;                       // phaseB 진입→ 아래 wbic 상승 인계(균형 필요)
         ht_cur=std::max(0.20,d->qpos[2]); qhome_h=-1; have_qref=false;
       }
       if(bz<GETUP_TRIG && ht_cur>GETUP_DONE) ht_cur=std::max(0.12,bz);      // 쓰러짐/off로 낮음→동기화
@@ -459,7 +459,10 @@ struct TrotCtrl {
         for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
           d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
         armed=false; return; }
-      if(!haunch_ready){ q.com_ref[0]=stand_ax; q.com_ref[1]=stand_ay; }    // ★서기=멈춘 위치서 홀드(홈 x=0으로 빨려감 방지). haunch getup은 블렌드 com_ref 유지
+      if(!haunch_ready){
+        if(from_sit){ q.com_ref[0]=d->subtree_com[0]; q.com_ref[1]=d->subtree_com[1]; }  // ★기립 rise=현재 CoM 상대추종(절대 xy 비의존→추정 드리프트 무관). 수평은 wbic 속도감쇠가 잡음
+        else { q.com_ref[0]=stand_ax; q.com_ref[1]=stand_ay; }              // 정상 서기=멈춘 위치 절대 홀드(홈 x=0 빨려감 방지)
+      }
       have_qref=false; q.wbic_stance(); armed=false; return;                // 서기(높이충분)=wbic_stance
     }
     have_qref=false; stand_set=false;   // move → fold·서기앵커 리셋(다음 서기서 새 위치 캡처)

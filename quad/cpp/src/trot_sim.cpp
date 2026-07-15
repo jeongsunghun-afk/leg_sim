@@ -122,6 +122,7 @@ int main(int argc,char**argv){
   std::mt19937 _rng(2024); std::normal_distribution<double> _nd(0.0,1.0);
   double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
+  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_KF")!=nullptr;   // ★표준 접촉KF(IMU 가속도 융합) 선택. 미설정=stance-anchored
   // ★sim2real 지연(latency): 센서→추정/제어 지연(SENSE_LAT_MS) + 제어→구동 지연(ACT_LAT_MS). 실기 버스·연산 지연 모델(게인 재튜닝 최대원인).
   //   고정 링버퍼(무한루프 무증가). L=0이면 인덱스 항상 현재=지연 없음(회귀無).
   double SLAT=getenv("SENSE_LAT_MS")?atof(getenv("SENSE_LAT_MS")):0.0, ALAT=getenv("ACT_LAT_MS")?atof(getenv("ACT_LAT_MS")):0.0;
@@ -133,6 +134,9 @@ int main(int argc,char**argv){
     if(TMAPDUMP && step%50==0){ double cx=getenv("TMAP_CX")?atof(getenv("TMAP_CX")):d->qpos[0], cy=getenv("TMAP_CY")?atof(getenv("TMAP_CY")):d->qpos[1];
       tmap.update(m,d,cx,cy,(uint64_t)(d->time*1e9)); }   // 맵 rate 갱신(로봇 위치 또는 TMAP_CX/CY 지정 중심)
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
+    if(getenv("MODE_CYCLE")){ double per=getenv("CYCLE_T")?atof(getenv("CYCLE_T")):4.0;   // ★임시 진단: sit↔stand_up 반복(튕김 재현). per초마다 토글
+      static double t0c=1.0; if(d->time>t0c){ int ph=(int)((d->time-t0c)/per); std::string wm=(ph%2==0)?"sit":"stand_up";
+        if(ctrl.mode!=wm && ctrl.mode!="jump"){ ctrl.mode=wm; std::printf("[cycle] t=%.2f → %s (z=%.3f x=%+.3f)\n",d->time,wm.c_str(),d->qpos[2],d->qpos[0]); } } }
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     if(ESTCTRL){
       // ★Phase2/3/4: 실기 센서(+노이즈+지연)→추정→d_est(base=추정 · 자세·gyro·관절=측정)→컨트롤러 계산→토크(지연) 실기 적용
@@ -154,7 +158,10 @@ int main(int argc,char**argv){
       { int o=0; for(int j=0;j<NJ;j++) qn[j]=df[o++]; for(int j=0;j<NJ;j++) dqn[j]=df[o++];
         for(int a=0;a<4;a++) quatn[a]=df[o++]; for(int a=0;a<3;a++) gyron[a]=df[o++];
         for(int i=0;i<4;i++) cts[i]=df[o++]>0.5; }
-      est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);
+      if(ESTKF){ double aw[3]={d->qacc[0]+ACCN*_nd(_rng),d->qacc[1]+ACCN*_nd(_rng),d->qacc[2]+ACCN*_nd(_rng)};   // ★표준 접촉KF(IMU 가속도 융합)
+        est.estimate_kf(m, qn.data(), dqn.data(), quatn, gyron, aw, _efg, _efr, cts, m->opt.timestep); }
+      else { est.estimate(m, qn.data(), dqn.data(), quatn, gyron, _efg, _efr, cts, m->opt.timestep);   // ★stance-anchored 위치
+        if(!(ctrl.mode=="move"||ctrl.mode=="jump")) est.v.setZero(); }   // 정적/기립=속도 ZUPT(위치는 앵커 유지)
       if(d->time>1.0){ epx+=std::pow(est.p[0]-d->qpos[0],2); epy+=std::pow(est.p[1]-d->qpos[1],2); epz+=std::pow(est.p[2]-d->qpos[2],2);
         evx+=std::pow(est.v[0]-d->qvel[0],2); evy+=std::pow(est.v[1]-d->qvel[1],2); evz+=std::pow(est.v[2]-d->qvel[2],2); ecnt++; }
       for(int c=0;c<3;c++){ d_est->qpos[c]=est.p[c]; d_est->qvel[c]=est.v[c]; }
@@ -172,7 +179,10 @@ int main(int argc,char**argv){
     if(ESTTEST && !ESTCTRL){
       std::vector<bool> cts(4,false);
       for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
-      est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);
+      if(ESTKF){ double aw[3]={d->qacc[0]+ACCN*_nd(_rng),d->qacc[1]+ACCN*_nd(_rng),d->qacc[2]+ACCN*_nd(_rng)};
+        est.estimate_kf(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], aw, _efg, _efr, cts, m->opt.timestep); }
+      else { est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);
+        if(!(ctrl.mode=="move"||ctrl.mode=="jump")) est.v.setZero(); }
       if(d->time>1.0){ epx+=std::pow(est.p[0]-d->qpos[0],2); epy+=std::pow(est.p[1]-d->qpos[1],2); epz+=std::pow(est.p[2]-d->qpos[2],2);
         evx+=std::pow(est.v[0]-d->qvel[0],2); evy+=std::pow(est.v[1]-d->qvel[1],2); evz+=std::pow(est.v[2]-d->qvel[2],2); ecnt++; } }
     if(SLIP){ for(int i=0;i<4;i++){ bool con=false;

@@ -73,7 +73,7 @@
 <section id="pipeline">
   <h2>1 · 파이프라인 <span class="dim">매 틱 · nv=23 (6 부동베이스 + 17 관절) · nu=17</span></h2>
   <div class="flow">
-    <div class="stage"><span class="n">state</span><span class="t">MuJoCo 상태 읽기</span><div class="d">qpos, qvel → M(관성)·h(qfrc_bias)·Jacobian</div></div>
+    <div class="stage"><span class="n">state</span><span class="t">상태 취득 — GT(개발) 또는 EST(배포)</span><div class="d"><b>GT</b>: MuJoCo qpos·qvel 직접(궤적/제어기 검증용). <b>EST</b>(배포·최종목표): IMU+엔코더+접촉 → <b>leg-odometry</b> 추정 → M·h·Jacobian</div></div>
     <div class="arrow">↓</div>
     <div class="stage"><span class="n">①</span><span class="t">게이트 스케줄러</span><div class="d">gait(i,t) → 다리별 stance/swing + 스윙위상 s∈[0,1]</div></div>
     <div class="arrow">↓</div>
@@ -90,6 +90,21 @@
     <div class="stage"><span class="n">step</span><span class="t">mj_step</span><div class="d">토크 적용 → 다음 상태</div></div>
   </div>
   <p class="dim">역할 분담: MPC=중심동역학 최적 GRF 계획(예측적·무거움) · WBIC=그 GRF 실현 전신토크 + 스윙발 추종(반응적·가벼움).</p>
+
+  <div class="stage" style="border-left:4px solid var(--ok);margin-top:14px">
+    <span class="t" style="color:var(--ok)">상태추정 (sim2real) — GT는 개발용, EST 성공이 배포 기준</span>
+    <div class="d" style="margin-top:6px;line-height:1.7">
+      실기엔 절대위치 센서가 없으므로 <b>제어기는 추정 상태로 돌아야</b> 진짜 sim2real이다. 그래서 <b>GT=궤적·제어기 검증용 옵션</b>, <b>EST(폐루프) 성공을 최종 배포 기준</b>으로 삼는다(<code>EST_CTRL</code>). 뷰어 '모니터 표시(viz)' 체크박스=추정 고스트(초록 GT vs 주황 EST) 시각 비교.<br>
+      <b>추정기(<code>state_estimator.hpp</code>, leg-odometry)</b> — IMU(자세·각속도) + 관절 엔코더(q,q̇) + 발 접촉만 사용, 절대위치 미사용(실기 동일):
+      <ul style="margin:6px 0 0;padding-left:20px">
+        <li><b>자세</b>=IMU 직접 · <b>각속도</b>=자이로 직접.</li>
+        <li><b>위치 z</b>=접촉발 기구학(평지 <code>ground_z</code> 기준, base_z=ground−mean(발 상대z)) → 드리프트 0.</li>
+        <li><b>위치 xy</b>=<b>stance-anchored</b>(접촉발을 월드 앵커로 고정 → base=mean(anchor−R·pfb)) + 미끄럼 아웃라이어 재앵커. 앵커가 <b>ZUPT를 대체</b>해 앉기/서기(몸 상하·CoM gather)서도 드리프트 없이 추종.</li>
+        <li><b>속도</b>=접촉발 zero-velocity 평균+저역통과, <b>정적/기립 모드=속도 ZUPT</b>(fold 미끄럼 거짓속도 제어 교란 차단).</li>
+      </ul>
+      <b>검증</b>: 개루프 고스트 오차 sit↔stand 반복 1.4m→<b>4cm</b>(z 1.7cm), 보행 6cm. <b>표준 대비</b>: 앵커링·접촉속도·ZUPT·미끄럼제거는 표준 기법이나, 정공법은 <b>IMU 가속도 융합 contact-aided InEKF</b>(Bloesch 2013·Hartley 2020) — 현재 결정론적 간이판(가속도 미융합·평지 z 가정)에서 <b>InEKF로 격상 진행 중</b>. xy·yaw 절대 드리프트는 leg-odom 원리적 한계 → exteroception(VoxelSLAM2, <a href="pipeline_nav.html">nav</a>)로 보정.
+    </div>
+  </div>
 </section>
 
 <section id="mpc">

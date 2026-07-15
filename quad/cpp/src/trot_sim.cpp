@@ -134,9 +134,6 @@ int main(int argc,char**argv){
     if(TMAPDUMP && step%50==0){ double cx=getenv("TMAP_CX")?atof(getenv("TMAP_CX")):d->qpos[0], cy=getenv("TMAP_CY")?atof(getenv("TMAP_CY")):d->qpos[1];
       tmap.update(m,d,cx,cy,(uint64_t)(d->time*1e9)); }   // 맵 rate 갱신(로봇 위치 또는 TMAP_CX/CY 지정 중심)
     if(switchT>0 && d->time>switchT && getenv("MODE2") && !switched){ ctrl.mode=getenv("MODE2"); switched=true; }  // ★1회성(내부 walk-out 인계 안 덮게)
-    if(getenv("MODE_CYCLE")){ double per=getenv("CYCLE_T")?atof(getenv("CYCLE_T")):4.0;   // ★임시 진단: sit↔stand_up 반복(튕김 재현). per초마다 토글
-      static double t0c=1.0; if(d->time>t0c){ int ph=(int)((d->time-t0c)/per); std::string wm=(ph%2==0)?"sit":"stand_up";
-        if(ctrl.mode!=wm && ctrl.mode!="jump"){ ctrl.mode=wm; std::printf("[cycle] t=%.2f → %s (z=%.3f x=%+.3f)\n",d->time,wm.c_str(),d->qpos[2],d->qpos[0]); } } }
     if(pF!=0){ for(int k=0;k<6;k++) d->xfrc_applied[pbid*6+k]=0; if(d->time>=pT && d->time<pT+pDur) d->xfrc_applied[pbid*6+pAX]=pF; }
     if(ESTCTRL){
       // ★Phase2/3/4: 실기 센서(+노이즈+지연)→추정→d_est(base=추정 · 자세·gyro·관절=측정)→컨트롤러 계산→토크(지연) 실기 적용

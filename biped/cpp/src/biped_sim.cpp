@@ -26,6 +26,8 @@ int main(int argc,char**argv){
   if(!m){ printf("모델 로드 실패: %s\n",err); return 1; }
   mjData* d=mj_makeData(m);
   BipedControl c(m,d); c.reset(); c.vx_cmd=vx;
+  c.vy_cmd = getenv("VY")?atof(getenv("VY")):0.0;        // 측방/선회 테스트용 env
+  c.wz_cmd = getenv("WZ")?atof(getenv("WZ")):0.0;
   double dt=m->opt.timestep; int steps=(int)(T/dt); double fell=-1;
 
   bool est_ctrl = getenv("EST_CTRL")!=nullptr;

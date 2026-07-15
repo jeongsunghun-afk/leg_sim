@@ -158,7 +158,7 @@ with dpg.window(tag='main'):
             dpg.add_text('좌: 위아래=전후 · 좌우=측방 (십자=하나씩)', color=(120, 130, 150))
         with dpg.group():
             right.build('선회')
-            dpg.add_text('우: 좌우=선회 (제자리 선회 권장·주행중 선회는 marginal)', color=(120, 130, 150))
+            dpg.add_text('우: 좌우=선회 (★점발 한계로 매우 약함 ~1-2°/s·측방도 60%)', color=(120, 130, 150))
         with dpg.group():
             dpg.add_text('vx [m/s]')
             dpg.add_slider_float(tag='spd_sl', default_value=0.0, min_value=-VMAX, max_value=VMAX, width=180, callback=on_vx)

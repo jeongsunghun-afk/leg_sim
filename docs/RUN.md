@@ -28,6 +28,25 @@ bash run_gui_py.sh        # Python 레퍼런스(연구/디버그, 느림) — �
 - 버튼: 전원(off)→눕기→앉기(haunch)→서기→보행. gait walk/trot/run/stairs 토글(속도·발높이·base height 자동세팅).
 - 조작(마우스1): 좌스틱 위 우클릭=고정(전진 유지)→"허리 핸들"로 조향(±68°, 오른쪽=우선회). 재우클릭/X=해제.
 - perceptive 자동 ON(지형 씬). 평지만 원하면 `run_gui.sh flat`.
+- **★강건 기립(2026-07-15)**: 앉기→서기 = **앉기→눕기→서기 라우팅**(haunch 직접상승은 측방 발산 → 대칭 저크라우치 거쳐 검증된 상승). 버튼 조작 동일.
+
+## ★지형 crossing — ③ selectFoot (perceptive foothold, FOOT_NUDGE)
+갭·스테핑을 건너려면 **footScore 기반 발판선택**을 켜야 함(perceptive 착지높이와 별개):
+```bash
+FOOT_NUDGE=1 bash run_gui.sh course      # 종합코스(레인3=갭→스테핑). 조향해 레인3(y≈+2.4)로 진입
+FOOT_NUDGE=1 bash run_gui.sh gap         # 갭 전용(0.32m갭·0.70m발판)
+FOOT_NUDGE=1 bash run_gui.sh stepping    # 스테핑스톤(0.44m간격)
+```
+- **★속도-공명 주의**: ③은 스텝길이가 발판간격에 **정렬된 속도에서만** 건넘. 이 지형들=**walk 0.5**(GUI walk버튼 기본 0.6은 실패!). 속도게이지를 0.5로. 지형 간격 바뀌면 정렬속도도 바뀜(로컬 nudge 한계, 강건 크로싱은 RL 트랙).
+- 헤드리스 검증: `FOOT_NUDGE=1 GAIT=walk TROT_V=0.5 STEPS=18000 ./build/trot_sim ../mjcf/quad_terrain_gap.mjcf`(falls=0 완주).
+
+## 상태추정 (sim2real, EST) — GT는 개발용·EST 성공이 배포 기준
+```bash
+EST_CTRL=1 ...   # 폐루프: 컨트롤러가 leg-odometry 추정상태로 계산(실기 조건). 기본=선형 접촉KF(IMU가속도 융합)
+#   EST_ANCHOR=1 이면 stance-anchored(비교/폴백) · 노이즈/지연: ENCQ_N·GYRO_N·ACC_N·SENSE_LAT_MS·ACT_LAT_MS
+```
+- 뷰어 '모니터 표시(viz)' 체크박스 = 추정 고스트(초록 GT/주황 EST) + footScore 오버레이.
+- 검증: 보행·선회·기립·점프 폐루프 falls=0. 지연예산 ≤2ms/각(앉기 posture는 3ms서 느린 드리프트).
 
 ## C++ 헤드리스 / 빌드
 ```bash

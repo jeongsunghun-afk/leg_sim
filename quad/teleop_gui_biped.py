@@ -12,7 +12,7 @@ CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
 STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
 VMAX   = 0.2          # 전진 상한[m/s] (로버스트 저속)
 VY_MAX = 0.06         # 좌우 상한[m/s] (★측방=점발 marginal, 실안정범위로 캡. quad도 측방보행X)
-WZ_MAX = 0.05         # 선회 상한[rad/s] (★점발 안정=~1°/s 완만한 코스보정만. 급선회=RL 몫)
+WZ_MAX = 0.30         # 선회 상한[rad/s] (★제자리 선회 안정범위. 실제 turn rate는 head_lead로 ~2.5°/s 포화. 주행중 선회는 marginal=RL)
 H_MIN, H_MAX, H_DEF = 0.44, 0.52, 0.483
 
 
@@ -154,7 +154,7 @@ with dpg.window(tag='main'):
             dpg.add_text('좌: 위아래=전후 · 좌우=측방', color=(120, 130, 150))
         with dpg.group():
             right.build('선회')
-            dpg.add_text('우: 좌우=선회 (gentle)', color=(120, 130, 150))
+            dpg.add_text('우: 좌우=선회 (제자리 선회 권장·주행중 선회는 marginal)', color=(120, 130, 150))
         with dpg.group():
             dpg.add_text('vx [m/s]')
             dpg.add_slider_float(tag='spd_sl', default_value=0.0, min_value=-VMAX, max_value=VMAX, width=180, callback=on_vx)

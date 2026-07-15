@@ -22,7 +22,8 @@ struct StateEstimator {
   // ★설계 근거: leg-odom은 "몸 상승"과 "발 미끄러짐"을 자기수용감각만으론 구분 못 함(앉기/서기 fold서 발 대거 재배치→순수 적분 z 1.2m 폭주).
   //   균형에 결정적인 z·자세는 견고하게 분리: z=접촉발 기구학(평지 가정, 드리프트 0)·자세=IMU직접·xy=stance 앵커(유계)·비접촉=유지(적분 폭주 차단).
   ~StateEstimator(){ if(ed) mj_deleteData(ed); }
-  void reset(const Eigen::Vector3d& p0){ p = p0; v.setZero(); anch_on.assign(anch_on.size(),0); }
+  void reset(const Eigen::Vector3d& p0){ p = p0; v.setZero(); anch_on.assign(anch_on.size(),0);
+    xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; acc_lp.setZero(); }  // ★KF 상태도 리셋(RESET·토글 시 stance-anchored·KF 모두 초기화 — 미리셋 시 EST 드리프트 안 풀리던 버그)
 
   // qj/dqj: 관절 위치·속도(qpos/qvel 순, NJ개) · quat_wxyz: IMU 자세(MuJoCo wxyz) · gyro: 동체 각속도(3)
   // foot_geom/foot_rad: 발 sphere geom id·반경 · contacts: 발별 stance 여부

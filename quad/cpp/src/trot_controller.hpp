@@ -575,6 +575,7 @@ struct TrotCtrl {
     if(std::abs(body_h-qhome_h)>2e-3){ qhome_h+=tc_clip(body_h-qhome_h,-0.3*dt,0.3*dt); q.update_stand_qhome(qhome_h); com_h0=q.com_ref[2]; }
     // ★perceptive 몸통높이=base 1점 지형높이+슬루(MPC x_ref[5]만). ★4-hip 평균은 갭서 hip이 발판↔갭 오가며 base 목표 출렁→불안정(전속도 실패)이라 미채택. 갭서 base가 발판만큼 안 올라오는 건 안정적 절충.
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
+    // ★갭서 base z가 발판 위서 튀는(솟구침) 건 base가 발판높이로 올라가는 정상반응+오버슈트. rise를 늦추면 오버슈트↓지만 base 지연→크로싱 전복이라 0.5 유지(빠른 rise가 크로싱에 필수).
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
     for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg,sch,sp);

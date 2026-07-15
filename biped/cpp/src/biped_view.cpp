@@ -2,7 +2,7 @@
 //   마우스: 좌드래그=회전 우드래그=이동 휠=줌.  GUI(teleop_gui_biped)가 v/vy/w/body_h/mode 조종.
 //   실행: CMDFILE=/tmp/biped_cmd.json ./biped_view ../biped_from_quad.mjcf
 #include "biped_control.hpp"
-#include "state_estimator.hpp"
+#include "deploy_loop.hpp"
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -13,21 +13,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-// ★배포 폐루프: 추정 base(leg-odom+접촉높이)로 제어, 물리는 GT. EST_CTRL=1로 활성(실HW는 항상 추정).
-static void est_control(mjModel* m, mjData* d, BipedControl& c, BipedEstimator& est, int sq, int sg, double dt){
-  std::vector<bool> cts(2,false);
-  for(int ci=0;ci<d->ncon;ci++){ int g1=d->contact[ci].geom1,g2=d->contact[ci].geom2;
-    for(int k=0;k<2;k++) if(c.sph[k]==g1||c.sph[k]==g2) cts[k]=true; }
-  double* quat = sq>=0 ? &d->sensordata[m->sensor_adr[sq]] : &d->qpos[3];
-  double* gyro = sg>=0 ? &d->sensordata[m->sensor_adr[sg]] : &d->qvel[3];
-  est.estimate(m, &d->qpos[7], &d->qvel[6], quat, gyro, cts, dt);
-  double gp[3]={d->qpos[0],d->qpos[1],d->qpos[2]}, gv[3]={d->qvel[0],d->qvel[1],d->qvel[2]};
-  for(int a=0;a<3;a++){ d->qpos[a]=est.p[a]; d->qvel[a]=est.v[a]; }
-  mj_forward(m,d); c.control(dt);
-  for(int a=0;a<3;a++){ d->qpos[a]=gp[a]; d->qvel[a]=gv[a]; }
-  mj_forward(m,d);
-}
 
 static double json_get(const std::string& s,const char* key,double def){
   std::string k=std::string("\"")+key+"\""; auto p=s.find(k);
@@ -72,16 +57,13 @@ int main(int argc,char**argv){
   mjData* d=mj_makeData(m); gM=m;
   BipedControl c(m,d); c.reset();
   std::string mode = getenv("MODE")?getenv("MODE"):"stand", prev_mode=mode; double body_h=c.com_ref_z;
-  // ★배포 폐루프 추정기(EST_CTRL=1). 실HW는 항상 이 경로(센서만으로 base 복원 + 접촉높이).
+  // ★배포 폐루프(EST_CTRL=1): 추정(leg-odom+접촉높이)+지연보상. 실HW는 항상 이 경로(센서만).
   bool est_ctrl = getenv("EST_CTRL")!=nullptr;
-  BipedEstimator est;
-  int sq=mj_name2id(m,mjOBJ_SENSOR,"imu_quat"), sg=mj_name2id(m,mjOBJ_SENSOR,"imu_gyro");
-  auto est_reset=[&](){ if(est_ctrl) est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2])); };
+  DeployLoop dl;
+  auto est_reset=[&](){ if(est_ctrl) dl.reset(m,d); };
   if(est_ctrl){
-    std::vector<int> fg={c.sph[0],c.sph[1]};
-    std::vector<double> fr={m->geom_size[c.sph[0]*3], m->geom_size[c.sph[1]*3]};
-    est.init(m,fg,fr); est_reset();
-    std::fprintf(stderr,"[biped_view] EST_CTRL=ON — 추정(leg-odom+접촉높이) 폐루프\n");
+    dl.init(m,c); est_reset();
+    std::fprintf(stderr,"[biped_view] EST_CTRL=ON — 추정 폐루프(SLAT=%d ALAT=%d LCOMP=%d step)\n",dl.SLAT,dl.ALAT,dl.LCOMP);
   }
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
@@ -115,7 +97,7 @@ int main(int argc,char**argv){
     bool off=(mode=="off");                              // ★모터 전원 off = 토크 0(limp). 실HW=motor disable
     while(d->time<target && guard++<60){
       if(off){ for(int i=0;i<m->nu;i++) d->ctrl[i]=0.0; }
-      else if(est_ctrl) est_control(m,d,c,est,sq,sg,dt);   // ★추정 폐루프(배포 경로)
+      else if(est_ctrl) dl.step(m,d,c,dt);                 // ★추정+지연보상 폐루프(배포 경로)
       else c.control(dt);
       mj_step(m,d);
       if(!off && d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋(off는 제외)

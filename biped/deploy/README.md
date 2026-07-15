@@ -52,11 +52,15 @@ xy 드리프트는 컨트롤러가 상대량만 써서 무해(수 m 드리프트
 **정정된 결론**: 점발 biped 폐루프는 **비성립이 아님**. **접촉 기반 높이 추정 하나로 전진·정지 폐루프가 0낙상**(고전 MPC+추정기만으로 배포 가능). 이전의 "RL 필수" 판정은 **z 관측 누락**이 원인이었음.
 → **전진 locomotion은 고전 스택으로 실배포 가능**. RL은 여전히 선회·측방·후진·외란 강건성 담당(가치 유지). (quad는 4발이라 애초에 z가 여러 발로 잘 잡혀 이 이슈 없었음.) 상세=메모리 biped-mpc-reimpl.
 
-## C++ 배포 경로 (`../cpp/`)
-Python에서 검증한 추정기(접촉높이)를 C++로 포팅 = `cpp/src/state_estimator.hpp`(BipedEstimator).
-- 헤드리스 검증: `EST_CTRL=1 ./cpp/build/biped_sim ../biped_from_quad.mjcf 0.15 30` → 전진 falls~0-2/30s(z 완벽추종).
-- 배포 뷰어: `EST_CTRL=1 CMDFILE=/tmp/biped_cmd.json ./cpp/build/biped_view` → GUI 폐루프(실HW는 항상 추정 경로).
-- 실HW는 `HardwareInterface`(Python) 또는 C++ 등가에서 `est.estimate()` 호출(센서만). 지연보상은 Python 검증본을 C++ 포팅 예정(잔여).
+## C++ 배포 경로 (`../cpp/`) — 추정+지연보상 포팅 완료
+Python 검증 알고리즘을 C++로 포팅. `cpp/src/`:
+- `state_estimator.hpp`(BipedEstimator) = leg-odom + ★접촉높이.
+- `deploy_loop.hpp`(DeployLoop) = 추정 + 센서/구동 지연(링버퍼) + **지연보상(모델 롤아웃)**. biped_sim·biped_view 공유.
+- 헤드리스 검증: `EST_CTRL=1 ./cpp/build/biped_sim ../biped_from_quad.mjcf 0.15 30` → 전진 falls~0(z 완벽추종).
+  지연: `SENSE_LAT_MS=4 ACT_LAT_MS=6 LAT_COMP_MS=10 EST_CTRL=1 …` → 실측급 지연+보상 0낙상.
+- 배포 뷰어: `EST_CTRL=1 CMDFILE=/tmp/biped_cmd.json ./cpp/build/biped_view` → GUI 폐루프(실HW는 항상 추정 경로·SENSE/ACT=0·LAT_COMP=실측지연).
+- ★C++는 Python보다 지연 관대(act≤10ms=0낙상, 카오스+QP수치차). 보상 sweet-spot: 중간지연(~20ms) 개선·고지연(30ms+)은 예측오차로 역효과.
+- 실HW = `HardwareInterface`(Python) 또는 C++ DeployLoop에서 센서만으로 `est.estimate()`. 잔여: HardwareInterface 실 SDK.
 
 ## 실행 (Python)
 ```bash

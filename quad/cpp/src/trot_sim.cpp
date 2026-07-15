@@ -116,13 +116,17 @@ int main(int argc,char**argv){
   std::vector<int> _efg={q.fgid[0],q.fgid[1],q.fgid[2],q.fgid[3]};
   std::vector<double> _efr={q.fr[0],q.fr[1],q.fr[2],q.fr[3]};
   est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));
+  if(getenv("KF_QV")) est.KF_QV=atof(getenv("KF_QV"));   // ★KF 튜닝 스윕(노이즈 강건성): 속도 프로세스노이즈↑=가속도 신뢰↓·접촉측정 의존↑
+  if(getenv("KF_QP")) est.KF_QP=atof(getenv("KF_QP"));
+  if(getenv("KF_RV")) est.KF_RV=atof(getenv("KF_RV"));   // 정지속도 측정노이즈
+  if(getenv("KF_ACC_LP")) est.KF_ACC_LP=atof(getenv("KF_ACC_LP"));   // 가속도 저역통과(0=off, 1=완전홀드)
   double epx=0,epy=0,epz=0,evx=0,evy=0,evz=0; long ecnt=0;
   mjData* d_est=(ESTCTRL)?mj_makeData(m):nullptr;   // 추정상태 mjData(컨트롤러가 여기서 Jacobian·MPC·WBIC 계산)
   // ★Phase3 센서 노이즈(가우시안, 고정시드=재현). IMU gyro[rad/s]·quat[rad]·엔코더 q[rad]·dq[rad/s]
   std::mt19937 _rng(2024); std::normal_distribution<double> _nd(0.0,1.0);
   double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
-  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_KF")!=nullptr;   // ★표준 접촉KF(IMU 가속도 융합) 선택. 미설정=stance-anchored
+  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_ANCHOR")==nullptr;   // ★표준 접촉KF(IMU 가속도 융합)=기본. EST_ANCHOR=1이면 stance-anchored(비교/폴백)
   // ★sim2real 지연(latency): 센서→추정/제어 지연(SENSE_LAT_MS) + 제어→구동 지연(ACT_LAT_MS). 실기 버스·연산 지연 모델(게인 재튜닝 최대원인).
   //   고정 링버퍼(무한루프 무증가). L=0이면 인덱스 항상 현재=지연 없음(회귀無).
   double SLAT=getenv("SENSE_LAT_MS")?atof(getenv("SENSE_LAT_MS")):0.0, ALAT=getenv("ACT_LAT_MS")?atof(getenv("ACT_LAT_MS")):0.0;

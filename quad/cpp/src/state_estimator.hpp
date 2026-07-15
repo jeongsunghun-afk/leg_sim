@@ -85,8 +85,9 @@ struct StateEstimator {
   Eigen::Matrix<double,18,1> xkf = Eigen::Matrix<double,18,1>::Zero();
   Eigen::Matrix<double,18,18> Pkf = Eigen::Matrix<double,18,18>::Identity();
   bool kf_init = false;
-  double KF_QP=1e-4, KF_QV=1e-2, KF_QF=1e-3, KF_QF_SWING=1e3;   // 프로세스: 위치·속도·접촉발·swing발
+  double KF_QP=1e-4, KF_QV=0.5, KF_QF=1e-3, KF_QF_SWING=1e3;   // 프로세스: 위치·속도·접촉발·swing발. ★QV=0.5(실기 가속도계 노이즈 반영=접촉측정 더 신뢰): 노이즈+지연 선회 강건(114°→0.3°), 클린 무회귀
   double KF_RP=1e-3, KF_RV=1e-2, KF_RZ=1e-4, KF_R_SWING=1e6;    // 측정: 상대위치·정지속도·지면z·swing스케일
+  double KF_ACC_LP=0.0; Eigen::Vector3d acc_lp=Eigen::Vector3d::Zero();   // ★가속도 저역통과(α, 0=off): 고주파 IMU 노이즈가 예측을 흔드는 것 완화
   void reset_kf(const Eigen::Vector3d& p0){ xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; p=p0; v.setZero(); }
 
   // accel_w: IMU 가속도(중력 보정 후 world 선가속도, a=R·f_body+g). 나머지 인자=estimate와 동일.
@@ -106,6 +107,7 @@ struct StateEstimator {
     double Rm[9]; mju_quat2Mat(Rm, quat_wxyz); Map<Matrix<double,3,3,RowMajor>> R(Rm);
     Vector3d omw = R * Vector3d(gyro[0],gyro[1],gyro[2]);
     Vector3d aw(accel_w[0],accel_w[1],accel_w[2]);
+    if(KF_ACC_LP>0.0){ acc_lp = (1.0-KF_ACC_LP)*aw + KF_ACC_LP*acc_lp; aw = acc_lp; }   // 가속도 저역통과(고주파 IMU 노이즈 완화)
 
     // ── 예측: p+=v dt+½a dt²; v+=a dt; 발위치 상수 ──
     xkf.segment<3>(0) += xkf.segment<3>(3)*dt + 0.5*aw*dt*dt;

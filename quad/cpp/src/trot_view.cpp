@@ -141,7 +141,7 @@ int main(int argc,char**argv){
   // 센서노이즈(현실 프리셋 = GUI '센서 노이즈' 체크 시). env로도 덮어씀. 0=완벽센서.
   double GYRON=getenv("GYRO_N")?atof(getenv("GYRO_N")):0.0, QUATN=getenv("QUAT_N")?atof(getenv("QUAT_N")):0.0;
   double ENCQN=getenv("ENCQ_N")?atof(getenv("ENCQ_N")):0.0, ENCDQN=getenv("ENCDQ_N")?atof(getenv("ENCDQ_N")):0.0;
-  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_KF")!=nullptr;   // ★표준 접촉KF(IMU가속도융합). 폐루프 기립 안정. 미설정=stance-anchored
+  double ACCN=getenv("ACC_N")?atof(getenv("ACC_N")):0.0; bool ESTKF=getenv("EST_ANCHOR")==nullptr;   // ★표준 접촉KF(IMU가속도융합)=기본(폐루프 기립 안정). EST_ANCHOR=1이면 stance-anchored
   double est_perr=0, est_verr=0;   // 최신 추정오차(HUD 표시)
   double est_quat[4]={1,0,0,0};    // 최신 추정(측정) 방위 — 고스트 헤딩 화살표용
   // ★TAMOLS P0: 로컬 elevation map(mj_ray→격자). GUI '지형맵' 토글(tmap_on) 또는 env TERRAIN_MAP=1. 맵 rate로만 갱신(1kHz 밖).

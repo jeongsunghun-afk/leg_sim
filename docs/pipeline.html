@@ -115,6 +115,8 @@
     <span class="t" style="color:var(--ok)">기동별 배포 방식 — leg-odom 전제(디딘 발=고정)가 지켜지느냐</span>
     <div class="d" style="margin-top:6px;line-height:1.7">
       <b>보행(wbic_track)</b>=발 주기접촉=정상영역 → <b>EST 폐루프(KF)</b>. · <b>기립(getup)</b>=fold 미끄럼+base 대이동=전제 깨짐 → rise는 <b>wbic 균형 필수</b>(pure 관절-PD는 GT도 전복), wbic 참조를 <b>절대 xy 비의존</b>(rise=현재 CoM 상대추종)+속도는 KF로 확보. · <b>점프(jump)</b>=이미 발사점 상대(<code>jump_launch_com</code>), flight는 IMU 가속 적분. 공통: 기립·점프는 절대 base 위치 비의존(피드포워드+자기수용감각), 절대량은 균형에 불필요.
+      <br><br>
+      <b>폐루프(EST_CTRL) 검증 — 선형 KF로 충분</b>: 전진+허리조향 선회가 <b>GT와 yaw·궤적 일치</b>(yaw −119° 동일, tilt&lt;1°, falls=0) — 선회는 yaw를 IMU서 직접 받고 보행이 leg-odom 정상영역이라 문제없음. 반복 기립 6사이클 falls=0(tilt 4°), 단발 점프 착지 falls=0. <b>실기 잔여 리스크=자이로 바이어스 하 절대 heading 표류</b>(선회 실행과 별개) → InEKF(바이어스 관측)+exteroception.
     </div>
   </div>
 </section>

@@ -5,6 +5,20 @@ import numpy as np
 from .tamols import TAMOLSState, setup_variables
 from .test import setup_costs_and_constraints, run_single_optimization, save_optimal_solutions
 from .map_processing import process_height_maps
+from .helpers import evaluate_spline_position
+
+
+def add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20, nsamp=4):
+    """★하드 base bound: 스플라인 z∈[zlo,zhi]·|roll|,|pitch|≤rp_max 강제(오버슈트/틸트 원천차단).
+       tracking cost가 전진 담당, 이 bound가 자세/높이 담당 → 소프트 가중 tension 해소."""
+    for phase in range(len(tmls.phase_durations)):
+        a_k = tmls.spline_coeffs[phase]; T_k = tmls.phase_durations[phase]
+        for tau in np.linspace(0, T_k, nsamp + 1)[1:]:
+            s = evaluate_spline_position(tmls, a_k, tau)
+            z = s[2]; roll = s[3]; pitch = s[4]
+            tmls.prog.AddConstraint(z >= zlo); tmls.prog.AddConstraint(z <= zhi)
+            tmls.prog.AddConstraint(roll >= -rp_max); tmls.prog.AddConstraint(roll <= rp_max)
+            tmls.prog.AddConstraint(pitch >= -rp_max); tmls.prog.AddConstraint(pitch <= rp_max)
 
 
 def setup_02leg_state(tmls: TAMOLSState):
@@ -81,6 +95,7 @@ if __name__ == "__main__":
     setup_02leg_state(tmls)
     setup_variables(tmls)
     setup_costs_and_constraints(tmls)
+    add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20)   # ★하드 자세/높이 bound
     print("\n===== 02_Leg TAMOLS solve =====", flush=True)
     ok = run_single_optimization(tmls)
     print("solve 성공:", ok, flush=True)

@@ -31,3 +31,9 @@ PYTHONPATH=fetch/tamols ../drake_venv/bin/python -m fetch.tamols.tamols_02leg   
 - base_pose_sampling_rate 1→3(스플라인 전체 높이구속), costs.py base_alignment 가중 0.01→0.1(★ws costs.py 직접수정, 프로젝트엔 미반영=재적용 필요).
 - ⚠️ **남은 균형문제**: base_alignment 가중↑(0.3)=base 안정하나 전진 안 함 / 가중↓(0.05)=전진하나 z 오버슈트(0.77)+틸트. 비선형 NLP 국소최적이라 노이지. **tracking↔regulation 균형 튜닝 or 하드 높이/자세 bound or 더 나은 초기추정 필요**(후속).
 - ★재적용 시 costs.py 수정: `add_base_pose_alignment_cost`의 `weight = 0.01*...` → `0.1*...`
+
+## 품질 튜닝 2 (하드 bound — base 궤적 해결)
+- ★★**base 궤적 품질 해결**: `add_base_bounds()`(tamols_02leg.py 신규) = 스플라인 z∈[0.45,0.60]·|roll|,|pitch|≤0.20 **하드 제약** → 오버슈트/틸트 원천차단, tracking이 전진 담당(균형 tension 해소). 결과: base z 0.52 안정·전진 x→0.64·레벨. (소프트 base_alignment 가중 0.03로 낮춤=costs.py 직접수정.)
+- costs.py 재적용: `add_base_pose_alignment_cost` weight `0.01`→`0.03`. (nominal_kinematic weight 20 유지=100은 infeasible.)
+- ⚠️ **남은 후속 = 발판 stance 좁음**(발판 y~0으로 몰림=측방 불안정). nominal_kinematic 가중↑(100)=infeasible → 하드 foot-y bound(±0.14) or 게이트/초기추정 개선 필요.
+- 실행 지속위치=`/home/jsh/tamols_ws`(tamols-rl+drake_venv 영구).

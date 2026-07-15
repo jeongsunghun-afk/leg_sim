@@ -391,6 +391,7 @@ struct TrotCtrl {
           for(int i=0;i<2;i++) q.q_home[q.legqp[i][3]-7]=footang; }
         q.sit_pitch+=tc_clip(0.0-q.sit_pitch,-1.2*dt,1.2*dt);              // nose-up은 q_home 베이킹(강성 PD홀드)
         double kp=(ht_cur<0.31||bz<0.295)?GETUP_KP:SIT_KP;                 // 하강복구=완만 / 개-앉기 정착=강성(발링크 평평 강제)
+        // ★앉기 지연 강건성(2026-07-15): 드리프트는 순전히 지연(≥3ms)·노이즈 무관. PD홀드는 능동 base롤/yaw규제 없어 3ms서 서서히 롤(>4s). wbic는 잡지만 깊은 nose-up 상실 → 사용자결정=깊은 haunch PD 유지·지연예산 ≤2ms(각), 빠른 sit→stand는 3ms도 무해.
         if(ht_cur<0.31 || bz<0.295 || haunch_ready){                       // ★개-앉기 정착(또는 저자세 복구)=중력보상 PD 홀드. 사용자=기립불요·자세우선 → 강성 PD로 접힘+발링크 바닥밀착 강제
           if(!have_qref){ for(int j=0;j<nu;j++) q_ref[j]=d->qpos[7+j]; have_qref=true; }
           for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);

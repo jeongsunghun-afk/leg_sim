@@ -62,8 +62,14 @@ class BipedStep(BW.BipedWBIC):
         vcom = (self.Jc_cache @ d.qvel)[:2] if hasattr(self, 'Jc_cache') else np.zeros(2)
         z = max(com[2] - min(d.geom_xpos[sp][2] for sp in self.sph), 0.15)
         w = np.sqrt(GVEC / z)
-        xi_y = com[1] + vcom[1] / w                        # 측방 DCM
+        xi_y = com[1] + vcom[1] / w                        # 측방 DCM(world)
         mid_y = 0.5 * (d.geom_xpos[self.sph[0]][1] + d.geom_xpos[self.sph[1]][1])
+        # ★측방 DCM을 body-frame으로(yaw 나도 올바른 측방=보행 강건). 발중점 기준 DCM벡터를 body-y축에 투영.
+        qc = d.qpos[3:7]
+        yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
+        cya, sya = np.cos(yaw_act), np.sin(yaw_act)
+        midx = 0.5 * (d.geom_xpos[self.sph[0]][0] + d.geom_xpos[self.sph[1]][0])
+        dcm_by = -sya*(com[0]+vcom[0]/w-midx) + cya*(xi_y-mid_y)   # body-y (직진 yaw=0시 =xi_y-mid_y)
         sy = 1.0 if self.swing == 0 else -1.0              # swing측 부호(HL좌=+)
         s = np.clip(self.t_ss / SS_NOMINAL, 0.0, 1.0)
         mode = os.environ.get('SWMODE', 'dcm')
@@ -73,8 +79,8 @@ class BipedStep(BW.BipedWBIC):
             p_sw_y = mid_y + self.nominal_off[self.swing][1]     # swing 발이 갈 측방
             E = 0.5 * vcom[1]**2 - 0.5 * w**2 * (com[1] - p_sw_y)**2
             committed = (sy * vcom[1] > 0) and (E >= -TRIG_Y)    # swing측 이동 + 궤도에너지
-        else:                      # 기본: DCM 임계(현 최적 7.88s)
-            committed = sy * (xi_y - mid_y) > TRIG_Y
+        else:                      # 기본: body-frame 측방 DCM 임계
+            committed = sy * dcm_by > TRIG_Y
         if self.t_ss > SS_MIN and (committed or self.t_ss > SS_MAX):   # 착지 이벤트
             self.stance, self.swing = self.swing, self.stance
             self.t_ss = 0.0

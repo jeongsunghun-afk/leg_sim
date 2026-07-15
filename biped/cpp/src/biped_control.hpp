@@ -82,11 +82,15 @@ struct BipedControl {
   void step_gait(double dt,int&st,int&sw,double&s){
     Vector3d c=com(); VectorXd qv=qvel(); MatrixXd Jc=jac_com(); Vector2d vcom=(Jc*qv).head(2);
     double z=std::max(c[2]-std::min(footz(0),footz(1)),0.15), w=std::sqrt(GVEC/z);
-    double xi_y=c[1]+vcom[1]/w;
-    double mid_y=0.5*(d->geom_xpos[sph[0]*3+1]+d->geom_xpos[sph[1]*3+1]);
+    // ★측방 DCM 트리거를 body-frame으로(yaw 나도 올바른 측방=보행 강건). 발 중점 기준 DCM벡터를 body-y축에 투영.
+    double ya=base_yaw(), cya=std::cos(ya), sya=std::sin(ya);
+    double midx=0.5*(d->geom_xpos[sph[0]*3]+d->geom_xpos[sph[1]*3]);
+    double midy=0.5*(d->geom_xpos[sph[0]*3+1]+d->geom_xpos[sph[1]*3+1]);
+    double dcmx=c[0]+vcom[0]/w-midx, dcmy=c[1]+vcom[1]/w-midy;   // world DCM(발중점 기준)
+    double dcm_by=-sya*dcmx+cya*dcmy;                            // body-y 성분(직진 yaw=0시 =dcmy)
     double sy=(swing==0)?1.0:-1.0;
     s=std::min(std::max(t_ss/SS_NOMINAL,0.0),1.0);
-    bool committed=sy*(xi_y-mid_y)>TRIG_Y;
+    bool committed=sy*dcm_by>TRIG_Y;
     if(t_ss>SS_MIN&&(committed||t_ss>SS_MAX)){ std::swap(stance,swing); t_ss=0;
       liftoff[swing]=spos(swing); have_liftoff[swing]=true; st=stance; sw=swing; s=0; return; }
     t_ss+=dt; st=stance; sw=swing;

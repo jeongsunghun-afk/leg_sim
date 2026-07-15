@@ -89,6 +89,7 @@ struct TrotCtrl {
       for(int i=0;i<4;i++) out[i]=w0*a[i]+w1*bb[i]; }
     double n=std::sqrt(out[0]*out[0]+out[1]*out[1]+out[2]*out[2]+out[3]*out[3]); for(int i=0;i<4;i++) out[i]/=n;
   }
+  // ★[DEAD CODE·미호출] 구 gather 궤적 getup. 앉기→서기가 측방 발산이라 앉기→눕기→서기 라우팅으로 교체(e3461f6). 동적 gather 재도입 시 참조용 보존.
   // ★C++ 자립 기립 궤적 생성(getup_kinematic.py 포팅, 순수 MuJoCo IK). 현재 sit qpos=q_sit, base_z0+q_home=stand.
   //   스케줄 G(gather:전진+낮춤+앞숙임)→A1(HL착지)→A2(HR착지)→B(상승·레벨). CoM ref도 생성(wbic_jump 추적용).
   void gen_getup(){

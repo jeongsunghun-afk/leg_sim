@@ -53,8 +53,13 @@ for try in 1 2 3 4; do
   rm -f "$STATE"
   setsid bash -c "cd '$CPP'; env GEAR_FOOT=0.5714 RATE=1.0 CMDFILE='$CMD' STATE_PUB='$STATE' \
     ./build/trot_view '../$MJCF' > /tmp/trot_view.log 2>&1" </dev/null &
-  sleep 3
-  if viewer_alive && viewer_rendering; then VOK=1; echo "viewer RUNNING (try $try)"; break; fi
+  # ★렌더(STATE 갱신) 최대 ~11초 폴링(구 3초 단발은 warmup+GL init 느린 머신서 오탐 킬)
+  for w in $(seq 1 6); do
+    sleep 1
+    if ! viewer_alive; then echo "viewer 조기종료(try $try) — 로그:"; tail -4 /tmp/trot_view.log 2>/dev/null; break; fi
+    if viewer_rendering; then VOK=1; break; fi
+  done
+  [ $VOK = 1 ] && { echo "viewer RUNNING (try $try)"; break; }
   echo "viewer 재시도 $try…"; pkill -9 -f 'build/trot_view' 2>/dev/null; sleep 1
 done
 if [ $VOK = 0 ]; then echo "viewer DEAD (4회 실패)"; tail -5 /tmp/trot_view.log 2>/dev/null; exit 1; fi

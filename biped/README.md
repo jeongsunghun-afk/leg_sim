@@ -50,7 +50,8 @@ HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GU
 | `cpp/src/biped_mpc.hpp` | Di Carlo SRBD MPC 2발 (파리티 3e-11) |
 | `cpp/src/biped_wbic.hpp` | 단일 전신 QP WBIC (파리티 6e-12) |
 | `cpp/src/biped_control.hpp` | 통합 컨트롤러 (게이트+발배치+MPC+WBIC+GEARBOX) |
-| `cpp/src/biped_sim.cpp` | 헤드리스 sim · `biped_view.cpp` GLFW 뷰어+GUI연동 |
+| `cpp/src/state_estimator.hpp` | ★상태추정(leg-odom+접촉높이) — Python deploy 포팅. 배포 폐루프용 |
+| `cpp/src/biped_sim.cpp` | 헤드리스 sim (`EST_CTRL=1`=추정 폐루프·falls카운트) · `biped_view.cpp` GLFW 뷰어+GUI연동(`EST_CTRL=1`=배포 폐루프) |
 | `cpp/dump_biped_{mpc,wbic}.py`·`*_parity.cpp` | Python 파리티 검증 |
 | `cpp/CMakeLists.txt` | 빌드 (eiquadprog+Eigen+mujoco+GLFW, proxddp env) |
 

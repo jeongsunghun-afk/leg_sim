@@ -5,7 +5,39 @@ import numpy as np
 from .tamols import TAMOLSState, setup_variables
 from .test import setup_costs_and_constraints, run_single_optimization, save_optimal_solutions
 from .map_processing import process_height_maps
-from .helpers import evaluate_spline_position
+from .helpers import evaluate_spline_position, evaluate_spline_velocity
+
+
+def export_trajectory(tmls, filepath, dt=0.005):
+    """★C++ WBIC 추종용 궤적 export. base pose/vel(6) + 다리별 접촉상태(4) 샘플 + 발판(4×3).
+       프레임=로봇중심(base 시작 0,0,0.52). C++가 1kHz로 보간·추종(wbic_jump식 base=GRF).
+       포맷: 헤더 'N dt' → 'FOOTHOLDS' 4행(x y z) → 'SAMPLES' N행(t·pose6·vel6·c0..c3)."""
+    coeffs = tmls.optimal_spline_coeffs                 # [phase][4×order]
+    Td = tmls.phase_durations                           # phase별 길이
+    pt = tmls.gait_pattern['phase_timing']              # 누적 경계 [0,..,T]
+    cs = tmls.gait_pattern['contact_states']            # [phase][4]
+    T_total = pt[-1]
+    n = int(round(T_total / dt))
+    rows = []
+    for k in range(n + 1):
+        t = k * dt
+        ph = min(int(np.searchsorted(pt, t, side='right')) - 1, len(Td) - 1)
+        ph = max(ph, 0)
+        tau = t - pt[ph]
+        pos = evaluate_spline_position(tmls, coeffs[ph], tau)   # [x,y,z,roll,pitch,yaw]
+        vel = evaluate_spline_velocity(tmls, coeffs[ph], tau)   # [vx,vy,vz,wr,wp,wy]
+        c = cs[ph]
+        rows.append([t, *pos, *vel, *[int(x) for x in c]])
+    fh = tmls.optimal_footsteps
+    with open(filepath, 'w') as f:
+        f.write(f"{len(rows)} {dt}\n")
+        f.write("FOOTHOLDS\n")
+        for L in range(4):
+            f.write(f"{fh[L,0]:.6f} {fh[L,1]:.6f} {fh[L,2]:.6f}\n")
+        f.write("SAMPLES\n")
+        for r in rows:
+            f.write(" ".join(f"{v:.6f}" for v in r[:13]) + " " + " ".join(str(int(v)) for v in r[13:]) + "\n")
+    print(f"→ {filepath} export (N={len(rows)} dt={dt} T={T_total})")
 
 
 def add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20, yaw_max=0.15, nsamp=4):
@@ -126,3 +158,4 @@ if __name__ == "__main__":
     if ok:
         save_optimal_solutions(tmls, filepath='out/02leg_solution.txt')
         print("→ out/02leg_solution.txt 저장")
+        export_trajectory(tmls, filepath='out/02leg_traj.txt', dt=0.005)   # ★C++ WBIC 추종용

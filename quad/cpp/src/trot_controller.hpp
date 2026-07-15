@@ -573,6 +573,7 @@ struct TrotCtrl {
     // ★body_h(서기+보행 통합 높이): 보행 중에도 body_h를 부드럽게 추종 → update_stand_qhome로 com_ref/q_home/com_h0 갱신(MPC·WBIC 정합). 서기와 동일 슬라이더.
     //   ★★버그수정: body_h와 현 높이 차이로 게이팅(구 hr-qhome_h는 1틱램프량이라 3e-3 못 넘어 영영 미호출). 램프 중 매틱 update.
     if(std::abs(body_h-qhome_h)>2e-3){ qhome_h+=tc_clip(body_h-qhome_h,-0.3*dt,0.3*dt); q.update_stand_qhome(qhome_h); com_h0=q.com_ref[2]; }
+    // ★perceptive 몸통높이=base 1점 지형높이+슬루(MPC x_ref[5]만). ★4-hip 평균은 갭서 hip이 발판↔갭 오가며 base 목표 출렁→불안정(전속도 실패)이라 미채택. 갭서 base가 발판만큼 안 올라오는 건 안정적 절충.
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;

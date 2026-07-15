@@ -21,6 +21,15 @@ def add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20, nsamp=4):
             tmls.prog.AddConstraint(pitch >= -rp_max); tmls.prog.AddConstraint(pitch <= rp_max)
 
 
+def add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22):
+    """★대칭 stance 강제: 좌측발(FL0·RL2) y∈[+ymin,+ymax]·우측발(FR1·RR3) y∈[−ymax,−ymin].
+       뒷발 비대칭/중앙쏠림(RR y≈−0.04·RL y≈+0.24) 차단 → 측방 안정 stance."""
+    for L in (0, 2):
+        tmls.prog.AddConstraint(tmls.p[L, 1] >= ymin); tmls.prog.AddConstraint(tmls.p[L, 1] <= ymax)
+    for R in (1, 3):
+        tmls.prog.AddConstraint(tmls.p[R, 1] <= -ymin); tmls.prog.AddConstraint(tmls.p[R, 1] >= -ymax)
+
+
 def setup_02leg_state(tmls: TAMOLSState):
     # ── 02_Leg 로봇 파라미터 (Go2 기본값 → 02_Leg 17dof) ──
     tmls.mass = 37.9                 # Go2 6.921 → 02_Leg 17dof
@@ -96,6 +105,7 @@ if __name__ == "__main__":
     setup_variables(tmls)
     setup_costs_and_constraints(tmls)
     add_base_bounds(tmls, zlo=0.45, zhi=0.60, rp_max=0.20)   # ★하드 자세/높이 bound
+    add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22)            # ★하드 foot-y bound(대칭 stance)
     print("\n===== 02_Leg TAMOLS solve =====", flush=True)
     ok = run_single_optimization(tmls)
     print("solve 성공:", ok, flush=True)

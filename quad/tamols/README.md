@@ -35,5 +35,12 @@ PYTHONPATH=fetch/tamols ../drake_venv/bin/python -m fetch.tamols.tamols_02leg   
 ## 품질 튜닝 2 (하드 bound — base 궤적 해결)
 - ★★**base 궤적 품질 해결**: `add_base_bounds()`(tamols_02leg.py 신규) = 스플라인 z∈[0.45,0.60]·|roll|,|pitch|≤0.20 **하드 제약** → 오버슈트/틸트 원천차단, tracking이 전진 담당(균형 tension 해소). 결과: base z 0.52 안정·전진 x→0.64·레벨. (소프트 base_alignment 가중 0.03로 낮춤=costs.py 직접수정.)
 - costs.py 재적용: `add_base_pose_alignment_cost` weight `0.01`→`0.03`. (nominal_kinematic weight 20 유지=100은 infeasible.)
-- ⚠️ **남은 후속 = 발판 stance 좁음**(발판 y~0으로 몰림=측방 불안정). nominal_kinematic 가중↑(100)=infeasible → 하드 foot-y bound(±0.14) or 게이트/초기추정 개선 필요.
-- 실행 지속위치=`/home/jsh/tamols_ws`(tamols-rl+drake_venv 영구).
+- ⚠️ ~~남은 후속 = 발판 stance 좁음~~ → **해결(2026-07-15)**.
+- 실행 지속위치=`/home/jsh/tamols_ws`(tamols-rl+drake_venv 영구). ★drake_venv는 세션 간 사라질 수 있음 → 재생성: `cd go2-hrl && python3 -m venv drake_venv && drake_venv/bin/pip install drake numpy plotly scipy`(python3.10 cp310 휠 OK).
+
+## 발판 stance 대칭 해결 (2026-07-15)
+- ★**하드 foot-y bound**(`add_foot_y_bounds`, tamols_02leg.py 신규): 좌측발(FL0·RL2) y∈[+0.10,+0.22]·우측발(FR1·RR3) y∈[−0.22,−0.10] 강제. 뒷발 비대칭(RR y≈−0.04·RL y≈+0.24=중앙쏠림) → 대칭(좌 +0.10~0.13·우 −0.14~0.18)으로. feasible 유지. `add_base_bounds` 다음에 호출.
+- costs.py 가중은 이미 튜닝 반영(base_alignment 0.03·nominal_kinematic 20) 확인됨.
+
+## 다음 (핵심 = 통합)
+base 궤적·발판 대칭 완료 → **base+footholds export → C++ 17dof WBIC(wbic_jump식) 추종** 착수. 이후 reach 물리복귀(0.25/0.60)·갭맵 매끄럽게·넓은 갭 시연.

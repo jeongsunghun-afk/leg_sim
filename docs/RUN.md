@@ -38,6 +38,8 @@ FOOT_NUDGE=1 bash run_gui.sh gap         # 갭 전용(0.32m갭·0.70m발판)
 FOOT_NUDGE=1 bash run_gui.sh stepping    # 스테핑스톤(0.44m간격)
 ```
 - **★속도-공명 주의**: ③은 스텝길이가 발판간격에 **정렬된 속도에서만** 건넘. 이 지형들=**walk 0.5**(GUI walk버튼 기본 0.6은 실패!). 속도게이지를 0.5로. 지형 간격 바뀌면 정렬속도도 바뀜(로컬 nudge 한계, 강건 크로싱은 RL 트랙).
+- **★보행 선택(지형별 강건성)**: **이산 정밀 발판(갭·stepping stone)=walk만**(high duty factor·정밀 디딤, trot/run은 전복). **연속·완만(험지 요철·평지)=walk/trot/run 다 OK**(trot·run이 빠름). 4라인 코스: 갭·스테핑 라인=walk 0.5 / 험지·계단 라인=trot/run 가능.
+- **★perceptive 몸통높이**: 연속지형(계단·험지)은 base가 지형 따라 정상 상승(계단 z0.49→0.79). 갭(불연속)만 base 중심이 구멍 위라 발판만큼 안 오름(안정적 절충, 4-hip 강제는 출렁여 불안정). base높이는 MPC에만 공급(WBIC 공급은 tilt 악화).
 - 헤드리스 검증: `FOOT_NUDGE=1 GAIT=walk TROT_V=0.5 STEPS=18000 ./build/trot_sim ../mjcf/quad_terrain_gap.mjcf`(falls=0 완주).
 
 ## 상태추정 (sim2real, EST) — GT는 개발용·EST 성공이 배포 기준

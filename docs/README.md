@@ -11,6 +11,8 @@
 | **[pipeline.html](pipeline.html)** | **A** — MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수(배포) | 아티팩트 |
 | **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구) | 아티팩트 |
 | **[pipeline_rl.html](pipeline_rl.html)** | **RL** — RGA `RobotSW_IsaacLab` 파쿠르 정책(RMA MLP teacher-student, 비순환) 파이프라인 + A/B·C(MPC/OCP) 대조 | 아티팩트 |
+| **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·후보3안(§15)·모델구조·입출력·비용·샘플링 CI(MJX/GPU) 파이프라인·진행(연구, `quad/ci_mpc/`) | 아티팩트 |
+| **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
 | [RECORDING.md](RECORDING.md) | 화면 녹화 가이드(NVENC/OBS) | md |
 | [DEVLOG.md](DEVLOG.md) | 개발일지 + 참조 메모(연대기) | md |

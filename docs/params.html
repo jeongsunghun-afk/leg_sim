@@ -207,15 +207,17 @@
 
 <section id="gearbox">
   <h2><span class="num">06</span> 기어박스 · 모터물리</h2>
-  <p class="note">모터 peak: hip/thigh <b>84</b> · calf <b>126</b> · foot <b>96</b>(8:1 재기어) Nm. w_limit=207/(gear·gmul).</p>
+  <p class="note">모터 peak: hip/thigh <b>84</b> · calf <b>126</b> · foot <b>100.8</b>(8.4:1 실값) Nm. w_limit=207/(gear·gmul).
+  <span class="pill">2026-07 정정</span> foot 감속비 <b>14:1→8.4:1 실값</b>(peak 168/96→100.8 · ω 25.9→24.6). 재기어(GEAR_FOOT=0.5714) 폐기.</p>
   <div class="scroll"><table>
     <thead><tr><th>파라미터</th><th>기본값</th><th>env</th><th>의미</th></tr></thead>
     <tbody>
-      <tr><td class="p">gear[4]</td><td class="val">7, 7, 10.5, 14</td><td><span class="tag dash">—</span></td><td class="mean">hip,thigh,calf,foot 감속비 N. ★허리(FB_waist)=미매칭→gi=0=hip <b>7:1</b>(실제와 일치, 의도)</td></tr>
+      <tr><td class="p">gear[4]</td><td class="val">7, 7, 10.5, 8.4</td><td><span class="tag dash">—</span></td><td class="mean">hip,thigh,calf,foot 감속비 N <b>실값</b>. ★허리(FB_waist)=미매칭→gi=0=hip <b>7:1</b>(실제와 일치, 의도)</td></tr>
       <tr><td class="p">GEARBOX</td><td class="val">ON</td><td><span class="tag s">S</span> GEARBOX=0 끔</td><td class="mean">반사관성 armature=Irot·N² + 감쇠 + 마찰</td></tr>
       <tr><td class="p">Irot</td><td class="val">1e-4</td><td><span class="tag s">S</span> ROTOR_I</td><td class="mean">로터 관성 <span class="pill">실측 대기</span></td></tr>
       <tr><td class="p">jdmp / jfrc</td><td class="val">0.1 / 0.5</td><td><span class="tag s">S</span> JDAMP / JFRIC</td><td class="mean">기어 점성감쇠 / 마찰 <span class="pill">실측 대기</span></td></tr>
-      <tr><td class="p">gmul</td><td class="val">1.0</td><td><span class="tag s">S</span> GEAR_HIP/…/FOOT</td><td class="mean">재기어 배율. 배포=GEAR_FOOT=0.5714(foot 14→8:1, peak 168→96·ω→25.9)</td></tr>
+      <tr><td class="p">gmul</td><td class="val">1.0</td><td><span class="tag s">S</span> GEAR_HIP/…/FOOT</td><td class="mean">재기어 배율(실험용, 기본 1.0). foot는 8.4:1이 실값이라 재기어 불요</td></tr>
+      <tr><td class="p">peak / ω (foot)</td><td class="val">100.8 / 24.6</td><td><span class="tag dash">—</span></td><td class="mean">MJCF actuatorfrcrange=100.8 Nm · ω=207/8.4=24.6 rad/s</td></tr>
       <tr><td class="p">perceptive</td><td class="val">ON</td><td><span class="tag s">S</span><span class="tag v">V</span> PERCEPTIVE=0 끔</td><td class="mean">지형인지(mj_ray 착지높이+몸통높이 적응) — 아래 §지형인지</td></tr>
     </tbody>
   </table></div>
@@ -319,7 +321,7 @@
 
 <section id="terrain">
   <h2><span class="num">12</span> 테스트 지형 씬 <span class="muted" style="font-size:13px;font-weight:400">make_terrains.py</span></h2>
-  <p class="note"><code>&lt;include&gt;</code>로 로봇 재사용 + 지형만 얹음(★모든 mjcf는 <code>quad/mjcf/</code>). 로봇은 원점서 +x 전진 → 지형 진입. 실행: <code>GEAR_FOOT=0.5714 ./cpp/build/trot_view ../mjcf/quad_terrain_stairs.mjcf</code></p>
+  <p class="note"><code>&lt;include&gt;</code>로 로봇 재사용 + 지형만 얹음(★모든 mjcf는 <code>quad/mjcf/</code>). 로봇은 원점서 +x 전진 → 지형 진입. 실행: <code>./cpp/build/trot_view ../mjcf/quad_terrain_stairs.mjcf</code> <span class="muted">(foot 8.4:1 실값이라 GEAR_FOOT 불요)</span></p>
   <div class="scroll"><table>
     <thead><tr><th>씬</th><th>내용</th><th>walk v0.5 결과</th></tr></thead>
     <tbody>

@@ -86,7 +86,8 @@
     <b>③ selectFoot</b>(로컬 footScore 발판 nudge)로 gap(0.32m갭)·stepping(0.44m간격) <b>완주</b>(falls=0) 확인. <b>단 속도-공명 취약</b> — 발판간격에 정렬된 속도(이 지형=walk 0.5)에서만 성공, 0.4/0.6/0.7 실패(nudge 반경 키워도 공명이 이동만). = "발이 우연히 정렬될 때만 건넘", 지형간격 전용.<br>
     <b>full TAMOLS→WBIC 단발 재생</b>: 파이프라인 완성(export·C++ 추종모드)이나 추종 불안정 = <b>구조적 막다른길</b>(tamols-rl은 발판1개/다리=수신horizon용, 단발 재생 부적합) → 정리.<br>
     <b>구조 진단</b>: 저수준(WBIC)은 문제없음. <b>계획층 3부재</b> — ①스텝길이 적응X(Raibert 고정) ②<b>접촉 타이밍 적응X(고정 게이트 클럭=속도공명 근본원인)</b> ③base-발판 협조 최적화X.<br>
-    <b>표준 해결</b>: 발판+base+타이밍 <b>co-optimization</b>(모델기반 B2/B3=crocoddyl 실시간 OCP, quad_centroidal 참조) 또는 <b>RL</b>(teacher-student, 험지 SOTA). <b>★확정: 험지크로싱=RL(하이브리드)</b> — WBIC·지형맵·footScore를 실행층/관측으로 재사용, A(보행·기립·점프 배포)는 모델기반 유지, ③은 경량 로컬 데모 유지. B2/B3(모델기반 OCP)는 살아있으나 현시점 미착수.
+    <b>표준 해결</b>: 발판+base+타이밍 <b>co-optimization</b>(모델기반 B2/B3=crocoddyl 실시간 OCP, quad_centroidal 참조) 또는 <b>RL</b>(teacher-student, 험지 SOTA). <b>★확정: 험지크로싱=RL(하이브리드)</b> — WBIC·지형맵·footScore를 실행층/관측으로 재사용, A(보행·기립·점프 배포)는 모델기반 유지, ③은 경량 로컬 데모 유지. B2/B3(모델기반 OCP)는 살아있으나 현시점 미착수.<br>
+    <b style="color:var(--plan)">★ 2026-07-16 갱신 — 모델기반 타이밍 트랙 착수: Contact-Implicit MPC</b> (샘플링 CI, 전략 §15 path B). 롤아웃을 <b>MuJoCo/MJX(GPU)</b>로 굴려 접촉 타이밍을 <b>물리가 발견</b>(고정 게이트 클럭 탈피) = 위 ②<b>접촉 타이밍 적응X</b>의 모델기반 해법. sim2sim 갭 0(배포 시뮬 그대로). 평지 전진보행 falls=0 달성, 다음=gap/stepping 크로싱. <b>RL과 병행</b> — RL=험지 발판탐색 SOTA·CI-MPC=접촉모드 창발. 상세=별도 <b>CI-MPC 파이프라인</b> 아티팩트.
   </div>
   <p class="sub"><b class="nav">TRG-planner</b>(Traversal Risk Graph, KAIST · 전역 경로)가 저위험·최단 경로를 내면, <b class="plan">TAMOLS</b>(지형인지 base+발판 최적화)가 로컬 지형에서 궤적·발판을 풀고, <b class="wbic">하위 전신제어기</b>(1 kHz)가 추종한다. 모든 지형 추론은 <b class="percept">elevation map</b>(이미 개발됨) 하나에서 나온다 — TRG의 traversal-risk와 TAMOLS의 foothold-score가 <b>같은 맵에서</b> 파생. ★두 관건: (1) nav↔제어는 얇은 velocity라 통합점은 perception 심(seam) 하나 · (2) <b>하위 제어기 TSID vs WBIC은 TAMOLS가 GRF를 정밀하게 내는지가 가른다</b>.</p>
 </header>

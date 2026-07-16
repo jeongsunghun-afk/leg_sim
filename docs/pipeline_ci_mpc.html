@@ -1,0 +1,324 @@
+<title>02_Leg Contact-Implicit MPC 파이프라인</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --panel2:#eef1f5; --ink:#141a21; --ink2:#43505e;
+    --ink3:#6b7887; --line:#d9dfe6; --accent:#0e8fa6; --accent2:#0b6f80;
+    --ok:#1f9d57; --warn:#c67a12; --blk:#c33a3a; --mono-bg:#f0f3f6;
+    --shadow:0 1px 2px rgba(20,30,40,.06),0 8px 24px rgba(20,30,40,.05);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0d1117; --panel:#151b23; --panel2:#1b232d; --ink:#e8edf3; --ink2:#a9b6c4;
+      --ink3:#788799; --line:#28323e; --accent:#3fc0d6; --accent2:#67d3e6;
+      --ok:#46c47e; --warn:#e0a244; --blk:#e5695f; --mono-bg:#0f151c;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f8; --panel:#ffffff; --panel2:#eef1f5; --ink:#141a21; --ink2:#43505e;
+    --ink3:#6b7887; --line:#d9dfe6; --accent:#0e8fa6; --accent2:#0b6f80;
+    --ok:#1f9d57; --warn:#c67a12; --blk:#c33a3a; --mono-bg:#f0f3f6;
+    --shadow:0 1px 2px rgba(20,30,40,.06),0 8px 24px rgba(20,30,40,.05);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1117; --panel:#151b23; --panel2:#1b232d; --ink:#e8edf3; --ink2:#a9b6c4;
+    --ink3:#788799; --line:#28323e; --accent:#3fc0d6; --accent2:#67d3e6;
+    --ok:#46c47e; --warn:#e0a244; --blk:#e5695f; --mono-bg:#0f151c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    line-height:1.6;-webkit-font-smoothing:antialiased}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans Mono",monospace}
+  .wrap{max-width:940px;margin:0 auto;padding:clamp(20px,4vw,52px) clamp(16px,4vw,40px)}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:34px}
+  .eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+    font-weight:700;margin:0 0 10px}
+  h1{font-size:clamp(26px,4.4vw,40px);line-height:1.12;margin:0 0 12px;letter-spacing:-.02em;
+    text-wrap:balance;font-weight:750}
+  .lead{font-size:clamp(15px,1.9vw,18px);color:var(--ink2);margin:0;max-width:64ch}
+  .meta{margin-top:16px;font-size:12.5px;color:var(--ink3)}
+  .meta b{color:var(--ink2);font-weight:600}
+  h2{font-size:20px;letter-spacing:-.01em;margin:44px 0 6px;font-weight:700;
+    display:flex;align-items:baseline;gap:11px}
+  h2 .n{font-family:ui-monospace,monospace;font-size:13px;color:var(--accent);font-weight:700;
+    border:1px solid var(--line);border-radius:6px;padding:2px 7px;background:var(--panel2)}
+  h2 + .sub{color:var(--ink3);font-size:14px;margin:0 0 18px}
+  p{margin:12px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;box-shadow:var(--shadow);margin:16px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+    padding:3px 9px;border-radius:999px;letter-spacing:.02em}
+  .t-ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+  .t-warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+  .t-blk{background:color-mix(in srgb,var(--blk) 15%,transparent);color:var(--blk)}
+  .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:540px}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);
+    font-weight:700;border-bottom:1.5px solid var(--line)}
+  tbody tr:last-child td{border-bottom:none}
+  td.num,th.num{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .rec{background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
+  code{font-family:ui-monospace,monospace;font-size:.88em;background:var(--mono-bg);
+    border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .flow{display:flex;flex-direction:column;gap:0}
+  .stage{display:grid;grid-template-columns:44px 1fr;gap:16px;align-items:start}
+  .rail{display:flex;flex-direction:column;align-items:center}
+  .node{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    font-family:ui-monospace,monospace;font-weight:700;font-size:15px;flex:none;
+    background:var(--panel2);border:1.5px solid var(--line);color:var(--accent)}
+  .node.done{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:var(--ok);color:var(--ok)}
+  .node.now{background:color-mix(in srgb,var(--accent) 15%,var(--panel));border-color:var(--accent);color:var(--accent)}
+  .node.next{border-style:dashed;color:var(--ink3)}
+  .bar{width:2px;flex:1;min-height:22px;background:var(--line);margin:4px 0}
+  .stage .body{padding-bottom:22px}
+  .stage h3{margin:6px 0 4px;font-size:15.5px;font-weight:700}
+  .stage .k{color:var(--ink2);font-size:13.5px;margin:2px 0}
+  .kv{display:flex;flex-wrap:wrap;gap:6px 8px;margin-top:9px}
+  .chip{font-family:ui-monospace,monospace;font-size:11.5px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink2)}
+  .chip b{color:var(--ink);font-weight:700}
+  ul.tight{margin:10px 0;padding-left:20px}
+  ul.tight li{margin:5px 0;color:var(--ink2)}
+  ul.tight li b{color:var(--ink)}
+  .callout{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 10px 10px 0;
+    padding:14px 18px;margin:16px 0;font-size:14px;color:var(--ink2)}
+  .callout b{color:var(--ink)}
+  .foot{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--ink3)}
+  .hl{color:var(--accent);font-weight:600}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <p class="eyebrow">02_Leg · 17-DOF · 모델기반 제2트랙</p>
+  <h1>Contact-Implicit MPC 파이프라인</h1>
+  <p class="lead">험지(gap·stepping) 크로싱의 근본 한계인 <b>고정 접촉 스케줄</b>을 넘기 위해,
+  접촉 모드·발판·타이밍을 온라인으로 동시에 발견하는 CI-MPC를 설계·구현한다.
+  배포 컨트롤러(A: WBIC+MPC)는 불변이며, 이는 병렬 연구 트랙이다.</p>
+  <p class="meta"><b>스택</b> Crocoddyl · Pinocchio · MuJoCo/MJX(GPU) &nbsp;·&nbsp;
+  <b>코드</b> <span class="mono">simulation/quad/ci_mpc/</span> &nbsp;·&nbsp;
+  <b>참조</b> Kim et al. 2023, Contact-Implicit MPC (KAIST HOUND)</p>
+</header>
+
+<h2><span class="n">01</span> 왜 필요한가 — 고정 스케줄의 벽</h2>
+<p class="sub">타이밍을 결정변수로 못 올리면 지형 간격에 스텝을 맞출 수 없다</p>
+<div class="card">
+<p>현재 컨트롤러 A(WBIC+SRBD MPC)·B(centroidal)·C(fulldynamics)는 모두 접촉 스케줄
+(<span class="mono">T_ds/T_ss</span>)을 <b>고정 입력</b>으로 두는 fixed-schedule이다. 발 cadence·step length가
+지형 간격과 우연히 맞는 gap만 넘는다 — <span class="hl">속도-공명(speed resonance)</span>. selectFoot(③)은
+발판 <b>위치</b>만 nudge할 뿐 타이밍은 못 바꾼다.</p>
+<p style="margin-bottom:0">타이밍을 최적화하려면 접촉 on/off가 결정변수가 되어야 하는데, 그러면 문제가
+비볼록(이산/상보성)이 되어 실시간 볼록 QP가 깨진다. 이 벽을 넘는 두 갈래 = <b>모델기반 CI-MPC</b> 또는 <b>RL</b>.
+지형 이산 발판 탐색은 RL 피벗을 유지하고, 본 트랙은 <b>접촉 모드 창발</b>을 담당한다.</p>
+</div>
+
+<h2><span class="n">02</span> 후보 3안과 선택 <span class="tag t-ok" style="align-self:center"><span class="dot"></span>B 채택</span></h2>
+<p class="sub">MuJoCo가 배포 시뮬이라는 전제가 선택을 가른다 (전략문서 §15)</p>
+<div class="scroll">
+<table>
+<thead><tr><th>접근</th><th>forward 물리</th><th>그래디언트</th><th>sim 정합</th><th>구현비용</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td><b>A. MJPC</b><br><span style="color:var(--ink3);font-size:12px">MuJoCo-native</span></td>
+  <td>soft</td><td>FD+soft</td><td>자기정합</td><td>최저</td>
+  <td>캘리브레이션·기준선용. 접촉 파괴 소극적</td></tr>
+<tr class="rec"><td><b>B. 샘플링 CI</b><br><span style="color:var(--accent);font-size:12px">MPPI / MJX ★</span></td>
+  <td><b>MuJoCo 그대로</b></td><td>없음</td><td><b>완전 정합</b></td><td>낮음</td>
+  <td>sim2sim 갭 0 · getup_mppi 재사용 · 상보성/완화 불필요</td></tr>
+<tr><td><b>C. HOUND 정통</b><br><span style="color:var(--ink3);font-size:12px">Kim 2023 (C-1)</span></td>
+  <td>하드 QCQP</td><td>해석+ρ</td><td>불일치 감수</td><td>최고</td>
+  <td>Pinocchio 하드접촉 ≠ MuJoCo soft. 조건부 폴백</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout"><b>선택 근거 (B).</b> MuJoCo가 우리 배포 시뮬이므로 롤아웃을 MuJoCo 그대로 굴리면
+<b>sim2sim 갭 0</b> — C-1은 Pinocchio 하드접촉과 MuJoCo soft의 불일치를 떠안는다.
+게다가 B는 <span class="mono">getup_mppi.py</span>를 승격 재사용하고, 상보성·완화·QCQP·해석 그래디언트 유도가
+통째로 불필요하다. Kim 2023(C-1)은 <b>샘플링이 정밀도·연산 병목일 때만</b> 진입하는 폴백으로 남긴다.</div>
+
+<h2><span class="n">03</span> 파이프라인 진행</h2>
+<p class="sub">모델기반 baseline으로 스택을 검증한 뒤 샘플링 CI로 피벗</p>
+<div class="flow card" style="padding-top:24px">
+
+  <div class="stage">
+    <div class="rail"><div class="node done">0</div><div class="bar"></div></div>
+    <div class="body">
+      <h3>기반 — 17-DOF 모델 브리지 <span class="tag t-ok"><span class="dot"></span>완료</span></h3>
+      <p class="k">MJCF ↔ Pinocchio(허리고정 reduced) 브리지. 질량·발 FK를 byte 수준 검증.</p>
+      <div class="kv"><span class="chip">nq <b>23</b>/nv <b>22</b>/nu <b>16</b></span>
+        <span class="chip">질량 <b>38.016</b>kg</span><span class="chip">발 FK diff <b>2.4e-7</b>m</span>
+        <span class="chip">URDF <b>02_Leg_UFDF_260703_3</b></span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><div class="node done">1</div><div class="bar"></div></div>
+    <div class="body">
+      <h3>모델기반 OCP baseline <span class="tag t-ok"><span class="dot"></span>완료 · 보존</span></h3>
+      <p class="k">Crocoddyl Box-FDDP 전신 고정스케줄 트롯 OCP. 비교 기준선으로 보존.</p>
+      <div class="kv"><span class="chip">VX <b>0.2–0.5</b> falls=0</span><span class="chip">토크 bound <b>84/126/100.8</b></span>
+        <span class="chip">포화 <b>6–12%</b></span><span class="chip">solve <b>~50ms</b></span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><div class="node now">2</div><div class="bar"></div></div>
+    <div class="body">
+      <h3>샘플링 CI-MPC (MJX/GPU) <span class="tag t-warn"><span class="dot"></span>진행 · 전진보행 달성</span></h3>
+      <p class="k">수신호라이즌 MPPI. 롤아웃을 MJX로 GPU 병렬(vmap), 접촉 타이밍은 물리가 결정 = CI.</p>
+      <div class="kv"><span class="chip">falls=0 · x <b>+0.21</b>m</span><span class="chip">vx <b>0.12</b>(목표 0.3의 40%)</span>
+        <span class="chip">z <b>0.356</b> 유지</span><span class="chip">Nsamp <b>96</b>/H <b>15</b></span>
+        <span class="chip">plan <b>~950ms</b></span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><div class="node next">3</div></div>
+    <div class="body">
+      <h3>gap / stepping 크로싱 <span class="tag t-blk"><span class="dot"></span>다음 · CI의 진가</span></h3>
+      <p class="k">물리 롤아웃이 접촉 타이밍을 자동 발견 → 지형 간격에 스텝을 맞춤. 전체 목표.</p>
+      <div class="kv"><span class="chip">속도추종 개선 선행</span><span class="chip">plan_ms 단축(실시간)</span></div>
+    </div>
+  </div>
+
+</div>
+
+<h2><span class="n">04</span> 모델 구조</h2>
+<p class="sub">롤아웃(MJX, 전 17-DOF)과 OCP(Pinocchio, 허리고정 16-DOF)의 두 관점</p>
+<div class="scroll">
+<table>
+<thead><tr><th>항목</th><th>MJX 롤아웃 (배포 정합)</th><th>Pinocchio OCP (baseline)</th></tr></thead>
+<tbody>
+<tr><td><b>모델</b></td><td>MJCF <span class="mono">quad_real_17dof_waist_sphere</span> (전 관절)</td><td>URDF 260703_3 → 허리 <b>고정</b> reduced</td></tr>
+<tr><td class="num"><b>nq / nv / nu</b></td><td class="num">24 / 23 / <b>17</b></td><td class="num">23 / 22 / <b>16</b></td></tr>
+<tr><td><b>허리(FB_waist)</b></td><td>강 PD 홀드(WAIST_KP 200)</td><td>고정(reduced)</td></tr>
+<tr><td><b>발 접촉</b></td><td colspan="2">4× sphere <span class="mono">{L}_foot_contact_link</span>, r=0.024 (ci_mpc), 점접촉 condim3</td></tr>
+</tbody>
+</table>
+</div>
+<div class="card" style="margin-top:14px">
+<p style="margin:0 0 10px"><b>상태 x = [q, v]</b> &nbsp;·&nbsp; q = base(위치 3 + 쿼터니언 4) + 관절, v = base(선속 3 + 각속 3) + 관절속도</p>
+<div class="kv">
+  <span class="chip">base quat <b>MuJoCo wxyz ↔ Pinocchio xyzw</b></span>
+  <span class="chip">base 선속도 <b>world → local (Rᵀv)</b></span>
+</div>
+<p style="margin:12px 0 6px;color:var(--ink2);font-size:13.5px"><b>관절 순서가 엔진마다 다름</b> — 브리지가 순열 매핑:</p>
+<div class="kv">
+  <span class="chip">MJCF ctrl <b>HL·HR·waist·FL·FR</b></span>
+  <span class="chip">Pinocchio leg <b>FL·FR·HL·HR</b></span>
+  <span class="chip">각 다리 = <b>hip·thigh·calf·foot</b></span>
+</div>
+</div>
+
+<h2><span class="n">05</span> 입출력 변수 정의</h2>
+<p class="sub">샘플링 CI-MPC 한 제어틱(replan → apply)의 데이터 흐름</p>
+<div class="scroll">
+<table>
+<thead><tr><th>구분</th><th>변수</th><th>차원 / 형</th><th>의미</th></tr></thead>
+<tbody>
+<tr><td rowspan="3"><span class="tag t-ok"><span class="dot"></span>입력</span></td>
+  <td class="mono">VX (VY·WZ)</td><td class="num">스칼라</td><td>전진 속도 명령 [m/s] (측방·선회는 확장)</td></tr>
+<tr><td class="mono">qpos · qvel</td><td class="num">24 · 23</td><td>현재 상태 (sim=MuJoCo GT · 배포=추정기)</td></tr>
+<tr><td class="mono">nominal</td><td class="num">[H, 17]</td><td>warm-start 관절기준궤적(이전 틱 shift + gait-prior tail)</td></tr>
+<tr><td rowspan="3"><span class="tag t-warn"><span class="dot"></span>내부<br>(MPPI)</span></td>
+  <td class="mono">ε</td><td class="num">[Nsamp, H, 17]</td><td>시간축 스무딩 관절 섭동(σ=0.12 rad)</td></tr>
+<tr><td class="mono">q_ref = nominal+ε</td><td class="num">[Nsamp, H, 17]</td><td>샘플별 관절기준 → MJX 병렬 롤아웃</td></tr>
+<tr><td class="mono">costs</td><td class="num">[Nsamp]</td><td>롤아웃 누적비용 → 가중치 w = exp(−(c−β)/λ)</td></tr>
+<tr><td rowspan="2"><span class="tag t-ok" style="background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)"><span class="dot"></span>출력</span></td>
+  <td class="mono">nominal′</td><td class="num">[H, 17]</td><td>가중평균 갱신 <span class="mono">nominal += Σ wₛ εₛ</span></td></tr>
+<tr><td class="mono">τ (적용)</td><td class="num">17</td><td>nominal′[0] → <b>PD+중력보상</b> → 관절토크 → MuJoCo ctrl(±peak clip)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout"><b>대조 — OCP(baseline)</b>는 <span class="mono">DDP</span> 구조라 입력 = 상태 x₀[45] + v_cmd + <b>고정 접촉스케줄</b>,
+출력 = 궤적 <span class="mono">xs</span> · 최적토크 <span class="mono">us</span> · <b>피드백 게인 K</b>(저수준 <span class="mono">u = u₀ − K·δx</span>).
+샘플링 CI는 스케줄이 <b>입력이 아니라 물리 롤아웃에서 창발</b>한다는 점이 근본 차이.</div>
+
+<h2><span class="n">06</span> 비용 함수 &amp; 갱신</h2>
+<p class="sub">롤아웃 각 노드에서 누적. 전진 추종이 주목표, 나머지는 붕괴/이탈 억제</p>
+<div class="scroll">
+<table>
+<thead><tr><th>항</th><th class="num">가중</th><th>정의</th><th>역할</th></tr></thead>
+<tbody>
+<tr class="rec"><td>전진 추종</td><td class="num">30</td><td class="mono">(vx − VX)²</td><td>주목표. ↑ 하면 크라우치-다이빙 착취 → 낙상</td></tr>
+<tr><td>측방 억제</td><td class="num">6</td><td class="mono">vy²</td><td>옆으로 안 새게</td></tr>
+<tr><td>자세(직립)</td><td class="num">20</td><td class="mono">1 − cos(tilt)</td><td>피치-다이빙 억제</td></tr>
+<tr><td>yaw 억제</td><td class="num">3</td><td class="mono">ωz²</td><td>제자리 스핀 방지</td></tr>
+<tr><td>붕괴 barrier</td><td class="num">1500</td><td class="mono">z &lt; 0.32</td><td>주저앉음 하드 차단</td></tr>
+<tr><td>soft floor</td><td class="num">400</td><td class="mono">max(0, 0.34 − z)²</td><td>높이 하한 부드럽게</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout"><b>★ 형상 교훈.</b> 높이를 <b>추종(z−z*)²</b>으로 벌하면 보행의 자연 bobbing이 억압돼 MPPI가 얼어붙는다.
+그래서 높이는 <b>추종이 아니라 붕괴 barrier + soft floor</b>로만 두고, 전진을 우세하게 둔다.
+<b>MPPI 갱신</b>: <span class="mono">w = exp(−(c−β)/λ)</span> (λ=40) 가중평균 → 시간축 스무딩. 매 틱 <b>iters 2회</b>, warm-start로 소수 반복.</div>
+
+<h2><span class="n">07</span> 걷게 만든 핵심 발견</h2>
+<div class="grid2">
+  <div class="card">
+    <span class="tag t-ok"><span class="dot"></span>stance 유지</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">KP=300 + IK 높이 0.42</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">PD는 base 중력 피드포워드가 없어 sag한다.
+    IK를 목표+sag만큼 높게 잡고 KP를 올려 stance 유지(KP≥600은 진동).</p>
+  </div>
+  <div class="card">
+    <span class="tag t-ok"><span class="dot"></span>전진 추진</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">전진 트롯 gait-prior</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">스탠스 발을 몸기준 뒤로 sweep(추진)·스윙 발 앞착지.
+    "제자리" prior는 뒤로 표류한다. 물리가 실제 접촉을 결정.</p>
+  </div>
+  <div class="card">
+    <span class="tag t-ok"><span class="dot"></span>cost 형상</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">height 추종 제거</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">높이 추종항은 보행의 자연 bobbing을 벌해 MPPI를 얼린다.
+    붕괴 barrier + 전진 우세만 두니 크라우치 없이 전진.</p>
+  </div>
+  <div class="card">
+    <span class="tag t-warn"><span class="dot"></span>미해결 긴장</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">fast ↔ stable</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">vx 가중↑ → 크라우치-다이빙 착취(z0.18 낙상).
+    prior가 ~0.12만 안정 지원. 완전 속도엔 긴 스텝 prior + 정교한 shaping 필요.</p>
+  </div>
+</div>
+
+<h2><span class="n">08</span> GPU 인프라 (MJX)</h2>
+<p class="sub">CPU 순차 롤아웃(740ms/스텝)은 튜닝 비현실적 → GPU 병렬화</p>
+<div class="card">
+<ul class="tight">
+<li><b>RTX 4060</b> + <span class="mono">jax[cuda12]</span> + <span class="mono">mujoco-mjx 3.9.0</span> (proxddp env).</li>
+<li><b>★ 메쉬 충돌 스트립이 결정적</b> — 몸통 메쉬 충돌을 끄고 발 sphere + 바닥만 충돌시키면
+  MJX forward JIT 컴파일이 <span class="hl">256초 → 8초</span>. (<span class="mono">strip_mesh_collision</span>)</li>
+<li>전체 롤아웃을 <b>단일 JIT</b>(<span class="mono">lax.scan</span> H×sub) + <span class="mono">vmap</span>(Nsamp)로 묶어 GPU 병렬.</li>
+<li><b>반사관성(armature)</b>이 폐루프 안정의 전제 — MJCF의 <span class="mono">dof_armature=0</span>이면 stiff PD가
+  dt=2ms에서 수치 발산. <span class="mono">I_rot·N²</span>(실물리)로 해결.</li>
+</ul>
+<p style="margin:12px 0 0;color:var(--ink3);font-size:13px"><b>남은 실시간 과제:</b> GPU가 샘플은 병렬화하나
+순차 스텝 깊이(H×sub=150)가 wall-clock 바닥(~950ms). 실시간(20ms)엔 H·sub 축소가 필요.</p>
+</div>
+
+<h2><span class="n">09</span> 다음 단계</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>우선</th><th>과제</th><th>내용</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td><b>속도추종 개선</b></td><td>prior 스텝 길이↑ · 전진진행 보상(안정성 인지) · iters/샘플↑ → vx = 명령 달성</td></tr>
+<tr><td class="num">2</td><td><b>plan_ms 단축</b></td><td>rollout dt 조정으로 순차 스텝 깊이↓ → 실시간 근접</td></tr>
+<tr><td class="num">3</td><td class="hl"><b>gap / stepping 크로싱</b></td><td>지형 위 수신호라이즌 CI — 물리 롤아웃의 접촉 타이밍 자동발견 (전체 목표)</td></tr>
+<tr><td class="num">—</td><td>폴백</td><td>샘플링이 정밀도·연산 병목이면 C-2(이중모델) → C-1(Kim 2023 정통) 진입</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="foot">
+<p><b>구성 파일</b> · <span class="mono">model_bridge.py</span> (브리지·gearbox·sphere·메쉬스트립) ·
+<span class="mono">ocp_fixed.py</span> (Crocoddyl OCP) · <span class="mono">ci_mpc_run.py</span>·<span class="mono">benchmark.py</span> (baseline) ·
+<span class="mono">mppi_mpc.py</span> (CPU) · <span class="mono">mjx_mppi.py</span> (GPU).</p>
+<p>02_Leg 17-DOF 제어 · 감속비 실값 hip/thigh 7 · calf 10.5 · foot 8.4 (peak 100.8 Nm · ω 24.6 rad/s).
+배포 컨트롤러 A는 불변, 본 트랙은 모델기반 타이밍 최적화 연구.</p>
+</div>
+</div>

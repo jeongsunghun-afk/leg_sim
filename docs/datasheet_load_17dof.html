@@ -1,0 +1,253 @@
+<title>17-DOF 관절 부하 데이터시트 — trot·walk</title>
+<style>
+  :root{
+    --ground:#eef1f4; --surface:#ffffff; --surface2:#f6f8fa;
+    --ink:#141821; --muted:#5c6675; --faint:#8a93a1; --hair:#dde2e9;
+    --accent:#26697f;
+    --safe:#1f8a5b; --moderate:#9a7d1e; --high:#c26a1f; --critical:#cf5427; --over:#c62f42;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0d1016; --surface:#141922; --surface2:#1a212c;
+      --ink:#e7ebf1; --muted:#98a2b1; --faint:#6b7482; --hair:#252d39;
+      --accent:#5cb2d0;
+      --safe:#43c489; --moderate:#d8b64a; --high:#e89246; --critical:#ef6f45; --over:#f1637a;
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#eef1f4; --surface:#ffffff; --surface2:#f6f8fa;
+    --ink:#141821; --muted:#5c6675; --faint:#8a93a1; --hair:#dde2e9; --accent:#26697f;
+    --safe:#1f8a5b; --moderate:#9a7d1e; --high:#c26a1f; --critical:#cf5427; --over:#c62f42;
+  }
+  :root[data-theme="dark"]{
+    --ground:#0d1016; --surface:#141922; --surface2:#1a212c;
+    --ink:#e7ebf1; --muted:#98a2b1; --faint:#6b7482; --hair:#252d39; --accent:#5cb2d0;
+    --safe:#43c489; --moderate:#d8b64a; --high:#e89246; --critical:#ef6f45; --over:#f1637a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.5;
+       -webkit-font-smoothing:antialiased;padding:clamp(16px,4vw,40px)}
+  .wrap{max-width:1080px;margin:0 auto}
+  header{margin-bottom:24px}
+  .kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-size:clamp(22px,3.6vw,30px);margin:.28em 0 .15em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:14.5px;max-width:66ch}
+  h2{font-size:15px;letter-spacing:.02em;margin:32px 0 12px;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--accent);flex:none}
+  h2 .mut{font-weight:400;color:var(--muted);font-size:12.5px;letter-spacing:0}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:18px 20px}
+  .grid2{display:grid;grid-template-columns:1fr 1.15fr;gap:16px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  .ref table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+  .ref th,.ref td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--hair)}
+  .ref th:first-child,.ref td:first-child{text-align:left;font-family:var(--sans)}
+  .ref thead th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+  .ref tbody tr:last-child td{border-bottom:none}
+  .note{font-size:13px;color:var(--muted)}
+  .note b{color:var(--ink);font-weight:600}
+  .eq{font-family:var(--mono);font-size:12.5px;background:var(--surface2);border:1px solid var(--hair);
+      border-radius:7px;padding:9px 11px;margin-top:10px;color:var(--ink);overflow-x:auto}
+  .eq .p{color:var(--critical);font-weight:700}
+  .eq .r{color:var(--over);font-weight:700}
+  .legend{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-family:var(--mono);
+        padding:4px 9px;border-radius:999px;border:1px solid var(--hair);background:var(--surface)}
+  .sw{width:11px;height:11px;border-radius:3px}
+
+  /* insight banner */
+  .insight{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--surface)),var(--surface));
+    border:1px solid color-mix(in srgb,var(--accent) 35%,var(--hair));border-radius:12px;padding:18px 20px;margin-top:16px}
+  .insight h3{margin:0 0 4px;font-size:15px}
+  .insight .dec{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;margin-top:12px;font-family:var(--mono);
+    font-size:12.5px;font-variant-numeric:tabular-nums;border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+  .insight .dec>div{padding:6px 12px;border-bottom:1px solid var(--hair)}
+  .insight .dec .hd{background:var(--surface2);color:var(--muted);font-weight:600;font-family:var(--sans);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .insight .dec>div:nth-last-child(-n+3){border-bottom:none}
+  .insight .big{font-weight:700}
+  .up{color:var(--over)} .flat{color:var(--safe)}
+
+  .scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:12px;background:var(--surface)}
+  table.dat{width:100%;border-collapse:collapse;font-family:var(--mono);font-variant-numeric:tabular-nums;
+            font-size:12.5px;min-width:760px}
+  table.dat thead th{background:var(--surface2);color:var(--muted);font-weight:600;padding:7px 6px;
+       border-bottom:1px solid var(--hair);text-align:center;line-height:1.25}
+  table.dat thead tr.top th{font-size:12px;border-left:1px solid var(--hair)}
+  table.dat thead tr.top th .g{display:block;color:var(--faint);font-size:10px;font-weight:500;margin-top:1px}
+  table.dat thead tr.sub th{font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 6px;color:var(--muted)}
+  table.dat thead th.corner{text-align:left;border-left:none}
+  table.dat thead th.rear{color:var(--accent)}
+  table.dat tbody td{border-bottom:1px solid var(--hair);padding:0;text-align:center;vertical-align:middle;border-left:1px solid var(--hair)}
+  table.dat tbody td.lbl{font-family:var(--sans);font-weight:600;text-align:left;padding:0 10px;color:var(--ink);white-space:nowrap;border-left:none}
+  table.dat tbody td.lbl .v{color:var(--muted);font-weight:500;font-family:var(--mono);font-size:12px}
+  .grouprow td{background:color-mix(in srgb,var(--accent) 8%,var(--surface));font-family:var(--sans);font-weight:700;
+       font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);padding:5px 10px;border-left:none !important}
+  .cell{display:grid;grid-template-rows:1fr 1fr}
+  .cell .ln{display:flex;justify-content:center;align-items:baseline;gap:5px;padding:4px 6px}
+  .cell .ln.pk{border-bottom:1px dashed var(--hair)}
+  .cell .val{color:var(--muted);font-size:11.5px;min-width:26px;text-align:right}
+  .cell .pct{font-weight:700;min-width:32px;text-align:left}
+  .tag{font-size:8.5px;color:var(--faint);font-weight:600;width:20px;text-align:left}
+  .heat-safe{--h:var(--safe)} .heat-moderate{--h:var(--moderate)} .heat-high{--h:var(--high)}
+  .heat-critical{--h:var(--critical)} .heat-over{--h:var(--over)}
+  .ln{background:color-mix(in srgb,var(--h,transparent) 13%,transparent)}
+  .ln .pct{color:var(--h,var(--muted))}
+  .ln.over-flag .pct::after{content:" ▲";font-size:8.5px}
+  .rowtag{font-family:var(--sans);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:1px 5px;border-radius:4px}
+  .rowtag.t{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .rowtag.w{background:color-mix(in srgb,var(--moderate) 20%,transparent);color:var(--moderate)}
+  footer{margin-top:28px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--hair);padding-top:14px}
+  footer code{font-family:var(--mono);background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11.5px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="kicker">02_Leg · 17-DOF · sim2real datasheet</div>
+    <h1>관절별 토크·각속도 부하 — trot vs walk</h1>
+    <p class="sub">보행속도별 각 축의 <b>peak</b>·<b>RMS</b> 사용률. 앞·뒤 다리를 나란히 두어 비교합니다. 실모터 물리(토크-속도곡선 + 기어박스 반사관성 + 속도한계) 하에서 정상구간 측정.</p>
+  </header>
+
+  <div class="insight">
+    <h3>뒤 thigh 폭주 <span style="color:var(--accent)">해결</span> — 발배치(raibert_k)를 표준 중립점으로</h3>
+    <p class="note" style="margin:0">원인은 <b>발배치</b>였습니다. Raibert 게인 raibert_k=0.8이 발을 속도비례로 <b>과하게 앞에</b> 던짐 → 지지면이 CoM보다 앞으로 → CoM이 지지면 뒤쪽에 걸림 → <b>뒷발에 하중 집중</b>(뒤 thigh 접촉토크 폭증). 이를 <b>교과서 Raibert 중립점 raibert_k=0.5</b>(발 위치 = 0.5·v·T_st)로 낮추니 GRF가 앞뒤로 균형을 이루고 뒤 thigh가 절반으로 떨어졌습니다. 외란복구 reach는 KCAP 피드백+MPC가 담당하므로 중립게인을 부풀릴 필요가 없습니다.</p>
+    <div class="dec" style="grid-template-columns:auto 1fr 1fr">
+      <div class="hd">trot 1.2 · raibert_k</div><div class="hd">0.8 (과전방)</div><div class="hd">0.5 (표준중립·현재)</div>
+      <div>뒤 thigh RMS (정격%)</div><div class="up big">30 (107%▲)</div><div class="flat big">14 (50%)</div>
+      <div>GRF 뒤:앞 비율</div><div class="up">1.58</div><div class="flat">1.15</div>
+      <div>push 복구 tilt</div><div>3.8°</div><div class="flat">2.1°</div>
+    </div>
+    <p class="note" style="margin:8px 0 0;font-size:12px">정지 서기 GRF는 앞:뒤 50:50 균형. 아래 표는 <b>raibert_k=0.5(현재)</b> 데이터 — 정격 초과(▲) 셀이 사라지고 앞/뒤 thigh가 대등해졌습니다.</p>
+  </div>
+
+  <div class="grid2" style="margin-top:16px">
+    <div class="card ref">
+      <h2 style="margin-top:0">기어비 · 모터 한계</h2>
+      <table>
+        <thead><tr><th>관절</th><th>기어비</th><th>peak τ</th><th>정격 τ</th><th>ω 한계</th></tr></thead>
+        <tbody>
+          <tr><td>hip</td><td>7 : 1</td><td>84</td><td>28</td><td>29.6</td></tr>
+          <tr><td>thigh</td><td>7 : 1</td><td>84</td><td>28</td><td>29.6</td></tr>
+          <tr><td>calf</td><td>10.5 : 1</td><td>126</td><td>42</td><td>19.7</td></tr>
+          <tr><td>foot</td><td>8.4 : 1</td><td>100.8</td><td>33.6</td><td>24.6</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin:10px 0 0">τ=Nm, ω=rad/s. 정격 = peak ÷ 3 (연속 열한계). <b>foot 8.4:1 실값</b>(2026-07 정정, 구 8:1/96 폐기).</p>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">peak·RMS 둘 다 peak한계 기준 (비교 가능)</h2>
+      <div class="eq">
+        <span class="p">peak%</span> = peak ÷ <b>peak한계</b>(예 84)<br>
+        <span class="r">RMS%</span>&nbsp; = RMS ÷ <b>peak한계</b> ← 같은 분모
+      </div>
+      <p class="note" style="margin-top:10px">모터 발열 ∝ τ² 라 <b>연속(열) 한계는 RMS 기준</b>. 정격 = peak ÷ 3 = <b>peak의 33%</b>(전 관절 공통). 그래서 <b>RMS가 33%를 넘으면 연속정격 초과 ▲</b>(지속 주행 시 과열). peak는 100%가 순간 한계.</p>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+
+  <h2>토크 τ <span class="mut">셀: 상단 peak · 하단 RMS · 둘 다 peak한계 기준(%) · Nm · RMS&gt;33%=연속정격 초과 ▲</span></h2>
+  <div class="scroll"><table class="dat" id="tau"></table></div>
+
+  <h2>각속도 ω <span class="mut">셀: 상단 peak (vs ω한계) / 하단 RMS (참고) · rad/s</span></h2>
+  <div class="scroll"><table class="dat" id="omega"></table></div>
+
+  <footer>
+    측정: <code>MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1</code> · <code>quad_mpc_wbic_17dof.py</code> · <b>raibert_k=0.5 기본(trot·walk 공통, 표준중립)</b> · walk <code>T=0.7</code>. <b>foot 8.4:1 실값</b>(GEAR_FOOT 재기어 폐기).
+    좌우(L·R) 묶어 정상구간(t&gt;2.5s) 산출. <b>trot 상한 1.2 m/s · walk 상한 ~0.6 m/s</b>. RMS ω가 낮은 것은 GEARBOX가 flail을 억제해 착지 peak만 남기 때문.
+  </footer>
+</div>
+
+<script>
+const LIM={hip:[84,28,29.6],thigh:[84,28,29.6],calf:[126,42,19.7],foot:[100.8,33.6,24.6]};
+const GEAR={hip:"7:1",thigh:"7:1",calf:"10.5:1",foot:"8.4:1"};
+const JT=["hip","thigh","calf","foot"];
+const D={
+ tau:{
+  rear:{
+   "trot 0.5":{hip:[32.8,15.2],thigh:[31.2,6.5],calf:[39.6,13.2],foot:[40.2,11.8]},
+   "trot 1.0":{hip:[39.3,16.1],thigh:[43.8,11.0],calf:[49.7,15.9],foot:[44.8,9.9]},
+   "trot 1.2":{hip:[41.2,16.3],thigh:[67.3,14.0],calf:[50.9,17.0],foot:[52.7,9.3]},
+   "walk 0.3":{hip:[31.3,12.8],thigh:[25.7,11.3],calf:[49.8,18.2],foot:[16.5,5.2]},
+   "walk 0.5":{hip:[38.5,13.3],thigh:[38.9,15.3],calf:[66.4,20.1],foot:[17.2,2.9]},
+   "walk 0.6":{hip:[40.1,13.4],thigh:[51.0,16.8],calf:[77.0,21.2],foot:[15.1,2.3]},
+  },
+  front:{
+   "trot 0.5":{hip:[34.0,14.8],thigh:[37.6,11.5],calf:[38.2,18.2],foot:[28.3,13.8]},
+   "trot 1.0":{hip:[44.6,16.2],thigh:[51.6,14.0],calf:[41.2,17.9],foot:[27.2,13.5]},
+   "trot 1.2":{hip:[48.5,16.6],thigh:[51.3,14.6],calf:[40.7,18.0],foot:[29.4,13.5]},
+   "walk 0.3":{hip:[44.2,13.4],thigh:[29.2,10.7],calf:[33.0,18.4],foot:[26.6,14.8]},
+   "walk 0.5":{hip:[53.8,14.4],thigh:[44.0,12.6],calf:[34.7,19.0],foot:[28.2,15.5]},
+   "walk 0.6":{hip:[56.1,14.9],thigh:[50.2,13.9],calf:[40.4,19.4],foot:[30.4,15.7]},
+  }
+ },
+ omega:{
+  rear:{
+   "trot 0.5":{hip:[0.6,0.1],thigh:[7.3,2.9],calf:[10.8,4.3],foot:[10.8,1.0]},
+   "trot 1.0":{hip:[1.2,0.2],thigh:[9.0,3.9],calf:[12.9,4.2],foot:[13.8,1.2]},
+   "trot 1.2":{hip:[1.5,0.2],thigh:[10.8,4.6],calf:[14.4,4.5],foot:[14.8,1.3]},
+   "walk 0.3":{hip:[0.4,0.1],thigh:[7.7,2.2],calf:[9.5,2.6],foot:[6.4,0.7]},
+   "walk 0.5":{hip:[1.2,0.1],thigh:[11.9,3.4],calf:[13.8,3.4],foot:[10.4,0.8]},
+   "walk 0.6":{hip:[1.6,0.1],thigh:[14.8,4.2],calf:[15.7,4.0],foot:[12.8,0.9]},
+  },
+  front:{
+   "trot 0.5":{hip:[0.7,0.2],thigh:[7.9,3.4],calf:[9.4,4.5],foot:[12.2,0.8]},
+   "trot 1.0":{hip:[1.3,0.3],thigh:[11.3,4.9],calf:[10.2,4.8],foot:[13.9,1.1]},
+   "trot 1.2":{hip:[1.5,0.3],thigh:[12.8,5.4],calf:[10.6,4.9],foot:[14.0,1.3]},
+   "walk 0.3":{hip:[0.3,0.1],thigh:[8.9,2.5],calf:[8.5,2.8],foot:[10.7,0.5]},
+   "walk 0.5":{hip:[0.6,0.1],thigh:[11.5,3.2],calf:[10.0,3.1],foot:[13.1,0.9]},
+   "walk 0.6":{hip:[0.7,0.1],thigh:[12.6,3.5],calf:[11.3,3.4],foot:[14.0,1.1]},
+  }
+ }
+};
+const BLOCKS=[["trot",["trot 0.5","trot 1.0","trot 1.2"]],["walk",["walk 0.3","walk 0.5","walk 0.6"]]];
+function heat(p){return p>=100?"over":p>=90?"critical":p>=75?"high":p>=50?"moderate":"safe";}
+function fmt(v){return v>=100?String(Math.round(v)):(v>=10?v.toFixed(0):v.toFixed(1));}
+function buildLegend(){
+  const items=[["<50%","safe"],["50–75%","moderate"],["75–90%","high"],["90–100%","critical"],["≥100%","over"]];
+  document.getElementById("legend").innerHTML=items.map(([t,c])=>
+    `<span class="chip"><span class="sw" style="background:var(--${c})"></span>${t}</span>`).join("")
+    +`<span class="chip" style="color:var(--over)"><b>▲</b> RMS&gt;33% = 연속정격 초과</span>`;
+}
+function cellHTML(metric,pk,rms,l){
+  const isTau=metric==="tau";
+  const denom=isTau?l[0]:l[2];               // ★peak·RMS 둘 다 같은 분모(peak한계 / ω한계)로 정규화 → 비교 가능
+  const pkP=pk/denom*100, rmsP=rms/denom*100;
+  const overCont=isTau && rms>l[1];          // RMS가 연속정격(=peak의 33%) 초과 → 발열 위험
+  const rmsLn=isTau
+    ? `<div class="ln heat-${heat(rmsP)} ${overCont?'over-flag':''}"><span class="tag">RMS</span><span class="val">${fmt(rms)}</span><span class="pct"${overCont?' style="color:var(--over)"':''}>${Math.round(rmsP)}%</span></div>`
+    : `<div class="ln"><span class="tag">RMS</span><span class="val">${fmt(rms)}</span><span class="pct" style="color:var(--faint)">${Math.round(rmsP)}%</span></div>`;
+  return `<div class="cell"><div class="ln pk heat-${heat(pkP)}"><span class="tag">peak</span><span class="val">${fmt(pk)}</span><span class="pct">${Math.round(pkP)}%</span></div>${rmsLn}</div>`;
+}
+function buildTable(id,metric){
+  const isTau=metric==="tau";
+  let h='<thead><tr class="top"><th class="corner" rowspan="2">보행</th>';
+  for(const j of JT){
+    const l=LIM[j];
+    const sub=isTau?`peak ${l[0]} · 정격 ${l[1]}`:`ω ${l[2]}`;
+    h+=`<th colspan="2">${j}<span class="g">${GEAR[j]} · ${sub}</span></th>`;
+  }
+  h+='</tr><tr class="sub">';
+  for(const j of JT) h+='<th class="rear">뒤</th><th>앞</th>';
+  h+='</tr></thead><tbody>';
+  for(const [gait,sps] of BLOCKS){
+    h+=`<tr class="grouprow"><td colspan="9">${gait==="trot"?"TROT (대각 2지지)":"WALK (순차 3~4지지)"}</td></tr>`;
+    for(const sp of sps){
+      const g=gait[0];
+      h+=`<tr><td class="lbl"><span class="rowtag ${g}">${gait.toUpperCase()}</span> <span class="v">${sp.split(" ")[1]}</span></td>`;
+      for(const j of JT){
+        for(const leg of ["rear","front"]){
+          const [pk,rms]=D[metric][leg][sp][j];
+          h+=`<td>${cellHTML(metric,pk,rms,LIM[j])}</td>`;
+        }
+      }
+      h+="</tr>";
+    }
+  }
+  h+="</tbody>";
+  document.getElementById(id).innerHTML=h;
+}
+buildLegend();
+buildTable("tau","tau");
+buildTable("omega","omega");
+</script>

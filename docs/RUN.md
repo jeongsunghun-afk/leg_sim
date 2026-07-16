@@ -105,4 +105,5 @@ EST_CTRL=1 GYRO_N=0.02 QUAT_N=0.01 ENCQ_N=0.001 ENCDQ_N=0.01 ./build/trot_sim ..
 ## 연구용(비배포) · 14-DOF
 - 14-DOF: `env $CFG GEAR_CALF=1.0 TROT_V=1.0 PXI research/quad_mpc_wbic.py --robot ours_sphere --mode trot` (14dof는 calf 기본 8:1이라 GEAR_CALF=1.0로 10.5 복원). GUI=research/teleop_gui.py.
 - 구조 B/C(FullDynamics·Centroidal, marginal): `simple_mpc/` (심링크). 반응형 발배치 거부라 본선 아님.
-- 파일: A=quad_mpc_wbic.py(14) · **A'=quad_mpc_wbic_17dof.py + teleop_gui_17dof.py(배포)** · cpp/(C++) · biped/(초기 phase).
+- 파일: A=quad_mpc_wbic.py(14) · **A'=quad_mpc_wbic_17dof.py + teleop_gui_17dof.py(배포)** · cpp/(C++).
+- **biped/**(뒷다리 2족, 별도 서브프로젝트): 추정 폐루프(leg-odom+접촉높이)+지연보상 C++ 배포·GUI. 전진 로버스트·측방 약함·선회 사실상 불가(점발 한계→RL). ★실행 레시피는 `biped/README.md`(run_gui_biped.sh·run_gui_cpp.sh·deploy/). 상세=메모리 biped-mpc-reimpl.

@@ -29,6 +29,7 @@ class SportClient:
                     'body_h': 0.52, 'step_h': 0.10, 'euler': [0.0, 0.0, 0.0], 'gait': 'trot',   # ★초기 서기 높이=0.52(Ready·slider와 일치, 보행은 gait 버튼서 0.50)
                     'vmax': VMAX, 'jump_seq': 0, 'home_seq': 0, 'reset_seq': 0,
                     'rate': 1.0, 'viz': True, 'terrain': True,   # ★rate=뷰어배속 viz=모니터표시+추정 base 고스트(개루프·보행 GT제어) terrain=지형적응
+                    'foot_nudge': False,                         # ★③ footScore 발판선택(갭·스테핑 crossing). 체크 시 도달반경 내 지형 발판으로 스윙발 유도. 연속지형(험지·평지)엔 불필요
                     'pos_hold': True,                            # ★정지 위치홀드(드리프트 보정, 효용확인됨)
                     'raibert_k': 0.5,
                     'swing_w_f': 0.1, 'swing_w_r': 0.6, 'auto_whip': True,  # ★앞/뒤 whip 목표(고속) · 속도연동 자동whip
@@ -47,6 +48,9 @@ class SportClient:
 
     def SetTerrain(self, on):                       # 지형적응(perception: 발/몸높이+elevation) on/off — live
         self.cmd['terrain'] = bool(on); self._pub()
+
+    def SetFootNudge(self, on):                     # ③ footScore 발판선택(갭·스테핑 crossing) on/off — live
+        self.cmd['foot_nudge'] = bool(on); self._pub()
 
     def SetGait(self, g):                           # 게이트 walk/trot 라이브 전환(컨트롤러가 재arm으로 위상 재앵커)
         self.cmd['gait'] = str(g); self._pub()
@@ -458,6 +462,9 @@ with dpg.window(tag='main'):
         dpg.add_spacer(width=20)
         dpg.add_checkbox(label='모니터 표시 + 추정 base 고스트 (초록=GT·주황=추정 · 보행은 GT제어 유지)', tag='viz', default_value=True,
                          callback=lambda s, a: sc.SetViz(a))
+        dpg.add_spacer(width=20)
+        dpg.add_checkbox(label='발 배치 (③ footScore 발판선택 · 갭/스테핑 crossing)', tag='foot_nudge', default_value=False,
+                         callback=lambda s, a: sc.SetFootNudge(a))
     dpg.add_separator()
     dpg.add_text('키: ↑↓=전후  ←→=측방  ,/.=선회  J=점프  X/Space=STOP', color=(140, 140, 155))
     dpg.add_text('', tag='status')

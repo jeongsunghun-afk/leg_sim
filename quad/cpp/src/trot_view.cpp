@@ -183,6 +183,7 @@ int main(int argc,char**argv){
         double swr=json_get(c,"swing_w_r",-1); if(swr>=0) ctrl.whip_lo_r=swr;   // ★뒷다리 whip 목표
         ctrl.auto_whip = json_bool(c,"auto_whip",ctrl.auto_whip);              // ★속도연동 whip 토글(on=속도스케일, off=슬라이더 상수)
         ctrl.POS_HOLD = json_bool(c,"pos_hold",ctrl.POS_HOLD);                 // ★정지 위치홀드(드리프트 보정) 토글
+        ctrl.foot_nudge = json_bool(c,"foot_nudge",ctrl.foot_nudge);           // ★③ footScore 발판선택(갭·스테핑) 토글(GUI '발 배치' 체크박스). FOOT_NUDGE env는 초기값
         ctrl.steer = json_get(c,"steer",ctrl.steer);            // ★허리 핸들=자동차식 조향각(GUI 슬라이더). Ackermann 반경으로 선회+허리 lean
         ctrl.GROUND_LIE_Z    = json_get(c,"g_lie_z",   ctrl.GROUND_LIE_Z);      // ★눕기 자세 실시간 조각(GUI 슬라이더)
         ctrl.GROUND_REAR_FOOT= json_get(c,"g_rear_foot",ctrl.GROUND_REAR_FOOT);

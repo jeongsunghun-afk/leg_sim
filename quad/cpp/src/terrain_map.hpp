@@ -65,6 +65,18 @@ struct MjRayTerrainMap {
   int NX=0, NY=0;
   Submap buf[2]; std::atomic<Submap*> front{nullptr}; int back_idx=0;
 
+  // ★base 높이용 support-aware 지형높이(2026-07-15): 로봇 footprint 창서 filtered elevation MAX.
+  //   → 갭 위에서도 발판(지지)높이 유지 = base중심 1점이 갭바닥(0)으로 떨어져 생기던 솟구침/출렁 완화.
+  //   MAX인 이유: 평균/1점은 갭 가로지를 때 dip → base가 발판↔갭 오가며 출렁. MAX는 지지 발판높이 홀드. front 없으면 -100(폴백).
+  double supportZ(double cx, double cy, double rx=0.28, double ry=0.16) const {
+    const Submap* s=front.load(std::memory_order_acquire); if(!s) return -100.0;
+    double zmax=-1e9; int n=0;
+    for(double dx=-rx; dx<=rx+1e-9; dx+=res) for(double dy=-ry; dy<=ry+1e-9; dy+=res){
+      bool ok; float v=s->bilinear(s->filtered, cx+dx, cy+dy, ok);
+      if(ok){ if(v>zmax) zmax=v; n++; } }
+    return n>0? zmax : -100.0;
+  }
+
   void init(){
     NX=(int)std::round(2*half/res)+1; NY=NX;
     for(int b=0;b<2;b++){ Submap& s=buf[b]; s.res=res; s.nx=NX; s.ny=NY;

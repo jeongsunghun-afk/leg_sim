@@ -229,6 +229,7 @@ int main(int argc,char**argv){
         { int o=0; for(int j=0;j<NJ;j++) qn[j]=df[o++]; for(int j=0;j<NJ;j++) dqn[j]=df[o++];
           for(int a=0;a<4;a++) quatn[a]=df[o++]; for(int a=0;a<3;a++) gyron[a]=df[o++];
           for(int i=0;i<4;i++) cts[i]=df[o++]>0.5; }
+        { double gz=0; int gn=0; for(int i=0;i<4;i++) if(cts[i]){ double fx=d->geom_xpos[q.fgid[i]*3],fy=d->geom_xpos[q.fgid[i]*3+1]; double tz=q.terrain_z(fx,fy); if(tz>-50.0){ gz+=tz; gn++; } } if(gn>0) est.ground_z=gz/gn; }  // ★지형서 발밑 높이=접촉발 지형평균(z오차↓). xy 드리프트는 leg-odom 근본한계(exteroception 필요)
         // ★상태추정: EST_KF=표준 접촉KF(IMU가속도 융합, 폐루프 기립 안정) / 기본=stance-anchored(위치 앵커+z기구학, 속도 정적ZUPT)
         if(ESTKF){ double aw[3]={d->qacc[0]+ACCN*_nd(_rng),d->qacc[1]+ACCN*_nd(_rng),d->qacc[2]+ACCN*_nd(_rng)};
           est.estimate_kf(m, qn.data(), dqn.data(), quatn, gyron, aw, _efg, _efr, cts, m->opt.timestep); }

@@ -180,6 +180,7 @@ int main(int argc,char**argv){
     if(ESTTEST && !ESTCTRL){
       std::vector<bool> cts(4,false);
       for(int i=0;i<4;i++) for(int ci=0;ci<d->ncon;ci++){ const auto&c=d->contact[ci]; if((c.geom1==q.fgid[i]||c.geom2==q.fgid[i])&&c.dist<0.002){ cts[i]=true; break; } }
+      { double gz=0; int gn=0; for(int i=0;i<4;i++) if(cts[i]){ double fx=d->geom_xpos[q.fgid[i]*3],fy=d->geom_xpos[q.fgid[i]*3+1]; double tz=q.terrain_z(fx,fy); if(tz>-50.0){ gz+=tz; gn++; } } if(gn>0) est.ground_z=gz/gn; }  // ★지형서 발밑 높이=접촉발 지형 평균(평지 가정 z오차 제거)
       if(ESTKF){ double aw[3]={d->qacc[0]+ACCN*_nd(_rng),d->qacc[1]+ACCN*_nd(_rng),d->qacc[2]+ACCN*_nd(_rng)};
         est.estimate_kf(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], aw, _efg, _efr, cts, m->opt.timestep); }
       else { est.estimate(m, &d->qpos[7], &d->qvel[6], &d->qpos[3], &d->qvel[3], _efg, _efr, cts, m->opt.timestep);

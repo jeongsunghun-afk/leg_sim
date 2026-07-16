@@ -85,11 +85,11 @@ struct QuadControl {
     if(waist_idx>=0){   // ★17-DOF(허리모델) 자동감지 → Python 17dof 튜닝값을 기본으로(canonical 실행코드와 동일). env로 여전히 override
       w_ori=20.0; W_AM=0.0; KD_AM=24.0; FRONT_ANKLE=-0.5;   // ★W_AM=0(각운동량 보상 제거): 외란복구 이득 측정상 무의미(측방 push서 오히려↑). 14dof 기본(5/0/8/-0.7) 대신 17dof 튜닝
       base_z0=0.50; }   // ★base height 최적(축별 worst-util 스윕): walk 95.8%·trot 67.7%·run 82.5%로 0.50이 3gait Pareto-최적(0.5234보다 발목 ω 여유↑)
-    // ★재기어(GEAR_*)+기어박스 물리(sim2real). Python line 244-263 일치.
-    //   재기어: tau_peak×gmul(8:1=168→96) → ★QP가 재기어 토크한계 존중(GEARBOX 무관 항상). w_limit는 C++ 미구현.
-    //   GEARBOX=1: 반사관성 dof_armature=I_rotor·N² + 점성감쇠 + 마찰(MJCF엔 0→발목 flail 과장 보정).
+    // ★감속비(실값)+기어박스 물리(sim2real). Python line 244-263 일치.
+    //   foot 감속비=8.4:1(실값). peak토크=MJCF actuatorfrcrange(foot 100.8Nm=8.4:1)·ω한계=207/8.4=24.6rad/s.
+    //   GEAR_* env는 실험용 재기어 배수(기본 1.0). GEARBOX=1: 반사관성 dof_armature=I_rotor·N² + 점성감쇠 + 마찰(MJCF엔 0→발목 flail 과장 보정).
     { const char* GN[4]={"hip","thigh","calf","foot"}; const char* GE[4]={"GEAR_HIP","GEAR_THIGH","GEAR_CALF","GEAR_FOOT"};
-      double gear[4]={7.0,7.0,10.5,14.0};                            // 관절별 감속비(Python 일치)
+      double gear[4]={7.0,7.0,10.5,8.4};                             // 관절별 감속비 실값(hip/thigh7·calf10.5·foot8.4, Python 일치)
       bool gbx = !(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"),"0"));   // ★기본 ON(반사관성=실제 물리). GEARBOX=0으로만 끔
       double Irot=getenv("ROTOR_I")?atof(getenv("ROTOR_I")):1e-4;
       double jdmp=getenv("JDAMP")?atof(getenv("JDAMP")):0.1, jfrc=getenv("JFRIC")?atof(getenv("JFRIC")):0.5;

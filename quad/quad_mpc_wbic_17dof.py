@@ -239,7 +239,7 @@ class QuadSim:
         self._wbt = bool(os.environ.get('WBIC_TIMING')); self._qpt = []   # ★WBIC QP solve 시간 계측(1kHz 실현 확인용)
         # ★기어비 재배분(설계검토): GEAR_xxx<1=저기어(속도↑·토크↓), >1=고기어(토크↑·속도↓). 같은 베이스모터 토크↔속도 맞교환.
         #   보행분석: thigh=토크병목·속도여유→GEAR_THIGH>1 이득 / calf·foot=속도병목·토크여유→GEAR<1 이득
-        _gdef = {'hip': '1.0', 'thigh': '1.0', 'calf': '1.0', 'foot': '1.0'}   # ★기본=명목 하드웨어(hip/thigh7·calf10.5·foot14). calf 8:1은 성능이득0(병목=thigh토크)+토크126→96손해→명목10.5 유지(C++일치). foot만 GEAR_FOOT=0.5714로 8:1(flail 억제 정당)
+        _gdef = {'hip': '1.0', 'thigh': '1.0', 'calf': '1.0', 'foot': '1.0'}   # ★기본=명목 하드웨어 실값(hip/thigh7·calf10.5·foot8.4). GEAR_*는 실험용 재기어 배수(기본 1.0). foot peak=100.8Nm(MJCF)·ω=207/8.4=24.6rad/s. calf 8:1은 성능이득0(병목=thigh토크)이라 명목10.5 유지
         for _grp in ('hip', 'thigh', 'calf', 'foot'):
             _g = float(os.environ.get('GEAR_' + _grp.upper(), _gdef[_grp]))
             if _g != 1.0:
@@ -248,7 +248,7 @@ class QuadSim:
                         self._w_limit[k] /= _g; self._tau_peak[k] *= _g
         # ★기어박스 물리 모델(sim2real, MJCF엔 0 → flail 과장 보정): 반사관성 I_rotor·N² + 점성감쇠 + Coulomb마찰
         #   ★기본 ON(반사관성=실제 하드웨어 물리, 항상 반영). GEARBOX=0으로만 끔. 값은 env로 조정(실측 스펙 들어오면 교체).
-        _gearmap = {'hip': 7.0, 'thigh': 7.0, 'calf': 10.5, 'foot': 14.0}   # 관절별 감속비
+        _gearmap = {'hip': 7.0, 'thigh': 7.0, 'calf': 10.5, 'foot': 8.4}   # 관절별 감속비 실값
         if os.environ.get('GEARBOX', '1') != '0':
             _Irot = float(os.environ.get('ROTOR_I', '1e-4'))   # 모터 로터관성[kg·m²] (대략)
             _jdmp = float(os.environ.get('JDAMP', '0.1'))      # 관절 점성감쇠[N·m·s/rad] (대략)
@@ -257,7 +257,7 @@ class QuadSim:
                 _grp = next((kk for kk in _gearmap if kk in _jnames[k]), 'hip')
                 _N = _gearmap[_grp] * float(os.environ.get('GEAR_' + _grp.upper(), '1.0'))   # ★GEAR_* 반영 실효 기어
                 _dof = 6 + k                                   # base free=0~5, 능동관절=6+k (qvel 규약 일치)
-                self.m.dof_armature[_dof] = _Irot * _N * _N    # ★반사관성: 발목14²=196배 → 유효관성↑로 flail 억제
+                self.m.dof_armature[_dof] = _Irot * _N * _N    # ★반사관성: 발목8.4²=70.6배 → 유효관성↑로 flail 억제
                 self.m.dof_damping[_dof] = _jdmp
                 self.m.dof_frictionloss[_dof] = _jfrc
         self.base_trail = _deque(maxlen=_tn)              # base 궤적(마젠타)

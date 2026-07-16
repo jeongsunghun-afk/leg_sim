@@ -9,7 +9,7 @@ set -uo pipefail
 cd "$(dirname "$0")"                       # simulation/quad/cpp
 MJ=../mjcf/quad_real_17dof_waist_sphere.mjcf
 COURSE=../mjcf/quad_terrain_verify.mjcf     # ★회귀검증=순차 직진코스(마찰→험지→계단). 병렬 course는 GUI용(갭/스테핑=실패허용)
-export GEAR_FOOT=0.5714                     # foot 8:1 재기어(배포 기본)
+# foot 감속비=8.4:1 실값(MJCF actuatorfrcrange=100.8, gear[3]=8.4). 재기어 불요
 PY=${PY:-/home/jsh/miniforge3/envs/proxddp/bin/python}
 DOPY=0; [ "${1:-}" = "--python" ] && DOPY=1
 

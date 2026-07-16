@@ -27,8 +27,8 @@ sleep 1.5; rm -f "$CMD" "$STATE"
 # 터미널1: dearpygui GUI
 setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' '$PXI' teleop_gui_17dof.py > /tmp/teleop_gui.log 2>&1" </dev/null &
 sleep 3
-# 터미널2: Python 컨트롤러(자체 MuJoCo 뷰어) — MJCF=지형씬·CMDFILE/STATE_PUB=GUI 연동·GEAR_FOOT=발목 8:1
-setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' MJCF='$MJCF' GEAR_FOOT=0.5714 CMDFILE='$CMD' STATE_PUB='$STATE' \
+# 터미널2: Python 컨트롤러(자체 MuJoCo 뷰어) — MJCF=지형씬·CMDFILE/STATE_PUB=GUI 연동·foot 감속비 8.4:1 실값(재기어 불요)
+setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' MJCF='$MJCF' CMDFILE='$CMD' STATE_PUB='$STATE' \
   '$PXI' quad_mpc_wbic_17dof.py --robot ours_17dof_waist_sphere --mode trot > /tmp/quad_py.log 2>&1" </dev/null &
 sleep 5
 

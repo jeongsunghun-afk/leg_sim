@@ -51,7 +51,7 @@ viewer_rendering(){
 VOK=0
 for try in 1 2 3 4; do
   rm -f "$STATE"
-  setsid bash -c "cd '$CPP'; env GEAR_FOOT=0.5714 RATE=1.0 CMDFILE='$CMD' STATE_PUB='$STATE' \
+  setsid bash -c "cd '$CPP'; env RATE=1.0 CMDFILE='$CMD' STATE_PUB='$STATE' \
     ./build/trot_view '../$MJCF' > /tmp/trot_view.log 2>&1" </dev/null &
   # ★렌더(STATE 갱신) 최대 ~11초 폴링(구 3초 단발은 warmup+GL init 느린 머신서 오탐 킬)
   for w in $(seq 1 6); do

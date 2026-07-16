@@ -193,10 +193,10 @@ int main(int argc,char**argv){
           if(ctrl.mode!="jump") ctrl.mode=mc; }                 // ★점프 중엔 GUI mode 무시(안 그러면 매 폴링 덮어써 점프 즉시 취소). 컨트롤러가 완료 후 stand_up 자가전환
         ctrl.set_gait(json_str(c,"gait","trot"));               // trot/walk 게이트 토글
         ctrl.body_h = json_get(c,"body_h",ctrl.body_h);         // 서기 높이 슬라이더
-        { bool er=json_bool(c,"viz",est_on) || est_ctrl;        // ★추정 고스트 = 기존 '모니터 표시(viz)' 체크박스 (개루프, 보행 GT제어라 안정). 폐루프(env)면 항상 on
+        { bool er=json_bool(c,"viz",est_on) || est_ctrl;        // ★'모니터 표시(viz)' 체크박스 = 상태추정기(EST) 고스트 표시. 개루프(보행 GT제어라 안정). 폐루프(env)면 항상 on
           if(er && !est_on) est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2]));  // 켤 때 현재 참 base로 초기화(스테일 드리프트 방지)
           est_on=er;
-          tmap_on = json_bool(c,"viz",tmap_on) || getenv("TERRAIN_MAP")!=nullptr; }   // ★footScore 격자 오버레이도 '모니터 표시(viz)' 체크박스에 연동(env TERRAIN_MAP도 유효)
+          tmap_on = ctrl.foot_nudge || getenv("TERRAIN_MAP")!=nullptr; }   // ★footScore 격자 오버레이 = '발 배치(③)' 체크박스에 연동(모니터표시=EST / 발배치=perceptive 발판, 시각 피드백 일치)
         double rt=json_get(c,"rate",RATE); if(rt>0) RATE=rt;
         long rseq=(long)json_get(c,"reset_seq",reset_seen);     // ★RESET 버튼(상승엣지): mj_resetData+crouch_home+상태초기화
         if(reset_seen<0) reset_seen=rseq;                       //   첫폴링=동기화(시작리셋 방지)

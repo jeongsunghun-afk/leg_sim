@@ -23,7 +23,7 @@ struct StateEstimator {
   //   균형에 결정적인 z·자세는 견고하게 분리: z=접촉발 기구학(평지 가정, 드리프트 0)·자세=IMU직접·xy=stance 앵커(유계)·비접촉=유지(적분 폭주 차단).
   ~StateEstimator(){ if(ed) mj_deleteData(ed); }
   void reset(const Eigen::Vector3d& p0){ p = p0; v.setZero(); anch_on.assign(anch_on.size(),0);
-    xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; acc_lp.setZero(); }  // ★KF 상태도 리셋(RESET·토글 시 stance-anchored·KF 모두 초기화 — 미리셋 시 EST 드리프트 안 풀리던 버그)
+    xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; kf_need_anchor=true; acc_lp.setZero(); }  // ★KF 상태도 리셋. ★kf_need_anchor=발 랜드마크를 다음 estimate서 현재 발 world로 초기화(0 방치 시 base를 원점으로 끌던 버그)
 
   // qj/dqj: 관절 위치·속도(qpos/qvel 순, NJ개) · quat_wxyz: IMU 자세(MuJoCo wxyz) · gyro: 동체 각속도(3)
   // foot_geom/foot_rad: 발 sphere geom id·반경 · contacts: 발별 stance 여부
@@ -86,10 +86,11 @@ struct StateEstimator {
   Eigen::Matrix<double,18,1> xkf = Eigen::Matrix<double,18,1>::Zero();
   Eigen::Matrix<double,18,18> Pkf = Eigen::Matrix<double,18,18>::Identity();
   bool kf_init = false;
+  bool kf_need_anchor = false;   // ★reset 후 첫 estimate서 발 랜드마크를 현재 발 world로 초기화(원점0→base 끌림 방지)
   double KF_QP=1e-4, KF_QV=0.5, KF_QF=1e-3, KF_QF_SWING=1e3;   // 프로세스: 위치·속도·접촉발·swing발. ★QV=0.5(실기 가속도계 노이즈 반영=접촉측정 더 신뢰): 노이즈+지연 선회 강건(114°→0.3°), 클린 무회귀
   double KF_RP=1e-3, KF_RV=1e-2, KF_RZ=1e-4, KF_R_SWING=1e6;    // 측정: 상대위치·정지속도·지면z·swing스케일
   double KF_ACC_LP=0.0; Eigen::Vector3d acc_lp=Eigen::Vector3d::Zero();   // ★가속도 저역통과(α, 0=off): 고주파 IMU 노이즈가 예측을 흔드는 것 완화
-  void reset_kf(const Eigen::Vector3d& p0){ xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; p=p0; v.setZero(); }
+  void reset_kf(const Eigen::Vector3d& p0){ xkf.setZero(); xkf.head<3>()=p0; Pkf.setIdentity(); Pkf*=1e-2; kf_init=true; kf_need_anchor=true; p=p0; v.setZero(); }
 
   // accel_w: IMU 가속도(중력 보정 후 world 선가속도, a=R·f_body+g). 나머지 인자=estimate와 동일.
   void estimate_kf(mjModel* m, const double* qj, const double* dqj,
@@ -133,6 +134,7 @@ struct StateEstimator {
       mjtNum pnt[3]={ed->geom_xpos[3*g], ed->geom_xpos[3*g+1], ed->geom_xpos[3*g+2]};
       mj_jac(m, ed, jb.data(), nullptr, pnt, m->geom_bodyid[g]);
       Vector3d vfb=Vector3d::Zero(); for(int r=0;r<3;r++){ double sm=0; for(int c=0;c<m->nv;c++) sm+=jb[r*m->nv+c]*ed->qvel[c]; vfb[r]=sm; }
+      if(kf_need_anchor) xkf.segment<3>(6+3*k) = xkf.segment<3>(0) + s;   // ★리셋 후 발 랜드마크=현재 발 world(base+s)로 초기화 → 잔차0(안 하면 랜드마크0이 base를 원점으로 끌어 시작점 재생성 버그)
       Vector3d pi = xkf.segment<3>(6+3*k), p_=xkf.segment<3>(0), v_=xkf.segment<3>(3);
       bool ct=contacts[k]; double rsc = ct?1.0:KF_R_SWING;
       // (1) 상대위치: 예측 pi−p = s → resid = s−(pi−p). H: ∂/∂p=−I, ∂/∂pi=+I
@@ -149,6 +151,7 @@ struct StateEstimator {
       yres[r0+6] = ground_z - pi[2];
       Rd[r0+6] = KF_RZ*rsc;
     }
+    kf_need_anchor=false;   // ★재앵커 1회 완료(모든 발 랜드마크 현재 world로 초기화됨)
     MatrixXd Rm2 = Rd.asDiagonal();
     MatrixXd S = H*Pkf*H.transpose() + Rm2;
     MatrixXd K = Pkf*H.transpose()*S.ldlt().solve(MatrixXd::Identity(MM,MM));

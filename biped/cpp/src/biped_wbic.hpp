@@ -23,6 +23,9 @@ struct WbicIn {
   bool has_swing; int swing_leg;
   MatrixXd Jsw;                   // 3×nv (swing jac)
   Vector3d sw_pos, sw_ptgt, sw_vtgt;
+  bool has_sw_ori=false;          // ★평발 swing 발 수평 유지
+  MatrixXd Jsw_rot;               // 3×nv (swing 회전 jac)
+  Vector3d sw_oerr;               // swing 발 방향오차(현재-목표수평)
   VectorXd Qhome;                 // nu
   VectorXd tau_peak;              // nu
   std::vector<int> ankle_idx;     // 발목 관절
@@ -41,6 +44,10 @@ inline VectorXd wbic_track(const WbicIn& in){
     Vector3d accel=in.SW_KP*(in.sw_ptgt-in.sw_pos)+in.SW_KD*(in.sw_vtgt-J*in.qv);
     P.topLeftCorner(nv,nv)+=90.0*(J.transpose()*J); g.head(nv)-=90.0*(J.transpose()*accel);
     for(int t=0;t<4;t++) sw_vidx.push_back(6+in.swing_leg*4+t);
+    if(in.has_sw_ori){                    // ★평발 swing 발 수평 유지(16cm 발 기울어 착지 교란 억제)
+      Vector3d a_rot=120*(-in.sw_oerr)-15*(in.Jsw_rot*in.qv);
+      P.topLeftCorner(nv,nv)+=15.0*(in.Jsw_rot.transpose()*in.Jsw_rot); g.head(nv)-=15.0*(in.Jsw_rot.transpose()*a_rot);
+    }
   }
   // 자세 레벨링(현재 yaw)
   const Vector4d& qc=in.qc;

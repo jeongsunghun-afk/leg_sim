@@ -30,7 +30,8 @@ struct BipedControl {
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표
-  int stance=1, swing=0; double t_ss=0; long _k=0;
+  Vector4d foot_home_quat[2];         // ★평발 swing 발 수평 목표(home world quat, yaw=0)
+  int stance=1, swing=0; double t_ss=0; long _k=0; bool walk_init=true; double walk_init_t=0;   // ★평발 보행개시 weight-shift
   Matrix<double,2,3> lam; bool have_liftoff[2]={false,false}; Vector3d liftoff[2];
   Matrix3d I_body; double mass;
 
@@ -68,6 +69,14 @@ struct BipedControl {
     double pt[3]={d->geom_xpos[geom*3],d->geom_xpos[geom*3+1],d->geom_xpos[geom*3+2]};
     mj_jac(m,d,jp.data(),nullptr,pt,body);
     MatrixXd J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jp[r*nv+c]; return J; }
+  // 발 중심 자코비안(swing task) = 모드별 기준구(점발=tip / 평발=heel+toe) 평균
+  MatrixXd foot_jac_center(int leg){ if(cmode==1&&has_heel)
+      return 0.5*(foot_jac_at(sph[leg],(int)m->geom_bodyid[sph[leg]])+foot_jac_at(sph2[leg],(int)m->geom_bodyid[sph2[leg]]));
+    return foot_jac(leg); }
+  // swing 발 회전 자코비안(수평 유지용)
+  MatrixXd foot_jacr(int leg){ std::vector<double> jr(3*nv);
+    mj_jac(m,d,nullptr,jr.data(),&d->xpos[fbody[leg]*3],fbody[leg]);
+    MatrixXd J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jr[r*nv+c]; return J; }
   // 접촉점(적응): 지면 근처 구만. (geom,body) 리스트.
   std::vector<std::pair<int,int>> contact_pts(std::vector<int> stance){
     std::vector<std::pair<int,int>> pts;
@@ -154,6 +163,7 @@ struct BipedControl {
     d->qpos[2]-=zmin; mj_forward(m,d);
     Vector3d c=com(); com0=c.head(2); com_ref_xy=c.head(2);
     for(int l=0;l<2;l++) nominal_off[l]=foot_center(l).head(2)-c.head(2);
+    for(int l=0;l<2;l++) for(int i=0;i<4;i++) foot_home_quat[l][i]=d->xquat[fbody[l]*4+i];   // swing 수평 목표
     com_ref_z=c[2];
     stance=1; swing=0; t_ss=0; _k=0; yaw_des=0; yaw_hold_set=false; have_liftoff[0]=have_liftoff[1]=false;
     for(int i=0;i<nv;i++) d->qvel[i]=0;
@@ -167,15 +177,16 @@ struct BipedControl {
     double z=std::max(c[2]-std::min(footz(0),footz(1)),0.15), w=std::sqrt(GVEC/z);
     // ★측방 DCM 트리거를 body-frame으로(yaw 나도 올바른 측방=보행 강건). 발 중점 기준 DCM벡터를 body-y축에 투영.
     double ya=base_yaw(), cya=std::cos(ya), sya=std::sin(ya);
-    double midx=0.5*(d->geom_xpos[sph[0]*3]+d->geom_xpos[sph[1]*3]);
-    double midy=0.5*(d->geom_xpos[sph[0]*3+1]+d->geom_xpos[sph[1]*3+1]);
+    Vector3d fc0=foot_center(0), fc1=foot_center(1);   // 발 중점(점발=tip / 평발=밑창중점)
+    double midx=0.5*(fc0[0]+fc1[0]);
+    double midy=0.5*(fc0[1]+fc1[1]);
     double dcmx=c[0]+vcom[0]/w-midx, dcmy=c[1]+vcom[1]/w-midy;   // world DCM(발중점 기준)
     double dcm_by=-sya*dcmx+cya*dcmy;                            // body-y 성분(직진 yaw=0시 =dcmy)
     double sy=(swing==0)?1.0:-1.0;
     s=std::min(std::max(t_ss/SS_NOMINAL,0.0),1.0);
     bool committed=sy*dcm_by>TRIG_Y;
     if(t_ss>SS_MIN&&(committed||t_ss>SS_MAX)){ std::swap(stance,swing); t_ss=0;
-      liftoff[swing]=spos(swing); have_liftoff[swing]=true; st=stance; sw=swing; s=0; return; }
+      liftoff[swing]=foot_center(swing); have_liftoff[swing]=true; st=stance; sw=swing; s=0; return; }
     t_ss+=dt; st=stance; sw=swing;
   }
 
@@ -191,7 +202,7 @@ struct BipedControl {
     double rel_fwd=off[0]+K_CAP*v_b[0]/w+K_RETURN*err_b[0];
     rel_fwd=std::min(std::max(rel_fwd,off[0]-CAP_CLAMP),off[0]+CAP_CLAMP);
     double rel_lat=SPREAD*off[1]+K_LAT*(v_b[1]/w)+K_RET_LAT*err_b[1];
-    Vector2d st_b=to_b(spos(1-sw).head(2)-c.head(2));
+    Vector2d st_b=to_b(foot_center(1-sw).head(2)-c.head(2));
     double gap=std::min(std::max(lat*(rel_lat-st_b[1]),GAP_MIN),GAP_MAX);
     rel_lat=st_b[1]+lat*gap;
     return c.head(2)+to_w(Vector2d(rel_fwd,rel_lat));
@@ -223,7 +234,7 @@ struct BipedControl {
     MatrixXd Jc=jac_com(); VectorXd qv=qvel(); Vector3d vcom=Jc*qv;
     Vector3d wb(d->qvel[3],d->qvel[4],d->qvel[5]), ow=R*wb; Vector3d cc=com();
     Matrix<double,13,1> x0; x0<<roll,pitch,yaw, cc[0],cc[1],cc[2], ow[0],ow[1],ow[2], vcom[0],vcom[1],vcom[2], -9.81;
-    Vector3d frel[2]; for(int i=0;i<2;i++) frel[i]=spos(i)-cc;
+    Vector3d frel[2]; for(int i=0;i<2;i++) frel[i]=foot_center(i)-cc;
     std::array<int,2> cur={stanceLeg==0?1:0, stanceLeg==1?1:0};
     std::vector<std::array<int,2>> cs(MPC_N,cur);
     std::array<Vector3d,2> fp0={frel[0],frel[1]}; std::vector<std::array<Vector3d,2>> fp(MPC_N,fp0);
@@ -241,10 +252,24 @@ struct BipedControl {
     in.h=Map<VectorXd>(d->qfrc_bias,nv); in.qv=qvel();
     in.q=Map<VectorXd>(&d->qpos[7],nu); for(int i=0;i<4;i++) in.qc[i]=d->qpos[3+i];
     in.com=com(); in.zref=com_ref_z; in.Jc=jac_com();
-    in.contacts={stanceLeg}; in.cjac={foot_jac(stanceLeg)}; in.lam={lam.row(stanceLeg).transpose()};
-    in.has_swing=true; in.swing_leg=sw; in.Jsw=foot_jac(sw); in.sw_pos=spos(sw);
+    // ★stance 접촉: 점발=tip 1개 / 평발=stance 발 접지 구(heel+toe 다접촉)
+    std::vector<std::pair<int,int>> scp;
+    if(cmode==1&&has_heel) scp=contact_pts({stanceLeg}); else scp={{sph[stanceLeg],fbody[stanceLeg]}};
+    in.Kc=(int)scp.size(); in.contacts.clear(); in.cjac.clear(); in.lam.clear();
+    for(auto&cp:scp){ in.contacts.push_back(stanceLeg); in.cjac.push_back(foot_jac_at(cp.first,cp.second));
+      in.lam.push_back(lam.row(stanceLeg).transpose()/(double)scp.size()); }   // MPC GRF 발당→접촉점 분배
+    in.has_swing=true; in.swing_leg=sw;
+    in.Jsw=(cmode==1&&has_heel)?foot_jac_center(sw):foot_jac(sw);
+    in.sw_pos=(cmode==1&&has_heel)?foot_center(sw):spos(sw);
     in.sw_ptgt=ptgt; in.sw_vtgt=vtgt;
-    in.Qhome=Map<VectorXd>(Qhome8,nu); in.tau_peak=Map<VectorXd>(tau_peak8,nu);
+    if(cmode==1&&has_heel && !getenv("NO_SWORI")){   // ★평발 swing 발 수평 유지
+      in.has_sw_ori=true; in.Jsw_rot=foot_jacr(sw);
+      double ya=base_yaw(), qy[4]={std::cos(ya/2),0,0,std::sin(ya/2)}, ftgt[4];
+      mju_mulQuat(ftgt,qy,foot_home_quat[sw].data());
+      double fq[4]; for(int i=0;i<4;i++) fq[i]=d->xquat[fbody[sw]*4+i];
+      double oe[3]; mju_subQuat(oe,fq,ftgt); for(int i=0;i<3;i++) in.sw_oerr[i]=oe[i];
+    }
+    in.Qhome=Map<const VectorXd>(Qcur(),nu); in.tau_peak=Map<VectorXd>(tau_peak8,nu);   // ★모드별 자세(평발=Qflat)
     in.ankle_idx={ankle_idx[0],ankle_idx[1]};
     in.SW_KP=SW_KP; in.SW_KD=SW_KD; in.W_ORI=W_ORI; in.W_ANKLE=W_ANKLE; in.W_POST=W_POST;
     in.W_LAM=W_LAM; in.STANCE_KD=STANCE_KD; in.MU_EFF=MU_EFF; in.LAMZ_MIN=LAMZ_MIN;
@@ -253,13 +278,28 @@ struct BipedControl {
 
   void control(double dt){
     double ya=base_yaw();
-    // ★2점 평발: 정적 양발지지(밑창 ZMP로 pitch 지지). 점발은 이 분기 안 옴(항상 stepping).
+    // ★2점 평발: 정지=정적 양발지지(밑창 ZMP). 이동명령=평발 동적 보행(아래 게이트, wbic 다접촉).
     if(has_heel && cmode==1){
-      Vector3d fc=0.5*(foot_center(0)+foot_center(1));
-      com_ref_xy=fc.head(2);                        // 현재 지지중심 홀드
-      wbic_stance();
-      t_ss=0; com0=com().head(2); have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true;
-      return;
+      bool flat_walk_en = getenv("FLAT_WALK")!=nullptr;   // ★평발 동적보행=실험(WIP: 뒤로 표류, ZMP게이트 필요)
+      bool moving = flat_walk_en && (std::abs(vx_cmd)>0.02 || std::abs(vy_cmd)>0.02 || std::abs(wz_cmd)>0.02);
+      if(!moving){                                   // 정지(또는 보행 미활성)=정적 양발지지
+        Vector3d fc=0.5*(foot_center(0)+foot_center(1)); com_ref_xy=fc.head(2);
+        wbic_stance();
+        t_ss=0; com0=com().head(2); have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true;
+        walk_init=true;                              // 다음 보행개시 때 weight-shift 재무장
+        return;
+      }
+      if(walk_init){                                 // ★보행개시: 첫 스텝 전 CoM을 첫 stance 발쪽 측방 이동
+        Vector3d sf=foot_center(stance);             // stance=1(HR) 쪽으로 체중 이동(지지면끝까지 못가니 75%)
+        double tgt_y=0.75*sf[1];
+        com_ref_xy[0]=sf[0]; com_ref_xy[1]=tgt_y;
+        wbic_stance(); walk_init_t+=dt;
+        Vector3d c=com();
+        if(std::abs(c[1]-tgt_y)<0.03 || walk_init_t>0.4){   // 지지발쪽 도달 or 시간초과→스텝 시작
+          walk_init=false; walk_init_t=0; t_ss=0; com0=c.head(2);
+          have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true; }
+        return;
+      }
     }
     if(std::abs(wz_cmd)>0.02){                    // ★선회: 명령 적분 + 리드 클램프(폭주방지)
       yaw_des+=wz_cmd*dt;
@@ -275,7 +315,7 @@ struct BipedControl {
     int st,sw; double s; step_gait(dt,st,sw,s);
     if(_k%mpc_decim==0) lam=mpc_grf(st);
     _k++;
-    if(!have_liftoff[sw]){ liftoff[sw]=spos(sw); have_liftoff[sw]=true; }
+    if(!have_liftoff[sw]){ liftoff[sw]=foot_center(sw); have_liftoff[sw]=true; }
     Vector3d p,v; swing_traj(sw,s,p,v);
     wbic(st,sw,p,v);
   }

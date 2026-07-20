@@ -42,6 +42,10 @@ int main(int argc,char**argv){
       if(est_ctrl) dl.reset(m,d); std::printf("  [T/2] 접촉모드 전환 → cmode=%d\n",c.cmode); }
     if(est_ctrl) dl.step(m,d,c,dt);      // 추정+지연+보상 → d->ctrl (물리 d 불변)
     else c.control(dt);
+    if(getenv("WALK_DBG") && i%25==0){ double* q=&d->qpos[3];
+      double pitch=std::asin(std::max(-1.0,std::min(1.0,2*(q[0]*q[2]-q[3]*q[1]))));
+      std::printf("  t%.2f x%+.3f z%.3f pitch%+.1f com_x%+.3f swing=%d stanceFx%+.3f swFx%+.3f t_ss%.2f\n",
+        i*dt,d->qpos[0],d->qpos[2],pitch*57.3,d->subtree_com[0],c.swing,c.foot_center(c.stance)[0],c.foot_center(c.swing)[0],c.t_ss); }
     mj_step(m,d);
     if(est_ctrl){                                           // 낙상 자동리셋 + 카운트(장시간 통계)
       if(d->qpos[2]<0.2 || tilt_deg(&d->qpos[3])>45){

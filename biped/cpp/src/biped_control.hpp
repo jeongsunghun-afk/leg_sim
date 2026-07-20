@@ -61,6 +61,7 @@ struct BipedControl {
     if(getenv("FLAT_WLAM")) FLAT_WLAM=atof(getenv("FLAT_WLAM"));
     if(getenv("FLAT_CZ")) czwalk=atof(getenv("FLAT_CZ"));
     if(getenv("FLAT_WORI")) FLAT_WORI=atof(getenv("FLAT_WORI"));
+    if(getenv("T_TRANS")) T_TRANS=atof(getenv("T_TRANS"));
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
   }

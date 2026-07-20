@@ -113,18 +113,6 @@ def on_turn(_, val): pub.set(w=round(val, 3))
 def on_height(_, val): pub.set(body_h=round(val, 3))
 
 
-def set_contact(contact):
-    """★접촉모드 전환: 1pt=점발(동적보행)·2pt=평발(정적 양발지지). 모델 리로드 + 기본높이 세팅."""
-    left.clear(); right.clear()
-    h = H_DEF_2PT if contact == '2pt' else H_DEF_1PT
-    pub.set(contact=contact, mode='stand', body_h=h, v=0.0, vy=0.0, w=0.0)
-    dpg.set_value('h_sl', h)
-    dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
-    dpg.set_value('contact_lbl', '접촉: ' + ('2점 평발(정적 서기 전용 — 걸으려면 1점)' if contact == '2pt'
-                  else '1점 점발(동적 보행)')
-                  + '  · 전환=목표자세 재정착 (C++ 배포경로 run_gui_cpp)')
-
-
 def set_mode(mode):
     if mode == 'reset':
         left.clear(); right.clear()
@@ -134,14 +122,12 @@ def set_mode(mode):
     if mode == 'walk':          # ★걸으려면 1점 점발로 자동 전환(평발=발목토크0라 걷기 부적합)
         pub.set(contact='1pt', body_h=H_DEF_1PT, mode='walk')
         dpg.set_value('h_sl', H_DEF_1PT)
-        dpg.set_value('contact_lbl', '접촉: 1점 점발(동적 보행) — Walk가 자동 전환')
         return
     if mode == 'stand':         # ★서려면 2점 평발로 자동 전환(밑창ZMP=안정 서기)
         left.clear(); right.clear()
         pub.set(contact='2pt', body_h=H_DEF_2PT, mode='stand', v=0.0, vy=0.0, w=0.0)
         dpg.set_value('h_sl', H_DEF_2PT)
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
-        dpg.set_value('contact_lbl', '접촉: 2점 평발(정적 서기) — Stand가 자동 전환')
         return
     pub.set(mode=mode)          # off 등
     left.clear(); right.clear(); pub.set(v=0.0, vy=0.0, w=0.0)
@@ -193,21 +179,18 @@ with dpg.window(tag='main'):
             dpg.add_text('몸통 높이 [m]')
             dpg.add_slider_float(tag='h_sl', default_value=H_DEF, min_value=H_MIN, max_value=H_MAX, width=180, callback=on_height)
     dpg.add_spacer(height=8)
-    dpg.add_text('접촉 모드', color=(170, 175, 195))
-    with dpg.group(horizontal=True):   # ★1점/2점 접촉모드(모델 리로드)
-        _c1 = dpg.add_button(label='1점 점발', width=110, callback=lambda: set_contact('1pt'))
-        _c2 = dpg.add_button(label='2점 평발', width=110, callback=lambda: set_contact('2pt'))
-        dpg.bind_item_theme(_c2, _walk)
-    dpg.add_text('접촉: 1점 점발(동적보행)', tag='contact_lbl', color=(150, 155, 175))
-    dpg.add_spacer(height=8)
     dpg.add_text('모션', color=(170, 175, 195))
-    with dpg.group(horizontal=True):   # ★버튼 순서(17-DOF 규약): RESET → Off전원 → Stand서기 → Walk이동
+    with dpg.group(horizontal=True):   # RESET → Off전원 → Stand(2점서기) → Walk(1점보행)
         _rb = dpg.add_button(label='RESET', width=90, callback=lambda: set_mode('reset'))
         dpg.bind_item_theme(_rb, _stop)
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
-        dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
-        _wb = dpg.add_button(label='Walk 이동', width=110, callback=lambda: set_mode('walk'))
+        with dpg.group():              # ★Stand=2점접촉 서기(자동 전환)
+            dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
+            dpg.add_text('(2점접촉)', color=(120, 130, 150))
+        with dpg.group():              # ★Walk=1점접촉 보행(자동 전환)
+            _wb = dpg.add_button(label='Walk 이동', width=110, callback=lambda: set_mode('walk'))
+            dpg.add_text('(1점접촉)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
     dpg.add_text('복구 순서: 전원(Off) → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
                  color=(150, 155, 175))

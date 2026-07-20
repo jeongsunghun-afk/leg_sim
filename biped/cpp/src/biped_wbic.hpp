@@ -26,6 +26,7 @@ struct WbicIn {
   bool has_sw_ori=false;          // ★평발 swing 발 수평 유지
   MatrixXd Jsw_rot;               // 3×nv (swing 회전 jac)
   Vector3d sw_oerr;               // swing 발 방향오차(현재-목표수평)
+  bool com_x_track=false; double com_x_ref=0, com_vx_ref=0;   // ★평발 보행 전후 CoM 규제(발목ZMP 활용)
   VectorXd Qhome;                 // nu
   VectorXd tau_peak;              // nu
   std::vector<int> ankle_idx;     // 발목 관절
@@ -67,6 +68,11 @@ inline VectorXd wbic_track(const WbicIn& in){
   Vector3d Jcqv=in.Jc*in.qv; double a_z=300*(in.zref-in.com[2])-30*Jcqv[2];
   P.topLeftCorner(nv,nv)+=400.0*(in.Jc.row(2).transpose()*in.Jc.row(2));
   g.head(nv)-=400.0*a_z*in.Jc.row(2).transpose();
+  if(in.com_x_track){            // ★평발 보행 전후 CoM 규제(밑창 발목ZMP로 CoM 속도를 명령에 유지, CoP 앞섬/과속 방지)
+    double a_cx=60*(in.com_x_ref-in.com[0])+50*(in.com_vx_ref-Jcqv[0]);   // 속도항↑(과속 제동)
+    P.topLeftCorner(nv,nv)+=140.0*(in.Jc.row(0).transpose()*in.Jc.row(0));
+    g.head(nv)-=140.0*a_cx*in.Jc.row(0).transpose();
+  }
   // posture
   auto is_ankle=[&](int j){ for(int a:in.ankle_idx) if(a==j) return true; return false; };
   auto is_sw=[&](int vi){ for(int v:sw_vidx) if(v==vi) return true; return false; };

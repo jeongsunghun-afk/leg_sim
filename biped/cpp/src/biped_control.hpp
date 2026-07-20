@@ -20,6 +20,10 @@ struct BipedControl {
   double T_STEP=0.24, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
   double SW_KP=800, SW_KD=60, K_RETURN=0.45, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
   double SS_NOMINAL=0.16, SS_MIN=0.10, SS_MAX=0.45, TRIG_Y=0.03, GVEC=9.81;
+  double FLAT_KCAP=0.3;               // ★평발 전후 capture 게인(발목ZMP가 주 균형, 약한 보조)
+  double FLAT_WANK=150;               // ★평발 보행 발목 flat 고정 가중(밑창 유지)
+  double FLAT_WLAM=2;                 // ★평발 보행 MPC GRF 추종 가중(↓=WBIC 높이/CoM task 지배)
+  double czwalk=0;                    // ★평발 보행 CoM 높이(0=reset값). 튜닝용
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
@@ -42,6 +46,10 @@ struct BipedControl {
     sph2[0]=mj_name2id(m,mjOBJ_GEOM,"HL_sphere2"); sph2[1]=mj_name2id(m,mjOBJ_GEOM,"HR_sphere2");
     has_heel=(sph2[0]>=0 && sph2[1]>=0);        // ★heel 구 보유=통합모델. 기본 평발(2점) 정적 rest.
     cmode = has_heel ? 1 : 0;
+    if(getenv("FLAT_KCAP")) FLAT_KCAP=atof(getenv("FLAT_KCAP"));   // 튜닝용 env
+    if(getenv("FLAT_STEPH")) STEP_H=atof(getenv("FLAT_STEPH"));
+    if(getenv("FLAT_WLAM")) FLAT_WLAM=atof(getenv("FLAT_WLAM"));
+    if(getenv("FLAT_CZ")) czwalk=atof(getenv("FLAT_CZ"));
     lam.setZero(); setup_gearbox();
   }
   void setup_gearbox(){ for(int j=0;j<nu;j++){ double N=GEAR[j%4]; int dof=6+j;
@@ -199,6 +207,14 @@ struct BipedControl {
     auto to_w=[&](Vector2d v){ return Vector2d(cy*v[0]-sy*v[1], sy*v[0]+cy*v[1]); };
     Vector2d v_b=to_b(vcom_w), err_b=to_b(c.head(2)-com0), off=nominal_off[sw];
     double lat=(off[1]>0)?1.0:-1.0;
+    if(cmode==1 && has_heel){          // ★평발: 전후=stance 발 앞 고정진행(밑창 발목ZMP가 균형)·측방=capture(밑창 좁음)
+      Vector2d st_b=to_b(foot_center(1-sw).head(2)-c.head(2));
+      double rel_fwd = st_b[0] + 2.0*vx_cmd*SS_NOMINAL + FLAT_KCAP*v_b[0]/w;   // 진행 + 약한 전후 capture
+      double rel_lat_cap = SPREAD*off[1] + K_LAT*(v_b[1]/w);
+      double gap=std::min(std::max(lat*(rel_lat_cap-st_b[1]),GAP_MIN),GAP_MAX);
+      double rel_lat = st_b[1]+lat*gap;
+      return c.head(2)+to_w(Vector2d(rel_fwd,rel_lat));
+    }
     double rel_fwd=off[0]+K_CAP*v_b[0]/w+K_RETURN*err_b[0];
     rel_fwd=std::min(std::max(rel_fwd,off[0]-CAP_CLAMP),off[0]+CAP_CLAMP);
     double rel_lat=SPREAD*off[1]+K_LAT*(v_b[1]/w)+K_RET_LAT*err_b[1];
@@ -271,8 +287,12 @@ struct BipedControl {
     }
     in.Qhome=Map<const VectorXd>(Qcur(),nu); in.tau_peak=Map<VectorXd>(tau_peak8,nu);   // ★모드별 자세(평발=Qflat)
     in.ankle_idx={ankle_idx[0],ankle_idx[1]};
-    in.SW_KP=SW_KP; in.SW_KD=SW_KD; in.W_ORI=W_ORI; in.W_ANKLE=W_ANKLE; in.W_POST=W_POST;
-    in.W_LAM=W_LAM; in.STANCE_KD=STANCE_KD; in.MU_EFF=MU_EFF; in.LAMZ_MIN=LAMZ_MIN;
+    if(cmode==1&&has_heel){       // ★평발 보행: 전후 CoM을 전진 레퍼런스(com0)에 규제 → 발목ZMP로 전진, CoP 앞섬 방지
+      in.com_x_track=true; in.com_x_ref=com0[0]; in.com_vx_ref=std::cos(base_yaw())*vx_cmd;
+    }
+    double wank=(cmode==1&&has_heel)?FLAT_WANK:W_ANKLE;   // ★평발=발목 강하게 flat 고정(밑창 유지, 안하면 발목 서서 토플)
+    in.SW_KP=SW_KP; in.SW_KD=SW_KD; in.W_ORI=W_ORI; in.W_ANKLE=wank; in.W_POST=W_POST;
+    in.W_LAM=(cmode==1&&has_heel)?FLAT_WLAM:W_LAM; in.STANCE_KD=STANCE_KD; in.MU_EFF=MU_EFF; in.LAMZ_MIN=LAMZ_MIN;   // 평발=MPC추종↓, WBIC task 지배
     VectorXd tau=wbic_track(in); for(int i=0;i<nu;i++) d->ctrl[i]=tau[i];
   }
 
@@ -300,6 +320,7 @@ struct BipedControl {
           have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true; }
         return;
       }
+      if(czwalk>0) com_ref_z=czwalk;               // 평발 보행 CoM 높이(튜닝)
     }
     if(std::abs(wz_cmd)>0.02){                    // ★선회: 명령 적분 + 리드 클램프(폭주방지)
       yaw_des+=wz_cmd*dt;

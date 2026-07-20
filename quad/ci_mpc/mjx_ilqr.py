@@ -290,6 +290,7 @@ def _mpc_run():
     ITERS = int(os.environ.get("ILQR_ITERS", "3"))
     NCYC = int(os.environ.get("NCYC", "20"))
     STEP_H = float(os.environ.get("STEP_H", "0.07"))
+    GAIT = os.environ.get("GAIT", "trot")            # trot(2-foot) | crawl(3-foot static)
     TERRAIN = DISABLE_FLOOR                          # terrain-aware footholds on gap course
     mm, mx = build_mjx(); dyn = MjxDynamics(mm, mx)
     br = MjPinBridge()
@@ -312,8 +313,17 @@ def _mpc_run():
     q_stand = standing_ik(br, 0.42, foot_z=FOOT_R)
     foot0 = br.foot_positions(q_stand)
     FOFF = {L: (foot0[L][:2] - q_stand[:2]) for L in FEET}   # body-frame hip offset
-    T_stance = 0.5 * NCYC * DT; half = 0.5 * VX * T_stance
-    pair = {'FR': (0, 0.5), 'HL': (0, 0.5), 'FL': (0.5, 1.0), 'HR': (0.5, 1.0)}
+    # gait swing windows (phase fraction each foot is airborne). TROT = diagonal pairs
+    # (2-foot support, dynamic). CRAWL/wave = one foot at a time (3-foot support, static)
+    # — the CoM stays inside the support triangle, which is what a careful gap crossing
+    # needs (trot tips forward once the CoM passes over the void).
+    if GAIT == "crawl":
+        pair = {'HL': (0.0, 0.25), 'FL': (0.25, 0.5), 'HR': (0.5, 0.75), 'FR': (0.75, 1.0)}
+        duty = 0.25
+    else:
+        pair = {'FR': (0, 0.5), 'HL': (0, 0.5), 'FL': (0.5, 1.0), 'HR': (0.5, 1.0)}
+        duty = 0.5
+    T_stance = (1.0 - duty) * NCYC * DT; half = 0.5 * VX * T_stance
     _grp2 = np.array([0, 0, 1, 0, 0, 0], dtype=np.uint8)
     qd = ([0, 8, 120] + [0, 120, 120, 120] + [40.0]*17
           + [20, 10, 5] + [5, 5, 8] + [0.05]*17)

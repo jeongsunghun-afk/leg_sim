@@ -204,9 +204,24 @@ def _stand_test():
     us = np.tile(u_settle, (N, 1))       # warm-start = the settle's stance-holding control
     print(f"iLQR standing regulation (settle warm-start |u|={np.linalg.norm(u_settle):.1f}):")
     xs, us, K = ilqr(dyn, x0, us, cost, iters=20)
-    print(f"final base z = {xs[-1][2]:.3f} (target 0.42), |K0|={np.linalg.norm(K[0]):.1f}")
-    zs = [x[2] for x in xs]
-    print("base z along horizon:", np.round(zs, 3))
+    print(f"final base z = {xs[-1][2]:.3f} (target {x_ref[2]:.3f}), |K0|={np.linalg.norm(K[0]):.1f}")
+    print("base z along horizon:", np.round([x[2] for x in xs], 3))
+
+    # ---- closed-loop feedback test: apply u0 + K0·(x_meas - xs0) in MuJoCo ----
+    # validates that the iLQR feedback gain actually STABILISES standing over time.
+    md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
+    u0 = us[0].copy(); K0 = K[0].copy(); xs0 = xs[0].copy()
+    print("closed-loop feedback (u0 + K0·dx):")
+    for step in range(1000):
+        x_meas = np.concatenate([md.qpos, md.qvel])
+        u = u0 + K0 @ (x_meas - xs0)
+        md.ctrl[:] = np.clip(u, -200, 200)
+        mujoco.mj_step(mm, md)
+        if step % 200 == 0 or step == 999:
+            print(f"  step{step:4d} base z={md.qpos[2]:.3f} tilt_qxy={np.linalg.norm(md.qpos[4:6]):.3f} "
+                  f"jv={np.linalg.norm(md.qvel[6:]):.2f}")
+        if md.qpos[2] < 0.18:
+            print(f"  FELL at step {step}"); break
 
 
 def _selftest():

@@ -1,0 +1,266 @@
+<title>biped MPC+WBIC — 2족 보행 컨트롤러</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#1a2230; --soft:#5a6675; --line:#dde3ea;
+    --accent:#0e7c86; --accent-soft:#e2f1f2; --good:#1f8a4c; --warn:#b5701a; --bad:#b23a3a;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0e1319;--panel:#161d26;--ink:#e6ecf3;--soft:#93a1b2;--line:#26313d;
+      --accent:#3fb6c2;--accent-soft:#12313480;--good:#4cc47e;--warn:#d99a4e;--bad:#e07373;}
+  }
+  :root[data-theme="dark"]{--bg:#0e1319;--panel:#161d26;--ink:#e6ecf3;--soft:#93a1b2;--line:#26313d;
+    --accent:#3fb6c2;--accent-soft:#12313480;--good:#4cc47e;--warn:#d99a4e;--bad:#e07373;}
+  :root[data-theme="light"]{--bg:#f4f6f8;--panel:#ffffff;--ink:#1a2230;--soft:#5a6675;--line:#dde3ea;
+    --accent:#0e7c86;--accent-soft:#e2f1f2;--good:#1f8a4c;--warn:#b5701a;--bad:#b23a3a;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    font-size:16px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px}
+  header.top{padding:52px 0 30px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 12px}
+  h1{font-size:clamp(30px,5vw,44px);line-height:1.1;margin:0 0 14px;letter-spacing:-.02em;text-wrap:balance}
+  .lede{font-size:18px;color:var(--soft);max-width:62ch;margin:0}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .chip{font-family:var(--mono);font-size:12px;padding:4px 10px;border:1px solid var(--line);
+    border-radius:100px;color:var(--soft);background:var(--panel)}
+  section{padding:38px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:23px;letter-spacing:-.01em;margin:0 0 6px;display:flex;align-items:baseline;gap:12px}
+  h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent)}
+  h2 + .sub{color:var(--soft);margin:0 0 22px;font-size:15px}
+  h3{font-size:16px;margin:24px 0 8px}
+  p{margin:0 0 14px}
+  strong{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--accent);
+    padding:1px 6px;border-radius:5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .card h3{margin-top:0}
+  .card.point{border-top:3px solid var(--warn)}
+  .card.flat{border-top:3px solid var(--accent)}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:5px;
+    font-weight:600;letter-spacing:.02em}
+  .t-ok{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+  .t-wip{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+  .t-no{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:520px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);
+    background:var(--panel);font-weight:600}
+  tr:last-child td{border-bottom:none}
+  td.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .timeline{position:relative;margin:0;padding:0 0 0 26px;list-style:none}
+  .timeline::before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .timeline li{position:relative;margin-bottom:20px}
+  .timeline li::before{content:"";position:absolute;left:-26px;top:6px;width:11px;height:11px;
+    border-radius:50%;background:var(--bg);border:2.5px solid var(--accent)}
+  .timeline li.done::before{background:var(--accent)}
+  .timeline .h{font-weight:600;font-size:15px}
+  .timeline .d{color:var(--soft);font-size:14px}
+  .key{background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
+    border-radius:12px;padding:16px 20px;margin:16px 0}
+  .key .lab{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:6px}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.5;margin:0 0 14px}
+  ul.plain{margin:0 0 14px;padding-left:20px}
+  ul.plain li{margin-bottom:6px}
+  footer{padding:34px 0 60px;color:var(--soft);font-size:13px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--soft);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <p class="eyebrow">simulation / biped · MPC + WBIC</p>
+  <h1>2족 보행 컨트롤러</h1>
+  <p class="lede">quad 17-DOF 뒷다리 2개를 추출해 만든 8-DOF 2족 로봇. 성숙한 Convex-SRBD MPC + 전신 WBIC 스택을
+    이식하고, <strong>점발(동적 보행)</strong>과 <strong>평발(정적 서기)</strong>을 같은 모델·같은 제어기에서 전환한다.</p>
+  <div class="meta">
+    <span class="chip">nv=14 · nu=8 · freejoint</span>
+    <span class="chip">MPC 50Hz · WBIC 500Hz</span>
+    <span class="chip">C++ (eiquadprog) 배포</span>
+    <span class="chip">통합모델 biped_flatfoot.mjcf</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="n">01</span> 무엇인가</h2>
+  <p class="sub">모델·알고리즘·통합 구조 한눈에</p>
+  <p><strong>모델</strong> — <code>quad_real_17dof</code>의 HL/HR 뒷다리만 추출(관절 이름 동일 → C++ 컨트롤러 발참조 그대로
+    재사용) + 재설계한 최소 몸통(freejoint base, CoM을 고관절 위 정렬). 발 끝에 <strong>toe 접촉구</strong>, 발목 관절 쪽에
+    <strong>heel 접촉구</strong>를 두어 한 모델로 두 접촉 형태를 지원한다.</p>
+  <p><strong>제어</strong> — Di Carlo(2018) Convex SRBD MPC가 지면반력(GRF)을 계획하고, 전신 단일 QP인 WBIC가 이를
+    추종하며 CoM·자세·스윙·접촉 제약을 동시에 만족시킨다. 배포는 C++(<code>biped_control.hpp</code>, eiquadprog).</p>
+  <div class="key">
+    <div class="lab">핵심 아이디어</div>
+    발목을 <strong>세우면</strong> toe만 닿아 <strong>점발</strong>(죽마형, 동적 보행), <strong>눕히면</strong> heel+toe
+    밑창이 닿아 <strong>평발</strong>(정적 서기 가능). 적응형 접촉 감지가 "실제 닿은 구"만 골라 쓰므로,
+    접촉 모드는 <strong>모델 교체 없이 런타임 자세</strong>로 결정된다.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">02</span> 두 접촉 모드</h2>
+  <p class="sub">점발과 평발은 물리적으로 상보적이다</p>
+  <div class="grid2">
+    <div class="card point">
+      <h3>1점 · 점발 <span class="tag t-ok">보행 OK</span></h3>
+      <p>발목을 세워 발끝 하나로 지지. 발목 토크의 모멘트 팔이 0이라 <strong>정적 균형이 원리적으로 불가</strong> →
+        항상 stepping(event-DCM capture-point)으로 동적 균형.</p>
+      <ul class="plain">
+        <li>전진·후진 보행 <strong>0.15 m/s</strong>, falls=0</li>
+        <li>정적 서기 불가(항상 스텝)</li>
+        <li>단일 접촉 → WBIC quadprog 경로</li>
+      </ul>
+    </div>
+    <div class="card flat">
+      <h3>2점 · 평발 <span class="tag t-ok">정적 OK</span> <span class="tag t-wip">보행 WIP</span></h3>
+      <p>발목을 눕혀 heel+toe 16cm 밑창으로 지지. 밑창이 <strong>발목 ZMP</strong>를 제공해 전후(pitch) 균형이 가능 →
+        <strong>정적 양발 지지</strong>가 성립.</p>
+      <ul class="plain">
+        <li>정적 서기 <strong>tilt 0.3°</strong>, 무한·무표류</li>
+        <li>동적 보행은 개발 중(아래 §05)</li>
+        <li>다중 접촉(rank-deficient) → proxqp/정칙화</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:16px"><strong>왜 상보적인가</strong> — 점발은 발목 토크 모멘트=0이라 서지 못하고 걷는다. 평발은 밑창이
+    pitch를 지지해 서지만, 걸으려면 발목 push-off·heel-toe 롤이 있는 ZMP 보행 게이트가 필요하다. 그래서 현재는
+    <strong>"서려면 2점, 걸으려면 1점"</strong>으로 쓰고, GUI로 전환한다.</p>
+</section>
+
+<section>
+  <h2><span class="n">03</span> 상태 대시보드</h2>
+  <p class="sub">C++ 배포 경로(run_gui_cpp) 기준 · biped_sim 검증</p>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>기능</th><th>상태</th><th class="num">지표</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr><td>1점 점발 전진 보행</td><td><span class="tag t-ok">OK</span></td><td class="mono">0.15 m/s · falls 0</td><td>배포 경로 검증</td></tr>
+      <tr><td>2점 평발 정적 서기</td><td><span class="tag t-ok">OK</span></td><td class="mono">tilt 0.3° · 표류 0</td><td>무한 서기</td></tr>
+      <tr><td>1점 ↔ 2점 런타임 전환</td><td><span class="tag t-ok">OK</span></td><td class="mono">양방향 falls 0</td><td>목표자세 재정착</td></tr>
+      <tr><td>추정 폐루프(EST_CTRL)</td><td><span class="tag t-ok">OK</span></td><td class="mono">양 모드 falls 0</td><td>leg-odom + 접촉높이</td></tr>
+      <tr><td>2점 평발 동적 보행</td><td><span class="tag t-wip">WIP</span></td><td class="mono">전진 ~1.8s</td><td>과속·CoM_z 상승 튜닝 중</td></tr>
+      <tr><td>매끄러운 앉기/서기 전환</td><td><span class="tag t-no">미착수</span></td><td class="mono">—</td><td>trajopt 필요</td></tr>
+      <tr><td>선회 · 측방</td><td><span class="tag t-wip">약함</span></td><td class="mono">gentle만</td><td>점발 yaw권한 한계 → RL</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--good)"></span>작동·검증</span>
+    <span><span class="dot" style="background:var(--warn)"></span>개발 중</span>
+    <span><span class="dot" style="background:var(--bad)"></span>미착수</span>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span> 개발 여정</h2>
+  <p class="sub">점발 동적 균형에서 평발 통합 아키텍처까지</p>
+  <ul class="timeline">
+    <li class="done"><div class="h">B1 · 점발 정적균형 불가 규명</div>
+      <div class="d">점 접촉은 지지점 둘레 모멘트=0 → lean 제어 불가, 대칭 스탠스서 앞으로 토플. "정적 양발"이 애초에 불가능한 목표였음.</div></li>
+    <li class="done"><div class="h">B2–B3 · 동적 스텝핑 + MPC 통합</div>
+      <div class="d">capture-point(ξ=x+v/ω) 제자리 스텝 + Di Carlo SRBD MPC가 수평 균형 GRF 공급. GEARBOX(반사관성) 누락이 초기 발산의 근본원인이었음.</div></li>
+    <li class="done"><div class="h">event-DCM 게이트 돌파 → 전진 보행</div>
+      <div class="d">스텝 착지를 측방 DCM crossing에 동기 → 제자리 균형 0.7→7.9s, 이후 전진 보행 20+s 무낙상. base-frame 발배치로 다리꼬임 해소.</div></li>
+    <li class="done"><div class="h">배포 경로 · 추정 · 지연보상 (C++)</div>
+      <div class="d">leg-odometry + 접촉높이 z추정으로 폐루프 성립(killer는 z추정이었음), 모델-롤아웃 지연보상. state_estimator.hpp · deploy_loop.hpp.</div></li>
+    <li class="done"><div class="h">평발 2점 + 통합 1점/2점 전환</div>
+      <div class="d">발링크 양끝 heel+toe 밑창으로 정적 양발지지 달성(점발 B2 해결). 통합모델·런타임 contact_mode. C++ 이식 완료.</div></li>
+    <li><div class="h">평발 동적 보행 (진행 중)</div>
+      <div class="d">전후 CoM 규제·발목 flat 고정으로 뒤로 표류 → 전진 전환 달성. 과속·CoM 상승 안정화 튜닝 중.</div></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">05</span> 평발 보행 — 진행과 난관</h2>
+  <p class="sub">점발 게이트를 평발에 그대로 쓰면 안 되는 이유</p>
+  <p>평발은 전후와 측방이 <strong>다르다</strong>. 밑창이 앞뒤 16cm라 <strong>발목 ZMP로 전후 균형이 가능</strong>하지만,
+    좌우로는 좁아(~2cm) <strong>측방은 스텝으로만</strong> 잡아야 한다. 그래서 게이트를 분리했다.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>해결한 근본 원인</h3>
+      <ul class="plain">
+        <li><strong>발목이 flat서 0으로 서던 문제</strong> → 강고정(FLAT_WANK)으로 밑창 유지</li>
+        <li><strong>전후 CoM 규제 부재</strong> → CoP가 CoM 앞에 놓여 뒤로 넘어감 → CoM-x 추종 task 추가</li>
+        <li><strong>MPC·WBIC 높이 충돌</strong> → 평발서 MPC 추종 약화(FLAT_WLAM)로 WBIC task 지배</li>
+      </ul>
+      <p style="margin:8px 0 0;color:var(--soft);font-size:14px">결과: 뒤로 표류(x −0.5) → <strong>전진(x +0.8)</strong>.</p>
+    </div>
+    <div class="card">
+      <h3>남은 난관</h3>
+      <ul class="plain">
+        <li><strong>과속</strong> — 명령과 무관하게 ~0.5 m/s로 달림(발목 CoP 속도 규제 부족)</li>
+        <li><strong>CoM_z 상승</strong> — 0.36 → 0.41로 떠올라 ~1.8s 토플</li>
+        <li>제대로 하려면 <strong>ZMP 프리뷰 기반 CoM 궤적 생성</strong>(Kajita) 급의 서브시스템 필요</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">06</span> 기억해둘 기술적 발견</h2>
+  <p class="sub">디버깅에서 나온 값진 교훈들</p>
+  <div class="key">
+    <div class="lab">Python vs C++ parity</div>
+    Python 점발 보행은 <strong>모든 mujoco 버전(3.3.6~3.9)·모든 커밋</strong>에서 0.1s에 발산하지만,
+    <strong>C++ 컨트롤러는 정상 작동</strong>한다. 배포·검증은 C++가 기준(run_gui_cpp). 같은 알고리즘의 포팅 불일치.
+  </div>
+  <div class="key">
+    <div class="lab">rank-deficient 접촉</div>
+    heel+toe가 같은 강체 발에 있어 no-slip 등식이 rank 결손 → eiquadprog 간헐 실패 → 미세 표류 누적 낙상.
+    <strong>정칙화 강화(λ블록 1e-2 · P 1e-6)</strong>로 실패 0.1%↓, Python의 proxqp 역할을 대체.
+  </div>
+  <div class="key">
+    <div class="lab">발 메시 충돌</div>
+    발을 눕히자 <strong>collidable 메시가 지면에 파고들어</strong> 발산 → 접촉은 구(sphere)로만, 시각 메시는 충돌 off.
+  </div>
+  <div class="key">
+    <div class="lab">폐루프의 killer는 z추정</div>
+    leg-odometry 위치 적분에서 xy는 수 m 표류해도 무해하지만 <strong>z 표류가 WBIC 높이 task를 즉시 붕괴</strong>시킨다.
+    z를 적분 대신 <strong>접촉으로 직접 측정</strong>(base_z = −p_foot_z)하면 드리프트 없이 폐루프 성립.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">07</span> 실행</h2>
+  <p class="sub">자기 터미널에서 (뷰어는 디스플레이 연결 필요)</p>
+  <pre>cd simulation/biped
+./run_gui_cpp.sh          # C++ 컨트롤러 + Python GUI (배포 경로)
+                          # 시작 = 2점 평발 정적 rest
+                          # GUI "1점 점발" / "2점 평발" 버튼으로 전환
+                          # 1점에서 Walk 로 보행
+
+# 헤드리스 검증
+./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.15 12     # 기본(2점 정적)
+CONTACT=0 ./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.15 12   # 1점 보행
+FLAT_WALK=1 ./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.10 12 # 평발 보행(실험)</pre>
+  <p style="color:var(--soft);font-size:14px">튜닝 env: <code>FLAT_KCAP</code> · <code>FLAT_WANK</code> ·
+    <code>FLAT_WLAM</code> · <code>FLAT_STEPH</code> · <code>FLAT_CZ</code> · <code>WALK_DBG</code>.</p>
+</section>
+
+<section>
+  <h2><span class="n">08</span> 로드맵</h2>
+  <p class="sub">다음 단계</p>
+  <ul class="plain">
+    <li><strong>평발 ZMP 보행 완성</strong> — 과속·높이 안정화, 필요 시 CoM 궤적 생성(프리뷰 제어) 도입.</li>
+    <li><strong>매끄러운 앉기/서기 전환</strong> — 현재 재정착(스냅). 발끝 기립·평발 하강은 정적 불가 구간이라 offline
+      trajectory optimization(getup/점프 계보)로 동적 기동 설계.</li>
+    <li><strong>선회·측방·외란 강건성</strong> — 점발 yaw 권한 한계 → RL(ref_lib 핸드오프 준비됨). MPC는 모델기반 유지.</li>
+    <li><strong>실 HW 배포</strong> — HardwareInterface 4메서드(모터버스·IMU) 구현, 컨트롤러·게인·GUI 불변.</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="wrap" style="padding:0">
+    biped MPC+WBIC · simulation/biped · C++ 배포 경로 기준<br>
+    관련 문서: <code>docs/README.md</code> · <code>docs/RUN.md</code> · MPC/RL 하이브리드 전략 리포트
+  </div>
+</footer>
+</div>

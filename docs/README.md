@@ -14,6 +14,7 @@
 | **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·후보3안(§15)·모델구조·입출력·비용·샘플링 CI(MJX/GPU) 파이프라인·진행(연구, `quad/ci_mpc/`) | 아티팩트 |
 | **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
+| **[biped.html](biped.html)** | **biped** — 2족 MPC+WBIC. 점발(동적보행)/평발(정적서기) 접촉모드·통합 1점/2점 전환·상태·개발여정·평발보행 진행(C++ 배포) | 아티팩트 |
 | [RECORDING.md](RECORDING.md) | 화면 녹화 가이드(NVENC/OBS) | md |
 | [DEVLOG.md](DEVLOG.md) | 개발일지 + 참조 메모(연대기) | md |
 

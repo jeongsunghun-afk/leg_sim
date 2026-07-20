@@ -131,10 +131,21 @@ def set_mode(mode):
         pub.set(mode='reset', v=0.0, vy=0.0, w=0.0)
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
         return
-    pub.set(mode=mode)
-    if mode != 'walk':
-        left.clear(); right.clear(); pub.set(v=0.0, vy=0.0, w=0.0)
+    if mode == 'walk':          # ★걸으려면 1점 점발로 자동 전환(평발=발목토크0라 걷기 부적합)
+        pub.set(contact='1pt', body_h=H_DEF_1PT, mode='walk')
+        dpg.set_value('h_sl', H_DEF_1PT)
+        dpg.set_value('contact_lbl', '접촉: 1점 점발(동적 보행) — Walk가 자동 전환')
+        return
+    if mode == 'stand':         # ★서려면 2점 평발로 자동 전환(밑창ZMP=안정 서기)
+        left.clear(); right.clear()
+        pub.set(contact='2pt', body_h=H_DEF_2PT, mode='stand', v=0.0, vy=0.0, w=0.0)
+        dpg.set_value('h_sl', H_DEF_2PT)
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
+        dpg.set_value('contact_lbl', '접촉: 2점 평발(정적 서기) — Stand가 자동 전환')
+        return
+    pub.set(mode=mode)          # off 등
+    left.clear(); right.clear(); pub.set(v=0.0, vy=0.0, w=0.0)
+    dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
 
 
 left  = JoyPad('joyL', 190, on_left, cross_only=True)   # ★십자만(전후 XOR 측방, 대각 금지)

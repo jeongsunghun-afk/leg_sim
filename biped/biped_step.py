@@ -19,7 +19,7 @@ from biped_wbic import (STANCE_KD, W_ORI, W_POST, W_ANKLE, MU, MU_MARGIN,
 #   빠른 스텝(진자 시상수 0.23s 이하)이 안전. 안전게이트(0.40/0.55) 시도=0.83s로 악화 확인.
 T_STEP  = 0.24          # 빠른 스텝(진자 시상수 0.23s 이하) = 최적
 DS_FRAC = 0.10          # 짧은 더블서포트
-STEP_H  = 0.05          # 스윙 발 들림
+STEP_H  = 0.06          # 스윙 발 들림 (★강건성 스윕: 0.05→0.06=발스침 여유. base0.50과 조합서 yaw 안정)
 K_CAP   = 1.0           # capture 이론값
 CAP_CLAMP = 0.22        # capture가 앞으로 뻗어 낙하 잡도록 완화
 SW_KP, SW_KD = 800.0, 60.0    # 스윙 추종(biped 무거운 다리용 완화, quad 2400/110)

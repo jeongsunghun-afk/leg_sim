@@ -13,7 +13,7 @@ STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
 VMAX   = 0.15         # 전진 상한[m/s] (★안전 하향 0.2→0.15=로버스트 범위. 0.20은 marginal)
 VY_MAX = 0.10         # 좌우 상한[m/s] (★body-frame 게이트 수정 후 vy 0.12까지 안정→0.10 캡. 십자라 순수 측방)
 WZ_MAX = 0.30         # 선회 상한[rad/s] (★제자리 0.4·주행중 0.3 안정(body-frame 수정 후). turn rate head_lead로 ~2.5°/s 포화)
-H_MIN, H_MAX, H_DEF = 0.44, 0.52, 0.483
+H_MIN, H_MAX, H_DEF = 0.44, 0.52, 0.50
 
 
 class Pub:

@@ -14,7 +14,7 @@ struct BipedControl {
   int nv, nu, NF=2;
   int sph[2], fbody[2];               // 발 sphere geom·contact body
   // ── 파라미터 (Python 동일) ──
-  double T_STEP=0.24, DS_FRAC=0.10, STEP_H=0.05, K_CAP=1.0, CAP_CLAMP=0.22;
+  double T_STEP=0.24, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
   double SW_KP=800, SW_KD=60, K_RETURN=0.45, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
   double SS_NOMINAL=0.16, SS_MIN=0.10, SS_MAX=0.45, TRIG_Y=0.03, GVEC=9.81;
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
@@ -174,9 +174,7 @@ struct BipedControl {
       yaw_des+=wz_cmd*dt;
       double lag=std::atan2(std::sin(yaw_des-ya),std::cos(yaw_des-ya));
       yaw_des=ya+std::min(std::max(lag,-head_lead),head_lead); yaw_hold_set=false;
-    } else if(std::abs(vy_cmd)>0.03){             // ★측방: heading-hold 간섭 회피=실제 추종
-      yaw_des=ya; yaw_hold_set=false;
-    } else {                                      // ★정지/전후진: heading latch(자유 yaw표류 방지, gentle=head_lead 제한)
+    } else {                                      // ★선회 외 전부(정지/전후진/측방): heading latch(base0.50서 측방도 안정)
       if(!yaw_hold_set){ yaw_hold=ya; yaw_hold_set=true; }
       double err=std::atan2(std::sin(yaw_hold-ya),std::cos(yaw_hold-ya));
       yaw_des=ya+std::min(std::max(err,-head_lead),head_lead);

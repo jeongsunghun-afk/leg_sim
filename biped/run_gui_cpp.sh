@@ -21,7 +21,7 @@ LATENV="SENSE_LAT_MS=${SENSE_LAT_MS:-0} ACT_LAT_MS=${ACT_LAT_MS:-0} LAT_COMP_MS=
 echo "모드: $MODEDESC"
 
 pkill -f biped_view 2>/dev/null; pkill -f teleop_gui_biped 2>/dev/null; sleep 1
-echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.483,"mode":"stand"}' > "$CMD"
+echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.50,"mode":"stand"}' > "$CMD"
 
 # ① C++ 뷰어 (컨트롤러+렌더+명령소비+상태발행)
 setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_from_quad.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &

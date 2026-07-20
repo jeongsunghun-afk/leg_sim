@@ -218,9 +218,8 @@ class BipedMPCWBIC(BS.BipedStep):
             lag = np.arctan2(np.sin(self.yaw_des - yaw_act), np.cos(self.yaw_des - yaw_act))
             self.yaw_des = yaw_act + np.clip(lag, -self.head_lead, self.head_lead)
             self.yaw_hold = None
-        elif abs(self.vy_cmd) > 0.03:                # ★측방 중: heading-hold 간섭 회피(측방 marginal)=실제 추종
-            self.yaw_des = yaw_act; self.yaw_hold = None
-        else:                                        # ★정지/전후진: heading latch, 복원오차 head_lead 제한(gentle=자유 yaw표류 방지)
+        else:                                        # ★선회 외 전부(정지/전후진/측방): heading latch, 복원오차 head_lead 제한(base0.50서 측방도 안정)
+
             if self.yaw_hold is None: self.yaw_hold = yaw_act
             err = np.arctan2(np.sin(self.yaw_hold - yaw_act), np.cos(self.yaw_hold - yaw_act))
             self.yaw_des = yaw_act + np.clip(err, -self.head_lead, self.head_lead)

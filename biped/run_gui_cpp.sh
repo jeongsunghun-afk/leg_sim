@@ -18,6 +18,9 @@ echo "빌드 확인 중…"
 # 모드: 기본=추정 폐루프(배포, 바이너리 기본 ON). GT=1 → GT 제어.
 if [ "${GT:-0}" = "1" ]; then EST="GT=1"; MODEDESC="GT 제어(디버그)"; else EST="EST_CTRL=1"; MODEDESC="추정 폐루프(배포: leg-odom+접촉높이+지연보상)"; fi
 LATENV="SENSE_LAT_MS=${SENSE_LAT_MS:-0} ACT_LAT_MS=${ACT_LAT_MS:-0} LAT_COMP_MS=${LAT_COMP_MS:-0} NOISE=${NOISE:-0}"
+# ★2점 평발 보행(실험 WIP): WALK2=1 반응형·WALK2=zmp event-DCM프리뷰(측방안정). 기본=2점 서기전용.
+W2ENV=""; case "${WALK2:-}" in 1) W2ENV="FLAT_WALK=1"; echo "★2점 보행=반응형(WIP·~2.5s 전진 후 리셋)";;
+  zmp) W2ENV="FLAT_WALK=1 ZMP_WALK=1"; echo "★2점 보행=ZMP프리뷰(측방안정·전후WIP)";; esac
 echo "모드: $MODEDESC"
 
 pkill -f biped_view 2>/dev/null; pkill -f teleop_gui_biped 2>/dev/null; sleep 1
@@ -25,7 +28,7 @@ pkill -f biped_view 2>/dev/null; pkill -f teleop_gui_biped 2>/dev/null; sleep 1
 echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.42,"mode":"stand","contact":"2pt"}' > "$CMD"
 
 # ① C++ 뷰어 (컨트롤러+렌더+명령소비+상태발행) — 통합모델 biped_flatfoot(heel+toe)
-setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_flatfoot.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $W2ENV $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_flatfoot.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (Python dearpygui)
 setsid bash -c "cd '$HERE/../quad'; QUAD_CMD='$CMD' DISPLAY='$DISPLAY' '$PY' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &

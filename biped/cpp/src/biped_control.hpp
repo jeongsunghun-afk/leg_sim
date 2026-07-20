@@ -25,7 +25,7 @@ struct BipedControl {
   int ankle_idx[2]={3,7};
   double GEAR[4]={7,7,10.5,8}, ROTOR_I=1e-4, JDAMP=0.1, JFRIC=0.5;
   // ── 상태 ──
-  double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0;
+  double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z;
   int stance=1, swing=0; double t_ss=0; long _k=0;
   Matrix<double,2,3> lam; bool have_liftoff[2]={false,false}; Vector3d liftoff[2];
@@ -72,7 +72,7 @@ struct BipedControl {
     Vector3d c=com(); com0=c.head(2);
     for(int l=0;l<2;l++) nominal_off[l]=spos(l).head(2)-c.head(2);
     com_ref_z=c[2];
-    stance=1; swing=0; t_ss=0; _k=0; yaw_des=0; have_liftoff[0]=have_liftoff[1]=false;
+    stance=1; swing=0; t_ss=0; _k=0; yaw_des=0; yaw_hold_set=false; have_liftoff[0]=have_liftoff[1]=false;
     for(int i=0;i<nv;i++) d->qvel[i]=0;
     compute_Icom();
   }
@@ -169,9 +169,18 @@ struct BipedControl {
   }
 
   void control(double dt){
-    yaw_des+=wz_cmd*dt;
-    double ya=base_yaw(); double lag=std::atan2(std::sin(yaw_des-ya),std::cos(yaw_des-ya));
-    yaw_des=ya+std::min(std::max(lag,-head_lead),head_lead);
+    double ya=base_yaw();
+    if(std::abs(wz_cmd)>0.02){                    // ★선회: 명령 적분 + 리드 클램프(폭주방지)
+      yaw_des+=wz_cmd*dt;
+      double lag=std::atan2(std::sin(yaw_des-ya),std::cos(yaw_des-ya));
+      yaw_des=ya+std::min(std::max(lag,-head_lead),head_lead); yaw_hold_set=false;
+    } else if(std::abs(vy_cmd)>0.03){             // ★측방: heading-hold 간섭 회피=실제 추종
+      yaw_des=ya; yaw_hold_set=false;
+    } else {                                      // ★정지/전후진: heading latch(자유 yaw표류 방지, gentle=head_lead 제한)
+      if(!yaw_hold_set){ yaw_hold=ya; yaw_hold_set=true; }
+      double err=std::atan2(std::sin(yaw_hold-ya),std::cos(yaw_hold-ya));
+      yaw_des=ya+std::min(std::max(err,-head_lead),head_lead);
+    }
     double cya=std::cos(ya),sya=std::sin(ya);   // ★복귀목표 이동=실제 base yaw 기준(base-relative)
     com0[0]+=(cya*vx_cmd-sya*vy_cmd)*dt; com0[1]+=(sya*vx_cmd+cya*vy_cmd)*dt;
     int st,sw; double s; step_gait(dt,st,sw,s);

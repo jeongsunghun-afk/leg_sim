@@ -40,6 +40,7 @@ class BipedMPCWBIC(BS.BipedStep):
         self.vy_cmd = float(os.environ.get('VY', '0.0'))   # ★좌우 명령[m/s] (body +y=좌)
         self.wz_cmd = float(os.environ.get('WZ', '0.0'))   # ★선회 명령[rad/s] (+=좌회전)
         self.yaw_des = 0.0                                  # heading 목표(wz로 갱신)
+        self.yaw_hold = None                                # ★정지/직진 heading latch(자유 yaw 표류 방지, 17-DOF 방식)
         self.head_lead = 0.15                               # ★헤딩 lead clamp[rad](발이 실제보다 앞서는 최대)
 
     # ── MPC 셋업 ──
@@ -210,11 +211,19 @@ class BipedMPCWBIC(BS.BipedStep):
         d.ctrl[:]=np.clip(tau,-TAU_PEAK,TAU_PEAK); return True
 
     def control(self, dt):
-        self.yaw_des += self.wz_cmd * dt            # ★선회: heading 목표 회전
         qc = self.d.qpos[3:7]                        # 실제 yaw
         yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
-        lag = np.arctan2(np.sin(self.yaw_des - yaw_act), np.cos(self.yaw_des - yaw_act))
-        self.yaw_des = yaw_act + np.clip(lag, -self.head_lead, self.head_lead)   # ★폭주방지: 실제서 ±lead 이내
+        if abs(self.wz_cmd) > 0.02:                  # ★선회 중: 명령 적분 + 리드 클램프(폭주방지)
+            self.yaw_des += self.wz_cmd * dt
+            lag = np.arctan2(np.sin(self.yaw_des - yaw_act), np.cos(self.yaw_des - yaw_act))
+            self.yaw_des = yaw_act + np.clip(lag, -self.head_lead, self.head_lead)
+            self.yaw_hold = None
+        elif abs(self.vy_cmd) > 0.03:                # ★측방 중: heading-hold 간섭 회피(측방 marginal)=실제 추종
+            self.yaw_des = yaw_act; self.yaw_hold = None
+        else:                                        # ★정지/전후진: heading latch, 복원오차 head_lead 제한(gentle=자유 yaw표류 방지)
+            if self.yaw_hold is None: self.yaw_hold = yaw_act
+            err = np.arctan2(np.sin(self.yaw_hold - yaw_act), np.cos(self.yaw_hold - yaw_act))
+            self.yaw_des = yaw_act + np.clip(err, -self.head_lead, self.head_lead)
         cya, sya = np.cos(yaw_act), np.sin(yaw_act)   # ★속도명령=실제 base yaw 기준(base-relative)
         self.com0[0] += (cya * self.vx_cmd - sya * self.vy_cmd) * dt   # ★복귀목표를 body속도(vx전진·vy좌우)로 이동
         self.com0[1] += (sya * self.vx_cmd + cya * self.vy_cmd) * dt

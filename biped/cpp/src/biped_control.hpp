@@ -42,6 +42,9 @@ struct BipedControl {
   ZmpPreview pv; long zkk=-1; double zanchor_x=0, zaf_y[2]={0,0}, z_sx=0;   // 발 앵커·스텝전진
   double cxr=0,vxr=0,cyr=0,vyr=0; int prev_ctr=0;                          // preview CoM ref
   double T_SS_Z=0.30; int PREV_DECIM=5; bool in_zmp_walk=false;            // SS시간·preview 데시메이션
+  // ── 오프라인 1점/2점 전환(toe-pivot 굴림 궤적) ──
+  bool trans_on=false; double trans_t=0, T_TRANS=1.4; int trans_to=0;      // 전환중·타이머·목표모드
+  double q_from[8], q_to[8], q_live[8], cz_from=0, cz_to=0;                // 자세·높이 보간
   Matrix<double,2,3> lam; bool have_liftoff[2]={false,false}; Vector3d liftoff[2];
   Matrix3d I_body; double mass;
 
@@ -78,7 +81,7 @@ struct BipedControl {
     return std::atan2(2*(q[0]*q[3]+q[1]*q[2]),1-2*(q[2]*q[2]+q[3]*q[3])); }
 
   // ── 평발(2점) 헬퍼 ──
-  const double* Qcur(){ return (has_heel&&cmode==1)?Qflat8:Qhome8; }   // 모드별 자세 기준
+  const double* Qcur(){ if(trans_on) return q_live; return (has_heel&&cmode==1)?Qflat8:Qhome8; }   // 전환중=보간자세
   Vector3d gpos(int geom){ return Vector3d(d->geom_xpos[geom*3],d->geom_xpos[geom*3+1],d->geom_xpos[geom*3+2]); }
   Vector3d foot_center(int leg){ if(cmode==1&&has_heel) return 0.5*(gpos(sph[leg])+gpos(sph2[leg])); return gpos(sph[leg]); }
   MatrixXd foot_jac_at(int geom,int body){ std::vector<double> jp(3*nv);
@@ -157,7 +160,29 @@ struct BipedControl {
     } else { for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-tau_peak8[i],std::min(tau_peak8[i],h[6+i])); }  // 실패=중력보상 홀드
   }
 
-  void set_contact_mode(int cm){ if(!has_heel||cm==cmode) return; cmode=cm; reset(); }
+  void set_contact_mode(int cm){ if(!has_heel||cm==cmode) return; cmode=cm; reset(); }   // 초기용(스냅)
+
+  // ★런타임 부드러운 전환 시작(toe-pivot 굴림): 발목·다리·높이를 목표자세로 서서히 굴림
+  void transition_to(int cm){
+    if(!has_heel || cm==cmode || trans_on) return;
+    const double* qf=Qcur(); const double* qt=(cm==1)?Qflat8:Qhome8;
+    for(int j=0;j<8;j++){ q_from[j]=qf[j]; q_to[j]=qt[j]; q_live[j]=qf[j]; }
+    cz_from=com_ref_z; cz_to=(cm==1)?0.362:0.483;
+    trans_on=true; trans_t=0; trans_to=cm;
+  }
+  // 전환 궤적 재생(양발/toe 적응접촉 wbic_stance로 추종)
+  void do_transition(double dt){
+    double a=trans_t/T_TRANS; a=a<0?0:(a>1?1:a); a=a*a*(3-2*a);   // smoothstep
+    for(int j=0;j<8;j++) q_live[j]=q_from[j]*(1-a)+q_to[j]*a;
+    com_ref_z=cz_from*(1-a)+cz_to*a;
+    auto cpts=contact_pts({0,1}); Vector3d sc(0,0,0);             // 접지 구 중심(적응: 밑창→toe)
+    for(auto&cp:cpts) sc+=gpos(cp.first); if(cpts.size()) sc/=(double)cpts.size();
+    com_ref_xy<<sc[0],sc[1];
+    wbic_stance();
+    yaw_hold=base_yaw(); yaw_hold_set=true; yaw_des=base_yaw();
+    trans_t+=dt;
+    if(trans_t>=T_TRANS){ trans_on=false; cmode=trans_to; }        // 완료→목표모드 확정
+  }
 
   void compute_Icom(){ mj_forward(m,d); mass=m->body_subtreemass[0];
     Vector3d c=com(); I_body.setZero();
@@ -365,6 +390,7 @@ struct BipedControl {
 
   void control(double dt){
     double ya=base_yaw();
+    if(trans_on){ do_transition(dt); return; }   // ★1점/2점 전환 굴림 재생 중
     // ★2점 평발: 정지=정적 양발지지(밑창 ZMP). 이동명령=평발 동적 보행(아래 게이트, wbic 다접촉).
     if(has_heel && cmode==1){
       bool flat_walk_en = getenv("FLAT_WALK")!=nullptr;   // ★평발 동적보행=실험(WIP: 뒤로 표류, ZMP게이트 필요)

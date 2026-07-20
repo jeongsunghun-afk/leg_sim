@@ -38,8 +38,10 @@ int main(int argc,char**argv){
 
   bool do_switch=getenv("SWITCH")!=nullptr;    // ★중간 접촉모드 전환 검증(T/2에 토글)
   for(int i=0;i<steps;i++){
-    if(do_switch && i==steps/2){ c.set_contact_mode(c.cmode==1?0:1); c.vx_cmd=(c.cmode==0?vx:0.0);
-      if(est_ctrl) dl.reset(m,d); std::printf("  [T/2] 접촉모드 전환 → cmode=%d\n",c.cmode); }
+    if(do_switch && i==steps/2){ int nm=c.cmode==1?0:1;
+      if(getenv("TRANS")){ c.transition_to(nm); std::printf("  [T/2] 굴림 전환 시작 → 목표 cmode=%d\n",nm); }
+      else { c.set_contact_mode(nm); c.vx_cmd=(c.cmode==0?vx:0.0); if(est_ctrl) dl.reset(m,d);
+             std::printf("  [T/2] 스냅 전환 → cmode=%d\n",c.cmode); } }
     if(est_ctrl) dl.step(m,d,c,dt);      // 추정+지연+보상 → d->ctrl (물리 d 불변)
     else c.control(dt);
     if(getenv("WALK_DBG") && i%25==0){ double* q=&d->qpos[3];

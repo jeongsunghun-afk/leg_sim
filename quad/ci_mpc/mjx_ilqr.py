@@ -28,11 +28,19 @@ DT = float(os.environ.get("DT", "0.02"))          # iLQR control-node dt
 DT_SIM = float(os.environ.get("DT_SIM", "0.002"))  # stable MuJoCo sim step (contact needs small dt)
 
 
-def build_mjx(mjcf=MJCF, foot_r=FOOT_R):
-    mm = mujoco.MjModel.from_xml_path(mjcf)
+MJCF_PATH = os.environ.get("MJCF_PATH", MJCF)          # override to a terrain scene
+DISABLE_FLOOR = os.environ.get("DISABLE_FLOOR", "0") == "1"
+
+
+def build_mjx(mjcf=None, foot_r=FOOT_R):
+    mm = mujoco.MjModel.from_xml_path(mjcf or MJCF_PATH)
     apply_gearbox(mm)
     set_foot_sphere(mm, foot_r)
     strip_mesh_collision(mm)             # sphere feet + terrain only (fast MJX)
+    if DISABLE_FLOOR:                    # gaps between platforms become true voids
+        fg = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+        if fg >= 0:
+            mm.geom_contype[fg] = 0; mm.geom_conaffinity[fg] = 0
     mm.opt.timestep = DT_SIM             # ★ small sim step; contact is unstable at dt=0.02
     return mm, mjx.put_model(mm)
 

@@ -120,9 +120,9 @@ def set_contact(contact):
     pub.set(contact=contact, mode='stand', body_h=h, v=0.0, vy=0.0, w=0.0)
     dpg.set_value('h_sl', h)
     dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
-    dpg.set_value('contact_lbl', '접촉: ' + ('2점 평발(정적 양발지지·서기 안정)' if contact == '2pt'
-                  else '1점 점발(항상 stepping·단일지지 B2 미해결로 현 환경 불안정)')
-                  + '  · 전환=목표자세 재정착')
+    dpg.set_value('contact_lbl', '접촉: ' + ('2점 평발(정적 양발지지·서기)' if contact == '2pt'
+                  else '1점 점발(항상 stepping·동적 보행)')
+                  + '  · 전환=목표자세 재정착 (C++ 배포경로 run_gui_cpp)')
 
 
 def set_mode(mode):

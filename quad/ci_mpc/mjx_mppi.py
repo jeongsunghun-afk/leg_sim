@@ -33,6 +33,7 @@ DT = float(os.environ.get("DT", "0.02"))
 FOOT_R = float(os.environ.get("FOOT_R", "0.024"))
 STEP_H = float(os.environ.get("STEP_H", "0.07"))
 NCYC = int(os.environ.get("NCYC", "20"))
+PRIOR_GAIN = float(os.environ.get("PRIOR_GAIN", "1.3"))   # prior step over-drive (slippage comp)
 VIEW = os.environ.get("VIEW", "0") == "1"
 KP = float(os.environ.get("KP", "300"))     # stiff enough to hold stance (PD has no base-gravity FF)
 KD = float(os.environ.get("KD", "8"))
@@ -42,11 +43,20 @@ TAU_NP = np.array([84, 84, 126, 100.8] * 2 + [84.0] + [84, 84, 126, 100.8] * 2)
 WID = MJ_WAIST_JIDX
 
 
+MJCF_PATH = os.environ.get("MJCF_PATH", MJCF)         # override to a terrain scene
+DISABLE_FLOOR = os.environ.get("DISABLE_FLOOR", "0") == "1"   # gaps become real voids
+
+
 def build_model():
-    mm = mujoco.MjModel.from_xml_path(MJCF)
+    mm = mujoco.MjModel.from_xml_path(MJCF_PATH)
     apply_gearbox(mm)
     set_foot_sphere(mm, FOOT_R)
-    strip_mesh_collision(mm)             # only sphere feet + floor collide (fast MJX)
+    strip_mesh_collision(mm)             # only sphere feet + terrain collide (fast MJX)
+    if DISABLE_FLOOR:                    # so gaps between platforms are true voids
+        fg = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+        if fg >= 0:
+            mm.geom_contype[fg] = 0
+            mm.geom_conaffinity[fg] = 0
     return mm
 
 
@@ -54,23 +64,26 @@ def make_rollout(mx, sub):
     """Return jitted rollout_batch(qpos0, qvel0, qref_batch) -> costs[N]."""
     TAU = jnp.array(TAU_NP)
 
-    def step_cost(dx):
+    def step_cost(dx, y0):
         z = dx.qpos[2]
-        qx, qy = dx.qpos[4], dx.qpos[5]
+        qw, qx, qy, qz = dx.qpos[3], dx.qpos[4], dx.qpos[5], dx.qpos[6]
         tilt = 1.0 - 2.0 * (qx * qx + qy * qy)      # 1 = upright
+        pitch = 2.0 * (qw * qy - qz * qx)           # sin(pitch); <0 = nose-down (dive)
         vx, vy = dx.qvel[0], dx.qvel[1]
-        # No hard height TRACKING (it freezes the gait's natural bob). Reward forward
-        # tracking + stay upright + don't collapse; the robot picks its own height.
-        # vx weight ~30 is the stable sweet spot (walks forward, holds height); pushing
-        # it higher makes the sampler crouch-dive to score speed and fall. Reaching the
-        # full commanded VX stably needs a longer-step prior / richer shaping (TODO).
+        # Stable forward gait: velocity tracking (weight ~30 is the stable sweet spot),
+        # lateral line hold, dive-blocking pitch penalty, collapse barrier + soft floor.
+        # No height TRACKING (freezes gait bob). Stable ~0.12 m/s - ideal for careful
+        # foothold crossing where slow is better than fast.
         c = 30.0 * (vx - VX) ** 2 + 6.0 * vy ** 2
-        c += 20.0 * (1.0 - tilt) + 3.0 * dx.qvel[5] ** 2
-        c += jnp.where(z < 0.32, 1500.0, 0.0)         # collapse barrier only
-        c += 400.0 * jnp.maximum(0.0, 0.34 - z) ** 2  # soft floor near 0.34
+        c += 40.0 * (dx.qpos[1] - y0) ** 2          # hold lateral line (no side drift)
+        c += 15.0 * (1.0 - tilt) + 3.0 * dx.qvel[5] ** 2
+        c += 40.0 * pitch ** 2 + 80.0 * jnp.maximum(0.0, -pitch) ** 2   # block dive
+        c += jnp.where(z < 0.30, 2000.0, 0.0)           # collapse barrier
+        c += 500.0 * jnp.maximum(0.0, 0.33 - z) ** 2    # soft floor
         return c
 
     def rollout_one(dx0, qref):                     # qref [H, nu]
+        y0 = dx0.qpos[1]
         def node(dx, tgt):
             def substep(dx, _):
                 tau = dx.qfrc_bias[6:] + KP * (tgt - dx.qpos[7:]) - KD * dx.qvel[6:]
@@ -80,7 +93,7 @@ def make_rollout(mx, sub):
                 dx = mjx.step(mx, dx)
                 return dx, None
             dx, _ = jax.lax.scan(substep, dx, None, length=sub)
-            return dx, step_cost(dx)
+            return dx, step_cost(dx, y0)
         dx, costs = jax.lax.scan(node, dx0, qref)
         return costs.sum()
 
@@ -120,7 +133,7 @@ class MjxMPPI:
         self.q_stand_mj = br.pin_to_mj_qpos(q_stand)
         self.qstand_j = self.q_stand_mj[7:].copy()
         T_stance = 0.5 * NCYC * DT
-        half = 0.5 * VX * T_stance
+        half = 0.5 * VX * PRIOR_GAIN * T_stance
         pair_swing = {'FR': (0.0, 0.5), 'HL': (0.0, 0.5),   # (swing_start, swing_end) in cycle frac
                       'FL': (0.5, 1.0), 'HR': (0.5, 1.0)}
         table = np.zeros((NCYC, self.nu))
@@ -194,6 +207,9 @@ def main():
             d.ctrl[:] = np.clip(tau, -TAU_NP, TAU_NP); mujoco.mj_step(mm, d)
         phase += 1
         nominal = np.vstack([nominal[1:], mpc.prior_node(phase + H - 1)])
+        if step % 50 == 0:
+            print(f"  step{step:4d} x={d.qpos[0]:+.3f} y={d.qpos[1]:+.3f} z={d.qpos[2]:.3f} "
+                  f"vx={d.qvel[0]:+.3f}", flush=True)
         if d.qpos[2] < 0.20:
             falls = 1; break
         if viewer is not None and step % 2 == 0:

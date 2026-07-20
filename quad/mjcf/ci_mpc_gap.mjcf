@@ -1,0 +1,19 @@
+<mujoco model="ci_mpc_gap">
+  <!-- Minimal gap course for sampling CI-MPC. Platform tops are flush with the robot's
+       standing ground (z=0), so no step-up / terrain-height adaptation is needed - the
+       only challenge is the gaps. At runtime the robot's infinite floor is disabled
+       (contype=0) so the gaps between platforms are real voids (a foot there falls
+       through). Platforms are group=2 (terrain) boxes with tops at z=0. -->
+  <include file="quad_real_17dof_waist_sphere.mjcf"/>
+  <worldbody>
+    <!-- start platform: x in [-0.6, 1.5] -->
+    <geom name="plat0" type="box" group="2" size="1.05 0.6 0.1" pos="0.45 0 -0.1"
+          rgba="0.50 0.55 0.62 1" friction="1.3 0.02 0.001" condim="3"/>
+    <!-- gap 0.12 @ x=1.5..1.62 -->
+    <geom name="plat1" type="box" group="2" size="0.55 0.6 0.1" pos="2.17 0 -0.1"
+          rgba="0.44 0.50 0.60 1" friction="1.3 0.02 0.001" condim="3"/>
+    <!-- gap 0.12 @ x=2.72..2.84 -->
+    <geom name="plat2" type="box" group="2" size="0.55 0.6 0.1" pos="3.39 0 -0.1"
+          rgba="0.50 0.55 0.62 1" friction="1.3 0.02 0.001" condim="3"/>
+  </worldbody>
+</mujoco>

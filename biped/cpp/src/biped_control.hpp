@@ -393,7 +393,7 @@ struct BipedControl {
     if(trans_on){ do_transition(dt); return; }   // ★1점/2점 전환 굴림 재생 중
     // ★2점 평발: 정지=정적 양발지지(밑창 ZMP). 이동명령=평발 동적 보행(아래 게이트, wbic 다접촉).
     if(has_heel && cmode==1){
-      bool flat_walk_en = getenv("NO_FLAT_WALK")==nullptr;   // ★2점 조이스틱 배선: 평발 동적보행 기본 활성(WIP)
+      bool flat_walk_en = getenv("FLAT_WALK")!=nullptr;   // ★2점=서기 전용(기본). 보행은 adaptive-timing 프리뷰 완성 후 활성
       bool moving = flat_walk_en && (std::abs(vx_cmd)>0.02 || std::abs(vy_cmd)>0.02 || std::abs(wz_cmd)>0.02);
       if(!moving){                                   // 정지(또는 보행 미활성)=정적 양발지지
         Vector3d fc=0.5*(foot_center(0)+foot_center(1)); com_ref_xy=fc.head(2);

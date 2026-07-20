@@ -302,9 +302,16 @@ def _mpc_run():
     # against the terrain (mj_ray, group 2) and nudged onto the nearest platform, then
     # IK'd to joints. Combined with the contact-implicit iLQR (no GRF-bounce) this is the
     # full solution: gait-shaping (step) + perceptive foothold (avoid gap) + CI (stabilise).
+    # --- world-frame foothold scheduler (the fix over the body-relative table) ---
+    # The body-relative table let the STANCE-foot reference drift forward with the base
+    # (foot = base + offset), so near a gap the planted foot got dragged into the void.
+    # Here, every control step, stance feet are pinned to their ACTUAL world position
+    # (read from FK), so as the base advances the reference keeps them planted; only
+    # swing feet move, to a base-anchored landing nudged off gaps (mj_ray, group 2).
     from ocp_fixed import ik_feet, FEET
     q_stand = standing_ik(br, 0.42, foot_z=FOOT_R)
-    foot0 = br.foot_positions(q_stand)               # body-relative standing foot positions
+    foot0 = br.foot_positions(q_stand)
+    FOFF = {L: (foot0[L][:2] - q_stand[:2]) for L in FEET}   # body-frame hip offset
     T_stance = 0.5 * NCYC * DT; half = 0.5 * VX * T_stance
     pair = {'FR': (0, 0.5), 'HL': (0, 0.5), 'FL': (0.5, 1.0), 'HR': (0.5, 1.0)}
     _grp2 = np.array([0, 0, 1, 0, 0, 0], dtype=np.uint8)
@@ -312,43 +319,47 @@ def _mpc_run():
           + [20, 10, 5] + [5, 5, 8] + [0.05]*17)
     rd = [2e-3]*nu
 
-    def _supported(x, y):
+    def _nudge(x, y):                                 # shift x forward off a gap onto terrain
         gid = np.zeros(1, dtype=np.int32)
-        mujoco.mj_ray(mm, md, np.array([x, y, 0.6]), np.array([0., 0., -1.]), _grp2, 1, -1, gid)
-        return gid[0] >= 0
+        def sup(xx):
+            mujoco.mj_ray(mm, md, np.array([xx, y, 0.6]), np.array([0., 0., -1.]), _grp2, 1, -1, gid)
+            return gid[0] >= 0
+        if not TERRAIN or sup(x):
+            return x
+        for d in (0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, -0.03, -0.06):
+            if sup(x + d):
+                return x + d
+        return x
 
-    def _gait_joints(g, base_world_x):
-        p = (g % NCYC) / NCYC; tgt = {L: foot0[L].copy() for L in FEET}
-        for L in FEET:
-            s0, s1 = pair[L]
-            if s0 <= p < s1:                          # swing: arc + terrain-aware landing
-                sp = (p - s0) / (s1 - s0)
-                fx = foot0[L][0] + half * (2 * sp - 1)
-                if TERRAIN and not _supported(base_world_x + fx, foot0[L][1]):
-                    for d in (0.03, 0.06, 0.09, 0.12, 0.15, 0.18, -0.03, -0.06):
-                        if _supported(base_world_x + fx + d, foot0[L][1]):
-                            fx += d; break
-                tgt[L][0] = fx; tgt[L][2] = FOOT_R + STEP_H * np.sin(np.pi * sp)
-            else:                                     # stance: sweep back
-                st = ((p - s1) % 1.0) / (1.0 - (s1 - s0)); tgt[L][0] = foot0[L][0] + half * (1 - 2 * st)
-        return br.pin_to_mj_qpos(ik_feet(br, 0.42, tgt, q_init=q_stand))[7:]
-
-    def build_ref(phase, base_x0):
+    def build_ref(phase, base_x0, base_y0, fworld):
         ref = np.zeros((Nh + 1, nx))
         for k in range(Nh + 1):
+            g = phase + k; p = (g % NCYC) / NCYC
+            base_xk = base_x0 + VX * k * DT
+            tgt = {}
+            for L in FEET:
+                s0, s1 = pair[L]
+                if s0 <= p < s1:                      # swing: base-anchored, terrain-aware landing
+                    sp = (p - s0) / (s1 - s0)
+                    xw = _nudge(base_xk + FOFF[L][0] + half * (2 * sp - 1), base_y0 + FOFF[L][1])
+                    tgt[L] = np.array([xw - base_xk, FOFF[L][1], FOOT_R + STEP_H * np.sin(np.pi * sp)])
+                else:                                 # stance: pinned to ACTUAL planted world pos
+                    tgt[L] = np.array([fworld[L][0] - base_xk, fworld[L][1] - base_y0, FOOT_R])
             ref[k, :nq] = q_mj
-            ref[k, 7:nq] = _gait_joints(phase + k, base_x0 + VX * k * DT)
+            ref[k, 7:nq] = br.pin_to_mj_qpos(ik_feet(br, 0.42, tgt, q_init=q_stand))[7:]
             ref[k, nq + 0] = VX
         return ref
 
-    fgid = {L: mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, L + '_sphere') for L in ['FL', 'HL']}
+    fgid_all = {L: mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, L + '_sphere') for L in FEET}
+    fgid = {L: fgid_all[L] for L in ['FL', 'HL']}
     md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
     us = np.tile(u_hold, (Nh, 1)); phase = 0
     print(f"iLQR-MPC gait walk: VX={VX} Nh={Nh} iters={ITERS} NCYC={NCYC}")
     falls = 0; fmax = {}
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
-        cost = QuadCost(nx, nu, nq, build_ref(phase, md.qpos[0]), qd, rd, qf_scale=8.0)
+        fworld = {L: md.geom_xpos[fgid_all[L]].copy() for L in FEET}   # actual planted foot positions
+        cost = QuadCost(nx, nu, nq, build_ref(phase, md.qpos[0], md.qpos[1], fworld), qd, rd, qf_scale=8.0)
         xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
         u0, K0, xs0 = us[0].copy(), K[0].copy(), xs[0].copy()
         for _ in range(dyn.sub):                    # apply node control for sub sim steps

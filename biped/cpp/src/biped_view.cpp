@@ -86,7 +86,11 @@ int main(int argc,char**argv){
       std::ifstream f(CMDFILE);
       if(f){ std::stringstream ss; ss<<f.rdbuf(); std::string cj=ss.str();
         mode=json_str(cj,"mode",mode); body_h=json_get(cj,"body_h",body_h);
-        if(mode=="reset"){ c.reset(); c.com_ref_z=body_h; mode="stand"; est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; }
+        // ★접촉모드(1pt/2pt) 전환: 같은 모델서 목표자세 재정착
+        std::string contact=json_str(cj,"contact", c.cmode==1?"2pt":"1pt");
+        int cm=(contact=="2pt")?1:0;
+        if(c.has_heel && cm!=c.cmode){ c.set_contact_mode(cm); est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; mode="stand"; prev_mode="stand"; }
+        if(mode=="reset"){ c.reset(); if(!c.has_heel) c.com_ref_z=body_h; mode="stand"; est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; }
         if(prev_mode=="off" && mode!="off"){ c.reset(); c.com_ref_z=body_h; est_reset(); wall0=std::chrono::steady_clock::now(); sim0=d->time; }  // ★전원 재투입: 낙상서 리셋 후 기립
         prev_mode=mode;
         bool walk=(mode=="walk");

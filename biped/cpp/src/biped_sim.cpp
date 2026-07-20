@@ -25,7 +25,9 @@ int main(int argc,char**argv){
   mjModel* m=mj_loadXML(mjcf,nullptr,err,1000);
   if(!m){ printf("모델 로드 실패: %s\n",err); return 1; }
   mjData* d=mj_makeData(m);
-  BipedControl c(m,d); c.reset(); c.vx_cmd=vx;
+  BipedControl c(m,d); c.reset();
+  if(getenv("CONTACT")) c.set_contact_mode(atoi(getenv("CONTACT")));   // ★0=1점 점발보행·1=2점 평발정적
+  c.vx_cmd=vx;
   c.vy_cmd = getenv("VY")?atof(getenv("VY")):0.0;        // 측방/선회 테스트용 env
   c.wz_cmd = getenv("WZ")?atof(getenv("WZ")):0.0;
   double dt=m->opt.timestep; int steps=(int)(T/dt); double fell=-1;
@@ -34,7 +36,10 @@ int main(int argc,char**argv){
   DeployLoop dl; int falls=0;
   if(est_ctrl){ dl.init(m,c); dl.reset(m,d); }
 
+  bool do_switch=getenv("SWITCH")!=nullptr;    // ★중간 접촉모드 전환 검증(T/2에 토글)
   for(int i=0;i<steps;i++){
+    if(do_switch && i==steps/2){ c.set_contact_mode(c.cmode==1?0:1); c.vx_cmd=(c.cmode==0?vx:0.0);
+      if(est_ctrl) dl.reset(m,d); std::printf("  [T/2] 접촉모드 전환 → cmode=%d\n",c.cmode); }
     if(est_ctrl) dl.step(m,d,c,dt);      // 추정+지연+보상 → d->ctrl (물리 d 불변)
     else c.control(dt);
     mj_step(m,d);

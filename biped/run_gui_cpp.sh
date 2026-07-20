@@ -21,10 +21,11 @@ LATENV="SENSE_LAT_MS=${SENSE_LAT_MS:-0} ACT_LAT_MS=${ACT_LAT_MS:-0} LAT_COMP_MS=
 echo "모드: $MODEDESC"
 
 pkill -f biped_view 2>/dev/null; pkill -f teleop_gui_biped 2>/dev/null; sleep 1
-echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.50,"mode":"stand"}' > "$CMD"
+# ★통합모델(biped_flatfoot): 시작=2점 평발 정적 rest. GUI 1점/2점 버튼으로 전환.
+echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.42,"mode":"stand","contact":"2pt"}' > "$CMD"
 
-# ① C++ 뷰어 (컨트롤러+렌더+명령소비+상태발행)
-setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_from_quad.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &
+# ① C++ 뷰어 (컨트롤러+렌더+명령소비+상태발행) — 통합모델 biped_flatfoot(heel+toe)
+setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_flatfoot.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (Python dearpygui)
 setsid bash -c "cd '$HERE/../quad'; QUAD_CMD='$CMD' DISPLAY='$DISPLAY' '$PY' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &

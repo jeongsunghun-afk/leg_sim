@@ -251,13 +251,14 @@ def _mpc_run():
     nq, nv, nx, nu = dyn.nq, dyn.nv, dyn.nx, dyn.nu
     # regulating cost: base x FREE, track height/upright + forward velocity vx
     x_ref = np.concatenate([q_mj, np.zeros(nv)]); x_ref[nq + 0] = VX   # world vx target
-    qd = ([0, 8, 50] + [0, 100, 100, 100] + [1.0]*17          # pos: x free, y, z, quat, joints
-          + [25, 10, 5] + [5, 5, 8] + [0.05]*17)              # vel: vx-track, vy, vz, ang, jvel
+    qd = ([0, 8, 140] + [0, 120, 120, 120] + [0.6]*17         # pos: x free, y, z↑↑, quat, joints
+          + [35, 10, 5] + [5, 5, 8] + [0.03]*17)              # vel: vx-track↑, vy, vz, ang, jvel
     cost = QuadCost(nx, nu, nq, x_ref, qd, [2e-3]*nu, qf_scale=8.0)
+    fgid = {L: mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, L + '_sphere') for L in ['FL', 'HL']}
     md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
     us = np.tile(u_hold, (Nh, 1))
     print(f"iLQR-MPC walk: VX={VX} Nh={Nh} iters={ITERS}")
-    falls = 0
+    falls = 0; fmax = {}
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
         xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
@@ -267,11 +268,15 @@ def _mpc_run():
             md.ctrl[:] = np.clip(u0 + K0 @ (xm - xs0), -200, 200)
             mujoco.mj_step(mm, md)
         us = np.vstack([us[1:], us[-1]])            # shift warm-start
+        for L in fgid:
+            fmax[L] = max(fmax.get(L, 0), md.geom_xpos[fgid[L]][2])
         if c % 5 == 0:
-            print(f"  c{c:3d} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f}", flush=True)
+            print(f"  c{c:3d} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f} "
+                  f"FLz={md.geom_xpos[fgid['FL']][2]:.3f} HLz={md.geom_xpos[fgid['HL']][2]:.3f}", flush=True)
         if md.qpos[2] < 0.20:
             falls = 1; print(f"  FELL at c{c}"); break
-    print(f"RESULT VX={VX} ctrl={c+1} falls={falls} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f}")
+    print(f"RESULT VX={VX} ctrl={c+1} falls={falls} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f} "
+          f"foot_lift_max FL={fmax.get('FL',0):.3f} HL={fmax.get('HL',0):.3f} (>0.04=stepping, ~0.024=sliding)")
 
 
 def _selftest():

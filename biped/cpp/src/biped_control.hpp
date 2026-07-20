@@ -41,7 +41,8 @@ struct BipedControl {
   // ── ZMP 프리뷰 보행(평발) ──
   ZmpPreview pv; long zkk=-1; double zanchor_x=0, zaf_y[2]={0,0}, z_sx=0;   // 발 앵커·스텝전진
   double cxr=0,vxr=0,cyr=0,vyr=0; int prev_ctr=0;                          // preview CoM ref
-  double T_SS_Z=0.30; int PREV_DECIM=5; bool in_zmp_walk=false;            // SS시간·preview 데시메이션
+  double T_SS_Z=0.32; int PREV_DECIM=5; bool in_zmp_walk=false;            // 공칭 SS시간·preview 데시메이션
+  long zlead=0;                                                            // ZMP 리드인 DS 잔여 틱
   // ── 오프라인 1점/2점 전환(toe-pivot 굴림 궤적) ──
   bool trans_on=false; double trans_t=0, T_TRANS=1.4; int trans_to=0;      // 전환중·타이머·목표모드
   double q_from[8], q_to[8], q_live[8], cz_from=0, cz_to=0;                // 자세·높이 보간
@@ -342,49 +343,57 @@ struct BipedControl {
       zx=zanchor_x+fs*z_sx; zy=zaf_y[(fs%2==0)?1:0]; }
   }
   // ── ZMP 프리뷰 평발 보행 (clock 기반 footstep + 프리뷰 CoM 궤적) ──
+  // ★event-DCM 측방 타이밍 + 프리뷰 전후. 고정clock 대신 측방 sway 동기(timing 충돌 해결).
   void zmp_walk(double dt){
-    int TICKS_SS=(int)std::round(T_SS_Z/dt);
     if(zkk<0){                                   // 보행 시작 초기화
       Vector3d f0=foot_center(0), f1=foot_center(1); Vector3d c=com();
-      zanchor_x=0.5*(f0[0]+f1[0]); zaf_y[0]=f0[1]; zaf_y[1]=f1[1];
-      pv.reset(c[0],c[1]); cxr=c[0]; cyr=c[1]; vxr=vyr=0; zkk=0; prev_ctr=0;
+      zanchor_x=f1[0]; zaf_y[0]=f0[1]; zaf_y[1]=f1[1];   // 앵커=현 지지발(HR) x
+      pv.reset(c[0],c[1]); cxr=c[0]; vxr=0; zkk=0; prev_ctr=0;
+      stance=1; swing=0; t_ss=0; zlead=(long)std::round(T_SS_Z/dt);   // 리드인 DS
       have_liftoff[0]=have_liftoff[1]=false;
     }
-    z_sx=vx_cmd*T_SS_Z;                           // 스텝당 전진량
-    if(prev_ctr==0){                             // 프리뷰 갱신(PREV_DECIM 틱마다)
-      int Np=pv.N; std::vector<double> px(Np),py(Np);
-      for(int j=0;j<Np;j++) zmp_ref_at(zkk+(long)j*PREV_DECIM,TICKS_SS,px[j],py[j]);
-      pv.step(px.data(),py.data(), cxr,vxr,cyr,vyr);
-    }
-    prev_ctr=(prev_ctr+1)%PREV_DECIM;
-    // 리드인 DS: 양발 지지로 CoM을 첫 지지발(HR)로 크게 이동(swing 전 체중이동). x=preview.
-    if(zkk<TICKS_SS){ com_ref_xy<<cxr, 0.7*zaf_y[1]; wbic_stance();
-      if(getenv("ZMP_DBG")&&zkk%25==0){ Vector3d c=com(); std::fprintf(stderr,"  lead t%.2f com_y%.3f ref_y%.3f\n",zkk*dt,c[1],cyr); }
-      yaw_hold=base_yaw(); yaw_hold_set=true; yaw_des=base_yaw(); zkk++; return; }
-    // SS 스텝핑
-    long ss=zkk-TICKS_SS; long step=ss/TICKS_SS; double s=(double)(ss%TICKS_SS)/TICKS_SS;
-    int support=(step%2==0)?1:0, swing=1-support;
-    double sw_tx=zanchor_x+(step+1)*z_sx;        // 전후=클록 계획
-    // 측방=capture 발배치(밑창 좁아 스텝으로 잡음)
+    z_sx=vx_cmd*T_SS_Z;
     Vector3d cc=com(); Vector2d vcm=(jac_com()*qvel()).head(2);
     double zz=std::max(cc[2]-std::min(footz(0),footz(1)),0.15), ww=std::sqrt(GVEC/zz);
-    double lat=(swing==0)?1.0:-1.0;
-    double sw_ty=zaf_y[swing]+0.5*K_LAT*vcm[1]/ww;                   // 절대 ±0.14 + 약한 측방 capture 보정
-    { double stf=foot_center(support)[1];                            // stance 발 기준 gap 제한
-      double gap=std::min(std::max(lat*(sw_ty-stf),GAP_MIN),GAP_MAX); sw_ty=stf+lat*gap; }
-    if(!have_liftoff[swing]){ liftoff[swing]=foot_center(swing); have_liftoff[swing]=true; }
-    Vector3d p0=liftoff[swing];
-    double gz=std::min(footz(0),footz(1))+m->geom_size[sph[swing]*3];
+    // ── 전후 프리뷰: ZMP staircase(현 지지발 x + 미래 공칭T_ss마다 z_sx) → CoM-x 궤적 ──
+    if(prev_ctr==0){
+      int Np=pv.N; std::vector<double> px(Np),py(Np,0.0);
+      for(int j=0;j<Np;j++){ double ta=t_ss + (double)j*PREV_DECIM*dt;
+        long sfut = (zlead>0)? 0 : (long)std::floor(ta/T_SS_Z);       // 리드인 중엔 현 지지발 유지
+        px[j]=zanchor_x + sfut*z_sx; }
+      double cyd,vyd; pv.step(px.data(),py.data(), cxr,vxr,cyd,vyd);
+    }
+    prev_ctr=(prev_ctr+1)%PREV_DECIM;
+    // ── 리드인 DS: CoM을 첫 지지발로 이동(전후=프리뷰) ──
+    if(zlead>0){ com_ref_xy<<cxr, 0.7*zaf_y[1]; wbic_stance();
+      yaw_hold=base_yaw(); yaw_hold_set=true; yaw_des=base_yaw(); zlead--; zkk++; return; }
+    // ── 측방 event-DCM 트리거(sway가 swing측 넘으면 착지) ──
+    double midy=0.5*(foot_center(0)[1]+foot_center(1)[1]);
+    double xi_y=cc[1]+vcm[1]/ww, sy=(swing==0)?1.0:-1.0;
+    bool committed = sy*(xi_y-midy) > TRIG_Y;
+    if(t_ss>SS_MIN && (committed || t_ss>SS_MAX)){
+      std::swap(stance,swing); t_ss=0; zanchor_x+=z_sx;              // 전후 앵커 전진
+      have_liftoff[swing]=false;
+      pv.set_state(cc[0],vcm[0],cc[1],vcm[1]);                       // ★프리뷰 전후 실제CoM 재동기(발산방지)
+    }
+    int support=stance, sw=swing; double s=std::min(t_ss/T_SS_Z,1.0);
+    // swing 발: 전후=다음 지지 x(앵커+z_sx)·측방=capture(밑창 좁음)
+    double sw_tx=zanchor_x+z_sx;
+    double lat=(sw==0)?1.0:-1.0;
+    double sw_ty=cc[1]+lat*std::abs(zaf_y[sw])+K_LAT*vcm[1]/ww;
+    { double stf=foot_center(support)[1]; double gap=std::min(std::max(lat*(sw_ty-stf),GAP_MIN),GAP_MAX); sw_ty=stf+lat*gap; }
+    if(!have_liftoff[sw]){ liftoff[sw]=foot_center(sw); have_liftoff[sw]=true; }
+    Vector3d p0=liftoff[sw];
+    double gz=std::min(footz(0),footz(1))+m->geom_size[sph[sw]*3];
     double sm=10*s*s*s-15*s*s*s*s+6*s*s*s*s*s, dsm=(30*s*s-60*s*s*s+30*s*s*s*s)/std::max(1e-6,T_SS_Z);
     Vector3d p(p0[0]+(sw_tx-p0[0])*sm, p0[1]+(sw_ty-p0[1])*sm, p0[2]+(gz-p0[2])*sm+4*STEP_H*s*(1-s));
     Vector3d v((sw_tx-p0[0])*dsm,(sw_ty-p0[1])*dsm,(gz-p0[2])*dsm+4*STEP_H*(1-2*s)*dsm);
-    if((ss+1)%TICKS_SS==0) have_liftoff[0]=have_liftoff[1]=false;
-    if(getenv("ZMP_DBG")&&zkk%25==0){ Vector3d c=com();
-      std::fprintf(stderr,"  z t%.2f step%ld sup%d com=(%.3f,%.3f,%.3f) ref=(%.3f,%.3f) swT=(%.2f,%.2f) zaf=[%.2f,%.2f]\n",
-        zkk*dt,step,support,c[0],c[1],c[2],cxr,cyr,sw_tx,sw_ty,zaf_y[0],zaf_y[1]); }
-    zkk++;
+    if(getenv("ZMP_DBG")&&zkk%25==0) std::fprintf(stderr,
+      "  z t%.2f sup%d com=(%.3f,%.3f,%.3f) cxref%.3f t_ss%.2f swT=(%.2f,%.2f)\n",
+      zkk*dt,support,cc[0],cc[1],cc[2],cxr,t_ss,sw_tx,sw_ty);
+    t_ss+=dt; zkk++;
     if(_k%mpc_decim==0) lam=mpc_grf(support); _k++;
-    in_zmp_walk=true; wbic(support,swing,p,v); in_zmp_walk=false;
+    in_zmp_walk=true; wbic(support,sw,p,v); in_zmp_walk=false;
     yaw_hold=base_yaw(); yaw_hold_set=true; yaw_des=base_yaw();
   }
 

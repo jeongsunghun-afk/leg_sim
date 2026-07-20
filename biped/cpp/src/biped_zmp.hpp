@@ -41,6 +41,7 @@ struct ZmpPreview {
     sx.setZero(); sy.setZero();
   }
   void reset(double cx,double cy){ sx<<cx,0,0; sy<<cy,0,0; }
+  void set_state(double cx,double vx,double cy,double vy){ sx<<cx,vx,sx(2); sy<<cy,vy,sy(2); }  // 실제 CoM 재동기(closed-loop)
 
   // 미래 ZMP 레퍼런스(px[N], py[N])로 CoM ref 한 스텝 전진. c/v 반환.
   void step(const double* px,const double* py, double&cx,double&vx,double&cy,double&vy){

@@ -44,8 +44,9 @@ int main(int argc,char**argv){
     else c.control(dt);
     if(getenv("WALK_DBG") && i%25==0){ double* q=&d->qpos[3];
       double pitch=std::asin(std::max(-1.0,std::min(1.0,2*(q[0]*q[2]-q[3]*q[1]))));
-      std::printf("  t%.2f com_x%+.3f com_z%.3f(ref%.3f) pitch%+.1f vcomx%+.2f ank%.2f swing=%d stFx%+.3f\n",
-        i*dt,d->subtree_com[0],d->subtree_com[2],c.com_ref_z,pitch*57.3,d->qvel[0],d->qpos[7+3],c.swing,c.foot_center(c.stance)[0]); }
+      double roll=std::atan2(2*(q[0]*q[1]+q[2]*q[3]),1-2*(q[1]*q[1]+q[2]*q[2]));
+      std::printf("  t%.2f com=(%+.3f,%+.3f,%.3f) v=(%+.2f,%+.2f) pitch%+.1f roll%+.1f sw=%d\n",
+        i*dt,d->subtree_com[0],d->subtree_com[1],d->subtree_com[2],d->qvel[0],d->qvel[1],pitch*57.3,roll*57.3,c.swing); }
     mj_step(m,d);
     if(est_ctrl){                                           // 낙상 자동리셋 + 카운트(장시간 통계)
       if(d->qpos[2]<0.2 || tilt_deg(&d->qpos[3])>45){

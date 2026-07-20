@@ -368,10 +368,23 @@
 <tbody>
 <tr><td class="num">1</td><td class="hl"><b>dynamic throw-and-catch 안정화</b></td><td>gap1 통과 직후 잔여 lunge 낙상 → 착지 후 제동. 긴 호라이즌(Nh↑)이 착지·제동을 계획, 또는 제동 cost. <b>현재 초점</b></td></tr>
 <tr><td class="num">2</td><td><b>gap2·stepping·연속 크로싱</b></td><td>단발 gap1 통과 → 연속 gap/stepping 코스 완주</td></tr>
-<tr><td class="num">3</td><td><b>실시간화</b></td><td>jacfwd 선형화가 wall-clock 바닥. 호라이즌 다이어트·모델 계층화로 20ms 목표</td></tr>
-<tr><td class="num">—</td><td>폴백</td><td>C-1 정통(Pinocchio 하드접촉 QCQP+해석그래디언트). 단 C-2 선형화 정확·gap1 통과 확인돼 필요성↓</td></tr>
+<tr><td class="num">3</td><td><b>실시간 배포는 별도 트랙</b></td><td>C-2 자체는 구조적으로 실시간 불가(아래 판정). 배포는 C-1(해석 그래디언트 C++) 또는 C-2→RL 증류</td></tr>
 </tbody>
 </table>
+</div>
+
+<div class="callout" style="border-left-color:var(--warn,#c9791f)">
+<h2 style="font-size:15px;margin:0 0 8px"><span class="n" style="color:var(--warn,#c9791f)">!</span> C-2 실시간성 판정 — 완성해도 실시간 불가, offline 검증/교사 도구</h2>
+<p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)"><b>근본 이유(산수):</b> 병목=jacfwd(forward-mode AD)로 접촉 물리 통과. 선형화 1회 = fx[47×47]+fu[47×17] →
+<b>64 JVP 방향</b> 각각 full <span class="mono">mjx.step</span>(서브스텝 10 × 순차 접촉솔버). 제어 1스텝 =
+64 × 10 × Nh(12) × ITERS(3) ≈ <b>2~5만 mjx.step</b>. mjx.step 하나 ~10-100μs → <b>~1-2.5s/iter</b>(실측 일치).
+20ms 도달하려면 mjx.step &lt; 1μs = 물리적 불가. GPU 18W/지연-바운드 → 서버 GPU도 무의미. Nh·sub·ITERS 다 줄여도 ~8배(0.5-1s)가 한계 + 품질 저하.</p>
+<p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)"><b>실시간 CI-MPC 자체는 가능 — 다른 구현:</b> HOUND 70μs/40Hz는 <b>자동미분을 안 씀</b> =
+Pinocchio 해석 도함수(RNEA/ABA 미분, O(n) 1패스) + 하드접촉 임펄스 해석적 완화-상보성 그래디언트(닫힌 형식, 솔버 미분관통 안 함) + C++.
+즉 실시간 = "C-2 더 개발"이 아니라 <b>C-1(HOUND식 해석 그래디언트 C++)</b> 재작성.</p>
+<p style="margin:0;font-size:13.5px;color:var(--ink2)"><b>C-2의 역할(배포 아님):</b> ① 개념 검증·프로토타이핑(offline) — CI가 fixed-schedule 벽 넘는지 증명·cost 튜닝·거동 규명
+(<b>이미 완료</b>: GRF-bounce 벽 돌파·gap1 통과) ② sim2sim 갭 0(MJX=MuJoCo, C++ 해석판 투자 전 확인) ③ <b>distillation 교사</b>(느리지만 정확 → 빠른 정책 증류, MPC-교사 하이브리드).
+<b>배포 두 갈래</b>: (a) C-1 해석 C++(대규모 재작성) (b) C-2 → RL 증류.</p>
 </div>
 
 <div class="foot">

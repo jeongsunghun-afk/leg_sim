@@ -24,7 +24,8 @@ from mujoco import mjx
 from model_bridge import MJCF, apply_gearbox, set_foot_sphere, strip_mesh_collision
 
 FOOT_R = float(os.environ.get("FOOT_R", "0.024"))
-DT = float(os.environ.get("DT", "0.02"))
+DT = float(os.environ.get("DT", "0.02"))          # iLQR control-node dt
+DT_SIM = float(os.environ.get("DT_SIM", "0.002"))  # stable MuJoCo sim step (contact needs small dt)
 
 
 def build_mjx(mjcf=MJCF, foot_r=FOOT_R):
@@ -32,7 +33,7 @@ def build_mjx(mjcf=MJCF, foot_r=FOOT_R):
     apply_gearbox(mm)
     set_foot_sphere(mm, foot_r)
     strip_mesh_collision(mm)             # sphere feet + terrain only (fast MJX)
-    mm.opt.timestep = DT                 # iLQR node dt == sim step for exact linearisation
+    mm.opt.timestep = DT_SIM             # ★ small sim step; contact is unstable at dt=0.02
     return mm, mjx.put_model(mm)
 
 
@@ -47,11 +48,16 @@ class MjxDynamics:
         self.nq, self.nv, self.nu = mm.nq, mm.nv, mm.nu
         self.nx = self.nq + self.nv
         self._d0 = mjx.make_data(mx)
+        self.sub = max(1, round(DT / mm.opt.timestep))   # sim sub-steps per control node
 
         def f(x, u):
-            q, v = x[:self.nq], x[self.nq:]
-            d = self._d0.replace(qpos=q, qvel=v, ctrl=u)
-            d = mjx.step(mx, d)
+            # one control node = `sub` small sim steps (holding u), so the node dt is DT
+            # while the contact sim runs at the stable DT_SIM. Forward-differentiable
+            # (lax.scan) - which is all jacfwd needs.
+            d = self._d0.replace(qpos=x[:self.nq], qvel=x[self.nq:], ctrl=u)
+            def sstep(d, _):
+                return mjx.step(mx, d.replace(ctrl=u)), None
+            d, _ = jax.lax.scan(sstep, d, None, length=self.sub)
             return jnp.concatenate([d.qpos, d.qvel])
         self.f = f
         # forward-mode Jacobians (reverse-mode is blocked by the solver's while_loop)
@@ -178,12 +184,13 @@ def _stand_test():
     # state as both x0 and the regulation target.
     md0 = mujoco.MjData(mm); md0.qpos[:] = q_mj; mujoco.mj_forward(mm, md0)
     qh = q_mj[7:].copy()
-    for _ in range(150):
-        u = md0.qfrc_bias[6:] + 300.0 * (qh - md0.qpos[7:]) - 8.0 * md0.qvel[6:]
+    for _ in range(400):                 # gentle settle to a real in-contact rest state
+        u = md0.qfrc_bias[6:] + 150.0 * (qh - md0.qpos[7:]) - 12.0 * md0.qvel[6:]
         u[MJ_WAIST_JIDX] = 200 * (0 - md0.qpos[7 + MJ_WAIST_JIDX]) - 5 * md0.qvel[6 + MJ_WAIST_JIDX]
         md0.ctrl[:] = np.clip(u, -200, 200); mujoco.mj_step(mm, md0)
     q_mj = md0.qpos.copy()
-    print(f"settled: base z={q_mj[2]:.3f} ncon={md0.ncon}")
+    u_settle = np.clip(md0.qfrc_bias[6:] + 150.0 * (qh - md0.qpos[7:]) - 12.0 * md0.qvel[6:], -200, 200)
+    print(f"settled: base z={q_mj[2]:.3f} ncon={md0.ncon} jointvel={np.linalg.norm(md0.qvel[6:]):.3f}")
     x_ref = np.concatenate([q_mj, np.zeros(dyn.nv)])
     # cost weights: state [pos3, quat4, joints17, vlin3, vang3, vjoint17]
     qd = ([0, 0, 60] + [0, 120, 120, 120] + [3.0]*17
@@ -194,11 +201,9 @@ def _stand_test():
     x0 = x_ref.copy()                    # start at standing
     # warm-start controls with the gravity-comp (bias) torque at the standing config -
     # a far better initial guess than zero (which free-falls), so iLQR converges fast.
-    md = mujoco.MjData(mm); md.qpos[:] = q_mj; mujoco.mj_forward(mm, md)
-    u_grav = md.qfrc_bias[6:].copy()
-    us = np.tile(u_grav, (N, 1))
-    print(f"iLQR standing regulation (grav warm-start |u|={np.linalg.norm(u_grav):.1f}):")
-    xs, us, K = ilqr(dyn, x0, us, cost, iters=25)
+    us = np.tile(u_settle, (N, 1))       # warm-start = the settle's stance-holding control
+    print(f"iLQR standing regulation (settle warm-start |u|={np.linalg.norm(u_settle):.1f}):")
+    xs, us, K = ilqr(dyn, x0, us, cost, iters=20)
     print(f"final base z = {xs[-1][2]:.3f} (target 0.42), |K0|={np.linalg.norm(K[0]):.1f}")
     zs = [x[2] for x in xs]
     print("base z along horizon:", np.round(zs, 3))

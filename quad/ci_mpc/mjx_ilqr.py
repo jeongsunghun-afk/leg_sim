@@ -331,17 +331,23 @@ def _mpc_run():
                 return x + d
         return x
 
-    def build_ref(phase, base_x0, base_y0, fworld):
+    def build_ref(phase, base_x0, base_y0, fworld, vx_meas):
+        # Anchor the horizon's base prediction to a capture-point velocity: blend the
+        # command with the MEASURED forward speed. During a forward lunge (vx_meas >> VX)
+        # this places the swing landing further ahead (Raibert-like) so the front foot
+        # catches the body on the far platform instead of diving short into the gap.
+        vx_pred = 0.5 * VX + 0.5 * float(np.clip(vx_meas, 0.0, 0.9))
         ref = np.zeros((Nh + 1, nx))
         for k in range(Nh + 1):
             g = phase + k; p = (g % NCYC) / NCYC
-            base_xk = base_x0 + VX * k * DT
+            base_xk = base_x0 + vx_pred * k * DT
             tgt = {}
             for L in FEET:
                 s0, s1 = pair[L]
-                if s0 <= p < s1:                      # swing: base-anchored, terrain-aware landing
+                if s0 <= p < s1:                      # swing: capture-point landing, terrain-aware
                     sp = (p - s0) / (s1 - s0)
-                    xw = _nudge(base_xk + FOFF[L][0] + half * (2 * sp - 1), base_y0 + FOFF[L][1])
+                    cap = 0.5 * (vx_meas - VX) * T_stance   # Raibert capture offset (extra reach when lunging)
+                    xw = _nudge(base_xk + FOFF[L][0] + half * (2 * sp - 1) + cap, base_y0 + FOFF[L][1])
                     tgt[L] = np.array([xw - base_xk, FOFF[L][1], FOOT_R + STEP_H * np.sin(np.pi * sp)])
                 else:                                 # stance: pinned to ACTUAL planted world pos
                     tgt[L] = np.array([fworld[L][0] - base_xk, fworld[L][1] - base_y0, FOOT_R])
@@ -359,7 +365,7 @@ def _mpc_run():
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
         fworld = {L: md.geom_xpos[fgid_all[L]].copy() for L in FEET}   # actual planted foot positions
-        cost = QuadCost(nx, nu, nq, build_ref(phase, md.qpos[0], md.qpos[1], fworld), qd, rd, qf_scale=8.0)
+        cost = QuadCost(nx, nu, nq, build_ref(phase, md.qpos[0], md.qpos[1], fworld, md.qvel[0]), qd, rd, qf_scale=8.0)
         xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
         u0, K0, xs0 = us[0].copy(), K[0].copy(), xs[0].copy()
         for _ in range(dyn.sub):                    # apply node control for sub sim steps

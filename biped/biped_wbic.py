@@ -57,10 +57,12 @@ class BipedWBIC:
                 for k in range(2): self.foot_spheres[k].append(ids[k])
         self.two_contact = len(self.foot_spheres[0]) > 1
         self.sph2 = [fs[1] for fs in self.foot_spheres] if self.two_contact else None
-        # ★평발 감지: 2번째 구(heel)가 tip과 다른 body(foot_link)에 있으면 flat-foot 모델 → 평발 home 사용
-        self.flatfoot = self.two_contact and any(
+        # ★heel 구 보유 = 통합 모델(발목 세우면 toe만=점발, 눕히면 heel+toe=평발). 접촉모드는 런타임 자세로 결정.
+        self.has_heel = self.two_contact and any(
             self.m.geom_bodyid[fs[1]] != self.fbody[k] for k, fs in enumerate(self.foot_spheres))
-        self.q_home = Q_HOME_FLAT if self.flatfoot else Q_HOME   # ★자세 task 기준(평발=눕힌 발목 유지)
+        # 런타임 접촉모드: 통합 모델은 평발(정적 rest) 기본, 아니면 점발. q_home/높이 목표를 결정.
+        self.contact_mode = '2pt' if self.has_heel else '1pt'
+        self.q_home = Q_HOME_FLAT if self.contact_mode == '2pt' else Q_HOME   # ★자세 task 기준(램프됨)
         self.qmin = self.m.jnt_range[1:, 0].copy()       # 관절 하한(freejoint 제외)
         self.qmax = self.m.jnt_range[1:, 1].copy()
         self.com_ref = None
@@ -80,7 +82,8 @@ class BipedWBIC:
     def reset_stand(self):
         d, m = self.d, self.m
         d.qpos[:] = 0; d.qpos[3:7] = [1, 0, 0, 0]
-        d.qpos[7:] = Q_HOME_FLAT if self.flatfoot else Q_HOME   # ★평발이면 눕힌 발목 home
+        d.qvel[:] = 0; d.qacc[:] = 0                  # ★런타임 재정착(모드전환) 시 잔류속도 제거
+        d.qpos[7:] = Q_HOME_FLAT if self.contact_mode == '2pt' else Q_HOME   # ★2점=눕힌 발목 home
         d.qpos[2] = 0.7
         mujoco.mj_forward(m, d)
         _allsph = [g for fs in self.foot_spheres for g in fs]
@@ -91,6 +94,7 @@ class BipedWBIC:
         self.com_ref = np.array([fp[:, 0].mean(), fp[:, 1].mean(), d.subtree_com[0][2]])  # 지지중심 xy + 현 CoM z
         # ★평발 swing 발 수평 목표 = home(밑창 수평)에서의 발 world quat (yaw=0 기준). swing 중 이 자세로 유지.
         self.foot_home_quat = [d.xquat[self.fbody[k]].copy() for k in range(2)]
+        self.q_home = (Q_HOME_FLAT if self.contact_mode == '2pt' else Q_HOME).copy()   # 스폰 자세 = q_home
 
     def foot_jac(self, k):
         jacp = np.zeros((3, self.nv))
@@ -116,13 +120,17 @@ class BipedWBIC:
                 pts.append((g, int(self.m.geom_bodyid[g]), f))   # ★구별 실제 body(heel=foot_link, toe=contact_link)
         return pts
 
+    def _ref_sph(self, leg):
+        """발 기준 구 = 접촉모드별. 점발=tip 하나(heel은 공중), 평발=heel+toe 전부(밑창중점)."""
+        return self.foot_spheres[leg] if getattr(self, 'contact_mode', '1pt') == '2pt' else [self.foot_spheres[leg][0]]
+
     def foot_center(self, leg):
-        """발 기준점(world) = 접촉구 평균."""
-        return np.mean([self.d.geom_xpos[g] for g in self.foot_spheres[leg]], axis=0)
+        """발 기준점(world) = 모드별 기준구 평균(점발=tip 위치, 평발=밑창중점)."""
+        return np.mean([self.d.geom_xpos[g] for g in self._ref_sph(leg)], axis=0)
 
     def foot_jac_center(self, leg):
-        """발 중심 자코비안 = 접촉구 자코비안 평균(swing task용). ★구별 실제 body."""
-        return np.mean([self.foot_jac_at(g, int(self.m.geom_bodyid[g])) for g in self.foot_spheres[leg]], axis=0)
+        """발 중심 자코비안(swing task용) = 모드별 기준구 자코비안 평균. ★구별 실제 body."""
+        return np.mean([self.foot_jac_at(g, int(self.m.geom_bodyid[g])) for g in self._ref_sph(leg)], axis=0)
 
     # ── WBIC stance QP (1틱) ──
     def wbic_stance(self):
@@ -174,8 +182,10 @@ class BipedWBIC:
             G[r, o + 2] = -1.0; hh[r] = -LAMZ_MIN; r += 1
 
         P = 0.5 * (P + P.T) + 1e-8 * np.eye(nz)
-        # ★2점(평발): 발당 접촉 2점 → 등식제약 rank-deficient → proxqp. 1점=quadprog.
-        x = solve_qp(P, g, G, hh, A, b, solver='proxqp' if self.two_contact else 'quadprog')
+        # ★실제 발당 2점 접지 시만 rank-deficient → proxqp. 점발(발당1점)=quadprog(강건·결정적).
+        _fc = {}
+        for (_g, _b, _f) in cpts: _fc[_f] = _fc.get(_f, 0) + 1
+        x = solve_qp(P, g, G, hh, A, b, solver='proxqp' if any(n > 1 for n in _fc.values()) else 'quadprog')
         if x is None:
             return False
         qdd = x[:nv]

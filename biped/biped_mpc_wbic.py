@@ -43,6 +43,12 @@ class BipedMPCWBIC(BS.BipedStep):
         self.yaw_hold = None                                # ★정지/직진 heading latch(자유 yaw 표류 방지, 17-DOF 방식)
         self.head_lead = 0.15                               # ★헤딩 lead clamp[rad](발이 실제보다 앞서는 최대)
         self.static_stand = os.environ.get('FLAT_STATIC', '1') != '0'  # ★평발 정지=정적 양발 지지(0=연속스텝 실험)
+        # ★접촉모드 자세 램프(앉기/서기): q_home·높이를 목표로 서서히 이동(발목 눕힘=앉기, 세움=서기).
+        self.CZ_2PT, self.CZ_1PT = 0.362, 0.500       # 모드별 목표 CoM 높이(평발 낮음/점발=배포 검증 crouch 0.50)
+        self.q_home_tgt = self.q_home.copy()
+        self.com_z_tgt = self.CZ_2PT if self.contact_mode == '2pt' else self.CZ_1PT
+        self.ramp_q = 0.9                              # 자세 램프 속도[rad/s](≈1.3s에 발목 눕힘/세움)
+        self.ramp_z = 0.06                             # 높이 램프 속도[m/s]
 
     # ── MPC 셋업 ──
     def setup_mpc(self):
@@ -172,7 +178,7 @@ class BipedMPCWBIC(BS.BipedStep):
             accel = SW_KP*(ptgt - self.foot_center(leg)) + SW_KD*(vtgt - J @ qv)
             P[:nv,:nv] += 90.0*(J.T @ J); g[:nv] -= 90.0*(J.T @ accel)
             for t in range(4): sw_vidx.add(6 + leg*4 + t)
-            if self.flatfoot:                      # ★평발 swing 발 수평 유지(안 하면 16cm 발 기울어 착지→교란)
+            if self.has_heel and self.contact_mode == '2pt':   # ★평발 walk 시만 swing 발 수평(점발 보행엔 부적용)
                 qb = d.qpos[3:7]
                 yw = np.arctan2(2*(qb[0]*qb[3]+qb[1]*qb[2]), 1-2*(qb[2]**2+qb[3]**2))
                 qyaw = np.array([np.cos(yw/2), 0, 0, np.sin(yw/2)])
@@ -217,18 +223,40 @@ class BipedMPCWBIC(BS.BipedStep):
             rows.append(-Tm[i]); hh.append(TAU_PEAK[i]+h[6+i])
         G=np.array(rows); hh=np.array(hh)
         P=0.5*(P+P.T)+1e-8*np.eye(nz)
-        _solver='proxqp' if self.two_contact else 'quadprog'   # ★2점=rank-deficient 등식 → proxqp
+        _multi = any(n > 1 for n in foot_npts.values())        # ★실제 발당 2점 접지 시만 rank-deficient
+        _solver='proxqp' if _multi else 'quadprog'             # 평발=proxqp, 점발=quadprog(강건·결정적)
         x=solve_qp(P,g,G,hh,A,bb,solver=_solver)
         if x is None: return self.wbic_stance()
         qdd=x[:nv]; tau=M[6:,:]@qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:,6:].T @ x[sl(k):sl(k)+3]
         d.ctrl[:]=np.clip(tau,-TAU_PEAK,TAU_PEAK); return True
 
+    def reset(self):
+        super().reset()
+        self.q_home_tgt = self.q_home.copy()           # 램프 목표 = 스폰 자세(램프 없이 시작)
+        self.com_z_tgt = self.CZ_2PT if self.contact_mode == '2pt' else self.CZ_1PT
+        self.com_ref[2] = self.com_z_tgt
+
+    def set_contact_mode(self, mode):
+        """★접촉모드 전환(같은 모델·같은 제어기): 1pt=점발(동적보행)·2pt=평발(정적 rest).
+        발목·높이 목표만 바꿈 → control()이 앉기/서기 동작으로 서서히 전환."""
+        if mode not in ('1pt', '2pt') or mode == self.contact_mode:
+            return
+        self.contact_mode = mode
+        self.q_home_tgt = (BS.BW.Q_HOME_FLAT if mode == '2pt' else BS.BW.Q_HOME).copy()
+        self.com_z_tgt = self.CZ_2PT if mode == '2pt' else self.CZ_1PT
+
     def control(self, dt):
         qc = self.d.qpos[3:7]                        # 실제 yaw
         yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
-        # ★평발 정적 양발 지지: 명령 정지면 stepping 대신 wbic_stance(점발은 2점이라 불가, 평발은 밑창이라 가능).
-        if self.flatfoot and self.static_stand and abs(self.vx_cmd) < 0.02 and abs(self.vy_cmd) < 0.02 and abs(self.wz_cmd) < 0.02:
+        # ★자세 램프(앉기/서기 동작): q_home 발목·CoM 높이를 모드 목표로 서서히 이동
+        self.q_home = self.q_home + np.clip(self.q_home_tgt - self.q_home, -self.ramp_q*dt, self.ramp_q*dt)
+        self.com_ref[2] += float(np.clip(self.com_z_tgt - self.com_ref[2], -self.ramp_z*dt, self.ramp_z*dt))
+        # ★정적 양발 지지 = 2점 목표 + 발이 실제 평발(양발 heel+toe 접지)일 때만. 앉기(1pt→2pt) 중엔
+        #   아직 발끝이라 스텝 유지하며 발목을 내려 heel 착지 → 평발 되면 정적. 서기(2pt→1pt)는 스텝(발끝 기립).
+        feet_flat = all(sum(1 for g in self.foot_spheres[f]
+                            if self.d.geom_xpos[g][2] < self.m.geom_size[g][0] + 0.012) >= 2 for f in range(2))
+        if self.has_heel and self.contact_mode == '2pt' and feet_flat:
             fc = 0.5 * (self.foot_center(0) + self.foot_center(1))
             self.com_ref[0], self.com_ref[1] = fc[0], fc[1]   # 현재 지지중심 홀드
             self.wbic_stance()

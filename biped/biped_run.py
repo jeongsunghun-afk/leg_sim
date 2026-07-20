@@ -21,22 +21,16 @@ def read_cmd():
         return None
 
 
-# ★접촉 모드별 모델: 1pt=점발(biped_from_quad, 동적보행)·2pt=평발(biped_flatfoot, 정적 양발지지)
-MODELS = {'1pt': None, '2pt': os.path.join(os.path.dirname(__file__), 'biped_flatfoot.mjcf')}
-
-
-def build(contact):
-    mjcf = MODELS.get(contact) or os.environ.get('BIPED_MJCF')
-    c = BM.BipedMPCWBIC(mjcf=mjcf) if mjcf else BM.BipedMPCWBIC()
-    c.reset(); c.setup_mpc()
-    tag = '2점 평발(정적지지)' if c.flatfoot else ('2점' if c.two_contact else '1점 점발')
-    print(f"[biped_run] 접촉모드={contact} → {tag} · 발당 접촉구 {len(c.foot_spheres[0])}개 · 기본높이 {c.com_ref[2]:.3f}")
-    return c
+# ★통합 모델(heel+toe 두 구): 발목 세우면 점발(1pt 동적보행)·눕히면 평발(2pt 정적지지).
+# 접촉모드 = 런타임 자세(set_contact_mode) → 모델 교체 없이 앉기/서기 동작으로 전환.
+UNIFIED = os.path.join(os.path.dirname(__file__), 'biped_flatfoot.mjcf')
 
 
 def main():
-    contact = os.environ.get('CONTACT', '1pt')     # 시작 접촉모드
-    c = build(contact)
+    contact = os.environ.get('CONTACT', '2pt')     # 시작 접촉모드(평발 정적 rest 기본)
+    c = BM.BipedMPCWBIC(mjcf=os.environ.get('BIPED_MJCF', UNIFIED))
+    c.set_contact_mode(contact); c.reset(); c.setup_mpc()
+    print(f"[biped_run] 통합모델 · 시작 접촉모드={contact} · 발당 접촉구 {len(c.foot_spheres[0])}개 · heel={c.has_heel}")
     m, d = c.m, c.d; dt = m.opt.timestep
     z_home = float(c.com_ref[2])
     mode, body_h, prev_mode = 'stand', z_home, 'stand'
@@ -51,26 +45,23 @@ def main():
         if k % 20 == 0:                                    # 명령 폴링(50Hz)
             cmd = read_cmd()
             if cmd:
-                if cmd.get('contact', contact) != contact:      # ★접촉모드 전환(1pt↔2pt): 컨트롤러+뷰어 재생성
-                    contact = cmd.get('contact')
-                    if viewer is not None: viewer.close()
-                    c = build(contact); m, d = c.m, c.d
-                    z_home = float(c.com_ref[2]); body_h = z_home
-                    viewer = mujoco.viewer.launch_passive(m, d) if view else None
-                    mode = 'stand'; prev_mode = 'stand'; t0 = time.perf_counter(); k = 0
+                if cmd.get('contact', contact) != contact:   # ★접촉모드 전환(1pt↔2pt): 모델유지, 목표자세로 재정착
+                    contact = cmd.get('contact'); c.set_contact_mode(contact)
+                    c.reset(); c.setup_mpc(); c._k = 0; mode = 'stand'   # (매끄러운 앉기/서기 동작=trajopt WIP)
                 mode = cmd.get('mode', mode)
                 body_h = float(cmd.get('body_h', body_h))
                 if mode == 'reset':                        # ★RESET: 초기 자세로 리셋(모터 재활성)
-                    c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
+                    c.reset(); c.setup_mpc(); c._k = 0
                     mode = 'stand'
                 if prev_mode == 'off' and mode != 'off':    # ★전원 재투입(Off→Stand/Walk): 낙상 자세서 리셋 후 기립
-                    c.reset(); c.setup_mpc(); c.com_ref[2] = body_h; c._k = 0
+                    c.reset(); c.setup_mpc(); c._k = 0
                 prev_mode = mode
                 walking = mode == 'walk'
                 c.vx_cmd = float(cmd.get('v', 0.0))  if walking else 0.0
                 c.wz_cmd = float(cmd.get('w', 0.0))  if walking else 0.0   # ★선회
                 c.vy_cmd = float(cmd.get('vy', 0.0)) if walking else 0.0   # ★좌우
-                c.com_ref[2] = body_h                      # 몸통높이 라이브 조절(crouch)
+                if not c.has_heel:                         # 통합모델=컨트롤러가 모드로 높이관리(램프). 그 외만 라이브 높이.
+                    c.com_ref[2] = body_h
         if mode == 'off':                                  # ★모터 전원 off = 토크 0(limp). 실HW=motor disable
             d.ctrl[:] = 0.0
         else:

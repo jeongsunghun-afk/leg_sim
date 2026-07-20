@@ -169,9 +169,21 @@ def _stand_test():
     from model_bridge import MjPinBridge
     mm, mx = build_mjx()
     dyn = MjxDynamics(mm, mx)
+    from model_bridge import MJ_WAIST_JIDX
     br = MjPinBridge()
     q_stand = standing_ik(br, 0.42, foot_z=FOOT_R)
     q_mj = br.pin_to_mj_qpos(q_stand)
+    # settle so the feet actually penetrate/contact (raw IK pose has feet exactly at
+    # ground -> ncon=0 -> no contact force -> free fall). Use the settled in-contact
+    # state as both x0 and the regulation target.
+    md0 = mujoco.MjData(mm); md0.qpos[:] = q_mj; mujoco.mj_forward(mm, md0)
+    qh = q_mj[7:].copy()
+    for _ in range(150):
+        u = md0.qfrc_bias[6:] + 300.0 * (qh - md0.qpos[7:]) - 8.0 * md0.qvel[6:]
+        u[MJ_WAIST_JIDX] = 200 * (0 - md0.qpos[7 + MJ_WAIST_JIDX]) - 5 * md0.qvel[6 + MJ_WAIST_JIDX]
+        md0.ctrl[:] = np.clip(u, -200, 200); mujoco.mj_step(mm, md0)
+    q_mj = md0.qpos.copy()
+    print(f"settled: base z={q_mj[2]:.3f} ncon={md0.ncon}")
     x_ref = np.concatenate([q_mj, np.zeros(dyn.nv)])
     # cost weights: state [pos3, quat4, joints17, vlin3, vang3, vjoint17]
     qd = ([0, 0, 60] + [0, 120, 120, 120] + [3.0]*17

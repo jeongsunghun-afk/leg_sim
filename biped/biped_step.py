@@ -48,10 +48,10 @@ class BipedStep(BW.BipedWBIC):
     def reset(self):
         self.reset_stand()
         d = self.d
-        self.nominal = np.array([d.geom_xpos[s][:2].copy() for s in self.sph])  # 착지 기준(초기)
+        self.nominal = np.array([self.foot_center(k)[:2].copy() for k in range(2)])  # 착지 기준(발 중심)
         com0 = d.subtree_com[0][:2].copy()
         self.com0 = com0                                                        # ★원점(복귀 목표 CoM xy)
-        self.nominal_off = np.array([d.geom_xpos[s][:2] - com0 for s in self.sph])  # ★몸(CoM) 상대 발 오프셋
+        self.nominal_off = np.array([self.foot_center(k)[:2] - com0 for k in range(2)])  # ★몸(CoM) 상대 발 중심 오프셋
         self.t = 0.0
         self.stance = 1; self.swing = 0; self.t_ss = 0.0   # event-based gait 상태(HR stance·HL swing 시작)
 
@@ -63,12 +63,13 @@ class BipedStep(BW.BipedWBIC):
         z = max(com[2] - min(d.geom_xpos[sp][2] for sp in self.sph), 0.15)
         w = np.sqrt(GVEC / z)
         xi_y = com[1] + vcom[1] / w                        # 측방 DCM(world)
-        mid_y = 0.5 * (d.geom_xpos[self.sph[0]][1] + d.geom_xpos[self.sph[1]][1])
+        _fc0, _fc1 = self.foot_center(0), self.foot_center(1)   # 발 중심(2접촉=2구 평균)
+        mid_y = 0.5 * (_fc0[1] + _fc1[1])
         # ★측방 DCM을 body-frame으로(yaw 나도 올바른 측방=보행 강건). 발중점 기준 DCM벡터를 body-y축에 투영.
         qc = d.qpos[3:7]
         yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
         cya, sya = np.cos(yaw_act), np.sin(yaw_act)
-        midx = 0.5 * (d.geom_xpos[self.sph[0]][0] + d.geom_xpos[self.sph[1]][0])
+        midx = 0.5 * (_fc0[0] + _fc1[0])
         dcm_by = -sya*(com[0]+vcom[0]/w-midx) + cya*(xi_y-mid_y)   # body-y (직진 yaw=0시 =xi_y-mid_y)
         sy = 1.0 if self.swing == 0 else -1.0              # swing측 부호(HL좌=+)
         s = np.clip(self.t_ss / SS_NOMINAL, 0.0, 1.0)
@@ -84,7 +85,7 @@ class BipedStep(BW.BipedWBIC):
         if self.t_ss > SS_MIN and (committed or self.t_ss > SS_MAX):   # 착지 이벤트
             self.stance, self.swing = self.swing, self.stance
             self.t_ss = 0.0
-            self.liftoff[self.swing] = d.geom_xpos[self.sph[self.swing]].copy()
+            self.liftoff[self.swing] = self.foot_center(self.swing).copy()
             return [self.stance], self.swing, 0.0
         self.t_ss += dt
         return [self.stance], self.swing, s
@@ -122,7 +123,7 @@ class BipedStep(BW.BipedWBIC):
         rel_fwd = off[0] + K_CAP * v_b[0] / w + K_RETURN * err_b[0]         # 전방: capture+원점복귀
         rel_fwd = np.clip(rel_fwd, off[0] - CAP_CLAMP, off[0] + CAP_CLAMP)
         rel_lat = SPREAD * off[1] + K_LAT * (v_b[1] / w) + K_RET_LAT * err_b[1]  # 측방: 벌림+capture+측방복귀(crab추종)
-        st_b = to_body(d.geom_xpos[self.sph[1 - swing_leg]][:2] - com[:2])  # 스탠스발(body 상대)
+        st_b = to_body(self.foot_center(1 - swing_leg)[:2] - com[:2])  # 스탠스발 중심(body 상대)
         gap = np.clip(lat * (rel_lat - st_b[1]), GAP_MIN, GAP_MAX)          # 스탠스 반대쪽 최소간격(body)
         rel_lat = st_b[1] + lat * gap
         return com[:2] + to_world(np.array([rel_fwd, rel_lat]))             # → world

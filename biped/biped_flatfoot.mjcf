@@ -1,0 +1,124 @@
+<mujoco model="biped_from_quad_17dof_hind">
+  <!--
+    biped (뒷다리 2족) — 성숙 quad_real_17dof_waist_sphere.mjcf 에서 HL/HR 뒷다리만 추출 + 재설계 최소 몸통.
+    · 다리(hip/thigh/calf/foot·관성·mesh·sphere발·관절범위·actuatorfrcrange) = quad 원본 그대로 (튜닝 관성·Peak토크 승계)
+    · 몸통 = 최소 box(~3kg), x=0 중심 대칭 → 순수 biped, CoM 고관절 위 정렬
+    · 관절 이름 HL/HR_*_joint 동일 → quad_control.hpp / mpc.hpp 발 참조 그대로 재사용
+    · meshdir = quad 공유. nv=14(freejoint6+관절8), nu=8.
+    B0 산출물. home pose·게인·게이트는 B1~ 에서.
+  -->
+  <compiler angle="radian" meshdir="/home/jsh/문서/jsh/simulation/quad/meshes_sim_17dof/" />
+  <asset>
+    <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.33 0.36 0.40" rgb2="0.42 0.45 0.50" width="512" height="512" />
+    <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="12 12" reflectance="0.12" />
+    <mesh name="HL_hip_link" content_type="model/stl" file="HL_hip_link.STL" />
+    <mesh name="HL_thigh_link" content_type="model/stl" file="HL_thigh_link.STL" />
+    <mesh name="HL_calf_link" content_type="model/stl" file="HL_calf_link.STL" />
+    <mesh name="HL_foot_link" content_type="model/stl" file="HL_foot_link.STL" />
+    <mesh name="HL_foot_contact_link" content_type="model/stl" file="HL_foot_contact_link.STL" />
+    <mesh name="HR_hip_link" content_type="model/stl" file="HR_hip_link.STL" />
+    <mesh name="HR_thigh_link" content_type="model/stl" file="HR_thigh_link.STL" />
+    <mesh name="HR_calf_link" content_type="model/stl" file="HR_calf_link.STL" />
+    <mesh name="HR_foot_link" content_type="model/stl" file="HR_foot_link.STL" />
+    <mesh name="HR_foot_contact_link" content_type="model/stl" file="HR_foot_contact_link.STL" />
+  </asset>
+  <worldbody>
+    <body name="torso" pos="0 0 0.52">
+      <freejoint name="root" />
+      <!-- 최소 몸통: 질량·관성만(inertial), 시각 box는 제거(placeholder였음). mass 3kg, CoM 고관절선 약간 위. -->
+      <inertial pos="0 0 0.05" mass="3.0" diaginertia="0.008 0.010 0.006" />
+      <site name="imu" pos="0 0 0.05" size="0.01" />   <!-- ★IMU 장착점(실기 반영, 상태추정 입력) -->
+
+      <!-- ===== HL (뒷 좌) : quad 원본 그대로, hip pos만 x=0 중심 ===== -->
+      <body name="HL_hip_link" pos="0.035 0.0225 0">
+        <inertial pos="0.026196 0.039035 -5.8825e-05" quat="0.727698 -1.12194e-05 -8.00771e-06 0.685898" mass="1.3" diaginertia="0.000788485 0.000555085 0.00044966" />
+        <joint name="HL_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.6109 0.6109" actuatorfrcrange="-84 84" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_hip_link" />
+        <geom type="mesh" contype="0" conaffinity="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_hip_link" />
+        <body name="HL_thigh_link" pos="0 0.115 0">
+          <inertial pos="0.055149 0.00079282 -0.077079" quat="0.674237 -0.213238 -0.213149 0.674167" mass="3.1" diaginertia="0.005605 0.00436141 0.00134769" />
+          <joint name="HL_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.356 1.134" actuatorfrcrange="-84 84" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link" />
+          <geom type="mesh" contype="0" conaffinity="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link" />
+          <body name="HL_calf_link" pos="0.13192 0 -0.1884">
+            <inertial pos="-0.071593 0.000126754 -0.0633446" quat="0.641055 0.29841 0.29841 0.641055" mass="0.595204" diaginertia="0.00243273 0.00232033 0.000138271" />
+            <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-0.959 1.134" actuatorfrcrange="-126 126" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_calf_link" />
+            <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_calf_link" />
+            <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
+              <inertial pos="0.0105929 -7.89238e-12 -0.0600756" quat="0.704415 -0.0616285 -0.0616283 0.704417" mass="0.202619" diaginertia="0.000300644 0.000274237 3.03295e-05" />
+              <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-168 168" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_foot_link" />
+              <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_foot_link" />
+              <!-- ★평발 heel 접촉구: foot_joint(발목 관절) 위치. toe(HL_sphere)와 함께 밑창 2점 -->
+              <geom name="HL_sphere2" type="sphere" size="0.018" pos="0 0 0" rgba="0.3 0.5 0.9 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
+              <body name="HL_foot_contact_link" pos="0.0277837 0 -0.157569">
+                <inertial pos="-0.000131235 1.07253e-10 0.000744242" quat="0.541675 0.45452 0.45452 0.541675" mass="0.0375462" diaginertia="1.07022e-05 8.08626e-06 7.24966e-06" />
+                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="HL_foot_contact_link" />
+                <geom name="HL_sphere" type="sphere" size="0.018" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <!-- ===== HR (뒷 우) : quad 원본 그대로, hip pos만 x=0 중심 ===== -->
+      <body name="HR_hip_link" pos="0.035 -0.0225 0">
+        <inertial pos="0.044964 -0.03664 4.8852e-05" quat="0.704132 9.93157e-06 1.28479e-05 0.710069" mass="1.4" diaginertia="0.000818289 0.000551961 0.00046473" />
+        <joint name="HR_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.6109 0.6109" actuatorfrcrange="-84 84" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_hip_link" />
+        <geom type="mesh" contype="0" conaffinity="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_hip_link" />
+        <body name="HR_thigh_link" pos="0 -0.115 0">
+          <inertial pos="0.053568 -0.00079281 -0.078186" quat="0.674558 -0.212019 -0.212132 0.674552" mass="3.1" diaginertia="0.005605 0.00436143 0.00134767" />
+          <joint name="HR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-2.356 1.134" actuatorfrcrange="-84 84" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link" />
+          <geom type="mesh" contype="0" conaffinity="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link" />
+          <body name="HR_calf_link" pos="0.13192 0 -0.1884">
+            <inertial pos="-0.071593 -0.000124046 -0.0633446" quat="0.641055 0.29841 0.29841 0.641055" mass="0.595204" diaginertia="0.00243273 0.00232033 0.000138271" />
+            <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-0.959 1.134" actuatorfrcrange="-126 126" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_calf_link" />
+            <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_calf_link" />
+            <body name="HR_foot_link" pos="-0.187681 0 -0.157483">
+              <inertial pos="0.0105929 -7.89188e-12 -0.0600756" quat="0.704415 -0.0616285 -0.0616283 0.704417" mass="0.202619" diaginertia="0.000300644 0.000274237 3.03295e-05" />
+              <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-168 168" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_foot_link" />
+              <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_foot_link" />
+              <!-- ★평발 heel 접촉구: foot_joint(발목 관절) 위치. toe(HR_sphere)와 함께 밑창 2점 -->
+              <geom name="HR_sphere2" type="sphere" size="0.018" pos="0 0 0" rgba="0.3 0.5 0.9 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
+              <body name="HR_foot_contact_link" pos="0.0277837 0 -0.157569">
+                <inertial pos="-0.000131235 1.07254e-10 0.000744242" quat="0.541675 0.45452 0.45452 0.541675" mass="0.0375462" diaginertia="1.07022e-05 8.08626e-06 7.24966e-06" />
+                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="HR_foot_contact_link" />
+                <geom name="HR_sphere" type="sphere" size="0.018" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" friction="1.6 0.05 0.001" solref="0.004 1" solimp="0.95 0.99 0.001" />   <!-- ★바닥 강성↑(soft개선 solref0.02→0.004)·마찰↑ -->
+    <light pos="0 0 3" dir="0 0 -1" />
+  </worldbody>
+  <option timestep="0.002" gravity="0 0 -9.81" />
+  <default>
+    <geom friction="1.3 0.02 0.001" condim="3" />
+    <motor ctrllimited="true" ctrlrange="-200 200" />
+  </default>
+  <actuator>
+    <motor joint="HL_hip_joint" name="HL_hip" />
+    <motor joint="HL_thigh_joint" name="HL_thigh" />
+    <motor joint="HL_calf_joint" name="HL_calf" />
+    <motor joint="HL_foot_joint" name="HL_foot" />
+    <motor joint="HR_hip_joint" name="HR_hip" />
+    <motor joint="HR_thigh_joint" name="HR_thigh" />
+    <motor joint="HR_calf_joint" name="HR_calf" />
+    <motor joint="HR_foot_joint" name="HR_foot" />
+  </actuator>
+  <!-- ★IMU 센서(실기 반영): 상태추정기 입력. gyro=각속도, accel=비력(중력반작용 포함), quat=자세.
+       실로봇과 동일하게 '센서만'으로 base 추정(leg-odometry+EKF). 절대 base(framepos/vel)는 GT 비교용만. -->
+  <sensor>
+    <gyro          site="imu" name="imu_gyro"  />
+    <accelerometer site="imu" name="imu_acc"   />
+    <framequat     objtype="site" objname="imu" name="imu_quat" />
+    <framepos      objtype="site" objname="imu" name="gt_pos"  />   <!-- GT(검증 전용, 실기엔 없음) -->
+    <framelinvel   objtype="site" objname="imu" name="gt_vel"  />
+  </sensor>
+</mujoco>

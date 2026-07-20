@@ -13,10 +13,10 @@ pkill -f teleop_gui_biped 2>/dev/null || true
 sleep 1
 
 # 초기 명령(제자리)
-echo '{"v":0.0,"body_h":0.50,"mode":"stand"}' > "$CMD"
+echo '{"v":0.0,"body_h":0.50,"mode":"stand","contact":"1pt"}' > "$CMD"
 
 # ① 컨트롤러 + 뷰어
-setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' '$PY' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' BIPED_MJCF='${BIPED_MJCF:-}' '$PY' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (quad/ 에 위치)
 setsid bash -c "cd '$HERE/../quad'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' '$PY' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &

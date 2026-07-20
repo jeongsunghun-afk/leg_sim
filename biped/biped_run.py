@@ -21,8 +21,22 @@ def read_cmd():
         return None
 
 
+# ★접촉 모드별 모델: 1pt=점발(biped_from_quad, 동적보행)·2pt=평발(biped_flatfoot, 정적 양발지지)
+MODELS = {'1pt': None, '2pt': os.path.join(os.path.dirname(__file__), 'biped_flatfoot.mjcf')}
+
+
+def build(contact):
+    mjcf = MODELS.get(contact) or os.environ.get('BIPED_MJCF')
+    c = BM.BipedMPCWBIC(mjcf=mjcf) if mjcf else BM.BipedMPCWBIC()
+    c.reset(); c.setup_mpc()
+    tag = '2점 평발(정적지지)' if c.flatfoot else ('2점' if c.two_contact else '1점 점발')
+    print(f"[biped_run] 접촉모드={contact} → {tag} · 발당 접촉구 {len(c.foot_spheres[0])}개 · 기본높이 {c.com_ref[2]:.3f}")
+    return c
+
+
 def main():
-    c = BM.BipedMPCWBIC(); c.reset(); c.setup_mpc()
+    contact = os.environ.get('CONTACT', '1pt')     # 시작 접촉모드
+    c = build(contact)
     m, d = c.m, c.d; dt = m.opt.timestep
     z_home = float(c.com_ref[2])
     mode, body_h, prev_mode = 'stand', z_home, 'stand'
@@ -37,6 +51,13 @@ def main():
         if k % 20 == 0:                                    # 명령 폴링(50Hz)
             cmd = read_cmd()
             if cmd:
+                if cmd.get('contact', contact) != contact:      # ★접촉모드 전환(1pt↔2pt): 컨트롤러+뷰어 재생성
+                    contact = cmd.get('contact')
+                    if viewer is not None: viewer.close()
+                    c = build(contact); m, d = c.m, c.d
+                    z_home = float(c.com_ref[2]); body_h = z_home
+                    viewer = mujoco.viewer.launch_passive(m, d) if view else None
+                    mode = 'stand'; prev_mode = 'stand'; t0 = time.perf_counter(); k = 0
                 mode = cmd.get('mode', mode)
                 body_h = float(cmd.get('body_h', body_h))
                 if mode == 'reset':                        # ★RESET: 초기 자세로 리셋(모터 재활성)

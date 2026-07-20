@@ -42,6 +42,7 @@ class BipedMPCWBIC(BS.BipedStep):
         self.yaw_des = 0.0                                  # heading 목표(wz로 갱신)
         self.yaw_hold = None                                # ★정지/직진 heading latch(자유 yaw 표류 방지, 17-DOF 방식)
         self.head_lead = 0.15                               # ★헤딩 lead clamp[rad](발이 실제보다 앞서는 최대)
+        self.static_stand = os.environ.get('FLAT_STATIC', '1') != '0'  # ★평발 정지=정적 양발 지지(0=연속스텝 실험)
 
     # ── MPC 셋업 ──
     def setup_mpc(self):
@@ -141,7 +142,7 @@ class BipedMPCWBIC(BS.BipedStep):
     def mpc_grf(self, contacts):
         x0, yaw0 = self.body_x0()
         com = self.d.subtree_com[0]
-        frel = [self.d.geom_xpos[self.sph[i]] - com for i in range(self.nfeet)]
+        frel = [self.foot_center(i) - com for i in range(self.nfeet)]   # ★MPC moment arm=발 중심
         fp = [frel] * MPC_N
         cur = [1 if i in contacts else 0 for i in range(self.nfeet)]   # 현재 접촉 유지 가정(event-based)
         cs = [cur] * MPC_N
@@ -158,16 +159,28 @@ class BipedMPCWBIC(BS.BipedStep):
     # ── WBIC (MPC lam 추종) — biped_step.wbic_track 오버라이드 ──
     def wbic_track(self, contacts, swing, lam):
         d, m, nv, nu = self.d, self.m, self.nv, self.nu
-        Kc = len(contacts); nz = nv + 3*Kc; sl = lambda k: nv + 3*k
-        cjac = [self.foot_jac(c) for c in contacts]
+        cpts = self.contact_pts(contacts)          # ★접촉점 [(geom,body,foot)] — 2접촉=stance 발당 2점
+        Kc = len(cpts); nz = nv + 3*Kc; sl = lambda k: nv + 3*k
+        cjac = [self.foot_jac_at(g, b) for (g, b, f) in cpts]
+        foot_npts = {}                             # 발별 실제 접촉점 수(MPC GRF 분배용, 적응형)
+        for (_g, _b, _f) in cpts: foot_npts[_f] = foot_npts.get(_f, 0) + 1
         M = np.zeros((nv, nv)); mujoco.mj_fullM(m, M, d.qM)
         h = d.qfrc_bias.copy(); qv = d.qvel.copy()
         P = np.zeros((nz, nz)); g = np.zeros(nz); sw_vidx = set()
         for leg, (ptgt, vtgt) in swing.items():
-            J = self.foot_jac(leg)
-            accel = SW_KP*(ptgt - d.geom_xpos[self.sph[leg]]) + SW_KD*(vtgt - J @ qv)
+            J = self.foot_jac_center(leg)          # ★swing=발 중심 추종(2접촉이면 2구 평균)
+            accel = SW_KP*(ptgt - self.foot_center(leg)) + SW_KD*(vtgt - J @ qv)
             P[:nv,:nv] += 90.0*(J.T @ J); g[:nv] -= 90.0*(J.T @ accel)
             for t in range(4): sw_vidx.add(6 + leg*4 + t)
+            if self.flatfoot:                      # ★평발 swing 발 수평 유지(안 하면 16cm 발 기울어 착지→교란)
+                qb = d.qpos[3:7]
+                yw = np.arctan2(2*(qb[0]*qb[3]+qb[1]*qb[2]), 1-2*(qb[2]**2+qb[3]**2))
+                qyaw = np.array([np.cos(yw/2), 0, 0, np.sin(yw/2)])
+                ftgt = np.zeros(4); mujoco.mju_mulQuat(ftgt, qyaw, self.foot_home_quat[leg])
+                oe = np.zeros(3); mujoco.mju_subQuat(oe, d.xquat[self.fbody[leg]], ftgt)
+                jr = np.zeros((3, nv)); mujoco.mj_jac(m, d, None, jr, d.xpos[self.fbody[leg]], self.fbody[leg])
+                a_rot = 120*(-oe) - 15*(jr @ qv)
+                P[:nv,:nv] += 15.0*(jr.T @ jr); g[:nv] -= 15.0*(jr.T @ a_rot)   # swing 발 레벨링(weight 15)
         Jc = np.zeros((3, nv)); mujoco.mj_jacSubtreeCom(m, d, Jc, 0); self.Jc_cache = Jc
         qc = d.qpos[3:7]
         yaw = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
@@ -179,13 +192,13 @@ class BipedMPCWBIC(BS.BipedStep):
         zref = self.com_ref[2]; a_z = 300*(zref - d.subtree_com[0][2]) - 30*(Jc @ qv)[2]
         P[:nv,:nv]+=400.0*np.outer(Jc[2],Jc[2]); g[:nv]-=400.0*a_z*Jc[2]   # ★단일지지 sink 억제(150→400·200→300)
         for j in range(nu):
-            a = 60*(Q_HOME[j]-d.qpos[7+j]) - 5*qv[6+j]
+            a = 60*(self.q_home[j]-d.qpos[7+j]) - 5*qv[6+j]
             w = W_ANKLE if j in ANKLE_IDX else (5.0 if (6+j) in sw_vidx else W_POST)
             P[6+j,6+j]+=w; g[6+j]-=w*a
         P[:nv,:nv]+=1e-3*np.eye(nv)
-        for k in range(Kc):                        # ★MPC GRF 추종
+        for k in range(Kc):                        # ★MPC GRF 추종 (발 GRF를 접촉점 수로 분배)
             P[sl(k):sl(k)+3, sl(k):sl(k)+3] += W_LAM*np.eye(3)
-            g[sl(k):sl(k)+3] -= W_LAM*lam[contacts[k]]
+            g[sl(k):sl(k)+3] -= W_LAM*lam[cpts[k][2]]/foot_npts[cpts[k][2]]
         neq = 6+3*Kc; A=np.zeros((neq,nz)); bb=np.zeros(neq)
         A[:6,:nv]=M[:6,:]; bb[:6]=-h[:6]
         for k in range(Kc):
@@ -204,7 +217,8 @@ class BipedMPCWBIC(BS.BipedStep):
             rows.append(-Tm[i]); hh.append(TAU_PEAK[i]+h[6+i])
         G=np.array(rows); hh=np.array(hh)
         P=0.5*(P+P.T)+1e-8*np.eye(nz)
-        x=solve_qp(P,g,G,hh,A,bb,solver='quadprog')
+        _solver='proxqp' if self.two_contact else 'quadprog'   # ★2점=rank-deficient 등식 → proxqp
+        x=solve_qp(P,g,G,hh,A,bb,solver=_solver)
         if x is None: return self.wbic_stance()
         qdd=x[:nv]; tau=M[6:,:]@qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:,6:].T @ x[sl(k):sl(k)+3]
@@ -213,6 +227,15 @@ class BipedMPCWBIC(BS.BipedStep):
     def control(self, dt):
         qc = self.d.qpos[3:7]                        # 실제 yaw
         yaw_act = np.arctan2(2*(qc[0]*qc[3]+qc[1]*qc[2]), 1-2*(qc[2]**2+qc[3]**2))
+        # ★평발 정적 양발 지지: 명령 정지면 stepping 대신 wbic_stance(점발은 2점이라 불가, 평발은 밑창이라 가능).
+        if self.flatfoot and self.static_stand and abs(self.vx_cmd) < 0.02 and abs(self.vy_cmd) < 0.02 and abs(self.wz_cmd) < 0.02:
+            fc = 0.5 * (self.foot_center(0) + self.foot_center(1))
+            self.com_ref[0], self.com_ref[1] = fc[0], fc[1]   # 현재 지지중심 홀드
+            self.wbic_stance()
+            self.t_ss = 0.0                                   # 보행 재개용 위상 초기화
+            self.com0 = self.d.subtree_com[0][:2].copy()
+            self.liftoff = [None, None]; self.yaw_hold = yaw_act
+            self.t += dt; return
         if abs(self.wz_cmd) > 0.02:                  # ★선회 중: 명령 적분 + 리드 클램프(폭주방지)
             self.yaw_des += self.wz_cmd * dt
             lag = np.arctan2(np.sin(self.yaw_des - yaw_act), np.cos(self.yaw_des - yaw_act))
@@ -231,7 +254,7 @@ class BipedMPCWBIC(BS.BipedStep):
             self.lam = self.mpc_grf(stance)          # 50Hz MPC (현재 stance 기준)
         self._k += 1
         if self.liftoff[swing_leg] is None:
-            self.liftoff[swing_leg] = self.d.geom_xpos[self.sph[swing_leg]].copy()
+            self.liftoff[swing_leg] = self.foot_center(swing_leg).copy()
         p, v = self.swing_traj(swing_leg, s)
         self.wbic_track(stance, {swing_leg: (p, v)}, self.lam)
         self.t += dt

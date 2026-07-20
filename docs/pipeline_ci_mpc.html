@@ -301,23 +301,81 @@
 순차 스텝 깊이(H×sub=150)가 wall-clock 바닥(~950ms). 실시간(20ms)엔 H·sub 축소가 필요.</p>
 </div>
 
-<h2><span class="n">09</span> 다음 단계</h2>
+<h2><span class="n">09</span> 샘플링의 벽 → 그래디언트 CI 피벗</h2>
+<p class="sub">샘플링과 하이브리드가 반대편에서 같은 벽에 도달 — 데이터로 규명</p>
+<div class="scroll">
+<table>
+<thead><tr><th>접근</th><th>gap 결과</th><th>강점</th><th>벽</th></tr></thead>
+<tbody>
+<tr><td><b>샘플링 CI</b> (MPPI)</td><td>앞발 gap1 크로싱(~10s falls=0) 후 낙상</td><td>타이밍 적응(물리 롤아웃)</td><td class="hl">피드백 부재 → lunge(z0.18)</td></tr>
+<tr><td><b>하이브리드</b> (OCP+발판)</td><td>base gap1 완전크로싱(z0.40·lunge없음) 후 뒷발서 실패</td><td>안정 피드백(DDP K)</td><td class="hl">고정 스케줄 → 타이밍 불가</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout"><b>핵심 규명.</b> 하이브리드에서 지형질의·발판보정은 정확했으나 blind OCP와 <b>같은 지점 실패</b> →
+실패는 "발 위치(WHERE)"가 아니라 <b>"고정 접촉 스케줄 타이밍(WHEN)"</b>. 발이 void 위인데 스케줄은 "접촉중" 가정 → GRF 불일치 → bounce.
+이건 <b>TAMOLS가 막힌 그 벽</b>이자 CI-MPC가 존재하는 이유. <b>로버스트 크로싱 = 접촉 타이밍 적응 + 안정 피드백을 한 구조에서</b> = 그래디언트 CI(iLQR/DDP through contact).</div>
+
+<h2><span class="n">10</span> MJX Contact-Implicit iLQR <span class="tag t-warn" style="align-self:center"><span class="dot"></span>C-1/C-2 · 구축·bring-up</span></h2>
+<p class="sub">§15 C-2(MuJoCo 방언): QCQP·해석그래디언트를 MJX autodiff로 대체 · <span class="mono">mjx_ilqr.py</span></p>
+<div class="flow card" style="padding-top:24px">
+  <div class="stage">
+    <div class="rail"><div class="node done">M</div><div class="bar"></div></div>
+    <div class="body"><h3>MjxDynamics — 접촉 통과 선형화</h3>
+      <p class="k">상태 x=[qpos24,qvel23]=47, 제어 u=17. f(x,u)=mjx.step(soft접촉 물리).</p>
+      <div class="kv"><span class="chip">fx=∂f/∂x, fu=∂f/∂u ← <b>jax.jacfwd</b></span>
+        <span class="chip">★<b>forward-mode</b>가 접촉 while_loop 통과(reverse는 막힘)</span>
+        <span class="chip">vmap 호라이즌 배치</span></div>
+    </div>
+  </div>
+  <div class="stage">
+    <div class="rail"><div class="node done">B</div><div class="bar"></div></div>
+    <div class="body"><h3>backward — Riccati</h3>
+      <p class="k">Vx·Vxx ← 종단 Qf. t=N-1..0: Qx,Qu,Qxx,Quu,Qux → <b>K[t]=−Quu⁻¹Qux(피드백)</b>·k[t]=−Quu⁻¹Qu(전진).</p>
+    </div>
+  </div>
+  <div class="stage">
+    <div class="rail"><div class="node done">F</div><div class="bar"></div></div>
+    <div class="body"><h3>forward — 라인서치</h3>
+      <p class="k">u = us + α·k + <b>K·(x−xs)</b> → mjx rollout. 비용 감소 시 accept, reg 적응. 반복.</p>
+      <div class="kv"><span class="chip">→ xs, us, <b>K(피드백 게인)</b></span></div>
+    </div>
+  </div>
+  <div class="stage">
+    <div class="rail"><div class="node next">L</div></div>
+    <div class="body"><h3>(의도) 폐루프 MPC</h3>
+      <p class="k">매 스텝 iLQR → <span class="mono">u₀ + K₀·(x_meas−x₀)</span> 적용, 수신호라이즌 재해결. 타이밍(fu)+피드백(K)을 한 구조에서.</p>
+    </div>
+  </div>
+</div>
+<div class="grid2">
+  <div class="card"><span class="tag t-ok"><span class="dot"></span>검증됨</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">파이프라인 작동 + 선형화 정확</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">iLQR 수렴(J 감소)·피드백 K 생성. 선형화 <b>jacfwd=유한차분</b>(dz/du 3.9e-5 vs 5.3e-5) → <b>C-2 그래디언트 건전</b>.</p>
+  </div>
+  <div class="card"><span class="tag t-warn"><span class="dot"></span>bring-up</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">standing 홀드 미달 = 접촉 자세</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">standing_ik는 발이 z=0에 정확히 닿아 <b>ncon=0</b>(침투없어 접촉미감지)→자유낙하. 그래디언트 문제 아님 — 발 침투(ncon&gt;0) 자세만 잡으면 됨.</p>
+  </div>
+</div>
+
+<h2><span class="n">11</span> 다음 단계</h2>
 <div class="scroll">
 <table>
 <thead><tr><th>우선</th><th>과제</th><th>내용</th></tr></thead>
 <tbody>
-<tr><td class="num">1</td><td><b>속도추종 개선</b></td><td>prior 스텝 길이↑ · 전진진행 보상(안정성 인지) · iters/샘플↑ → vx = 명령 달성</td></tr>
-<tr><td class="num">2</td><td><b>plan_ms 단축</b></td><td>rollout dt 조정으로 순차 스텝 깊이↓ → 실시간 근접</td></tr>
-<tr><td class="num">3</td><td class="hl"><b>gap / stepping 크로싱</b></td><td>지형 위 수신호라이즌 CI — 물리 롤아웃의 접촉 타이밍 자동발견 (전체 목표)</td></tr>
-<tr><td class="num">—</td><td>폴백</td><td>샘플링이 정밀도·연산 병목이면 C-2(이중모델) → C-1(Kim 2023 정통) 진입</td></tr>
+<tr><td class="num">1</td><td class="hl"><b>접촉 자세 bring-up</b></td><td>발이 살짝 침투해 4발 ncon&gt;0인 x_ref/x0 → iLQR standing 홀드</td></tr>
+<tr><td class="num">2</td><td><b>cost/reg·라인서치 robust화</b></td><td>tangent-space(quat manifold) 정식화 검토 · standing → 보행(트롯 참조 추종)</td></tr>
+<tr><td class="num">3</td><td class="hl"><b>gap 크로싱</b></td><td>그래디언트(fu)가 접촉 타이밍 적응 + K 안정화 = 하이브리드가 못 준 둘을 동시에 (전체 목표)</td></tr>
+<tr><td class="num">—</td><td>폴백</td><td>C-2 bring-up이 막히면 C-1 정통(Pinocchio 하드접촉 QCQP+해석그래디언트). 단 선형화 정확 확인돼 폴백 필요성↓</td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="foot">
-<p><b>구성 파일</b> · <span class="mono">model_bridge.py</span> (브리지·gearbox·sphere·메쉬스트립) ·
-<span class="mono">ocp_fixed.py</span> (Crocoddyl OCP) · <span class="mono">ci_mpc_run.py</span>·<span class="mono">benchmark.py</span> (baseline) ·
-<span class="mono">mppi_mpc.py</span> (CPU) · <span class="mono">mjx_mppi.py</span> (GPU).</p>
+<p><b>구성 파일</b> (<span class="mono">simulation/quad/ci_mpc/</span>) · <span class="mono">model_bridge.py</span> (브리지·gearbox·sphere·메쉬스트립) ·
+<span class="mono">ocp_fixed.py</span> (Crocoddyl OCP+foot_adjust 훅) · <span class="mono">ci_mpc_run.py</span> (OCP 폐루프·지형·발판보정)·<span class="mono">benchmark.py</span> (baseline) ·
+<span class="mono">mppi_mpc.py</span>·<span class="mono">mjx_mppi.py</span> (샘플링 CI) · <span class="mono">mjx_ilqr.py</span> (★그래디언트 CI iLQR) · <span class="mono">mjcf/ci_mpc_gap.mjcf</span> (gap 코스).</p>
 <p>02_Leg 17-DOF 제어 · 감속비 실값 hip/thigh 7 · calf 10.5 · foot 8.4 (peak 100.8 Nm · ω 24.6 rad/s).
 배포 컨트롤러 A는 불변, 본 트랙은 모델기반 타이밍 최적화 연구.</p>
 </div>

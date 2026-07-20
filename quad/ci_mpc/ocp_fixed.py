@@ -155,11 +155,15 @@ class TrotGaitOCP:
         pz = self.foot_r + step_h * np.sin(np.pi * phase_frac)
         return np.array([px, py, pz])
 
-    def create_problem(self, x0, v_cmd=(0.4, 0., 0.), N=20, T_half=8, step_h=0.08, k0=0):
+    def create_problem(self, x0, v_cmd=(0.4, 0., 0.), N=20, T_half=8, step_h=0.08, k0=0,
+                       foot_adjust=None):
         """Build an N-node receding-horizon trot problem starting at x0.
 
         k0 anchors the gait schedule to the global gait clock so the contact
         sequence advances with real time across successive MPC solves.
+        foot_adjust(xyz)->xyz : optional terrain-aware nudge of each swing landing
+        target (e.g. shift off a gap onto a platform). This is the hybrid's
+        perceptive foothold layer on top of the stable OCP gait.
         """
         v_cmd = np.asarray(v_cmd, float)
         step_len = float(v_cmd[0]) * (T_half * self.dt)   # distance covered per swing
@@ -173,6 +177,8 @@ class TrotGaitOCP:
             base_xy = base_xy0 + np.array([v_cmd[0] * k * self.dt, 0.0])
             swing_targets = {L: self._swing_target(L, phase_frac, step_len, step_h, base_xy)
                              for L in swing}
+            if foot_adjust is not None:                   # terrain-aware foothold nudge
+                swing_targets = {L: foot_adjust(L, t, phase_frac) for L, t in swing_targets.items()}
             models.append(self._make_node(stance, swing_targets, v_cmd))
         # terminal
         stance, swing = self._phase(k0 + N, T_half)

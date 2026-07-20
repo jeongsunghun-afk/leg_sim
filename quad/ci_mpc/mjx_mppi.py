@@ -78,6 +78,7 @@ def make_rollout(mx, sub):
         c += 40.0 * (dx.qpos[1] - y0) ** 2          # hold lateral line (no side drift)
         c += 15.0 * (1.0 - tilt) + 3.0 * dx.qvel[5] ** 2
         c += 40.0 * pitch ** 2 + 80.0 * jnp.maximum(0.0, -pitch) ** 2   # block dive
+        c += 200.0 * jnp.maximum(0.0, vx - 0.40) ** 2   # anti-lunge overshoot barrier (soft, not a state clip)
         c += jnp.where(z < 0.30, 2000.0, 0.0)           # collapse barrier
         c += 500.0 * jnp.maximum(0.0, 0.33 - z) ** 2    # soft floor
         return c

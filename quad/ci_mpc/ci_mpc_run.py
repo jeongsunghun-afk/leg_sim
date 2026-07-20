@@ -23,6 +23,8 @@ KP = float(os.environ.get("KP", "60"))
 KD = float(os.environ.get("KD", "2.0"))
 FF = float(os.environ.get("FF", "1.0"))     # feed-forward torque scale
 FOOT_R = float(os.environ.get("FOOT_R", "0.024"))   # contact sphere radius (ci_mpc only)
+MJCF_PATH = os.environ.get("MJCF_PATH", MJCF)       # override to a terrain scene
+DISABLE_FLOOR = os.environ.get("DISABLE_FLOOR", "0") == "1"   # gaps become real voids
 WAIST_KP, WAIST_KD = 200.0, 5.0
 N = 20
 DT_MPC = 2.5e-2
@@ -32,11 +34,37 @@ MAXIT = int(os.environ.get("MAXIT", "20"))
 def main():
     br = MjPinBridge()
     ocp = TrotGaitOCP(br, dt=DT_MPC, foot_r=FOOT_R)
-    mm = mujoco.MjModel.from_xml_path(MJCF)
+    mm = mujoco.MjModel.from_xml_path(MJCF_PATH)
     apply_gearbox(mm)                                    # reflected rotor inertia (C++ parity)
     set_foot_sphere(mm, FOOT_R)                          # enlarge foot spheres (ci_mpc only)
+    if DISABLE_FLOOR:                                    # gaps between platforms = true voids
+        fgid = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+        if fgid >= 0:
+            mm.geom_contype[fgid] = 0; mm.geom_conaffinity[fgid] = 0
     md = mujoco.MjData(mm)
     sim_per_mpc = int(round(DT_MPC / mm.opt.timestep))   # 12–13
+
+    # --- hybrid perceptive foothold layer ---
+    # OCP gives the stable base gait; this nudges a swing landing target off a gap onto
+    # the nearest platform (mj_ray downcast masked to terrain group 2). Only on terrain.
+    _grp2 = np.array([0, 0, 1, 0, 0, 0], dtype=np.uint8)
+
+    def _supported(x, y):
+        gid = np.zeros(1, dtype=np.int32)
+        mujoco.mj_ray(mm, md, np.array([x, y, 0.6]), np.array([0., 0., -1.]),
+                      _grp2, 1, -1, gid)
+        return gid[0] >= 0
+
+    def foot_adjust(L, tgt, phase_frac):
+        x, y, z = tgt
+        if _supported(x, y):
+            return tgt
+        for dx in (0.03, 0.06, 0.09, 0.12, 0.15, -0.03, -0.06):   # reach forward first
+            if _supported(x + dx, y):
+                return np.array([x + dx, y, z])
+        return tgt
+
+    FA = foot_adjust if DISABLE_FLOOR else None
 
     # init to standing pose, settle with PD hold
     q_mj = br.pin_to_mj_qpos(ocp.q_stand)
@@ -52,7 +80,7 @@ def main():
 
     # warm-start buffers
     x0 = br.mj_to_pin_x(md.qpos, md.qvel)
-    prob = ocp.create_problem(x0, v_cmd=(VX, 0., 0.), N=N)
+    prob = ocp.create_problem(x0, v_cmd=(VX, 0., 0.), N=N, foot_adjust=FA)
     solver = crocoddyl.SolverBoxFDDP(prob)
     xs = [x0] * (N + 1)
     us = prob.quasiStatic([x0] * N)
@@ -80,7 +108,7 @@ def main():
             x0 = br.mj_to_pin_x(md.qpos, md.qvel)
             gait_acc += sim_per_mpc * mm.opt.timestep / DT_MPC   # advance gait clock in real time
             node = int(round(gait_acc))
-            prob = ocp.create_problem(x0, v_cmd=(VX, 0., 0.), N=N, k0=node)
+            prob = ocp.create_problem(x0, v_cmd=(VX, 0., 0.), N=N, k0=node, foot_adjust=FA)
             xs_ws = [x0] + xs[2:] + [xs[-1]]
             us_ws = us[1:] + [us[-1]]
             solver = crocoddyl.SolverBoxFDDP(prob)
@@ -108,6 +136,9 @@ def main():
             if (ja / tau_cap).max() > 0.98:      # any leg joint at >=98% of peak
                 sat_n += 1
             vx_sum += md.qvel[0]; vx_n += 1
+        if step % 100 == 0:
+            print(f"  step{step:4d} x={md.qpos[0]:+.3f} y={md.qpos[1]:+.3f} z={md.qpos[2]:.3f} "
+                  f"vx={md.qvel[0]:+.3f}", flush=True)
         # fall check
         if md.qpos[2] < 0.18:
             falls = 1

@@ -325,7 +325,11 @@ def _mpc_run():
         duty = 0.5
     T_stance = (1.0 - duty) * NCYC * DT; half = 0.5 * VX * T_stance
     _grp2 = np.array([0, 0, 1, 0, 0, 0], dtype=np.uint8)
-    qd = ([0, 8, 120] + [0, 120, 120, 120] + [40.0]*17
+    # base x weight 6 (was 0/free): tracks a controlled advancing line (build_ref sets
+    # ref x = base_x0 + VX·t) so a forward lunge — CoM running ahead of the line — is
+    # braked, while steady forward progress at VX is unpenalised. Position feedback on
+    # top of the vx (velocity) damping = PD on CoM forward motion, catches the runaway.
+    qd = ([6, 8, 120] + [0, 120, 120, 120] + [40.0]*17
           + [20, 10, 5] + [5, 5, 8] + [0.05]*17)
     rd = [2e-3]*nu
 
@@ -348,7 +352,8 @@ def _mpc_run():
         # catches the body on the far platform instead of diving short into the gap.
         vx_pred = 0.5 * VX + 0.5 * float(np.clip(vx_meas, 0.0, 0.9))
         ref = np.zeros((Nh + 1, nx))
-        for k in range(Nh + 1):
+        q_prev = q_stand                             # warm-start IK chain: adjacent horizon
+        for k in range(Nh + 1):                      # nodes differ little → few IK iters each
             g = phase + k; p = (g % NCYC) / NCYC
             base_xk = base_x0 + vx_pred * k * DT
             tgt = {}
@@ -361,8 +366,10 @@ def _mpc_run():
                     tgt[L] = np.array([xw - base_xk, FOFF[L][1], FOOT_R + STEP_H * np.sin(np.pi * sp)])
                 else:                                 # stance: pinned to ACTUAL planted world pos
                     tgt[L] = np.array([fworld[L][0] - base_xk, fworld[L][1] - base_y0, FOOT_R])
+            q_prev = ik_feet(br, 0.42, tgt, q_init=q_prev)
             ref[k, :nq] = q_mj
-            ref[k, 7:nq] = br.pin_to_mj_qpos(ik_feet(br, 0.42, tgt, q_init=q_stand))[7:]
+            ref[k, 0] = base_x0 + VX * k * DT       # controlled advancing line (brakes lunge)
+            ref[k, 7:nq] = br.pin_to_mj_qpos(q_prev)[7:]
             ref[k, nq + 0] = VX
         return ref
 
@@ -370,18 +377,27 @@ def _mpc_run():
     fgid = {L: fgid_all[L] for L in ['FL', 'HL']}
     md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
     us = np.tile(u_hold, (Nh, 1)); phase = 0
-    print(f"iLQR-MPC gait walk: VX={VX} Nh={Nh} iters={ITERS} NCYC={NCYC}")
+    PROFILE = os.environ.get("PROFILE", "0") == "1"   # break wall-clock into ref/ilqr/sim
+    import time as _time
+    t_ref = t_ilqr = t_sim = 0.0
+    print(f"iLQR-MPC gait walk: VX={VX} Nh={Nh} iters={ITERS} NCYC={NCYC} sub={dyn.sub}")
     falls = 0; fmax = {}
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
         fworld = {L: md.geom_xpos[fgid_all[L]].copy() for L in FEET}   # actual planted foot positions
-        cost = QuadCost(nx, nu, nq, build_ref(phase, md.qpos[0], md.qpos[1], fworld, md.qvel[0]), qd, rd, qf_scale=8.0)
+        t0 = _time.perf_counter()
+        rref = build_ref(phase, md.qpos[0], md.qpos[1], fworld, md.qvel[0])
+        cost = QuadCost(nx, nu, nq, rref, qd, rd, qf_scale=8.0)
+        t1 = _time.perf_counter()
         xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
-        u0, K0, xs0 = us[0].copy(), K[0].copy(), xs[0].copy()
+        u0, K0, xs0 = np.asarray(us[0]).copy(), np.asarray(K[0]).copy(), np.asarray(xs[0]).copy()
+        t2 = _time.perf_counter()
         for _ in range(dyn.sub):                    # apply node control for sub sim steps
             xm = np.concatenate([md.qpos, md.qvel])
             md.ctrl[:] = np.clip(u0 + K0 @ (xm - xs0), -200, 200)
             mujoco.mj_step(mm, md)
+        if PROFILE:
+            t_ref += t1 - t0; t_ilqr += t2 - t1; t_sim += _time.perf_counter() - t2
         us = np.vstack([us[1:], us[-1]]); phase += 1   # shift warm-start + advance gait clock
         for L in fgid:
             fmax[L] = max(fmax.get(L, 0), md.geom_xpos[fgid[L]][2])
@@ -392,6 +408,10 @@ def _mpc_run():
             falls = 1; print(f"  FELL at c{c}"); break
     print(f"RESULT VX={VX} ctrl={c+1} falls={falls} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f} "
           f"foot_lift_max FL={fmax.get('FL',0):.3f} HL={fmax.get('HL',0):.3f} (>0.04=stepping, ~0.024=sliding)")
+    if PROFILE:
+        n = c + 1; tot = t_ref + t_ilqr + t_sim
+        print(f"PROFILE/step[ms]: build_ref(CPU IK) {1e3*t_ref/n:.1f} | ilqr(GPU) {1e3*t_ilqr/n:.1f} | "
+              f"sim {1e3*t_sim/n:.1f} | total {1e3*tot/n:.1f}  (ref {100*t_ref/tot:.0f}% ilqr {100*t_ilqr/tot:.0f}% sim {100*t_sim/tot:.0f}%)")
 
 
 def _selftest():

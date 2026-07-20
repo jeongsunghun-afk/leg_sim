@@ -1,0 +1,326 @@
+<title>CI-MPC (그래디언트 CI · MJX iLQR) 조정변수 레퍼런스</title>
+<style>
+  :root{
+    --bg:#eef0f4; --surface:#ffffff; --surface2:#f7f8fb; --ink:#1a1f2b;
+    --muted:#5b6575; --line:#e1e5ec; --accent:#1f6f8b; --accent-soft:#dcecf1;
+    --s:#2f6bd6; --v:#2c8a58; --a:#7a4bd0; --w:#bf6a12; --code:#243b53;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#12151b;--surface:#1a1e26;--surface2:#161a21;--ink:#e6eaf2;--muted:#98a2b3;
+      --line:#2a313d;--accent:#5fbcd6;--accent-soft:#16323b;
+      --s:#6ea6ff;--v:#5fc98c;--a:#b596f0;--w:#e8a752;--code:#c3d3e6;}
+  }
+  :root[data-theme="light"]{--bg:#eef0f4;--surface:#ffffff;--surface2:#f7f8fb;--ink:#1a1f2b;--muted:#5b6575;
+    --line:#e1e5ec;--accent:#1f6f8b;--accent-soft:#dcecf1;--s:#2f6bd6;--v:#2c8a58;--a:#7a4bd0;--w:#bf6a12;--code:#243b53;}
+  :root[data-theme="dark"]{--bg:#12151b;--surface:#1a1e26;--surface2:#161a21;--ink:#e6eaf2;--muted:#98a2b3;
+    --line:#2a313d;--accent:#5fbcd6;--accent-soft:#16323b;--s:#6ea6ff;--v:#5fc98c;--a:#b596f0;--w:#e8a752;--code:#c3d3e6;}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px 90px}
+
+  header.hero{padding:44px 0 22px;border-bottom:1px solid var(--line);margin-bottom:26px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 8px;letter-spacing:-.01em;text-wrap:balance;font-weight:680}
+  .sub{color:var(--muted);font-size:15px;max-width:62ch}
+  .sub code{font-family:var(--mono);font-size:.86em;color:var(--code);background:var(--surface2);
+    padding:1px 5px;border-radius:4px}
+
+  nav.toc{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 12px;margin-bottom:8px;
+    border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:7px}
+  nav.toc a{font-size:12.5px;font-family:var(--mono);color:var(--muted);text-decoration:none;
+    padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+    transition:.15s}
+  nav.toc a:hover{color:var(--accent);border-color:var(--accent)}
+
+  section{margin-top:34px;scroll-margin-top:64px}
+  h2{font-size:19px;margin:0 0 4px;letter-spacing:-.005em;display:flex;align-items:baseline;gap:10px}
+  h2 .num{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:600}
+  .note{color:var(--muted);font-size:13.5px;margin:2px 0 14px}
+  .note code,p code,td code{font-family:var(--mono);font-size:.84em;color:var(--code);
+    background:var(--surface2);padding:1px 5px;border-radius:4px;white-space:nowrap}
+
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:540px}
+  thead th{position:sticky;top:0;background:var(--surface2);text-align:left;font-weight:600;
+    font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--surface2)}
+  td.p{font-family:var(--mono);color:var(--code);font-weight:600;white-space:nowrap}
+  td.val{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)}
+  td.mean{color:var(--muted);min-width:240px}
+
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    padding:1px 6px;border-radius:5px;line-height:1.5}
+  .tag.env{color:var(--s);background:color-mix(in srgb,var(--s) 15%,transparent)}
+  .tag.code{color:var(--v);background:color-mix(in srgb,var(--v) 15%,transparent)}
+  .tag.new{color:var(--a);background:color-mix(in srgb,var(--a) 15%,transparent)}
+  .tag.dash{color:var(--muted);background:var(--surface2)}
+
+  .callout{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:11px;padding:18px 20px;margin-top:12px}
+  .callout h2{margin-bottom:12px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin:14px 0 2px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:14px}
+  .knob{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+  .knob .k{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:13.5px}
+  .knob .d{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);margin:3px 0 6px}
+  .knob .m{font-size:12.5px;color:var(--muted);line-height:1.45}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:5px;
+    background:var(--accent-soft);color:var(--accent);font-weight:600}
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  .ok{color:var(--v);font-weight:600}
+  .warn{color:var(--w);font-weight:600}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">02_Leg · CI-MPC 제2트랙 · mjx_ilqr.py</div>
+  <h1>CI-MPC 조정변수 레퍼런스</h1>
+  <p class="sub">그래디언트 Contact-Implicit MPC — MJX forward-diff iLQR(§15 C-2). 배포 컨트롤러 A와는
+  <b>파라미터 집합이 완전히 별개</b>라 분리 관리. 입출력변수 정의는 <code>pipeline_ci_mpc.html</code>,
+  본 문서는 <b>조정변수(knob)</b>. 값은 코드 기본값이며 <span class="tag env">env</span>로 오버라이드.</p>
+</header>
+
+<nav class="toc">
+  <a href="#knob">★ knob</a>
+  <a href="#ilqr">iLQR 코어</a>
+  <a href="#cost">비용 가중</a>
+  <a href="#gait">gait 참조</a>
+  <a href="#capture">capture-point</a>
+  <a href="#terrain">지형인지 nudge</a>
+  <a href="#gearbox">기어박스·모터</a>
+  <a href="#contact">발 접촉·모델</a>
+  <a href="#env">실행 env</a>
+  <a href="#mppi">샘플링 CI</a>
+  <a href="#status">크로싱 현황</a>
+</nav>
+
+<section id="knob">
+  <div class="callout">
+    <h2><span class="num">★</span> 자주 쓰는 튜닝 knob</h2>
+    <div class="grid">
+      <div class="knob"><div class="k">VX</div><div class="d">0.2 (gap 0.3)</div><div class="m">전진 속도 명령 [m/s]. 소심(0.2)=stall·과격(0.3)=lunge 긴장</div></div>
+      <div class="knob"><div class="k">NH</div><div class="d">12</div><div class="m">호라이즌 노드 수. ↑=throw-and-catch 계획 여유(solve 느림)</div></div>
+      <div class="knob"><div class="k">ILQR_ITERS</div><div class="d">3–4</div><div class="m">제어틱당 iLQR 반복(warm-start라 소수)</div></div>
+      <div class="knob"><div class="k">NCYC</div><div class="d">20</div><div class="m">gait 한 주기 제어스텝 수 → T_stance=0.5·NCYC·DT=0.2s</div></div>
+      <div class="knob"><div class="k">STEP_H</div><div class="d">0.08</div><div class="m">스윙 발 아치 높이 [m]</div></div>
+      <div class="knob"><div class="k">FOOT_R</div><div class="d">0.024</div><div class="m">발 sphere 반경(ci_mpc 전용, 접촉 여유↑)</div></div>
+      <div class="knob"><div class="k">DISABLE_FLOOR</div><div class="d">0 / 1</div><div class="m">1=무한바닥 끔 → 플랫폼 사이 gap이 진짜 void. 지형인지 활성</div></div>
+      <div class="knob"><div class="k">MJCF_PATH</div><div class="d">기본/지형</div><div class="m">평지 또는 <code>ci_mpc_gap.mjcf</code> 등 지형 씬</div></div>
+      <div class="knob"><div class="k">GEARBOX</div><div class="d">ON</div><div class="m">반사관성 armature=I_rot·N²(dt=2ms 발산 방지 전제)</div></div>
+    </div>
+    <div class="legend">
+      <span><span class="tag env">env</span> 환경변수 오버라이드</span>
+      <span><span class="tag code">code</span> 코드 상수(멤버)</span>
+      <span><span class="tag new">2026-07-20</span> gap 크로싱서 신규</span>
+      <span><span class="tag dash">—</span> 파생값</span>
+    </div>
+  </div>
+</section>
+
+<section id="ilqr">
+  <h2><span class="num">01</span> iLQR 코어 <span class="muted" style="font-size:13px;font-weight:400">MjxDynamics + Riccati</span></h2>
+  <p class="note">상태 <code>x=[qpos24, qvel23]=47</code>, 제어 <code>u=17</code>. <code>f(x,u)=mjx.step</code>(soft 접촉).
+  선형화 <code>fx,fu ← jax.jacfwd</code>(★forward-mode가 접촉 while_loop 통과, reverse는 막힘).</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>훅</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">DT</td><td class="val">0.02</td><td><span class="tag env">DT</span></td><td class="mean">iLQR 제어 노드 dt [s] = 50 Hz</td></tr>
+        <tr><td class="p">DT_SIM</td><td class="val">0.002</td><td><span class="tag env">DT_SIM</span></td><td class="mean">★MuJoCo 물리 스텝 [s]. 접촉은 dt=0.02서 발산 → 반드시 소스텝</td></tr>
+        <tr><td class="p">sub</td><td class="val">10</td><td><span class="tag dash">—</span></td><td class="mean">노드당 서브스텝 = DT/DT_SIM. <code>lax.scan</code>으로 u 고정 반복(forward-미분 가능)</td></tr>
+        <tr><td class="p">iters</td><td class="val">3–4 (standing 20)</td><td><span class="tag env">ILQR_ITERS</span></td><td class="mean">제어틱당 iLQR 반복. warm-start라 소수면 충분</td></tr>
+        <tr><td class="p">reg0</td><td class="val">1e-3</td><td><span class="tag code">code</span></td><td class="mean">Riccati Quu 정칙화 초기값(Cholesky 실패 시 ×2 적응)</td></tr>
+        <tr><td class="p">qf_scale</td><td class="val">8.0 (보행) / 20 (standing)</td><td><span class="tag code">code</span></td><td class="mean">종단비용 배율 Qf = Q·qf_scale</td></tr>
+        <tr><td class="p">line-search α</td><td class="val">1·0.5·0.25·0.1·0.03</td><td><span class="tag code">code</span></td><td class="mean">forward 라인서치 스텝 후보(비용 감소 시 accept)</td></tr>
+        <tr><td class="p">피드백 K</td><td class="val">−Quu⁻¹·Qux</td><td><span class="tag dash">—</span></td><td class="mean">폐루프 적용 <code>u₀ + K₀·(x_meas − xs₀)</code> → lunge 벽 돌파의 핵심</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="cost">
+  <h2><span class="num">02</span> 비용 가중 <span class="muted" style="font-size:13px;font-weight:400">QuadCost 대각 (q_diag · r_diag)</span></h2>
+  <p class="note">보행 <code>qd</code>(길이 47 = qpos24+qvel23) — base x는 <b>자유</b>(전진), z·자세·관절(gait 추종)·속도 벌점.
+  <code>rd</code>=토크 정규화. gait 참조 추종(관절 40)이 스텝을 강제.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>항</th><th>가중</th><th>인덱스</th><th>역할</th></tr></thead>
+      <tbody>
+        <tr><td>base 위치 x·y·z</td><td class="val">0 · 8 · 120</td><td class="p">0–2</td><td class="mean">x=0(전진 자유)·y 드리프트 억제·z 높이 강력 유지</td></tr>
+        <tr><td>base 자세(quat)</td><td class="val">0 · 120·120·120</td><td class="p">3–6</td><td class="mean">직립 유지(피치-다이빙 억제)</td></tr>
+        <tr><td>관절 위치 ×17</td><td class="val">40.0</td><td class="p">7–23</td><td class="mean">★gait 참조 추종 = 스텝 강제(8은 약해 슬라이딩, 40이 필요)</td></tr>
+        <tr><td>base 선속도 vx·vy·vz</td><td class="val">20 · 10 · 5</td><td class="p">24–26</td><td class="mean">전진 추종(vx→VX)·측방/수직 억제</td></tr>
+        <tr><td>base 각속도 ωx·ωy·ωz</td><td class="val">5 · 5 · 8</td><td class="p">27–29</td><td class="mean">몸통 회전 감쇠</td></tr>
+        <tr><td>관절 속도 ×17</td><td class="val">0.05</td><td class="p">30–46</td><td class="mean">약한 감쇠(bobbing 허용)</td></tr>
+        <tr><td>제어(토크) rd</td><td class="val">2e-3</td><td class="p">u 0–16</td><td class="mean">토크 정규화(과도 제어 억제)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout"><b>★ 형상 교훈.</b> gait 관절 참조 가중을 <b>40</b>까지 올려야 iLQR가 쉬운 <b>슬라이딩 해</b>를
+  버리고 실제로 발을 든다(8은 부족). base x는 자유로 두어 전진을 허용하되, z·자세는 강하게 잡아 다이빙 방지.</div>
+</section>
+
+<section id="gait">
+  <h2><span class="num">03</span> gait 참조 — world-frame 발판 스케줄러 <span class="pill">2026-07-20 근본수정</span></h2>
+  <p class="note">트롯 참조를 매 제어스텝 재구성. <b class="warn">이전(body-relative)의 한계</b>: 참조가 <code>발=base+offset</code>이라
+  base 전진 시 <b>디딘 발 참조도 앞으로 드래그</b> → gap으로 미끄러져 낙상. <b class="ok">수정</b>: 디딘 발을 실제 밟은 world 위치에 고정.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>훅</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">T_stance</td><td class="val">0.5·NCYC·DT = 0.2</td><td class="tag dash">—</td><td class="mean">한 발 지지 시간 [s]</td></tr>
+        <tr><td class="p">half</td><td class="val">0.5·VX·T_stance</td><td class="tag dash">—</td><td class="mean">반보 거리 [m]. VX=0.2 → 0.02(작음=stall 원인)</td></tr>
+        <tr><td class="p">pair (트롯)</td><td class="val">FR·HL / FL·HR</td><td class="tag code">code</td><td class="mean">대각쌍: FR·HL 전반부 스윙, FL·HR 후반부</td></tr>
+        <tr><td class="p">FOFF[L]</td><td class="val">foot0−base_xy</td><td class="tag dash">—</td><td class="mean">몸통기준 힙 오프셋(standing IK에서)</td></tr>
+        <tr><td class="p">stance 발 <span class="tag new">신규</span></td><td class="val">fworld[L] − base_xk</td><td class="tag code">code</td><td class="mean">★<b>실제 밟은 world 위치(geom_xpos FK)에 고정</b> → base 전진해도 planted 유지</td></tr>
+        <tr><td class="p">swing 발</td><td class="val">base+FOFF+half(2sp−1)</td><td class="tag code">code</td><td class="mean">base-anchored 아치 + 지형 nudge. z=FOOT_R+STEP_H·sin(π·sp)</td></tr>
+        <tr><td class="p">IK</td><td class="val">ik_feet(0.42, tgt)</td><td class="tag dash">—</td><td class="mean">노드별 발 목표 → 관절 참조(Pinocchio LWA Jacobian)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="capture">
+  <h2><span class="num">04</span> capture-point 착지 <span class="pill">2026-07-20 신규</span></h2>
+  <p class="note">lunge(실제 vx ≫ 명령 VX) 시, 스윙 착지를 명령 VX로 예측하면 앞발이 far platform에 못 미쳐
+  <b>gap으로 다이빙</b>. Raibert capture-point로 <b>측정 속도</b>에 맞춰 발을 더 앞으로 뻗어 몸통을 잡음.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">vx_pred</td><td class="val">0.5·VX + 0.5·clip(vx_meas, 0, 0.9)</td><td class="mean">호라이즌 base 예측 속도 = 명령·측정 블렌드</td></tr>
+        <tr><td class="p">cap (스윙 offset)</td><td class="val">0.5·(vx_meas − VX)·T_stance</td><td class="mean">★lunge 시 착지를 앞으로 추가 이동(braking reach)</td></tr>
+        <tr><td class="p">vx_meas 상한</td><td class="val">0.9</td><td class="mean">clip 상한(폭주 속도에 과반응 방지)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout"><b>효과.</b> VX=0.3에서 이 항으로 <b>몸통 중심이 gap1(x 0.5–0.55)을 통과</b>(base 0.33→0.67, 크로싱 첫 달성).
+  단 crossing 직후 잔여 lunge로 낙상 → <b>dynamic throw-and-catch 안정화</b>(착지 후 제동)가 남은 과제.</div>
+</section>
+
+<section id="terrain">
+  <h2><span class="num">05</span> 지형인지 발판 nudge <span class="muted" style="font-size:13px;font-weight:400">mj_ray group 2</span></h2>
+  <p class="note">스윙 착지 xy가 gap 위(<code>TERRAIN=DISABLE_FLOOR</code>일 때)면 플랫폼 위로 밀어냄. 하이브리드 OCP의 발판보정과 동일 패턴.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">_grp2 마스크</td><td class="val">[0,0,1,0,0,0]</td><td class="mean">지형 geom(group 2)만 레이캐스트 대상</td></tr>
+        <tr><td class="p">레이</td><td class="val">z=0.6 → (0,0,−1)</td><td class="mean">착지 xy 위에서 수직 하향 캐스트, 지지 여부 판정</td></tr>
+        <tr><td class="p">nudge 스텝</td><td class="val">±0.03…0.21</td><td class="mean">전방 우선(0.03→0.21) 후 후방(−0.03,−0.06)으로 첫 지지점 탐색</td></tr>
+        <tr><td class="p">TERRAIN</td><td class="val">= DISABLE_FLOOR</td><td class="mean">gap 코스(무한바닥 끔)에서만 활성. 평지는 그대로</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="gearbox">
+  <h2><span class="num">06</span> 기어박스 · 모터물리 <span class="muted" style="font-size:13px;font-weight:400">apply_gearbox · C++ 파리티</span></h2>
+  <p class="note">MJCF는 <code>dof_armature=0</code>으로 출고 → 반사관성 없으면 stiff PD가 dt=2ms에서 <b>수치 발산</b>.
+  실물리(<code>I_rot·N²</code>)로 armature·감쇠·마찰 주입(배포 컨트롤러 A와 동일 값).</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">gear N</td><td class="val">hip 7 · thigh 7 · calf 10.5 · foot 8.4</td><td class="mean">실 감속비. 허리(FB_waist)=미매칭→hip 7 fallback</td></tr>
+        <tr><td class="p">I_rotor</td><td class="val">1e-4</td><td class="mean">로터 관성 → armature = I_rotor·N²</td></tr>
+        <tr><td class="p">J_damp</td><td class="val">0.1</td><td class="mean">관절 점성 감쇠 dof_damping</td></tr>
+        <tr><td class="p">J_fric</td><td class="val">0.5</td><td class="mean">건마찰 dof_frictionloss</td></tr>
+        <tr><td class="p">peak τ</td><td class="val">84 · 84 · 126 · 100.8</td><td class="mean">hip·thigh·calf·foot [Nm]. <span class="pill">foot 8.4:1 실값</span> (14:1 폐기)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="contact">
+  <h2><span class="num">07</span> 발 접촉 · 모델 <span class="muted" style="font-size:13px;font-weight:400">MJX 롤아웃</span></h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">모델</td><td class="val">quad_real_17dof_waist_sphere.mjcf</td><td class="mean">전 17-DOF(허리 강 PD 홀드). nq24/nv23/nu17</td></tr>
+        <tr><td class="p">FOOT_R</td><td class="val">0.024</td><td class="mean">발 sphere 반경(ci_mpc 전용 확대, 접촉 안정). set_foot_sphere</td></tr>
+        <tr><td class="p">메쉬 스트립</td><td class="val">몸통 충돌 off</td><td class="mean">★MJX JIT 256s→8s. 발 sphere+지형만 충돌(strip_mesh_collision)</td></tr>
+        <tr><td class="p">WAIST_KP / KD</td><td class="val">200 / (settle 12)</td><td class="mean">허리 강 PD 홀드(능동 허리는 후속)</td></tr>
+        <tr><td class="p">settle PD</td><td class="val">kp 150 · kd 12</td><td class="mean">초기 접촉 자세 정착(_settle_state)</td></tr>
+        <tr><td class="p">ctrl clip</td><td class="val">±200</td><td class="mean">토크 안전 클립(물리 peak는 MJCF actuatorfrcrange)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="env">
+  <h2><span class="num">08</span> 실행 env <span class="muted" style="font-size:13px;font-weight:400">mjx_ilqr.py _mpc_run</span></h2>
+  <p class="note">예: <code>MJCF_PATH=../mjcf/ci_mpc_gap.mjcf DISABLE_FLOOR=1 VX=0.3 NH=12 ILQR_ITERS=4 STEP_H=0.08 python -c "import mjx_ilqr; mjx_ilqr._mpc_run()"</code></p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>env</th><th>기본</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">VX</td><td class="val">0.2</td><td class="mean">전진 명령 [m/s]</td></tr>
+        <tr><td class="p">NCTRL</td><td class="val">40</td><td class="mean">제어 스텝 수(크로싱은 200–300)</td></tr>
+        <tr><td class="p">NH</td><td class="val">12</td><td class="mean">호라이즌 노드</td></tr>
+        <tr><td class="p">ILQR_ITERS</td><td class="val">3</td><td class="mean">iLQR 반복(gap 4)</td></tr>
+        <tr><td class="p">NCYC</td><td class="val">20</td><td class="mean">gait 주기 스텝</td></tr>
+        <tr><td class="p">STEP_H</td><td class="val">0.07</td><td class="mean">스윙 높이(gap 0.08)</td></tr>
+        <tr><td class="p">FOOT_R</td><td class="val">0.024</td><td class="mean">발 sphere 반경</td></tr>
+        <tr><td class="p">DT · DT_SIM</td><td class="val">0.02 · 0.002</td><td class="mean">노드 dt · 물리 dt</td></tr>
+        <tr><td class="p">MJCF_PATH</td><td class="val">기본 모델</td><td class="mean">지형 씬 경로 오버라이드</td></tr>
+        <tr><td class="p">DISABLE_FLOOR</td><td class="val">0</td><td class="mean">1=무한바닥 끔(gap=void)+지형인지 활성</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="mppi">
+  <h2><span class="num">09</span> 샘플링 CI (MPPI) <span class="muted" style="font-size:13px;font-weight:400">mjx_mppi.py · 참조/폴백</span></h2>
+  <p class="note">그래디언트 CI(iLQR) 이전의 샘플링 트랙. 피드백 부재 → lunge 벽으로 iLQR에 자리를 내줌. 조정변수만 기록.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="p">Nsamp</td><td class="val">96</td><td class="mean">샘플 수(vmap GPU 병렬)</td></tr>
+        <tr><td class="p">H</td><td class="val">15</td><td class="mean">호라이즌</td></tr>
+        <tr><td class="p">σ (섭동)</td><td class="val">0.12 rad</td><td class="mean">관절 섭동 표준편차(시간축 스무딩)</td></tr>
+        <tr><td class="p">λ (온도)</td><td class="val">40</td><td class="mean">MPPI 가중 <code>w=exp(−(c−β)/λ)</code></td></tr>
+        <tr><td class="p">iters/틱</td><td class="val">2</td><td class="mean">warm-start 재사용</td></tr>
+        <tr><td class="p">비용(요지)</td><td class="val">전진30·자세20·붕괴barrier1500</td><td class="mean">★높이는 추종 아닌 barrier+soft floor(bobbing 억압 방지)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="status">
+  <h2><span class="num">★</span> gap 크로싱 현황</h2>
+  <div class="callout">
+    <div class="scroll" style="border:none">
+      <table style="min-width:480px">
+        <thead><tr><th>시도</th><th>결과</th><th>규명</th></tr></thead>
+        <tbody>
+          <tr><td>1–2차 (blind / 스윙 nudge)</td><td class="warn">c111–114 gap 빠짐 낙상</td><td class="mean">body-relative 참조가 stance 발 드래그</td></tr>
+          <tr><td>3차 (world-frame 발판)</td><td class="ok">falls=0 · 200스텝 완주</td><td class="mean">stance 발 world 고정 → 낙상 구조적 제거. 단 gap서 STALL</td></tr>
+          <tr><td>4차 (capture-point)</td><td class="ok">몸통이 gap1 통과 (base 0.33→0.67)</td><td class="mean">크로싱 첫 달성. crossing 직후 잔여 lunge 낙상</td></tr>
+          <tr><td>다음</td><td class="warn">dynamic throw-and-catch 안정화</td><td class="mean">착지 후 제동(긴 호라이즌/제동 cost) = CI-MPC 본연 난제</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p><b>소스</b>: <code>simulation/quad/ci_mpc/mjx_ilqr.py</code>(그래디언트 CI iLQR) · <code>mjx_mppi.py</code>(샘플링) ·
+  <code>model_bridge.py</code>(브리지·gearbox·sphere) · <code>ocp_fixed.py</code>·<code>ci_mpc_run.py</code>(OCP baseline) · <code>mjcf/ci_mpc_gap.mjcf</code>(gap 코스).</p>
+  <p>입출력변수 정의·파이프라인 진행: <code>pipeline_ci_mpc.html</code>. 배포 컨트롤러 A 파라미터: <code>params.html</code>(완전 별개).
+  본 트랙은 모델기반 접촉-타이밍 최적화 연구 — 배포 A는 불변.</p>
+</footer>
+</div>

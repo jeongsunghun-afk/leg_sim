@@ -67,7 +67,8 @@
   <div class="eyebrow">02_Leg 17-DOF · cpp/src/ · WBIC + Convex MPC + 점프 OCP</div>
   <h1>A 배포 제어 파이프라인 &amp; 솔버 문제 정의</h1>
   <p class="sub"><b>보행</b>: <b class="mpc">MPC</b>(Di Carlo Convex SRBD, 50 Hz)가 <b>최적 지면반력(GRF)</b>을 계획하고 <b class="wbic">WBIC</b>(단일 전신 QP, 1 kHz)가 그 GRF를 실현하는 <b>관절 토크</b>를 푼다(둘 다 eiquadprog).
-  <b>기동</b>(§5): 점프=<b class="mpc">aligator OCP</b>+WBIC 추종 · 기립=기구학+PD/WBIC.</p>
+  <b>기동</b>(§5): 점프=<b class="mpc">aligator OCP</b>+WBIC 추종 · 기립=기구학+PD/WBIC.<br>
+  <span class="dim">본 문서=파이프라인·입출력·솔버 구조 · <b>조정변수(파라미터 값)</b>는 <code>params.html</code>에서 별도 관리.</span></p>
 </header>
 
 <section id="pipeline">

@@ -178,11 +178,12 @@
   </div>
 
   <div class="stage">
-    <div class="rail"><div class="node next">3</div></div>
+    <div class="rail"><div class="node now">3</div></div>
     <div class="body">
-      <h3>gap / stepping 크로싱 <span class="tag t-blk"><span class="dot"></span>다음 · CI의 진가</span></h3>
-      <p class="k">물리 롤아웃이 접촉 타이밍을 자동 발견 → 지형 간격에 스텝을 맞춤. 전체 목표.</p>
-      <div class="kv"><span class="chip">속도추종 개선 선행</span><span class="chip">plan_ms 단축(실시간)</span></div>
+      <h3>gap 크로싱 (그래디언트 CI · iLQR) <span class="tag t-warn"><span class="dot"></span>진행 · 몸통 gap1 통과</span></h3>
+      <p class="k">world-frame 발판(디딘 발 world 고정)으로 낙상 제거, capture-point 착지로 몸통이 gap1을 통과. §10–11 상세.</p>
+      <div class="kv"><span class="chip">falls=0 (world-frame)</span><span class="chip">base <b>0.33→0.67</b> gap1 통과</span>
+        <span class="chip t-blk" style="background:none">남은=착지 후 제동(settle)</span></div>
     </div>
   </div>
 
@@ -216,7 +217,7 @@
 </div>
 
 <h2><span class="n">05</span> 입출력 변수 정의</h2>
-<p class="sub">샘플링 CI-MPC 한 제어틱(replan → apply)의 데이터 흐름</p>
+<p class="sub">샘플링 CI-MPC 한 제어틱(replan → apply)의 데이터 흐름 · <b>조정변수(튜닝 knob)는 <span class="mono">params_ci_mpc.html</span></b>에서 별도 관리</p>
 <div class="scroll">
 <table>
 <thead><tr><th>구분</th><th>변수</th><th>차원 / 형</th><th>의미</th></tr></thead>
@@ -342,9 +343,9 @@
     </div>
   </div>
   <div class="stage">
-    <div class="rail"><div class="node next">L</div></div>
-    <div class="body"><h3>(의도) 폐루프 MPC</h3>
-      <p class="k">매 스텝 iLQR → <span class="mono">u₀ + K₀·(x_meas−x₀)</span> 적용, 수신호라이즌 재해결. 타이밍(fu)+피드백(K)을 한 구조에서.</p>
+    <div class="rail"><div class="node done">L</div></div>
+    <div class="body"><h3>폐루프 MPC <span class="tag t-ok"><span class="dot"></span>작동</span></h3>
+      <p class="k">매 스텝 iLQR → <span class="mono">u₀ + K₀·(x_meas−x₀)</span> 적용, 수신호라이즌 재해결. standing 홀드·스텝 보행·gap1 통과 검증.</p>
     </div>
   </div>
 </div>
@@ -353,9 +354,10 @@
     <h3 style="margin:10px 0 4px;font-size:15px">파이프라인 작동 + 선형화 정확</h3>
     <p style="margin:0;color:var(--ink2);font-size:13.5px">iLQR 수렴(J 감소)·피드백 K 생성. 선형화 <b>jacfwd=유한차분</b>(dz/du 3.9e-5 vs 5.3e-5) → <b>C-2 그래디언트 건전</b>.</p>
   </div>
-  <div class="card"><span class="tag t-warn"><span class="dot"></span>bring-up</span>
-    <h3 style="margin:10px 0 4px;font-size:15px">standing 홀드 미달 = 접촉 자세</h3>
-    <p style="margin:0;color:var(--ink2);font-size:13.5px">standing_ik는 발이 z=0에 정확히 닿아 <b>ncon=0</b>(침투없어 접촉미감지)→자유낙하. 그래디언트 문제 아님 — 발 침투(ncon&gt;0) 자세만 잡으면 됨.</p>
+  <div class="card"><span class="tag t-ok"><span class="dot"></span>해결됨</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">standing·보행·gap1 통과</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">접촉 dt 버그 수정(<b>DT_SIM=2ms sub=10</b>)+접촉 자세로 standing 홀드. gait 참조 가중 40으로 스텝 보행.
+    <b>world-frame 발판</b>=낙상 제거(falls=0)·<b>capture-point</b>=몸통이 gap1 통과(base 0.33→0.67).</p>
   </div>
 </div>
 
@@ -364,10 +366,10 @@
 <table>
 <thead><tr><th>우선</th><th>과제</th><th>내용</th></tr></thead>
 <tbody>
-<tr><td class="num">1</td><td class="hl"><b>접촉 자세 bring-up</b></td><td>발이 살짝 침투해 4발 ncon&gt;0인 x_ref/x0 → iLQR standing 홀드</td></tr>
-<tr><td class="num">2</td><td><b>cost/reg·라인서치 robust화</b></td><td>tangent-space(quat manifold) 정식화 검토 · standing → 보행(트롯 참조 추종)</td></tr>
-<tr><td class="num">3</td><td class="hl"><b>gap 크로싱</b></td><td>그래디언트(fu)가 접촉 타이밍 적응 + K 안정화 = 하이브리드가 못 준 둘을 동시에 (전체 목표)</td></tr>
-<tr><td class="num">—</td><td>폴백</td><td>C-2 bring-up이 막히면 C-1 정통(Pinocchio 하드접촉 QCQP+해석그래디언트). 단 선형화 정확 확인돼 폴백 필요성↓</td></tr>
+<tr><td class="num">1</td><td class="hl"><b>dynamic throw-and-catch 안정화</b></td><td>gap1 통과 직후 잔여 lunge 낙상 → 착지 후 제동. 긴 호라이즌(Nh↑)이 착지·제동을 계획, 또는 제동 cost. <b>현재 초점</b></td></tr>
+<tr><td class="num">2</td><td><b>gap2·stepping·연속 크로싱</b></td><td>단발 gap1 통과 → 연속 gap/stepping 코스 완주</td></tr>
+<tr><td class="num">3</td><td><b>실시간화</b></td><td>jacfwd 선형화가 wall-clock 바닥. 호라이즌 다이어트·모델 계층화로 20ms 목표</td></tr>
+<tr><td class="num">—</td><td>폴백</td><td>C-1 정통(Pinocchio 하드접촉 QCQP+해석그래디언트). 단 C-2 선형화 정확·gap1 통과 확인돼 필요성↓</td></tr>
 </tbody>
 </table>
 </div>

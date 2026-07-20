@@ -93,25 +93,32 @@ class MjxDynamics:
 class QuadCost:
     """Quadratic tracking cost l = 0.5 dxᵀQ dx + 0.5 uᵀR u (terminal uses Qf).
 
-    v1 treats the base quaternion Euclidean (penalise x,y,z components = tilt).
+    x_ref may be a single target [nx] OR a per-node reference trajectory [N+1, nx]
+    (for gait tracking - a trot joint pattern makes the legs step). v1 treats the base
+    quaternion Euclidean (penalise x,y,z components = tilt).
     """
     def __init__(self, nx, nu, nq, x_ref, q_diag, r_diag, qf_scale=20.0):
-        self.x_ref = np.asarray(x_ref, float)
+        self.x_ref = np.asarray(x_ref, float)      # [nx] or [N+1, nx]
+        self.per_node = self.x_ref.ndim == 2
         self.Q = np.diag(np.asarray(q_diag, float))
         self.R = np.diag(np.asarray(r_diag, float))
         self.Qf = self.Q * qf_scale
         self.nx, self.nu = nx, nu
 
-    def stage(self, x, u):
-        dx = x - self.x_ref
+    def ref(self, t):
+        return self.x_ref[t] if self.per_node else self.x_ref
+
+    def stage(self, x, u, t):
+        dx = x - self.ref(t)
         return 0.5 * dx @ self.Q @ dx + 0.5 * u @ self.R @ u
 
-    def terminal(self, x):
-        dx = x - self.x_ref
+    def terminal(self, x, t):
+        dx = x - self.ref(t)
         return 0.5 * dx @ self.Qf @ dx
 
     def total(self, xs, us):
-        return sum(self.stage(xs[t], us[t]) for t in range(len(us))) + self.terminal(xs[-1])
+        return (sum(self.stage(xs[t], us[t], t) for t in range(len(us)))
+                + self.terminal(xs[-1], len(us)))
 
 
 def ilqr(dyn, x0, us, cost, iters=12, reg0=1e-3, verbose=True):
@@ -123,12 +130,12 @@ def ilqr(dyn, x0, us, cost, iters=12, reg0=1e-3, verbose=True):
     for it in range(iters):
         FX, FU = dyn.linearize_traj(xs[:-1], us)          # [N,nx,nx], [N,nx,nu]
         # ---- backward pass ----
-        Vx = cost.Qf @ (xs[-1] - cost.x_ref)
+        Vx = cost.Qf @ (xs[-1] - cost.ref(N))
         Vxx = cost.Qf.copy()
         K = np.zeros((N, nu, nx)); kff = np.zeros((N, nu))
         ok = True
         for t in range(N - 1, -1, -1):
-            dx = xs[t] - cost.x_ref
+            dx = xs[t] - cost.ref(t)
             lx = cost.Q @ dx; lu = cost.R @ us[t]
             fx, fu = FX[t], FU[t]
             Qx = lx + fx.T @ Vx
@@ -236,38 +243,79 @@ def _settle_state(mm, q_mj, MJ_WAIST_JIDX, steps=400, kp=150.0, kd=12.0):
     return md.qpos.copy(), u_hold
 
 
+def gait_joint_table(br, base_z, foot_r, ncyc, step_h, vx, dt):
+    """Trot joint reference over one gait cycle (diagonal pairs lift + sweep forward).
+
+    A gait REFERENCE the iLQR tracks in joint space -> the legs step; the contact
+    gradient + feedback then stabilise and adapt the timing. Reuses ik_feet.
+    """
+    from ocp_fixed import standing_ik, ik_feet, FEET
+    q_stand = standing_ik(br, base_z, foot_z=foot_r)
+    foot0 = br.foot_positions(q_stand)
+    T_stance = 0.5 * ncyc * dt
+    half = 0.5 * vx * T_stance
+    pair = {'FR': (0, 0.5), 'HL': (0, 0.5), 'FL': (0.5, 1.0), 'HR': (0.5, 1.0)}
+    nmj = len(br.pin_to_mj_qpos(q_stand)) - 7      # MJCF joint count (17, incl. waist)
+    table = np.zeros((ncyc, nmj))
+    for c in range(ncyc):
+        p = c / ncyc
+        tgt = {L: foot0[L].copy() for L in FEET}
+        for L in FEET:
+            s0, s1 = pair[L]
+            if s0 <= p < s1:
+                sp = (p - s0) / (s1 - s0)
+                tgt[L][0] += half * (2 * sp - 1); tgt[L][2] = foot_r + step_h * np.sin(np.pi * sp)
+            else:
+                st = ((p - s1) % 1.0) / (1.0 - (s1 - s0)); tgt[L][0] += half * (1 - 2 * st)
+        q = ik_feet(br, base_z, tgt, q_init=q_stand)
+        table[c] = br.pin_to_mj_qpos(q)[7:]
+    return table
+
+
 def _mpc_run():
-    """Closed-loop iLQR-MPC forward-walking attempt (HOUND-style regulating cost)."""
+    """Closed-loop iLQR-MPC forward walk with a trot gait reference (joint-space)."""
     from ocp_fixed import standing_ik
     from model_bridge import MjPinBridge, MJ_WAIST_JIDX
     VX = float(os.environ.get("VX", "0.2"))
-    NCTRL = int(os.environ.get("NCTRL", "40"))     # closed-loop control steps
-    Nh = int(os.environ.get("NH", "12"))           # iLQR horizon
+    NCTRL = int(os.environ.get("NCTRL", "40"))
+    Nh = int(os.environ.get("NH", "12"))
     ITERS = int(os.environ.get("ILQR_ITERS", "3"))
+    NCYC = int(os.environ.get("NCYC", "20"))
+    STEP_H = float(os.environ.get("STEP_H", "0.07"))
     mm, mx = build_mjx(); dyn = MjxDynamics(mm, mx)
     br = MjPinBridge()
     q0 = br.pin_to_mj_qpos(standing_ik(br, 0.42, foot_z=FOOT_R))
     q_mj, u_hold = _settle_state(mm, q0, MJ_WAIST_JIDX)
     nq, nv, nx, nu = dyn.nq, dyn.nv, dyn.nx, dyn.nu
-    # regulating cost: base x FREE, track height/upright + forward velocity vx
-    x_ref = np.concatenate([q_mj, np.zeros(nv)]); x_ref[nq + 0] = VX   # world vx target
-    qd = ([0, 8, 140] + [0, 120, 120, 120] + [0.6]*17         # pos: x free, y, z↑↑, quat, joints
-          + [35, 10, 5] + [5, 5, 8] + [0.03]*17)              # vel: vx-track↑, vy, vz, ang, jvel
-    cost = QuadCost(nx, nu, nq, x_ref, qd, [2e-3]*nu, qf_scale=8.0)
+    gtab = gait_joint_table(br, 0.42, FOOT_R, NCYC, STEP_H, VX, DT)   # trot joint reference
+    # cost weights: base x FREE, hold z/upright, TRACK gait joints (->step), vx forward.
+    qd = ([0, 8, 120] + [0, 120, 120, 120] + [40.0]*17        # joints weight↑↑ = force-follow gait
+          + [20, 10, 5] + [5, 5, 8] + [0.05]*17)
+    rd = [2e-3]*nu
+
+    def build_ref(phase):                                    # per-node gait reference over the horizon
+        ref = np.zeros((Nh + 1, nx))
+        for k in range(Nh + 1):
+            ref[k, :nq] = q_mj                               # base pos(x free)/quat + (joints overwritten)
+            ref[k, 7:nq] = gtab[(phase + k) % NCYC]          # gait joints at this phase
+            ref[k, nq + 0] = VX                              # forward vx target
+        return ref
+
     fgid = {L: mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, L + '_sphere') for L in ['FL', 'HL']}
     md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
-    us = np.tile(u_hold, (Nh, 1))
-    print(f"iLQR-MPC walk: VX={VX} Nh={Nh} iters={ITERS}")
+    us = np.tile(u_hold, (Nh, 1)); phase = 0
+    print(f"iLQR-MPC gait walk: VX={VX} Nh={Nh} iters={ITERS} NCYC={NCYC}")
     falls = 0; fmax = {}
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
+        cost = QuadCost(nx, nu, nq, build_ref(phase), qd, rd, qf_scale=8.0)
         xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
         u0, K0, xs0 = us[0].copy(), K[0].copy(), xs[0].copy()
         for _ in range(dyn.sub):                    # apply node control for sub sim steps
             xm = np.concatenate([md.qpos, md.qvel])
             md.ctrl[:] = np.clip(u0 + K0 @ (xm - xs0), -200, 200)
             mujoco.mj_step(mm, md)
-        us = np.vstack([us[1:], us[-1]])            # shift warm-start
+        us = np.vstack([us[1:], us[-1]]); phase += 1   # shift warm-start + advance gait clock
         for L in fgid:
             fmax[L] = max(fmax.get(L, 0), md.geom_xpos[fgid[L]][2])
         if c % 5 == 0:

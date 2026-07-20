@@ -26,6 +26,7 @@ struct BipedControl {
   double FLAT_WLAM=2;                 // ★평발 보행 MPC GRF 추종 가중(↓=WBIC 높이/CoM task 지배)
   double czwalk=0;                    // ★평발 보행 CoM 높이(0=reset값). 튜닝용
   double FLAT_WORI=5;                 // ★평발 보행 base pitch/roll 레벨링 가중
+  double FLAT_WLEG=0.05;              // ★평발 정적 thigh/calf posture 가중(낮음=CoM 높이 조절 가능)
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
@@ -132,10 +133,11 @@ struct BipedControl {
     Vector3d oerr; { double s=(dq[0]<0?-1:1); Vector3d v(dq[1],dq[2],dq[3]); double n=v.norm();
       oerr=(n<1e-12)?Vector3d(0,0,0):(2.0*std::atan2(n,std::abs(dq[0]))*s/n)*v; }
     for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=W_ORI; g[3+j]-=W_ORI*a; }
-    // posture
+    // posture — ★thigh/calf는 약하게(CoM 높이 task가 다리 신전으로 높이 조절 가능하게), 발목/hip은 firm
     const double* Qh=Qcur();
     for(int j=0;j<nu;j++){ double a=60*(Qh[j]-d->qpos[7+j])-5*qv[6+j];
-      double w=(j==ankle_idx[0]||j==ankle_idx[1])?W_ANKLE:W_POST; P(6+j,6+j)+=w; g[6+j]-=w*a; }
+      int lj=j%4; double w=(lj==3)?W_ANKLE : (lj==1||lj==2)?FLAT_WLEG : W_POST;
+      P(6+j,6+j)+=w; g[6+j]-=w*a; }
     P.topLeftCorner(nv,nv)+=1e-4*MatrixXd::Identity(nv,nv);
     for(int k=0;k<K;k++) P.block(nv+3*k,nv+3*k,3,3)+=1e-2*Matrix3d::Identity();   // ★λ 정칙화↑(rank-deficient 안정)
     // 등식: base6 + 접촉3K
@@ -406,6 +408,7 @@ struct BipedControl {
       bool flat_walk_en = getenv("FLAT_WALK")!=nullptr;   // ★2점=서기 전용(기본). 보행은 adaptive-timing 프리뷰 완성 후 활성
       bool moving = flat_walk_en && (std::abs(vx_cmd)>0.02 || std::abs(vy_cmd)>0.02 || std::abs(wz_cmd)>0.02);
       if(!moving){                                   // 정지(또는 보행 미활성)=정적 양발지지
+        com_ref_z=std::min(std::max(com_ref_z,0.36),0.42);   // ★평발 정적 높이 실현범위 클램프(발 flat 유지 기하제약)
         Vector3d fc=0.5*(foot_center(0)+foot_center(1)); com_ref_xy=fc.head(2);
         wbic_stance();
         t_ss=0; com0=com().head(2); have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true;

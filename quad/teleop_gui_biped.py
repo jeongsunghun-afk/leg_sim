@@ -13,14 +13,14 @@ STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
 VMAX   = 0.15         # 전진 상한[m/s] (★안전 하향 0.2→0.15=로버스트 범위. 0.20은 marginal)
 VY_MAX = 0.10         # 좌우 상한[m/s] (★body-frame 게이트 수정 후 vy 0.12까지 안정→0.10 캡. 십자라 순수 측방)
 WZ_MAX = 0.30         # 선회 상한[rad/s] (★제자리 0.4·주행중 0.3 안정(body-frame 수정 후). turn rate head_lead로 ~2.5°/s 포화)
-H_MIN, H_MAX, H_DEF = 0.36, 0.52, 0.50
-H_DEF_1PT, H_DEF_2PT = 0.50, 0.42       # ★접촉모드별 기본 몸통높이(점발/평발)
+H_MIN, H_MAX, H_DEF = 0.36, 0.54, 0.38  # 슬라이더 전체범위·시작(2점)기본
+H_DEF_1PT, H_DEF_2PT = 0.50, 0.38       # ★접촉모드별 기본 몸통높이(점발/평발, 접촉구2배 자연높이)
 
 
 class Pub:
     def __init__(self, path=CMD):
         self.path = path
-        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'stand', 'contact': '1pt'}
+        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'stand', 'contact': '2pt'}  # ★시작=2점 서기
         self._pub()
 
     def set(self, **kw):

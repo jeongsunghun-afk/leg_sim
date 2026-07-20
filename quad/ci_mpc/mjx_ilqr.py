@@ -224,6 +224,56 @@ def _stand_test():
             print(f"  FELL at step {step}"); break
 
 
+def _settle_state(mm, q_mj, MJ_WAIST_JIDX, steps=400, kp=150.0, kd=12.0):
+    """Settle to an in-contact rest state; return (q_settled, u_hold)."""
+    md = mujoco.MjData(mm); md.qpos[:] = q_mj; mujoco.mj_forward(mm, md)
+    qh = q_mj[7:].copy(); tau = np.array([84, 84, 126, 100.8]*2 + [84.] + [84, 84, 126, 100.8]*2)
+    for _ in range(steps):
+        u = md.qfrc_bias[6:] + kp*(qh - md.qpos[7:]) - kd*md.qvel[6:]
+        u[MJ_WAIST_JIDX] = 200*(0 - md.qpos[7+MJ_WAIST_JIDX]) - 5*md.qvel[6+MJ_WAIST_JIDX]
+        md.ctrl[:] = np.clip(u, -tau, tau); mujoco.mj_step(mm, md)
+    u_hold = np.clip(md.qfrc_bias[6:] + kp*(qh - md.qpos[7:]) - kd*md.qvel[6:], -tau, tau)
+    return md.qpos.copy(), u_hold
+
+
+def _mpc_run():
+    """Closed-loop iLQR-MPC forward-walking attempt (HOUND-style regulating cost)."""
+    from ocp_fixed import standing_ik
+    from model_bridge import MjPinBridge, MJ_WAIST_JIDX
+    VX = float(os.environ.get("VX", "0.2"))
+    NCTRL = int(os.environ.get("NCTRL", "40"))     # closed-loop control steps
+    Nh = int(os.environ.get("NH", "12"))           # iLQR horizon
+    ITERS = int(os.environ.get("ILQR_ITERS", "3"))
+    mm, mx = build_mjx(); dyn = MjxDynamics(mm, mx)
+    br = MjPinBridge()
+    q0 = br.pin_to_mj_qpos(standing_ik(br, 0.42, foot_z=FOOT_R))
+    q_mj, u_hold = _settle_state(mm, q0, MJ_WAIST_JIDX)
+    nq, nv, nx, nu = dyn.nq, dyn.nv, dyn.nx, dyn.nu
+    # regulating cost: base x FREE, track height/upright + forward velocity vx
+    x_ref = np.concatenate([q_mj, np.zeros(nv)]); x_ref[nq + 0] = VX   # world vx target
+    qd = ([0, 8, 50] + [0, 100, 100, 100] + [1.0]*17          # pos: x free, y, z, quat, joints
+          + [25, 10, 5] + [5, 5, 8] + [0.05]*17)              # vel: vx-track, vy, vz, ang, jvel
+    cost = QuadCost(nx, nu, nq, x_ref, qd, [2e-3]*nu, qf_scale=8.0)
+    md = mujoco.MjData(mm); md.qpos[:] = q_mj; md.qvel[:] = 0.0; mujoco.mj_forward(mm, md)
+    us = np.tile(u_hold, (Nh, 1))
+    print(f"iLQR-MPC walk: VX={VX} Nh={Nh} iters={ITERS}")
+    falls = 0
+    for c in range(NCTRL):
+        x_meas = np.concatenate([md.qpos, md.qvel])
+        xs, us, K = ilqr(dyn, x_meas, us, cost, iters=ITERS, verbose=False)
+        u0, K0, xs0 = us[0].copy(), K[0].copy(), xs[0].copy()
+        for _ in range(dyn.sub):                    # apply node control for sub sim steps
+            xm = np.concatenate([md.qpos, md.qvel])
+            md.ctrl[:] = np.clip(u0 + K0 @ (xm - xs0), -200, 200)
+            mujoco.mj_step(mm, md)
+        us = np.vstack([us[1:], us[-1]])            # shift warm-start
+        if c % 5 == 0:
+            print(f"  c{c:3d} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f}", flush=True)
+        if md.qpos[2] < 0.20:
+            falls = 1; print(f"  FELL at c{c}"); break
+    print(f"RESULT VX={VX} ctrl={c+1} falls={falls} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f}")
+
+
 def _selftest():
     mm, mx = build_mjx()
     dyn = MjxDynamics(mm, mx)

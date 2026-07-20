@@ -229,24 +229,126 @@
 </section>
 
 <section>
-  <h2><span class="n">07</span> 실행</h2>
-  <p class="sub">자기 터미널에서 (뷰어는 디스플레이 연결 필요)</p>
-  <pre>cd simulation/biped
-./run_gui_cpp.sh          # C++ 컨트롤러 + Python GUI (배포 경로)
-                          # 시작 = 2점 평발 정적 rest
-                          # GUI "1점 점발" / "2점 평발" 버튼으로 전환
-                          # 1점에서 Walk 로 보행
+  <h2><span class="n">07</span> 입출력 변수</h2>
+  <p class="sub">컨트롤러(<code>BipedControl</code>) 경계 — 1kHz 루프</p>
 
-# 헤드리스 검증
-./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.15 12     # 기본(2점 정적)
-CONTACT=0 ./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.15 12   # 1점 보행
-FLAT_WALK=1 ./cpp/build/biped_sim ../biped_flatfoot.mjcf 0.10 12 # 평발 보행(실험)</pre>
-  <p style="color:var(--soft);font-size:14px">튜닝 env: <code>FLAT_KCAP</code> · <code>FLAT_WANK</code> ·
-    <code>FLAT_WLAM</code> · <code>FLAT_STEPH</code> · <code>FLAT_CZ</code> · <code>WALK_DBG</code>.</p>
+  <h3>입력 · 명령 (GUI → JSON 채널)</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>변수</th><th>단위</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">vx_cmd · vy_cmd</td><td class="mono">m/s</td><td>전진 · 측방 속도 (body-frame)</td></tr>
+      <tr><td class="mono">wz_cmd</td><td class="mono">rad/s</td><td>선회 각속도 (+ = 좌회전)</td></tr>
+      <tr><td class="mono">contact</td><td class="mono">1pt / 2pt</td><td>접촉모드 = 점발(보행) / 평발(정적) → 재정착</td></tr>
+      <tr><td class="mono">mode</td><td class="mono">enum</td><td>stand · walk · off(토크0) · reset</td></tr>
+      <tr><td class="mono">body_h</td><td class="mono">m</td><td>몸통 높이 (점발 모드 crouch)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>입력 · 상태 (플랜트 → 추정)</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>변수</th><th>출처</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">qpos · qvel</td><td>엔코더</td><td>관절 위치·속도 (8관절)</td></tr>
+      <tr><td class="mono">base quat</td><td>IMU</td><td>몸통 자세 (직접 사용)</td></tr>
+      <tr><td class="mono">base pos · vel</td><td>추정</td><td>leg-odometry + <strong>접촉높이 z</strong> (절대 base 미사용, 실기 동일)</td></tr>
+      <tr><td class="mono">gyro · accel</td><td>IMU</td><td>각속도(직접) · 가속(융합 옵션)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>출력</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>변수</th><th>차원</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">d.ctrl</td><td class="mono">8 × Nm</td><td><strong>관절 토크</strong> = hip·thigh·calf·ankle ×2 (제어 산출물)</td></tr>
+      <tr><td class="mono">state.json</td><td>발행</td><td>base_z · tilt · x · y · yaw (GUI 오버레이)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="color:var(--soft);font-size:14px;margin-top:10px">내부 계산: MPC → <code>lam</code>(발 GRF 계획, 50Hz) →
+    WBIC QP → <code>qdd · tau</code>(전신 추종, 500Hz).</p>
 </section>
 
 <section>
-  <h2><span class="n">08</span> 로드맵</h2>
+  <h2><span class="n">08</span> 조정 변수</h2>
+  <p class="sub"><code>biped_control.hpp</code> 기본값 · 평발 전용은 env로도 조절</p>
+
+  <h3>게이트 · 타이밍</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>파라미터</th><th class="num">값</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">SS_NOMINAL</td><td class="num">0.16</td><td>단일지지 공칭 시간 [s] (스텝 위상)</td></tr>
+      <tr><td class="mono">SS_MIN · SS_MAX</td><td class="num">0.10 · 0.45</td><td>스텝 이벤트 최소·최대(타임아웃)</td></tr>
+      <tr><td class="mono">STEP_H</td><td class="num">0.06</td><td>스윙 발 들림 높이 [m]</td></tr>
+      <tr><td class="mono">TRIG_Y</td><td class="num">0.03</td><td>측방 DCM 착지 트리거 임계 (7.9s의 핵심)</td></tr>
+      <tr><td class="mono">DS_FRAC · T_STEP</td><td class="num">0.10 · 0.24</td><td>양지지 비율 · 스텝 주기 [s]</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>발 배치 (capture-point)</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>파라미터</th><th class="num">값</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">K_CAP · CAP_CLAMP</td><td class="num">1.0 · 0.22</td><td>capture 게인 (ξ=x+v/ω) · 전후 클램프</td></tr>
+      <tr><td class="mono">K_RETURN</td><td class="num">0.45</td><td>원점복귀(제자리유지) · 저속 안정 핵심</td></tr>
+      <tr><td class="mono">K_LAT · SPREAD</td><td class="num">0.5 · 1.0</td><td>측방 capture · 발벌림(다리꼬임 방지)</td></tr>
+      <tr><td class="mono">GAP_MIN · GAP_MAX</td><td class="num">0.14 · 0.34</td><td>좌우 발 간격 하한·상한 [m]</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>WBIC · MPC 가중</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>파라미터</th><th class="num">값</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">SW_KP · SW_KD</td><td class="num">800 · 60</td><td>스윙 발 추종 PD</td></tr>
+      <tr><td class="mono">W_ORI · W_ANKLE · W_POST</td><td class="num">5 · 20 · 1</td><td>자세 레벨링 · 발목 · 관절 nullspace</td></tr>
+      <tr><td class="mono">W_LAM · STANCE_KD</td><td class="num">10 · 20</td><td>MPC GRF 추종 · 접촉 baumgarte(slip저감)</td></tr>
+      <tr><td class="mono">MU_EFF · LAMZ_MIN</td><td class="num">0.57 · 1</td><td>유효 마찰추 · 최소 수직력</td></tr>
+      <tr><td class="mono">MPC_N · MPC_DT · decim</td><td class="num">14 · 0.02 · 10</td><td>호라이즌 · 스텝 · 50Hz 데시메이션</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>평발 전용 <span class="tag t-wip">WIP</span></h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>파라미터 (env)</th><th class="num">값</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Qflat (발목)</td><td class="num">−1.146</td><td>평발 home 발목각 (밑창 수평, CoM 밑창중심)</td></tr>
+      <tr><td class="mono">FLAT_WANK</td><td class="num">150</td><td>보행 중 발목 flat 강고정 (밑창 유지)</td></tr>
+      <tr><td class="mono">FLAT_WLAM</td><td class="num">2</td><td>평발 MPC추종 약화 → WBIC task 지배 (전진 전환 레버)</td></tr>
+      <tr><td class="mono">FLAT_KCAP</td><td class="num">0.6</td><td>전후 capture 게인 (과속 브레이킹)</td></tr>
+      <tr><td class="mono">FLAT_WORI</td><td class="num">5</td><td>보행 pitch 레벨링 가중</td></tr>
+      <tr><td class="mono">com_x_track</td><td class="num">80/50</td><td>전후 CoM 위치/속도 규제 (CoP 앞섬 방지)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>물리 · 액추에이터 (GEARBOX)</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>파라미터</th><th class="num">값</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">GEAR</td><td class="num">7 · 7 · 10.5 · 8</td><td>감속비 (hip·thigh·calf·ankle)</td></tr>
+      <tr><td class="mono">ROTOR_I</td><td class="num">1e-4</td><td>로터 관성 → armature = I·N² (★발산 방지 핵심)</td></tr>
+      <tr><td class="mono">JDAMP · JFRIC</td><td class="num">0.1 · 0.5</td><td>관절 점성감쇠 · 마찰</td></tr>
+      <tr><td class="mono">tau_peak</td><td class="num">84·84·126·96</td><td>관절 Peak 토크 [Nm] (실모터 한계)</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">09</span> 로드맵</h2>
   <p class="sub">다음 단계</p>
   <ul class="plain">
     <li><strong>평발 ZMP 보행 완성</strong> — 과속·높이 안정화, 필요 시 CoM 궤적 생성(프리뷰 제어) 도입.</li>

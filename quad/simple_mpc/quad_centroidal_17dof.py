@@ -26,15 +26,15 @@ class MujocoRobot:
             self.m.body_inertia[_bb]*=(_mn/_m0); self.m.body_mass[_bb]=_mn; _mj.mj_setConst(self.m,_mj.MjData(self.m))
             print('[BODY_ADD-MJ] base %.2f→%.2fkg 총%.1fkg 다리비율%.0f%%'%(_m0,_mn,self.m.body_mass.sum(),100*(1-self.m.body_mass[_bb]/self.m.body_mass.sum())),flush=True)
         if _o2.environ.get("CONE"): self.m.opt.cone=int(_o2.environ["CONE"])
-        if _o2.environ.get("STIFF"): self.m.geom_solref[:,0]=float(_o2.environ["STIFF"]); self.m.geom_solref[:,1]=1.0
-        _rl=float(_o2.environ.get("REAR_LOCK","0"))   # ★17-DOF: 전4발목 물리잠금(§5.5 대칭 강체화, 14dof는 앞fixed+뒤lock이었음)
+        _st17=float(_o2.environ.get("STIFF","0.002")); self.m.geom_solref[:,0]=_st17; self.m.geom_solref[:,1]=1.0   # ★17-DOF 안정핵심: 접촉정합(OCP 점접촉↔soft sphere)
+        _rl=float(_o2.environ.get("REAR_LOCK","500"))   # ★17-DOF: 전4발목 물리잠금(§5.5 대칭 강체화, 14dof는 앞fixed+뒤lock이었음)
         if _rl>0:
             for _jn in ("FL_foot_joint","FR_foot_joint","HL_foot_joint","HR_foot_joint"):
                 _jid=_mj.mj_name2id(self.m,_mj.mjtObj.mjOBJ_JOINT,_jn)
                 if _jid>=0:
                     self.m.jnt_stiffness[_jid]=_rl; self.m.dof_damping[self.m.jnt_dofadr[_jid]]=_rl*0.2
             print("[REAR_LOCK] 뒷발목 stiffness=%.0f (대칭3-DOF화)"%_rl,flush=True)
-        _wl=float(_o2.environ.get("WAIST_LOCK","0"))   # ★17-DOF 허리 물리홀드(A의 stiff WAIST_KP 등가) — 측방 불안정 주범 격리
+        _wl=float(_o2.environ.get("WAIST_LOCK","2000"))   # ★17-DOF 허리 물리홀드(A의 stiff WAIST_KP 등가) — 측방 불안정 주범 격리
         if _wl>0:
             _wj=_mj.mj_name2id(self.m,_mj.mjtObj.mjOBJ_JOINT,"FB_waist_joint")
             if _wj>=0:
@@ -164,7 +164,7 @@ _wbz = float(_os.environ.get("WBZ", "100"))   # base z 가중(FullDynamics=0=발
 w_basepos = [_wbp, _wbp, _wbz, float(_os.environ.get("WBORI","200")), float(_os.environ.get("WBORI","200")), 0]
 w_legpos = [1, 1, 1, 1]
 
-w_basevel = [float(_os.environ.get("WBVX","60")), float(_os.environ.get("WBVY","10")), 10, 10, 10, float(_os.environ.get("WBWZ","10"))]  # ★측방/yaw 가중 env(드리프트 억제)
+w_basevel = [float(_os.environ.get("WBVX","60")), float(_os.environ.get("WBVY","150")), 10, 10, 10, float(_os.environ.get("WBWZ","10"))]  # ★측방/yaw 가중 env(드리프트 억제)
 w_legvel = [0.1, 0.1, 0.1, 0.1]
 # ★FullDynamics 참조: 뒷발목(pin idx 9=HL_foot,13=HR_foot)은 point-foot서 floppy → posture/vel 강하게 핀고정
 _ankw = float(_os.environ.get("ANKLE_W", "50")); _ankdw = float(_os.environ.get("ANKLE_DW", "5"))
@@ -189,7 +189,7 @@ w_u = np.diag(w_u)
 w_LFRF = 2000
 # ★STEP3: 발을 OCP가 더 자유롭게 최적화(footstep adaptation). w_frame↓ → 발 참조구속 완화 → OCP가 최적 foothold 선택.
 #   발은 이미 q통한 결정변수이고 reachability는 kinematics_limits(qmin/qmax)가 제공. FOOT_DECISION=0=baseline(w_frame full).
-_fd = float(_os.environ.get("FOOT_DECISION","0"))
+_fd = float(_os.environ.get("FOOT_DECISION","0.6"))
 if _fd > 0: w_LFRF = w_LFRF / (1.0 + 9.0 * min(_fd, 1.0))   # FD=1 → w_frame 10%(거의 자유)
 if _fd > 0: print("[FOOT_DECISION] w_frame %d→%.0f (발 자유최적화)" % (2000, w_LFRF), flush=True)
 _wcap = float(_os.environ.get("WCENT_ANG_P","0.1"))   # ★pitch/roll 각운동량 가중(02_Leg 다리79%=pitch각모멘텀 폭증, 0.1로 못잡음)

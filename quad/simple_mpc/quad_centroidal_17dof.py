@@ -335,6 +335,17 @@ if _os.environ.get("HEIGHTMAP","0") != "0":
 q_meas, v_meas = device.measureState()
 x_measured = np.concatenate([q_meas, v_meas])
 
+# ★★TAMOLS: base 높이 지형적응 — base-z 참조를 (지형높이+명목)으로 슬루 갱신(A의 terrain_z+com_h0 등가).
+#   B의 HEIGHTMAP은 발판-z만 주입, base높이 미적응→지형서 낙상. base-z 참조 적응이 크로싱 핵심.
+_HMBASE = _os.environ.get("HM_BASE","0") != "0"
+_xref_ad = model_handler.getReferenceState().copy()   # 참조상태(base-z만 갱신)
+_combase = float(_os.environ.get("COM_H0","0.50"))    # 명목 base높이
+_bz_slew = _combase
+_grp2b = np.array([0,0,1,0,0,0], dtype=np.uint8); _gidb = np.zeros(1, dtype=np.int32)
+def _terrain_z_base(bx, by):
+    _dd = _mj.mj_ray(device.m, device.d, np.array([bx,by,2.0]), np.array([0.,0.,-1.]), _grp2b,1,-1,_gidb)
+    return (2.0 - _dd) if (_dd >= 0 and _gidb[0] >= 0) else 0.0
+
 device.showQuadrupedFeet(
     mpc.getDataHandler().getFootPose(mpc.getModelHandler().getFootNb("FL_foot")),
     mpc.getDataHandler().getFootPose(mpc.getModelHandler().getFootNb("FR_foot")),
@@ -407,6 +418,10 @@ for step in range(int(_os.environ.get("STEPS","300"))):
             print("[MJ] ❌ 전복 @%.2fs"%(step*0.01)); _fell=True; break
     # print("Time " + str(step))
     if step % _DECIM == 0:                  # ★비동기 재계획: DECIM틱마다만 OCP solve
+        if _HMBASE:                                   # ★base 높이 지형적응(TAMOLS): mpc.x_reference base-z 갱신
+            _tz = _terrain_z_base(device.d.qpos[0], device.d.qpos[1])
+            _bz_slew += 0.05 * ((_tz + _combase) - _bz_slew)   # 슬루(부드럽게, 급변 방지)
+            _xr = np.array(mpc.x_reference); _xr[2] = _bz_slew; mpc.x_reference = _xr
         start = time.time(); mpc.iterate(x_measured); solve_time.append(time.time()-start); _pk = 0
     _pkc = min(_pk, T - 2)                   # stale plan advance 인덱스(재사용)
 

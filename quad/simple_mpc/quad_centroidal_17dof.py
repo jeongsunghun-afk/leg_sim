@@ -27,9 +27,9 @@ class MujocoRobot:
             print('[BODY_ADD-MJ] base %.2f→%.2fkg 총%.1fkg 다리비율%.0f%%'%(_m0,_mn,self.m.body_mass.sum(),100*(1-self.m.body_mass[_bb]/self.m.body_mass.sum())),flush=True)
         if _o2.environ.get("CONE"): self.m.opt.cone=int(_o2.environ["CONE"])
         if _o2.environ.get("STIFF"): self.m.geom_solref[:,0]=float(_o2.environ["STIFF"]); self.m.geom_solref[:,1]=1.0
-        _rl=float(_o2.environ.get("REAR_LOCK","0"))   # ★뒷발목 물리잠금(4-DOF→3-DOF 대칭화, 강성)
+        _rl=float(_o2.environ.get("REAR_LOCK","0"))   # ★17-DOF: 전4발목 물리잠금(§5.5 대칭 강체화, 14dof는 앞fixed+뒤lock이었음)
         if _rl>0:
-            for _jn in ("HL_foot_joint","HR_foot_joint"):
+            for _jn in ("FL_foot_joint","FR_foot_joint","HL_foot_joint","HR_foot_joint"):
                 _jid=_mj.mj_name2id(self.m,_mj.mjtObj.mjOBJ_JOINT,_jn)
                 if _jid>=0:
                     self.m.jnt_stiffness[_jid]=_rl; self.m.dof_damping[self.m.jnt_dofadr[_jid]]=_rl*0.2

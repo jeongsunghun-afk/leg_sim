@@ -215,7 +215,47 @@
   </table></div>
 </section>
 
+<section>
+  <h2><span class="chip" style="background:#5a4bd0;color:#fff">D1·OCS2</span> 6 · D1(NavBotHub) 대조 <span class="dim">legged_control = OCS2 NMPC + 계층 WBC (qiayuanl 계열)</span></h2>
+  <p>D1은 <b>OCS2 기반 kino-dynamic NMPC(100 Hz) → 계층 WBC(1 kHz)</b>로 추종한다. <b>MPC 모델은 B와 같은 kino-dynamic</b>인데,
+  <b>2-layer 분리 + HPIPM/single-SQP</b>로 실시간을 달성한다 — 이것이 B·C(단일 OCP, aligator, 비실시간)와의 결정적 차이다.
+  즉 <b>OCS2 ≈ "B의 모델을 우리 A식 2-layer로 실시간화한 것"</b>이고, 구조상 우리 A(reduced-MPC+WBIC)와 같은 계열이다.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>항목</th><th class="kino">B · Centroidal</th><th class="full">C · FullDynamics</th><th>D1 · OCS2</th></tr></thead>
+    <tbody>
+      <tr><td class="p">동역학 모델</td><td class="mean">Kinodynamic</td><td class="mean">전신 강체+접촉제약</td><td class="mean"><b>Kinodynamic</b>(FullCentroidal, B와 동급)</td></tr>
+      <tr><td class="p">상태 x</td><td class="mean">[q;v] 중심운동량 파생</td><td class="mean">[q;v] 전신</td><td class="mean">정규화 중심운동량(6)·base pose(6)·관절pos(12)</td></tr>
+      <tr><td class="p">결정변수 u</td><td class="mean">접촉력12 + 관절가속14</td><td class="mean">관절토크14 직접</td><td class="mean">접촉력12 + 관절속도12</td></tr>
+      <tr><td class="p">구조</td><td class="mean">OCP → TSID (2단)</td><td class="mean">OCP + Riccati (1단)</td><td class="mean"><b>NMPC(100Hz) → 계층 WBC(1kHz, HoQp)</b></td></tr>
+      <tr><td class="p">솔버</td><td class="mean">aligator ProxDDP RTI(1)</td><td class="mean">aligator ProxDDP</td><td class="mean"><b>SLQ / Multiple-Shooting SQP + HPIPM</b>, sqpIter=1, CppAD 코드젠</td></tr>
+      <tr><td class="p">호라이즌</td><td class="mean">T=50·dt0.01 (0.5s)</td><td class="mean">T·dt0.01</td><td class="mean">dt0.015·T=1.0s (~67노드)</td></tr>
+      <tr><td class="p">전신동역학 처리</td><td class="mean">TSID(전신 ID QP)</td><td class="mean">OCP가 전신</td><td class="mean">WBC의 FloatingBaseEom + TorqueLimit + FrictionCone (계층 HoQp)</td></tr>
+      <tr><td class="p">제약</td><td class="mean">마찰추·착지(토글)</td><td class="mean">마찰추·착지·토크box</td><td class="mean">FrictionCone(μ0.3)·ZeroVelocity(stance)·ZeroForce(swing)·NormalVelocity·SelfCollision</td></tr>
+      <tr><td class="p" style="color:var(--full,#c33)">실시간</td><td class="mean">❌ ~20–30 Hz</td><td class="mean">❌ ~6–13 Hz</td><td class="mean">✅ <b>100 Hz MPC + 1 kHz WBC</b></td></tr>
+      <tr><td class="p">시뮬 / 내부동역학</td><td class="mean">MuJoCo(pt) / Pinocchio</td><td class="mean">MuJoCo(pt) / Pinocchio</td><td class="mean">Gazebo / Pinocchio(CppAD)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>D1/OCS2 입출력</h3>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>입력</th><th>출력</th></tr></thead>
+    <tbody>
+      <tr><td class="p">D1</td>
+        <td class="mean">v_cmd (TargetTrajectoriesPublisher → base pose/vel 타깃) · x = leg-odometry KF 추정(legged_estimation) · gait(SwitchedModelReferenceManager 모드스케줄 + SwingTrajectoryPlanner)</td>
+        <td class="mean">NMPC 최적궤적 → WBC → 관절토크 (+ HybridJointInterface: kp/kd/pos/vel/tau 저수준)</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note-nb"><b>Q. OCS2 솔버가 MuJoCo에 적합한가?</b> 솔버(SLQ/SQP/HPIPM)는 <b>모델-불가지</b>라 알고리즘적으론 문제없다.
+  관건은 <b>모델</b>이다 — OCS2는 <b>Pinocchio 해석 강체동역학</b>을 NMPC·WBC 양쪽에 쓰고 Gazebo로 시뮬한다.
+  이를 MuJoCo에 얹으면 <b>Pinocchio↔MuJoCo 접촉/동역학 불일치(sim2sim 갭)</b>가 생기는데, 이건 <b>우리 B·C가 이미 안고 있는 것과 동종</b>
+  (B/C도 Pinocchio OCP → MuJoCo pt 시뮬). 피드백+튜닝으로 관리되나 "MuJoCo-native"는 아니다.
+  대조로 <b>우리 A</b>는 WBIC가 MuJoCo의 M·h·J를 직접 읽어 갭이 최소이고, <b>C-2(mjx_ilqr)</b>는 MJX로 MuJoCo를 직접 미분해 sim2sim 갭 0
+  — MuJoCo-native 그래디언트가 필요하면 이쪽이 정답. <b>요약: OCS2 솔버는 적합하나, Pinocchio 모델의 sim2sim 갭은 B/C와 동일 수준</b>이다.</div>
+</section>
+
 <footer>
   소스: <code>quad/simple_mpc/quad_centroidal.py</code> (B) · <code>quad_fulldynamics.py</code> (C) · 라이브러리 <code>simple-mpc</code>(kinodynamics.cpp·kinodynamics-id.cpp·fulldynamics.cpp·mpc.cpp), 솔버 aligator <code>SolverProxDDP</code>(proxddp) + TSID proxqp. 배포 컨트롤러 A(MPC+WBIC, 1 kHz)=<code>pipeline.html</code>. I/O 비교=메모리 <code>quad-abc-io-structure</code>.
+  D1/OCS2 분석=메모리 <code>d1-navbothub-mpc-amp-analysis</code> · repo github.com/NavBotHub/D1(legged_control=OCS2 NMPC+계층 WBC).
 </footer>
 </div>

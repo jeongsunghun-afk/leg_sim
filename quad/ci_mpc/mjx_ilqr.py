@@ -291,6 +291,7 @@ def _mpc_run():
     NCYC = int(os.environ.get("NCYC", "20"))
     STEP_H = float(os.environ.get("STEP_H", "0.07"))
     GAIT = os.environ.get("GAIT", "trot")            # trot(2-foot) | crawl(3-foot static)
+    GAP_AWARE = os.environ.get("GAP_AWARE", "0") == "1"   # high-plateau swing over a void
     TERRAIN = DISABLE_FLOOR                          # terrain-aware footholds on gap course
     mm, mx = build_mjx(); dyn = MjxDynamics(mm, mx)
     br = MjPinBridge()
@@ -333,15 +334,16 @@ def _mpc_run():
           + [20, 10, 5] + [5, 5, 8] + [0.05]*17)
     rd = [2e-3]*nu
 
+    _gid1 = np.zeros(1, dtype=np.int32)
+    def _supported(x, y):                             # terrain (group 2) under (x,y)?
+        mujoco.mj_ray(mm, md, np.array([x, y, 0.6]), np.array([0., 0., -1.]), _grp2, 1, -1, _gid1)
+        return _gid1[0] >= 0
+
     def _nudge(x, y):                                 # shift x forward off a gap onto terrain
-        gid = np.zeros(1, dtype=np.int32)
-        def sup(xx):
-            mujoco.mj_ray(mm, md, np.array([xx, y, 0.6]), np.array([0., 0., -1.]), _grp2, 1, -1, gid)
-            return gid[0] >= 0
-        if not TERRAIN or sup(x):
+        if not TERRAIN or _supported(x, y):
             return x
         for d in (0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, -0.03, -0.06):
-            if sup(x + d):
+            if _supported(x + d, y):
                 return x + d
         return x
 
@@ -362,8 +364,15 @@ def _mpc_run():
                 if s0 <= p < s1:                      # swing: capture-point landing, terrain-aware
                     sp = (p - s0) / (s1 - s0)
                     cap = 0.5 * (vx_meas - VX) * T_stance   # Raibert capture offset (extra reach when lunging)
-                    xw = _nudge(base_xk + FOFF[L][0] + half * (2 * sp - 1) + cap, base_y0 + FOFF[L][1])
-                    tgt[L] = np.array([xw - base_xk, FOFF[L][1], FOOT_R + STEP_H * np.sin(np.pi * sp)])
+                    fy = base_y0 + FOFF[L][1]
+                    nom_x = base_xk + FOFF[L][0] + half * (2 * sp - 1) + cap
+                    crossing = GAP_AWARE and TERRAIN and not _supported(nom_x, fy)  # landing over a void
+                    xw = _nudge(nom_x, fy)
+                    if crossing:                      # gap-aware(opt): high plateau, descend past far edge
+                        zc = 1.5 * STEP_H * min(1.0, np.sin(np.pi * sp) / np.sin(0.15 * np.pi))
+                    else:
+                        zc = STEP_H * np.sin(np.pi * sp)
+                    tgt[L] = np.array([xw - base_xk, FOFF[L][1], FOOT_R + zc])
                 else:                                 # stance: pinned to ACTUAL planted world pos
                     tgt[L] = np.array([fworld[L][0] - base_xk, fworld[L][1] - base_y0, FOOT_R])
             q_prev = ik_feet(br, 0.42, tgt, q_init=q_prev)

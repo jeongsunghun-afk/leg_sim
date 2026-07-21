@@ -43,7 +43,7 @@ Q=/home/jsh/문서/jsh/simulation/quad
 (cd $Q && FOOT_NUDGE=1 bash run_gui.sh gap)        # 갭 전용(0.32m갭·0.70m발판)
 (cd $Q && FOOT_NUDGE=1 bash run_gui.sh stepping)   # 스테핑스톤(0.44m간격)
 ```
-- **★속도-공명 주의**: ③은 스텝길이가 발판간격에 **정렬된 속도에서만** 건넘. 이 지형들=**walk 0.5**(GUI walk버튼 기본 0.6은 실패!). 속도게이지를 0.5로. 지형 간격 바뀌면 정렬속도도 바뀜(로컬 nudge 한계, 강건 크로싱은 RL 트랙).
+- **★속도-공명 해소(2026-07-21)**: 구 18mm 접촉구에선 정렬 속도(walk 0.5)에서만 건넜으나, **표준 접촉구 0.024 + 리빌드본에서 gap·stepping 둘 다 전속도(0.25~0.75) falls=0**(2회 반복 일관). 즉 속도-공명의 실체=발 접촉구 과소근사였고 0.024로 해소. 완전 임의/불규칙·경사 지형은 여전히 RL/CI-MPC·마찰콘회전 몫.
 - **★보행 선택(지형별 강건성)**: **이산 정밀 발판(갭·stepping stone)=walk만**(high duty factor·정밀 디딤, trot/run은 전복). **연속·완만(험지 요철·평지)=walk/trot/run 다 OK**(trot·run이 빠름). 4라인 코스: 갭·스테핑 라인=walk 0.5 / 험지·계단 라인=trot/run 가능.
 - **★perceptive 몸통높이**: 연속지형(계단·험지)은 base가 지형 따라 정상 상승(계단 z0.49→0.79). 갭(불연속)만 base 중심이 구멍 위라 발판만큼 안 오름(안정적 절충, 4-hip 강제는 출렁여 불안정). base높이는 MPC에만 공급(WBIC 공급은 tilt 악화).
 - 헤드리스 검증: `(cd /home/jsh/문서/jsh/simulation/quad/cpp && FOOT_NUDGE=1 GAIT=walk TROT_V=0.5 STEPS=18000 ./build/trot_sim /home/jsh/문서/jsh/simulation/quad/mjcf/quad_terrain_gap.mjcf)`(falls=0 완주).

@@ -114,7 +114,7 @@
       <div class="knob"><div class="k">ILQR_ITERS</div><div class="d">3–4</div><div class="m">제어틱당 iLQR 반복(warm-start라 소수)</div></div>
       <div class="knob"><div class="k">NCYC</div><div class="d">20</div><div class="m">gait 한 주기 제어스텝 수 → T_stance=0.5·NCYC·DT=0.2s</div></div>
       <div class="knob"><div class="k">STEP_H</div><div class="d">0.08</div><div class="m">스윙 발 아치 높이 [m]</div></div>
-      <div class="knob"><div class="k">FOOT_R</div><div class="d">0.024</div><div class="m">발 sphere 반경(ci_mpc 전용, 접촉 여유↑)</div></div>
+      <div class="knob"><div class="k">FOOT_R</div><div class="d">0.025</div><div class="m">발 sphere 반경(ci_mpc 전용, 접촉 여유↑)</div></div>
       <div class="knob"><div class="k">DISABLE_FLOOR</div><div class="d">0 / 1</div><div class="m">1=무한바닥 끔 → 플랫폼 사이 gap이 진짜 void. 지형인지 활성</div></div>
       <div class="knob"><div class="k">MJCF_PATH</div><div class="d">기본/지형</div><div class="m">평지 또는 <code>ci_mpc_gap.mjcf</code> 등 지형 씬</div></div>
       <div class="knob"><div class="k">GEARBOX</div><div class="d">ON</div><div class="m">반사관성 armature=I_rot·N²(dt=2ms 발산 방지 전제)</div></div>
@@ -250,7 +250,7 @@
       <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
       <tbody>
         <tr><td class="p">모델</td><td class="val">quad_real_17dof_waist_sphere.mjcf</td><td class="mean">전 17-DOF(허리 강 PD 홀드). nq24/nv23/nu17</td></tr>
-        <tr><td class="p">FOOT_R</td><td class="val">0.024</td><td class="mean">발 sphere 반경(ci_mpc 전용 확대, 접촉 안정). set_foot_sphere</td></tr>
+        <tr><td class="p">FOOT_R</td><td class="val">0.025</td><td class="mean">발 sphere 반경(ci_mpc 전용 확대, 접촉 안정). set_foot_sphere</td></tr>
         <tr><td class="p">메쉬 스트립</td><td class="val">몸통 충돌 off</td><td class="mean">★MJX JIT 256s→8s. 발 sphere+지형만 충돌(strip_mesh_collision)</td></tr>
         <tr><td class="p">WAIST_KP / KD</td><td class="val">200 / (settle 12)</td><td class="mean">허리 강 PD 홀드(능동 허리는 후속)</td></tr>
         <tr><td class="p">settle PD</td><td class="val">kp 150 · kd 12</td><td class="mean">초기 접촉 자세 정착(_settle_state)</td></tr>
@@ -273,7 +273,7 @@
         <tr><td class="p">ILQR_ITERS</td><td class="val">3</td><td class="mean">iLQR 반복(gap 4)</td></tr>
         <tr><td class="p">NCYC</td><td class="val">20</td><td class="mean">gait 주기 스텝</td></tr>
         <tr><td class="p">STEP_H</td><td class="val">0.07</td><td class="mean">스윙 높이(gap 0.08)</td></tr>
-        <tr><td class="p">FOOT_R</td><td class="val">0.024</td><td class="mean">발 sphere 반경</td></tr>
+        <tr><td class="p">FOOT_R</td><td class="val">0.025</td><td class="mean">발 sphere 반경</td></tr>
         <tr><td class="p">DT · DT_SIM</td><td class="val">0.02 · 0.002</td><td class="mean">노드 dt · 물리 dt</td></tr>
         <tr><td class="p">MJCF_PATH</td><td class="val">기본 모델</td><td class="mean">지형 씬 경로 오버라이드</td></tr>
         <tr><td class="p">DISABLE_FLOOR</td><td class="val">0</td><td class="mean">1=무한바닥 끔(gap=void)+지형인지 활성</td></tr>

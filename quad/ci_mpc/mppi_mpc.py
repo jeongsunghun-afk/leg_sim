@@ -29,7 +29,7 @@ ITERS = int(os.environ.get("ITERS", "2"))       # MPPI iters per replan
 SIGMA = float(os.environ.get("SIGMA", "0.10"))  # joint-target sample std [rad]
 LAM = float(os.environ.get("LAM", "40.0"))      # MPPI temperature
 DT = float(os.environ.get("DT", "0.02"))        # control node dt
-FOOT_R = float(os.environ.get("FOOT_R", "0.024"))
+FOOT_R = float(os.environ.get("FOOT_R", "0.025"))
 VIEW = os.environ.get("VIEW", "0") == "1"
 KP = float(os.environ.get("KP", "120"))
 KD = float(os.environ.get("KD", "4"))

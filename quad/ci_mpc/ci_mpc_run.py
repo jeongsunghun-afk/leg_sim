@@ -22,7 +22,7 @@ VIEW = os.environ.get("VIEW", "0") == "1"
 KP = float(os.environ.get("KP", "60"))
 KD = float(os.environ.get("KD", "2.0"))
 FF = float(os.environ.get("FF", "1.0"))     # feed-forward torque scale
-FOOT_R = float(os.environ.get("FOOT_R", "0.024"))   # contact sphere radius (ci_mpc only)
+FOOT_R = float(os.environ.get("FOOT_R", "0.025"))   # contact sphere radius (ci_mpc only)
 MJCF_PATH = os.environ.get("MJCF_PATH", MJCF)       # override to a terrain scene
 DISABLE_FLOOR = os.environ.get("DISABLE_FLOOR", "0") == "1"   # gaps become real voids
 WAIST_KP, WAIST_KD = 200.0, 5.0

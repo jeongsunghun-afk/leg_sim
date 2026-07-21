@@ -23,7 +23,7 @@ import jax.numpy as jnp
 from mujoco import mjx
 from model_bridge import MJCF, apply_gearbox, set_foot_sphere, strip_mesh_collision
 
-FOOT_R = float(os.environ.get("FOOT_R", "0.024"))
+FOOT_R = float(os.environ.get("FOOT_R", "0.025"))
 DT = float(os.environ.get("DT", "0.02"))          # iLQR control-node dt
 DT_SIM = float(os.environ.get("DT_SIM", "0.002"))  # stable MuJoCo sim step (contact needs small dt)
 

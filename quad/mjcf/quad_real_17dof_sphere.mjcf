@@ -56,7 +56,7 @@
                 <inertial pos="-0.000131235 1.07253e-10 0.000744242" quat="0.541675 0.45452 0.45452 0.541675" mass="0.0375462" diaginertia="1.07022e-05 8.08626e-06 7.24966e-06" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="HL_foot_contact_link" />
                 <geom type="mesh" rgba="1 1 1 1" mesh="HL_foot_contact_link" contype="0" conaffinity="0" />
-                <geom name="HL_sphere" type="sphere" size="0.024" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
+                <geom name="HL_sphere" type="sphere" size="0.025" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
               </body>
             </body>
           </body>
@@ -86,7 +86,7 @@
                 <inertial pos="-0.000131235 1.07254e-10 0.000744242" quat="0.541675 0.45452 0.45452 0.541675" mass="0.0375462" diaginertia="1.07022e-05 8.08626e-06 7.24966e-06" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="HR_foot_contact_link" />
                 <geom type="mesh" rgba="1 1 1 1" mesh="HR_foot_contact_link" contype="0" conaffinity="0" />
-                <geom name="HR_sphere" type="sphere" size="0.024" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
+                <geom name="HR_sphere" type="sphere" size="0.025" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
               </body>
             </body>
           </body>
@@ -120,7 +120,7 @@
                   <inertial pos="-0.00627719 -9.99837e-05 0.00215514" quat="0.531362 0.466535 0.466508 0.531385" mass="0.0917377" diaginertia="4.39469e-05 4.3319e-05 2.23667e-05" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="FL_foot_contact_link" />
                   <geom type="mesh" rgba="1 1 1 1" mesh="FL_foot_contact_link" contype="0" conaffinity="0" />
-                  <geom name="FL_sphere" type="sphere" size="0.024" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
+                  <geom name="FL_sphere" type="sphere" size="0.025" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
                 </body>
               </body>
             </body>
@@ -150,7 +150,7 @@
                   <inertial pos="-0.00627719 -9.99837e-05 0.00215514" quat="0.531362 0.466535 0.466508 0.531385" mass="0.0917377" diaginertia="4.39469e-05 4.3319e-05 2.23667e-05" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="FR_foot_contact_link" />
                   <geom type="mesh" rgba="1 1 1 1" mesh="FR_foot_contact_link" contype="0" conaffinity="0" />
-                  <geom name="FR_sphere" type="sphere" size="0.024" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
+                  <geom name="FR_sphere" type="sphere" size="0.025" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.3 0.02 0.001" condim="3" />
                 </body>
               </body>
             </body>

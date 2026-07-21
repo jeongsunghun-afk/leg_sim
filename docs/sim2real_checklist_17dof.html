@@ -35,7 +35,7 @@
 </head>
 <body>
 
-<h1>sim2real 체크리스트 — 17-DOF · quad_mpc_wbic_17dof · 37.94kg</h1>
+<h1>sim2real 체크리스트 — 17-DOF · quad_mpc_wbic_17dof · 38.016kg</h1>
 <p class="sub">전(全)4다리 4-DOF(앞발목도 관절) · 허리 FB_waist(7:1 조향 능동) · sphere발 · perceptive(지형인지) · 2026-07-10 (최신화 2026-07-21: PACE·접촉구0.025·경사마찰콘)</p>
 <p class="legend">상태: <span class="ok">✅ 적용됨</span> · <span class="wait">⌛ 실측/작업 대기</span> &nbsp;|&nbsp; <span class="star">★</span>=변경/주의 · <code>파란 글꼴</code>=env/위치 &nbsp;|&nbsp; 파라미터 값 전체·게이트 프리셋·튕김조절 = <b>params 아티팩트</b>(중복 제거, 여기는 sim2real 갭만)</p>
 
@@ -44,15 +44,16 @@
 <h2>A. 액추에이터 물리 — <span class="star">★</span>실측 스펙으로 교체 (최우선·블로킹)</h2>
 <table>
 <tr><th>항목</th><th>현재 sim 값</th><th>조치</th><th>env / 위치</th><th>상태</th></tr>
-<tr><td class="k">Peak 토크</td><td>84 / 84 / 126 / <b>96</b> Nm <span class="star">★</span>(foot 8:1=168→96)</td><td>데이터시트 · foot 재기어 반영</td><td>MJCF actfrcrange · <code>tau_peak×gmul</code></td><td class="ok">✅</td></tr>
+<tr><td class="k">Peak 토크</td><td>84 / 84 / 126 / <b>100.8</b> Nm <span class="star">★</span>(foot 8.4:1=168→100.8)</td><td>데이터시트 · foot 재기어 반영</td><td>MJCF actfrcrange · <code>tau_peak×gmul</code></td><td class="ok">✅</td></tr>
 <tr><td class="k">무부하 각속도</td><td>29.6 / 19.7 / 14.8 rad/s</td><td>토크-속도곡선</td><td><code>MOTOR_CURVE</code> · <code>VEL_LIM</code></td><td class="ok">✅</td></tr>
 <tr><td class="k">로터관성=반사관성</td><td>ROTOR_I=1e-4 <span class="hot">(대략!)</span></td><td><span class="star">★PACE</span> CMA-ES 실측식별 또는 데이터시트</td><td><code>ROTOR_I</code>→armature</td><td class="wait">⌛ 실측대기</td></tr>
 <tr><td class="k">기어 Coulomb 마찰</td><td>JFRIC=0.5 <span class="hot">(대략!)</span></td><td><span class="star">★PACE</span> CMA-ES 실측식별</td><td><code>JFRIC</code></td><td class="wait">⌛ 실측대기</td></tr>
 <tr><td class="k">기어 점성 감쇠</td><td>JDAMP=0.1 <span class="hot">(대략!)</span></td><td><span class="star">★PACE</span> CMA-ES 실측식별</td><td><code>JDAMP</code></td><td class="wait">⌛ 실측대기</td></tr>
-<tr><td class="k">감속비 (hip/thigh/calf/foot)</td><td><b>7 / 7 / 10.5 / 8</b> <span class="star">★</span>(foot 14→8, calf 10.5 유지) · 허리 7</td><td>확정+재선정</td><td><code>GEAR_FOOT=0.5714</code></td><td class="ok">✅</td></tr>
+<tr><td class="k">감속비 (hip/thigh/calf/foot)</td><td><b>7 / 7 / 10.5 / 8.4</b> <span class="star">★</span>(foot 14→8.4 실값, calf 10.5) · 허리 7</td><td>확정+재선정</td><td><code>기본 8.4(GEAR_FOOT 불요)</code></td><td class="ok">✅</td></tr>
+<tr><td class="k"><span class="star">★</span>hip 관절 range <span class="ok">2026-07-21</span></td><td><b>±0.349 rad (±20°)</b> <span class="star">★</span>(구 ±0.6109/±35° 폐기)</td><td>실기 hip(ab/ad) 가동범위 ±20°로 확정 → sim 정합</td><td>MJCF <code>hip_joint range</code> (6개 모델 전부·컨트롤러 자동)</td><td class="ok">✅ verify 무회귀</td></tr>
 <tr><td class="k"><span class="star">★</span>앞 thigh 관절 limit</td><td>FL/FR thigh <b>−2.705~1.309</b> rad <span class="star">★</span>(원본 −2.443~1.047서 <b>양방향 +15°</b>/0.262 확장)</td><td><span class="star">★</span>눕기 저자세서 앞다리 세움 여유 확보용. 실기 앞 thigh에 +15° 가동여유 있는지 확인 → 없으면 원복</td><td>MJCF <code>joint range</code></td><td class="wait">⌛ 실측대기</td></tr>
 </table>
-<p class="note">MJCF는 이상화(armature=0)라 발목 flail 과장(V1.8 158rad/s). <code>GEARBOX=1</code>=반사관성 <span class="m">I_rotor·N²</span> + 재기어 토크한계 <span class="m">tau_peak×gmul</span>(foot 168→96Nm, QP 존중) + <code>MOTOR_CURVE=1</code>(고속 가용토크↓) → 발목 158→24rad/s(한계 내). 실측 스펙 오면 env만 교체.</p>
+<p class="note">MJCF는 이상화(armature=0)라 발목 flail 과장(V1.8 158rad/s). <code>GEARBOX=1</code>=반사관성 <span class="m">I_rotor·N²</span> + 재기어 토크한계 <span class="m">tau_peak×gmul</span>(foot 168→100.8Nm, QP 존중) + <code>MOTOR_CURVE=1</code>(고속 가용토크↓) → 발목 158→24rad/s(한계 내). 실측 스펙 오면 env만 교체.</p>
 <p class="note"><span class="star">★PACE 채택(2026-07-21)</span> — ROTOR_I·JFRIC·JDAMP(+엔코더 바이어스·지연)의 "대략값 → 실측"을 <b>PACE(ETH RSL, CMA-ES 시스템식별)</b>로 확정. 워크플로=실물 관절궤적(명령+측정 dof) 수집 → sim이 실측 재현하도록 armature/damping/friction 진화탐색(<span class="m">Σ(sim−real−bias)²</span> 최소화). <b>전제=실물 하드웨어 데이터</b>라 확보 시 실행. 우리 MuJoCo-native 스택엔 <b>PACE 방법론을 MuJoCo에 이식</b>(CMA-ES 실측-매칭)이 깔끔(엔진차 없음). 상세=메모리 <code>pace-sim2real-actuator-id</code>.</p>
 <p class="note" style="border-left:3px solid var(--ok,#2c8a58);padding-left:10px"><b>★적용 경로(식별→실제 제어기)</b>: PACE 식별값이 <b>그대로 우리 컨트롤러로 흘러들어감</b> — 식별 armature/damping/friction → env <code>ROTOR_I</code>/<code>JDAMP</code>/<code>JFRIC</code> → <code>apply_gearbox()</code>가 MJCF <code>dof_armature</code>(=I_rot·N²)/<code>dof_damping</code>/<code>dof_frictionloss</code>에 기입 → WBIC·MPC가 그 물리로 동작. 즉 <b>PACE는 이 3개 env값을 실측으로 대체</b>하는 것이고, 컨트롤러 코드·구조는 불변(값만 교체). 적용·검증(verify.sh 무회귀) 완료 시 위 3행 상태 <span class="wait">⌛</span> → <span class="ok">✅</span>. 지연/바이어스는 <code>SENSE/ACT_LAT_MS</code>·추정기 bias로 매핑(C섹션).</p>
 </section>

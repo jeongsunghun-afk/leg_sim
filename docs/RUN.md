@@ -14,9 +14,10 @@ GitHub: jeongsunghun-afk/simulation (master)
 
 ## 배포 물리 config (실모터, 항상)
 ```
-CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1 GEAR_FOOT=0.5714"
+CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1"
 ```
-- 기어 hip7/thigh7/calf10.5/foot8 → peak 84/84/126/**96**Nm · ω 29.6/29.6/19.7/25.9. foot만 8:1(GEAR_FOOT). 허리 7:1.
+- 기어 hip7/thigh7/calf10.5/**foot8.4**(실값) → peak 84/84/126/**100.8**Nm · ω 29.6/29.6/19.7/**24.6**. 허리 7:1. **★GEAR_FOOT 불요**(기본 8.4:1 실값, 구 0.5714=14→8 재기어는 폐기·stale).
+- **질량 38.016kg** · **hip 관절 range ±20°**(±0.349rad, 실기 가동범위. 구 ±35° 폐기). 모든 MJCF·컨트롤러 동일.
 - GEARBOX=반사관성(발 flail 억제·필수). ROTOR_I=1e-4·JDAMP=0.1·JFRIC=0.5 = ★대략값, 실측 대기(sim2real 체크리스트).
 - **★17dof 게인은 C++가 허리모델 자동감지로 기본 적용**(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) → env 불요. Python도 동일 기본.
 
@@ -62,7 +63,7 @@ EST_CTRL=1 ...   # 폐루프: 컨트롤러가 leg-odometry 추정상태로 계�
 CPP=/home/jsh/문서/jsh/simulation/quad/cpp; MJCF=/home/jsh/문서/jsh/simulation/quad/mjcf
 cmake -S $CPP -B $CPP/build && cmake --build $CPP/build     # 빌드(어디서든)
 # 헤드리스: GAIT=walk|trot|run  TROT_V  STEPS  (조향 TROT_STEER=δ · 선회 TROT_WZ) · ★모든 mjcf는 quad/mjcf/
-(cd $CPP && GAIT=walk TROT_V=0.5 GEAR_FOOT=0.5714 STEPS=8000 ./build/trot_sim $MJCF/quad_real_17dof_waist_sphere.mjcf)
+(cd $CPP && GAIT=walk TROT_V=0.5 STEPS=8000 ./build/trot_sim $MJCF/quad_real_17dof_waist_sphere.mjcf)
 # 뷰어 기동은 run_gui.sh 사용(setsid+CMDFILE/STATE_PUB 자동). 맵=인자로 지정.
 ```
 

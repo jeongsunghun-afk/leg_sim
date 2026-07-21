@@ -34,6 +34,12 @@ class MujocoRobot:
                 if _jid>=0:
                     self.m.jnt_stiffness[_jid]=_rl; self.m.dof_damping[self.m.jnt_dofadr[_jid]]=_rl*0.2
             print("[REAR_LOCK] 뒷발목 stiffness=%.0f (대칭3-DOF화)"%_rl,flush=True)
+        _wl=float(_o2.environ.get("WAIST_LOCK","0"))   # ★17-DOF 허리 물리홀드(A의 stiff WAIST_KP 등가) — 측방 불안정 주범 격리
+        if _wl>0:
+            _wj=_mj.mj_name2id(self.m,_mj.mjtObj.mjOBJ_JOINT,"FB_waist_joint")
+            if _wj>=0:
+                self.m.jnt_stiffness[_wj]=_wl; self.m.dof_damping[self.m.jnt_dofadr[_wj]]=_wl*0.2
+                print("[WAIST_LOCK] 허리 stiffness=%.0f (물리홀드)"%_wl,flush=True)
         self.d=_mj.MjData(self.m); self.nu=self.m.nu
         self._set(q0); self.viewer=None
         if view:

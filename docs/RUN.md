@@ -47,6 +47,7 @@ Q=/home/jsh/문서/jsh/simulation/quad
 - **★보행 선택(지형별 강건성)**: **이산 정밀 발판(갭·stepping stone)=walk만**(high duty factor·정밀 디딤, trot/run은 전복). **연속·완만(험지 요철·평지)=walk/trot/run 다 OK**(trot·run이 빠름). 4라인 코스: 갭·스테핑 라인=walk 0.5 / 험지·계단 라인=trot/run 가능.
 - **★perceptive 몸통높이**: 연속지형(계단·험지)은 base가 지형 따라 정상 상승(계단 z0.49→0.79). 갭(불연속)만 base 중심이 구멍 위라 발판만큼 안 오름(안정적 절충, 4-hip 강제는 출렁여 불안정). base높이는 MPC에만 공급(WBIC 공급은 tilt 악화).
 - 헤드리스 검증: `(cd /home/jsh/문서/jsh/simulation/quad/cpp && FOOT_NUDGE=1 GAIT=walk TROT_V=0.5 STEPS=18000 ./build/trot_sim /home/jsh/문서/jsh/simulation/quad/mjcf/quad_terrain_gap.mjcf)`(falls=0 완주).
+- **★★발 접촉구 크기가 지형 강건성 지배 레버(2026-07-21)**: 발 sphere `0.018→0.024`(실물 foot_contact_link 51×29mm 반폭 25.5mm에 부합)로 **gap 크로싱이 전-속도(0.3~0.6) falls=0**으로 해결(구 18mm=점접촉 과소근사→발판 엣지 트립→gap 전멸). 24mm=gap전속도·stepping0.45~0.55, 36mm(과대)=일부 실패. verify.sh 4/4 무회귀. 상세=메모리 [[perceptive-nav-tamols]].
 
 ## 상태추정 (sim2real, EST) — GT는 개발용·EST 성공이 배포 기준
 ```bash

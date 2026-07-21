@@ -32,6 +32,12 @@ SW_KD = float(os.environ.get('SW_KD', '110.0'))    # ↑(80→110): SW_KP 상향
 W_SW = float(os.environ.get('W_SW', '90.0'))        # ★스윙 task 가중치↑(30→90): QP서 발끝추종 우선순위↑
 _NOLIMIT = False                 # --nolimit: 관절 한계 해제 (가동범위 테스트용)
 
+# ★★표준 접촉구 반지름 = 0.024 m (24mm). 실제 발 foot_contact_link(51×29mm, 수평 반폭 25.5mm)에
+#   부합하는 물리값. 구 0.018(18mm)=실물 과소근사→발판 엣지 트립(gap 크로싱 전-속도 실패)이라 폐기(2026-07-21).
+#   메인 sphere는 MJCF(quad_real_17dof_waist_sphere.mjcf)가 이 값으로 정의→컨트롤러가 geom_size로 자동 인식.
+#   이 상수는 코드-주입 지오메트리(선-발 sphere2 등)를 같은 표준에 맞추기 위함. CI-MPC set_foot_sphere도 0.024로 일치.
+FOOT_SPHERE_R = 0.024
+
 # 로봇 설정 — 우리 모델 / Go2 (--robot 으로 선택). 다리 인덱스 0,3 / 1,2 = 대각쌍(둘 다 동일)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ROBOTS = {
@@ -99,8 +105,8 @@ class QuadSim:
             if self._linefoot > 0:                # ★선-발: HL/HR에 2번째 접촉구(원점에서 후방 _linefoot)
                 for _L in ('HL', 'HR'):
                     _orig = '<geom name="%s_sphere"' % _L
-                    _s2 = ('<geom name="%s_sphere2" type="sphere" size="0.018" pos="%.6f 0.000000e+00 -0.056668" '
-                           'rgba="0.3 0.4 0.95 1" friction="1.3 0.02 0.001" condim="3" />\n                ' % (_L, 0.024546 - self._linefoot)) + _orig
+                    _s2 = ('<geom name="%s_sphere2" type="sphere" size="%.4f" pos="%.6f 0.000000e+00 -0.056668" '
+                           'rgba="0.3 0.4 0.95 1" friction="1.3 0.02 0.001" condim="3" />\n                ' % (_L, FOOT_SPHERE_R, 0.024546 - self._linefoot)) + _orig
                     _xml = _xml.replace(_orig, _s2, 1)
             _tmp = os.path.join(os.path.dirname(_xmlp), '_inject_tmp.mjcf')   # 메시 상대경로 위해 같은 폴더
             with open(_tmp, 'w') as _f: _f.write(_xml)

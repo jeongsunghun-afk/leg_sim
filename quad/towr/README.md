@@ -48,7 +48,18 @@ env TERRAIN=gap N=50 XGOAL=1.0 X0=0.55 X1=0.80 DEPTH=0.30 $PIX $TD/towr_cd.py
   ★게인스윕 "완주 tilt6.7"은 거짓양성(텀블링 후 끝점만 우연히 정립)→낙상감지에 tilt>50 추가.
   **결론: 갭 추종은 full-dynamics WBIC(QP: M q̈+h=Sᵀτ+J_cᵀf, 접촉·마찰콘)로 승격 필요.**
 
+### QP-WBIC 프로토타입 (2026-07-22, towr_wbic.py)
+풀 QP-WBIC 구현(proxsuite): 변수 [q̈, f], base 동역학 하드등식 + 접촉 소프트task + 마찰콘,
+MuJoCo M/bias/Jac 사용, τ 복원. **부분 작동**:
+- ✅ 정지 안정(tilt<3°), 첫 스윙 통과(소프트접촉+STIFF), 일부 config는 목표 x 도달.
+- ❌ **지속 보행 미달**: 스윙 몇 회 후 자세 발산(tilt↑)·base 전진 부족. 원인 후보=접촉전이
+  임팩트 처리·정확한 J̇q̇(유한차분은 노이즈)·계층 null-space 부재·soft/rigid 접촉 잔차.
+- 결론: **성숙 WBIC 엔지니어링 필요**. from-scratch보다 **B(simple_mpc)의 검증된 C++ WBIC 재사용이
+  신뢰 경로**. B WBIC는 접촉전이·soft접촉·null-space를 이미 해결(STIFF, [[b-elevation-tamols-towr-track]]).
+실행: `env TRAJ=traj_crawl_flat.json VIEW=1 $PIX towr_wbic.py` (게인 env: KP_R·W_BR·W_C·KP_S…)
+
 ## 다음
-1. **★풀 WBIC 추종**(최우선): fast cadence 갭 크로싱의 관문. B의 C++ WBIC 재사용 or Python QP-WBIC 신규.
+1. **★B의 WBIC 재사용**(최우선): TOWR 궤적을 B(quad_centroidal_17dof)의 WBIC 참조로 브리지
+   → 접촉전이·soft접촉 이미 해결된 추종. QP-WBIC 프로토타입은 참고/폴백.
 2. 변동 phase timing → slow-on-platform + short-at-gap(트래킹 부담↓) + 넓은 갭.
 3. 실제 지형맵(heightmap) → 지형함수 자동생성(perceptive 연동).

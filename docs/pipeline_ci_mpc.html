@@ -366,7 +366,7 @@
 <table>
 <thead><tr><th>우선</th><th>과제</th><th>내용</th></tr></thead>
 <tbody>
-<tr><td class="num">1</td><td class="hl"><b>C-1 착수(C1.0~)</b></td><td>참조 레버(BRAKE·STIFF·GAP_AWARE)로 gap 크로싱 개선했으나 <b>marginal 확정</b>(§12, 2모드 실패)=robust는 C-1/RL. C-1=<span class="mono">C1_ROADMAP.md</span>, C1.0 착수(Pinocchio 해석도함수 de-risk). <b>선행=C1.0 sim2sim 갭 게이트</b></td></tr>
+<tr><td class="num">1</td><td class="hl"><b>C-1 착수(C1.0~)</b></td><td>참조 레버(BRAKE·STIFF·GAP_AWARE)로 gap 크로싱 개선했으나 <b>marginal 확정</b>(§12, 2모드 실패)=robust는 C-1/RL. C-1 로드맵=<b>§13</b>(C1.0~1.4), C1.0 착수(Pinocchio 해석도함수 de-risk). <b>선행=C1.0 sim2sim 갭 게이트</b></td></tr>
 <tr><td class="num">2</td><td><b>(b) RL 증류 (게이트 우선)</b></td><td>RL이 험지 풀면 C-1 불필요. C-2/STIFF·TOWR가 교사. <b>RL 소스 도착 시 C-1보다 먼저</b></td></tr>
 <tr><td class="num">3</td><td><b>실시간 배포는 별도 트랙</b></td><td>C-2 자체는 구조적으로 실시간 불가(아래 판정). 배포=C-1(해석 그래디언트 C++) 또는 C-2→RL 증류</td></tr>
 </tbody>
@@ -406,6 +406,28 @@ gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b
   </div>
 </div>
 
+<h2><span class="n">13</span> C-1 로드맵 — HOUND식 해석 그래디언트 실시간 CI-MPC</h2>
+<p class="sub">동기: 참조 레버(BRAKE·STIFF)로도 post-crossing settle(WHEN)·발판(WHERE) 동시해결 불가=marginal(§12). 착지 안정화=접촉 타이밍을 최적화가 직접 정해야 → C-1. <b>왜 C-2 아닌 C-1</b>: C-2 jacfwd=offline(아래 판정). HOUND 70μs/40Hz는 자동미분 안 씀=해석 도함수.</p>
+<div class="callout">
+<p style="margin:0 0 6px;font-size:13.5px;color:var(--ink2)"><b>핵심(novel) = 접촉임펄스 동역학 + 해석 그래디언트:</b>
+<b>forward</b>=하드접촉 임펄스(속도공간 Signorini LCP+Coulomb, Hwangbo block Gauss-Seidel)+semi-implicit Euler ·
+<b>backward</b>=완화 상보성 <b>해석</b> 그래디언트 ∂λ/∂(q,q̇,u) 닫힌형식(식11-19,26) + Pinocchio ABA 미분. ★<b>C1.2의 하드접촉 해석미분이 관문</b>(참조코드 없음, FD 대조가 안전망).
+단 Pinocchio <span class="mono">computeConstraintDynamicsDerivatives</span> 내장이 이걸 대폭 de-risk(§12).</p>
+</div>
+<div class="scroll">
+<table>
+<thead><tr><th>단계</th><th>내용</th><th>검증 게이트</th></tr></thead>
+<tbody>
+<tr><td class="num">C1.0</td><td>접촉임펄스 forward 동역학 (<span class="mono">ci_action.py</span>, DifferentialActionModel 서브클래스)</td><td>MuJoCo 스텝과 <b>sim2sim 갭</b> 측정(강체↔soft). <span class="tag t-warn"><span class="dot"></span>착수(de-risk·프로브)</span></td></tr>
+<tr><td class="num">C1.1</td><td>FD 그래디언트 sanity → Box-FDDP 평지 트롯</td><td>CI가 fixed-schedule보다 gap서 나은가(타이밍 적응 증명)</td></tr>
+<tr><td class="num">C1.2</td><td>★<b>해석 그래디언트</b>(완화 상보성 닫힌형식)</td><td>해석≈FD(rel&lt;1e-3)·Box-FDDP 수렴. <b>최고난도</b></td></tr>
+<tr><td class="num">C1.3</td><td>gap/stepping <b>완전</b> 크로싱(착지 안정화)</td><td>C-2가 못한 post-crossing settle 해결</td></tr>
+<tr><td class="num">C1.4</td><td>C++ 실시간 포팅(dt25ms·N20·40Hz·max-iter4)</td><td>40Hz + 폐루프 크로싱, 해석 그래디언트 ~70μs</td></tr>
+</tbody>
+</table>
+</div>
+<p style="margin:8px 0 0;font-size:13px;color:var(--ink2)"><b>리스크(정직):</b> ① C1.2 하드접촉 해석미분=관문(미묘·참조코드 없음) ② sim2sim 갭(Pinocchio 하드↔MuJoCo soft, C1.0서 정량화 선행) ③ 수주 규모(Python-first C1.0-3→C++ C1.4). C1.2 정체 시 폴백=RL 증류. <b>착수 조건</b>: RL 하이브리드 결과 후 게이트(RL이 험지 풀면 불필요)·선행=C1.0 sim2sim 갭.</p>
+
 <div class="callout" style="border-left-color:var(--warn,#c9791f)">
 <h2 style="font-size:15px;margin:0 0 8px"><span class="n" style="color:var(--warn,#c9791f)">!</span> C-2 실시간성 판정 — 완성해도 실시간 불가, offline 검증/교사 도구</h2>
 <p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)"><b>근본 이유(산수):</b> 병목=jacfwd(forward-mode AD)로 접촉 물리 통과. 선형화 1회 = fx[47×47]+fu[47×17] →
@@ -424,7 +446,7 @@ Pinocchio 해석 도함수(RNEA/ABA 미분, O(n) 1패스) + 하드접촉 임펄�
 <p><b>구성 파일</b> (<span class="mono">simulation/quad/ci_mpc/</span>) · <span class="mono">model_bridge.py</span> (브리지·gearbox·sphere·메쉬스트립) ·
 <span class="mono">ocp_fixed.py</span> (Crocoddyl OCP+foot_adjust 훅) · <span class="mono">ci_mpc_run.py</span> (OCP 폐루프·지형·발판보정)·<span class="mono">benchmark.py</span> (baseline) ·
 <span class="mono">mppi_mpc.py</span>·<span class="mono">mjx_mppi.py</span> (샘플링 CI) · <span class="mono">mjx_ilqr.py</span> (★그래디언트 CI iLQR·BRAKE·STIFF·QPOS_OUT) ·
-<span class="mono">C1_ROADMAP.md</span> (C-1 단계) · <span class="mono">sim2sim_probe.py</span> (C1.0 갭측정) · <span class="mono">replay_viewer.py</span> (rollout 뷰어) · <span class="mono">mjcf/ci_mpc_gap.mjcf</span> (gap 코스).</p>
+<span class="mono">sim2sim_probe.py</span> (C1.0 갭측정) · <span class="mono">replay_viewer.py</span> (rollout 뷰어) · <span class="mono">mjcf/ci_mpc_gap.mjcf</span> (gap 코스). C-1 로드맵=§13(위).</p>
 <p>02_Leg 17-DOF 제어 · 감속비 실값 hip/thigh 7 · calf 10.5 · foot 8.4 (peak 100.8 Nm · ω 24.6 rad/s).
 배포 컨트롤러 A는 불변, 본 트랙은 모델기반 타이밍 최적화 연구.</p>
 </div>

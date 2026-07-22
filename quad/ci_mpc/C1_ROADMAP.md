@@ -53,3 +53,15 @@ C-1은 **RL 하이브리드 결과 후** 진입 권장(RL이 험지 풀면 불�
 ## 다음 실행
 1. **C1.0**: `ci_action.py` 스켈레톤 = 접촉임펄스 forward + MuJoCo 대조. (이 세션 파운데이션)
 2. 이후 C1.1~1.4는 포커스 세션별로. C1.2가 핵심 연구 관문.
+
+## ★C1.0 착수 결과 (2026-07-22)
+- **★★핵심 de-risk**: Pinocchio 4.0.0이 **`constraintDynamics`(강체접촉 forward) +
+  `computeConstraintDynamicsDerivatives`(해석 도함수) + `RigidConstraintModel`/`impulseDynamics`
+  내장**(proxddp env 확인). → **C1.2(해석 그래디언트)를 손코딩(Hwangbo block-GS + ∂λ/∂q 유도)
+  대신 Pinocchio 내장으로** 갈 여지 큼. C-1 최대 리스크 대폭↓.
+  - 단 주의: Pinocchio constraintDynamics=**고정 active-set**(접촉 지정). contact-IMPLICIT(타이밍
+    발견)은 여기에 완화 상보성/스무스 active-set 레이어를 얹어야 함(C1.2 잔여 연구).
+- **sim2sim 프로브**(`sim2sim_probe.py`) 작성: 순간 qacc 비교는 **STIFF 접촉 강성응답이 지배해
+  오염**(|qacc|~1e4). **깨끗한 갭=궤적기반 비교(스탠스 push 양쪽 적분→base 발산) 재설계 필요**=C1.0 잔여.
+- **다음 C1.0**: ①궤적기반 sim2sim 프로브 ②Crocoddyl `ContactFwdDynamics`(=constraintDynamics 래핑,
+  ocp_fixed 이미 사용)에 완화 상보성 얹는 설계 스케치.

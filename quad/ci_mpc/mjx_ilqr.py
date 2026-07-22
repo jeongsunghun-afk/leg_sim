@@ -38,7 +38,7 @@ def build_mjx(mjcf=None, foot_r=FOOT_R):
     apply_gearbox(mm)
     set_foot_sphere(mm, foot_r)
     strip_mesh_collision(mm)             # sphere feet + terrain only (fast MJX)
-    _stiff = float(os.environ.get("STIFF", "0"))   # 0=기본(soft, 발 penetrate) · >0=단단(발 덜 파고듦)
+    _stiff = float(os.environ.get("STIFF", "0.002"))   # ★배포 표준(quad_centroidal)과 동일화. 0=soft(구거동)
     if _stiff > 0:
         mm.geom_solref[:, 0] = _stiff; mm.geom_solref[:, 1] = 1.0
     if DISABLE_FLOOR:                    # gaps between platforms become true voids

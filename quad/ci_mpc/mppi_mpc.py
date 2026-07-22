@@ -48,6 +48,9 @@ class SamplingMPC:
         self.m = mujoco.MjModel.from_xml_path(MJCF)
         apply_gearbox(self.m)
         set_foot_sphere(self.m, FOOT_R)
+        _stiff = float(os.environ.get("STIFF", "0.002"))   # ★배포 표준과 접촉강성 동일화
+        if _stiff > 0:
+            self.m.geom_solref[:, 0] = _stiff; self.m.geom_solref[:, 1] = 1.0
         self.nu = self.m.nu
         self.sub = max(1, round(DT / self.m.opt.timestep))
         self.fg = {L: mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, L + '_sphere')

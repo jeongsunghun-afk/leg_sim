@@ -37,6 +37,9 @@ def main():
     mm = mujoco.MjModel.from_xml_path(MJCF_PATH)
     apply_gearbox(mm)                                    # reflected rotor inertia (C++ parity)
     set_foot_sphere(mm, FOOT_R)                          # enlarge foot spheres (ci_mpc only)
+    _stiff = float(os.environ.get("STIFF", "0.002"))     # ★배포 표준(quad_centroidal)과 접촉강성 동일화
+    if _stiff > 0:
+        mm.geom_solref[:, 0] = _stiff; mm.geom_solref[:, 1] = 1.0
     if DISABLE_FLOOR:                                    # gaps between platforms = true voids
         fgid = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         if fgid >= 0:

@@ -52,6 +52,9 @@ def build_model():
     apply_gearbox(mm)
     set_foot_sphere(mm, FOOT_R)
     strip_mesh_collision(mm)             # only sphere feet + terrain collide (fast MJX)
+    _stiff = float(os.environ.get("STIFF", "0.002"))   # ★배포 표준과 접촉강성 동일화
+    if _stiff > 0:
+        mm.geom_solref[:, 0] = _stiff; mm.geom_solref[:, 1] = 1.0
     if DISABLE_FLOOR:                    # so gaps between platforms are true voids
         fg = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         if fg >= 0:

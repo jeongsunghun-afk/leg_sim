@@ -323,7 +323,7 @@
   <div class="stage">
     <div class="rail"><div class="node done">M</div><div class="bar"></div></div>
     <div class="body"><h3>MjxDynamics — 접촉 통과 선형화</h3>
-      <p class="k">상태 x=[qpos24,qvel23]=47, 제어 u=17. f(x,u)=mjx.step(soft접촉 물리).</p>
+      <p class="k">상태 x=[qpos24,qvel23]=47, 제어 u=17. f(x,u)=mjx.step(<b>STIFF=0.002</b> 접촉, 배포 파리티·§12).</p>
       <div class="kv"><span class="chip">fx=∂f/∂x, fu=∂f/∂u ← <b>jax.jacfwd</b></span>
         <span class="chip">★<b>forward-mode</b>가 접촉 while_loop 통과(reverse는 막힘)</span>
         <span class="chip">vmap 호라이즌 배치</span></div>
@@ -345,7 +345,7 @@
   <div class="stage">
     <div class="rail"><div class="node done">L</div></div>
     <div class="body"><h3>폐루프 MPC <span class="tag t-ok"><span class="dot"></span>작동</span></h3>
-      <p class="k">매 스텝 iLQR → <span class="mono">u₀ + K₀·(x_meas−x₀)</span> 적용, 수신호라이즌 재해결. standing 홀드·스텝 보행·gap1 통과 검증.</p>
+      <p class="k">매 스텝 iLQR → <span class="mono">u₀ + K₀·(x_meas−x₀)</span> 적용, 수신호라이즌 재해결. standing 홀드·스텝 보행·gap1 통과(<b>marginal</b>, §12).</p>
     </div>
   </div>
 </div>
@@ -354,10 +354,10 @@
     <h3 style="margin:10px 0 4px;font-size:15px">파이프라인 작동 + 선형화 정확</h3>
     <p style="margin:0;color:var(--ink2);font-size:13.5px">iLQR 수렴(J 감소)·피드백 K 생성. 선형화 <b>jacfwd=유한차분</b>(dz/du 3.9e-5 vs 5.3e-5) → <b>C-2 그래디언트 건전</b>.</p>
   </div>
-  <div class="card"><span class="tag t-ok"><span class="dot"></span>해결됨</span>
-    <h3 style="margin:10px 0 4px;font-size:15px">standing·보행·gap1 통과</h3>
-    <p style="margin:0;color:var(--ink2);font-size:13.5px">접촉 dt 버그 수정(<b>DT_SIM=2ms sub=10</b>)+접촉 자세로 standing 홀드. gait 참조 가중 40으로 스텝 보행.
-    <b>world-frame 발판</b>=낙상 제거(falls=0)·<b>capture-point</b>=몸통이 gap1 통과(base 0.33→0.67).</p>
+  <div class="card"><span class="tag t-warn"><span class="dot"></span>부분·marginal</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">standing·보행 ✓ · gap1 통과=marginal</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">접촉 dt 버그 수정(<b>DT_SIM=2ms sub=10</b>)+standing 홀드·스텝 보행 <b>확실</b>. <b>world-frame 발판</b>=falls=0.
+    <b>capture-point</b>=gap1 통과(base 0.67)나 <b>marginal·stochastic</b>(§12: BRAKE 회귀→복구·STIFF로 개선·2 실패모드).</p>
   </div>
 </div>
 
@@ -366,11 +366,44 @@
 <table>
 <thead><tr><th>우선</th><th>과제</th><th>내용</th></tr></thead>
 <tbody>
-<tr><td class="num">1</td><td class="hl"><b>dynamic throw-and-catch 안정화</b></td><td>gap1 통과 직후 잔여 lunge 낙상 → 착지 후 제동. 긴 호라이즌(Nh↑)이 착지·제동을 계획, 또는 제동 cost. <b>현재 초점</b></td></tr>
-<tr><td class="num">2</td><td><b>gap2·stepping·연속 크로싱</b></td><td>단발 gap1 통과 → 연속 gap/stepping 코스 완주</td></tr>
-<tr><td class="num">3</td><td><b>실시간 배포는 별도 트랙</b></td><td>C-2 자체는 구조적으로 실시간 불가(아래 판정). 배포는 C-1(해석 그래디언트 C++) 또는 C-2→RL 증류</td></tr>
+<tr><td class="num">1</td><td class="hl"><b>C-1 착수(C1.0~)</b></td><td>참조 레버(BRAKE·STIFF·GAP_AWARE)로 gap 크로싱 개선했으나 <b>marginal 확정</b>(§12, 2모드 실패)=robust는 C-1/RL. C-1=<span class="mono">C1_ROADMAP.md</span>, C1.0 착수(Pinocchio 해석도함수 de-risk). <b>선행=C1.0 sim2sim 갭 게이트</b></td></tr>
+<tr><td class="num">2</td><td><b>(b) RL 증류 (게이트 우선)</b></td><td>RL이 험지 풀면 C-1 불필요. C-2/STIFF·TOWR가 교사. <b>RL 소스 도착 시 C-1보다 먼저</b></td></tr>
+<tr><td class="num">3</td><td><b>실시간 배포는 별도 트랙</b></td><td>C-2 자체는 구조적으로 실시간 불가(아래 판정). 배포=C-1(해석 그래디언트 C++) 또는 C-2→RL 증류</td></tr>
 </tbody>
 </table>
+</div>
+
+<h2><span class="n">12</span> gap 크로싱 dig + STIFF 파리티 + C1.0 착수 <span class="tag t-warn" style="align-self:center"><span class="dot"></span>2026-07-22</span></h2>
+<div class="grid2">
+  <div class="card"><span class="tag t-warn"><span class="dot"></span>재현·복구</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">gap 크로싱 미재현 → 회귀 규명·복구</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">문서화 크로싱(base 0.67, 3ad7ac8)이 <b>미재현</b>(gap 가장자리 lunge-dive). 원인=이후 커밋이 추가한
+    <span class="mono">ref[k,0] base-x 참조 제동</span>이 4차의 lunge-crossing 원리(몸이 gap 너머로 나르고 capture-point가 잡음)를 차단.
+    <b>BRAKE 토글</b>(1=제동·0=vx_pred) 추가 → <span class="mono">BRAKE=0+GAP_AWARE=1</span>로 <b>base 0.79 gap1 통과</b> 복구.</p>
+  </div>
+  <div class="card"><span class="tag t-ok"><span class="dot"></span>STIFF 파리티</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">★바닥 soft → STIFF=0.002 동일화</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">C-2가 <b>STIFF 미설정=soft</b>(발 penetrate·base 처짐)로 배포 표준(<span class="mono">quad_centroidal</span> STIFF=0.002)과 불일치.
+    4러너 전부 <b>STIFF=0.002 기본 동일화</b>. 결과: soft는 가장자리서 다이빙, <b>STIFF는 gap 통과</b>(crisp push-off). 무회귀 검증.</p>
+  </div>
+</div>
+<div class="callout" style="border-left-color:var(--ok,#2b9348)">
+<p style="margin:0;font-size:13.5px;color:var(--ink2)"><b>★soft/hard 설계 통찰:</b> soft=<b>최적화 그래디언트 매끈</b>(DDP 수렴, C-2가 쓴 이유) BUT <b>물리 mushy</b>(약한 push-off).
+gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b>. <b>최적화 ≠ 실행.</b>
+이게 <b>HOUND/C-1이 hard-forward + 완화상보성-그래디언트를 쓰는 이유</b>(양쪽 다 얻음). C-2 soft-everywhere의 근본 한계 = C-1이 해결.</p>
+</div>
+<div class="grid2">
+  <div class="card"><span class="tag t-ok"><span class="dot"></span>★C1.0 de-risk</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">Pinocchio가 접촉 해석도함수 내장</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">Pinocchio 4.0이 <span class="mono">constraintDynamics</span>(강체접촉 forward) +
+    <span class="mono">computeConstraintDynamicsDerivatives</span>(<b>해석 도함수</b>) 내장 → C-1 최고난도 <b>C1.2(해석 그래디언트)를 손코딩 대신 Pinocchio 내장으로</b> 대폭 de-risk.
+    단 <span class="mono">constraintDynamics</span>=고정 active-set이라 contact-implicit(타이밍 발견)엔 완화 상보성 레이어 잔여.</p>
+  </div>
+  <div class="card"><span class="tag t-warn"><span class="dot"></span>marginal 확정</span>
+    <h3 style="margin:10px 0 4px;font-size:15px">크로싱 2 실패모드 · sim2sim 프로브</h3>
+    <p style="margin:0;color:var(--ink2);font-size:13.5px">STIFF 크로싱도 여전히 <b>marginal·stochastic</b>: ①발이 갭 착지(WHERE)·②크로싱 후 lunge(WHEN). 참조 레버(BRAKE·GAP_AWARE·STIFF) 개선하나 robust 불가=<b>C-1/RL 몫</b>.
+    C1.0 궤적 sim2sim 프로브=갭 0.059m(주로 Baumgarte-less drift). 교훈=<b>Pinocchio도 armature 필수</b>(없으면 stiff PD 발산).</p>
+  </div>
 </div>
 
 <div class="callout" style="border-left-color:var(--warn,#c9791f)">
@@ -383,14 +416,15 @@
 Pinocchio 해석 도함수(RNEA/ABA 미분, O(n) 1패스) + 하드접촉 임펄스 해석적 완화-상보성 그래디언트(닫힌 형식, 솔버 미분관통 안 함) + C++.
 즉 실시간 = "C-2 더 개발"이 아니라 <b>C-1(HOUND식 해석 그래디언트 C++)</b> 재작성.</p>
 <p style="margin:0;font-size:13.5px;color:var(--ink2)"><b>C-2의 역할(배포 아님):</b> ① 개념 검증·프로토타이핑(offline) — CI가 fixed-schedule 벽 넘는지 증명·cost 튜닝·거동 규명
-(<b>이미 완료</b>: GRF-bounce 벽 돌파·gap1 통과) ② sim2sim 갭 0(MJX=MuJoCo, C++ 해석판 투자 전 확인) ③ <b>distillation 교사</b>(느리지만 정확 → 빠른 정책 증류, MPC-교사 하이브리드).
+(<b>완료</b>: GRF-bounce 벽 돌파·gap1 통과 <b>marginal</b>·STIFF로 개선, §12) ② sim2sim 갭 0(MJX=MuJoCo, C++ 해석판 투자 전 확인) ③ <b>distillation 교사</b>(느리지만 정확 → 빠른 정책 증류, MPC-교사 하이브리드).
 <b>배포 두 갈래</b>: (a) C-1 해석 C++(대규모 재작성) (b) C-2 → RL 증류.</p>
 </div>
 
 <div class="foot">
 <p><b>구성 파일</b> (<span class="mono">simulation/quad/ci_mpc/</span>) · <span class="mono">model_bridge.py</span> (브리지·gearbox·sphere·메쉬스트립) ·
 <span class="mono">ocp_fixed.py</span> (Crocoddyl OCP+foot_adjust 훅) · <span class="mono">ci_mpc_run.py</span> (OCP 폐루프·지형·발판보정)·<span class="mono">benchmark.py</span> (baseline) ·
-<span class="mono">mppi_mpc.py</span>·<span class="mono">mjx_mppi.py</span> (샘플링 CI) · <span class="mono">mjx_ilqr.py</span> (★그래디언트 CI iLQR) · <span class="mono">mjcf/ci_mpc_gap.mjcf</span> (gap 코스).</p>
+<span class="mono">mppi_mpc.py</span>·<span class="mono">mjx_mppi.py</span> (샘플링 CI) · <span class="mono">mjx_ilqr.py</span> (★그래디언트 CI iLQR·BRAKE·STIFF·QPOS_OUT) ·
+<span class="mono">C1_ROADMAP.md</span> (C-1 단계) · <span class="mono">sim2sim_probe.py</span> (C1.0 갭측정) · <span class="mono">replay_viewer.py</span> (rollout 뷰어) · <span class="mono">mjcf/ci_mpc_gap.mjcf</span> (gap 코스).</p>
 <p>02_Leg 17-DOF 제어 · 감속비 실값 hip/thigh 7 · calf 10.5 · foot 8.4 (peak 100.8 Nm · ω 24.6 rad/s).
 배포 컨트롤러 A는 불변, 본 트랙은 모델기반 타이밍 최적화 연구.</p>
 </div>

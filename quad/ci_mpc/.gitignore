@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 MUJOCO_LOG.TXT
 *.npz
+*.npy
+crossing*.npy

@@ -91,12 +91,13 @@ def main():
         # TOWR 참조(보간)
         pd=(1-fr)*P[:,k]+fr*P[:,k+1]; vd=(1-fr)*Pd[:,k]+fr*Pd[:,k+1]; ad=(1-fr)*Pdd[:,k]+fr*Pdd[:,k+1]
         thd=(1-fr)*Th[:,k]+fr*Th[:,k+1]; Rd=pin.rpy.rpyToMatrix(*thd)
-        # ── 원하는 base 렌치(world) ──
+        # ── 원하는 base 렌치(world): 가속ff + 중력 + 피드백 ──
         F_des=MASS*(ad + KP_P*(pd-p) + KD_P*(vd-v_lin)) + MASS*np.array([0,0,G])
         M_des=INER@(KP_R*so3_err(Rd,R) - KD_R*w_ang)
         W=np.concatenate([F_des,M_des])
         # ── 지지발 GRF 분배: W = Σ[ f_i ; (r_i-p)×f_i ] ──
         st=[f for f in FEET if con[f][k]]
+        fvec={}
         if st:
             Gm=np.zeros((6,3*len(st)))
             for i,f in enumerate(st):
@@ -104,31 +105,27 @@ def main():
                 Gm[0:3,3*i:3*i+3]=np.eye(3)
                 Gm[3:6,3*i:3*i+3]=np.array([[0,-r[2],r[1]],[r[2],0,-r[0]],[-r[1],r[0],0]])
             fsol=Gm.T@np.linalg.solve(Gm@Gm.T+1e-4*np.eye(6),W)
-            fvec={f:fsol[3*i:3*i+3] for i,f in enumerate(st)}
-            for f in st:      # 마찰콘·수직 클립
-                fz=max(fvec[f][2],0.0); lim=MU*fz
-                fvec[f]=np.array([np.clip(fvec[f][0],-lim,lim),np.clip(fvec[f][1],-lim,lim),
-                                  np.clip(fz,0,2*MASS*G)])
-        else: fvec={}
-        # ── 토크: 중력보상 + 지지발 τ=-Jᵀf(world) + 스윙발 관절 PD ──
+            for i,f in enumerate(st):
+                fz=max(fsol[3*i+2],0.0); lim=MU*fz
+                fvec[f]=np.array([np.clip(fsol[3*i],-lim,lim),np.clip(fsol[3*i+1],-lim,lim),np.clip(fz,0,2*MASS*G)])
+        # ── 토크: 중력보상(+선택적 스윙 CT) + 지지발 -Jᵀf + 스윙발 PD ──
         tau=np.zeros(m.nu)
-        # 전신 중력보상(pinocchio RNEA, 측정자세) → 액추에이터 관절 성분
-        qpin=np.zeros(NQ); qpin[0:3]=p; qpin[3:7]=[quat[1],quat[2],quat[3],quat[0]]  # xyzw
-        qpin[7:]=data.qpos[7:7+m.nu][_PIN2MJ]               # mjcf→pin
-        g_tau=pin.computeGeneralizedGravity(pm,pdat,qpin)   # nv, pin순
-        tau[_PIN2MJ] += g_tau[6:]                            # pin leg → actuator
+        qpin=np.zeros(NQ); qpin[0:3]=p; qpin[3:7]=[quat[1],quat[2],quat[3],quat[0]]
+        qpin[7:]=data.qpos[7:7+m.nu][_PIN2MJ]
+        g_tau=pin.computeGeneralizedGravity(pm,pdat,qpin)
+        tau[_PIN2MJ] += g_tau[6:]
         qd=(1-fr)*q_des[k]+fr*q_des[k+1]; _qd=np.zeros(m.nu); _qd[_PIN2MJ]=qd[7:]
         for f in FEET:
-            jacp=np.zeros((3,m.nv)); mj.mj_jacBody(m,data,jacp,None,bid[f])
             if f in fvec:
+                jacp=np.zeros((3,m.nv)); mj.mj_jacBody(m,data,jacp,None,bid[f])
                 tau += -(jacp[:,6:6+m.nu].T @ fvec[f])
         # 스윙발(비지지) 관절 PD — 해당 다리 관절만
-        LEGJ={'FL':[9,10,11,12],'FR':[13,14,15,16],'HL':[0,1,2,3],'HR':[4,5,6,7]}  # pin leg → actuator via PIN2MJ
+        LEGJ={'FL':[9,10,11,12],'FR':[13,14,15,16],'HL':[0,1,2,3],'HR':[4,5,6,7]}  # pin leg 인덱스
         for f in FEET:
             if not con[f][k]:
                 for pj in LEGJ[f]:
-                    aj=_PIN2MJ[pj]
-                    tau[aj]+= KP_J*(_qd[aj]-data.qpos[7+aj]) - KD_J*data.qvel[6+aj]
+                    ai=_PIN2MJ[pj]
+                    tau[ai]+= KP_J*(_qd[ai]-data.qpos[7+ai]) - KD_J*data.qvel[6+ai]
         if m.actuator_forcelimited.any():
             data.ctrl[:]=np.clip(tau,m.actuator_forcerange[:,0],m.actuator_forcerange[:,1])
         else: data.ctrl[:]=tau
@@ -137,7 +134,7 @@ def main():
             z=data.qpos[2]; til=np.degrees(np.arccos(np.clip(1-2*(data.qpos[4]**2+data.qpos[5]**2),-1,1)))
             print("  s=%4d t=%.2f x=%+.3f y=%+.3f z=%.3f tilt=%.1f | TOWRx=%.3f TOWRz=%.3f"
                   %(s,s*sim_dt,data.qpos[0],data.qpos[1],z,til,pd[0],pd[2]),flush=True)
-            if z<0.20: print("[TRACK] ❌낙상 @%.2fs"%(s*sim_dt)); fell=True; break
+            if z<0.20 or til>50: print("[TRACK] ❌낙상 @%.2fs (z=%.2f tilt=%.0f)"%(s*sim_dt,z,til)); fell=True; break
         if v is not None: v.sync()
     til=np.degrees(np.arccos(np.clip(1-2*(data.qpos[4]**2+data.qpos[5]**2),-1,1)))
     print("[TRACK] %s 최종 x=%.3f (TOWR목표%.3f) z=%.3f tilt=%.1f"

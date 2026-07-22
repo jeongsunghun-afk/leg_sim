@@ -36,12 +36,19 @@ env TERRAIN=gap N=50 XGOAL=1.0 X0=0.55 X1=0.80 DEPTH=0.30 $PIX $TD/towr_cd.py
 - **Phase1 추종 작동(STEP)**: ★TOWR STEP 궤적 → WBIC-lite 추종 → 로봇이 0.10m 단 위로
   **base 0.50→0.64 상승하며 완주(falls=0, tilt7°)**. 엔드투엔드 모델기반 지형 크로싱 실증.
   안정 게인=KP_R 1600(강 자세권한)·KP_P 300(부드러운 위치)·KP_J 20(약 스윙반력).
-- **GAP 크로싱=변동 timing 필요(미구현)**: 고정 phase timing은 갭>2·ROM_x(0.26m)서
-  발이 어느 플랫폼도 못 닿는 사각구간→infeasible. 긴 crawl stance도 유효ROM을 조임.
-  **TOWR 핵심 기능=phase duration을 결정변수화**하면 touchdown을 갭 밖으로 옮겨 해결.
-  = 다음 개발과제(Phase0c). trot로는 standalone gap solve되나 동적이라 WBIC-lite 추종 난이.
+### GAP 크로싱 진행 (2026-07-22)
+- **★GAP PLANNING 해결**: 핵심=**짧은 stance**. 긴 crawl stance(Tg0.80·0.64s)는 발판 하나가
+  base 0.19m 범위를 커버해야 해 유효ROM을 조여 갭 근처 infeasible. **Tg≤0.40(stance≤0.28s)로
+  줄이면** 발이 갭 밖으로 빨리 재배치→feasible+**갭 회피 완벽**(갭내착지 0, cadence 스윕 검증).
+  - 전역 위상오프셋 8개 스윕=**전부 infeasible**(정렬 아닌 stance 지속시간 문제 확인).
+  - 부수: base높이 참조 bhref(갭 위 base가 갭바닥으로 안 빠지게 지지면 레벨), platgap 지형·phase_off.
+- **GAP TRACKING=풀 WBIC 필요(미해결)**: WBIC-lite(준정적 gravity+GRF)는 **slow crawl(Tg0.80,
+  step)은 추종하나 fast cadence(Tg0.40)는 못 잡음** — 갭 전 평지서 이미 발산(빠른 스윙 다리반력을
+  준정적 힘균형이 미보상). computed-torque(rnea 전신역동역학) 시도=프레임규약 버그로 실패(제거).
+  ★게인스윕 "완주 tilt6.7"은 거짓양성(텀블링 후 끝점만 우연히 정립)→낙상감지에 tilt>50 추가.
+  **결론: 갭 추종은 full-dynamics WBIC(QP: M q̈+h=Sᵀτ+J_cᵀf, 접촉·마찰콘)로 승격 필요.**
 
 ## 다음
-1. **변동 phase timing** → 넓은 갭 크로싱(TOWR 시그니처).
-2. 추종을 B의 풀 WBIC로 승격(동적 trot 궤적도 추종 → 고속 지형).
+1. **★풀 WBIC 추종**(최우선): fast cadence 갭 크로싱의 관문. B의 C++ WBIC 재사용 or Python QP-WBIC 신규.
+2. 변동 phase timing → slow-on-platform + short-at-gap(트래킹 부담↓) + 넓은 갭.
 3. 실제 지형맵(heightmap) → 지형함수 자동생성(perceptive 연동).

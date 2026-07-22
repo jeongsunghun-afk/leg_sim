@@ -52,7 +52,7 @@ def terrain_height(x, y, kind='flat', **kw):
 
 
 def build_and_solve(kind='flat', tkw=None, N=40, dt=0.02, Tg=0.40, duty=0.5,
-                    x_goal=0.8, vx_des=None, verbose=True, gait='trot'):
+                    x_goal=0.8, vx_des=None, verbose=True, gait='trot', phase_off=0.0):
     """
     phase-based TO. footholds=지형 위 변수.
       gait: 'trot'(대각쌍 FL·HR/FR·HL, 동적) | 'crawl'(한발씩 스윙, 3발지지 정적안정)
@@ -72,7 +72,7 @@ def build_and_solve(kind='flat', tkw=None, N=40, dt=0.02, Tg=0.40, duty=0.5,
     # ── 접촉 스케줄: 각 발이 각 노드에서 stance인지(1/0) ──
     _CRAWL_ORDER = ['FL','HR','FR','HL']         # crawl 스윙 순서(지지삼각형 유지)
     def in_stance(foot, k):
-        t = k*dt; ph = (t % Tg)/Tg               # 0~1
+        t = k*dt; ph = ((t + phase_off*Tg) % Tg)/Tg   # 0~1 (phase_off=전역 위상 오프셋)
         if gait == 'crawl':                       # 4구간, 각 구간서 1발만 스윙(swing=duty만큼)
             idx = _CRAWL_ORDER.index(foot)
             win_lo = idx*0.25; sw = 0.25*duty     # 이 발의 스윙 창

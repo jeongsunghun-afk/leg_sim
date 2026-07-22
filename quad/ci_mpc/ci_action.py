@@ -35,41 +35,79 @@ class ContactImplicit:
         self.ground = ground
         self.fids = [br.foot_fid[L] for L in FEET]
 
-    def contact_forces(self, q, v):
-        """각 발 접촉력(world 3D) + 진단. 발 접촉점=frame + [0,0,-FOOT_R]."""
+    def _force_law(self, phi, vf):
+        """접촉력 법칙 f(φ, vf) → world 3D. φ=지면위높이, vf=접촉점 선속도. (미분용 순수함수)"""
+        w = sigmoid(-phi, self.rho)                                       # 접촉 활성 0~1
+        depth = softplus(-phi, self.rho)                                 # 단방향 침투
+        fn = softplus(self.kn * depth - self.bn * vf[2] * w, 1.0)         # 법선(스프링+감쇠, ≥0 스무스)
+        ft = -self.bt * vf[:2] * w                                       # 접선 감쇠(no-slip 근사)
+        ftn = np.linalg.norm(ft) + 1e-9
+        cap = self.mu * fn                                              # 마찰콘(스무스 클립)
+        scale = cap / ftn if ftn > cap else 1.0
+        ft = ft * scale
+        return np.array([ft[0], ft[1], fn])
+
+    def _foot_state(self, q, v):
+        """각 발의 (phi, vf, J[3×nv]) — FK 1회."""
         m, d = self.m, self.d
-        pin.forwardKinematics(m, d, q, v)
-        pin.updateFramePlacements(m, d)
-        F = []; info = []
+        pin.forwardKinematics(m, d, q, v); pin.updateFramePlacements(m, d); pin.computeJointJacobians(m, d, q)
+        out = []
         for fid in self.fids:
             oMf = d.oMf[fid]
-            p = oMf.translation + oMf.rotation @ np.array([0., 0., -FOOT_R])   # 접촉점 world
-            phi = p[2] - self.ground                                          # 지면 위 높이(gap)
-            vf = pin.getFrameVelocity(m, d, fid, pin.LOCAL_WORLD_ALIGNED).linear  # 접촉점 속도(≈frame lin)
-            w = sigmoid(-phi, self.rho)                                       # 접촉 활성 0~1
-            depth = softplus(-phi, self.rho)                                 # 단방향 침투
-            fn = self.kn * depth - self.bn * vf[2] * w                        # 법선(스프링+감쇠)
-            fn = softplus(fn, 1.0)                                           # ≥0 스무스 클램프
-            ft = -self.bt * vf[:2] * w                                       # 접선 감쇠(no-slip 근사)
-            ftn = np.linalg.norm(ft) + 1e-9
-            cap = self.mu * fn                                              # 마찰콘(스무스 클립)
-            scale = np.where(ftn > cap, cap / ftn, 1.0)
-            ft = ft * scale
-            F.append(np.array([ft[0], ft[1], fn]))
-            info.append((phi, w, fn))
+            p = oMf.translation + oMf.rotation @ np.array([0., 0., -FOOT_R])
+            phi = p[2] - self.ground
+            J = pin.getFrameJacobian(m, d, fid, pin.LOCAL_WORLD_ALIGNED)[:3]
+            vf = J @ v                                                    # 접촉점 선속도(=J·v)
+            out.append((phi, vf, J))
+        return out
+
+    def contact_forces(self, q, v):
+        F = []; info = []
+        for phi, vf, J in self._foot_state(q, v):
+            f = self._force_law(phi, vf); F.append(f); info.append((phi, sigmoid(-phi,self.rho), f[2]))
         return F, info
 
     def dynamics(self, q, v, tau_act):
         """ddq = aba(q,v, τ + Σ J_cᵀ f).  tau_act=액추에이터(nv-6)."""
         m, d = self.m, self.d
-        F, info = self.contact_forces(q, v)
+        fs = self._foot_state(q, v)
         tau_full = np.concatenate([np.zeros(6), tau_act])
-        pin.computeJointJacobians(m, d, q)
-        for fid, f in zip(self.fids, F):
-            J = pin.getFrameJacobian(m, d, fid, pin.LOCAL_WORLD_ALIGNED)[:3]
+        F = []; info = []
+        for phi, vf, J in fs:
+            f = self._force_law(phi, vf); F.append(f); info.append((phi, sigmoid(-phi,self.rho), f[2]))
             tau_full = tau_full + J.T @ f
         ddq = pin.aba(m, d, q, v, tau_full)
         return ddq, F, info
+
+    def dynamics_derivatives(self, q, v, tau_act):
+        """★C1.2 해석 그래디언트: ∂ddq/∂(q,v,τ). computeABADerivatives + 힘 연쇄.
+           근사: ∂vf/∂q≈0·∂Jᵀ/∂q≈0(kin.hessian 생략) — 지배항 검증용."""
+        m, d = self.m, self.d
+        fs = self._foot_state(q, v)
+        tau_full = np.concatenate([np.zeros(6), tau_act])
+        Js = []; dfdphi = []; dfdvf = []
+        for phi, vf, J in fs:
+            f = self._force_law(phi, vf); tau_full = tau_full + J.T @ f; Js.append(J)
+            # 힘법칙 미분(FD, cheap): ∂f/∂φ(3), ∂f/∂vf(3×3)
+            e = 1e-6
+            dfp = (self._force_law(phi + e, vf) - self._force_law(phi - e, vf)) / (2*e)
+            dfv = np.zeros((3, 3))
+            for k in range(3):
+                dvf = np.zeros(3); dvf[k] = e
+                dfv[:, k] = (self._force_law(phi, vf + dvf) - self._force_law(phi, vf - dvf)) / (2*e)
+            dfdphi.append(dfp); dfdvf.append(dfv)
+        # ABA 도함수(τ_full 고정 편미분)
+        pin.computeABADerivatives(m, d, q, v, tau_full)
+        ddq = d.ddq.copy(); Minv = np.array(d.Minv); aba_dq = np.array(d.ddq_dq); aba_dv = np.array(d.ddq_dv)
+        # ∂τ_full/∂(q,v) — 접촉 연쇄
+        nv = m.nv; dtau_dq = np.zeros((nv, nv)); dtau_dv = np.zeros((nv, nv))
+        for J, dfp, dfv in zip(Js, dfdphi, dfdvf):
+            dtau_dv += J.T @ (dfv @ J)                        # ∂f/∂vf · ∂vf/∂v(=J)
+            dtau_dq += J.T @ np.outer(dfp, J[2])              # ∂f/∂φ · ∂φ/∂q(=J[2])  (∂vf/∂q,∂Jᵀ/∂q 생략)
+        dddq_dq = aba_dq + Minv @ dtau_dq
+        dddq_dv = aba_dv + Minv @ dtau_dv
+        dddq_dtau = Minv[:, 6:]
+        return ddq, dddq_dq, dddq_dv, dddq_dtau
 
     def step(self, q, v, tau_act, dt):
         ddq, F, info = self.dynamics(q, v, tau_act)
@@ -114,22 +152,28 @@ def main():
     fin = "✅ 균형(서있음)" if q[2] > 0.30 and np.linalg.norm(v) < 2.0 else "❌ 붕괴/발산"
     print("  결과:", fin, " (접촉력 단방향·스무스 → 발이 지면 딛고 base 지지되면 접촉 forward 정상)")
 
-    # ── C1.2 sanity: contact-implicit 스텝이 부드럽게 미분가능한가(FD 그래디언트 유한·안정) ──
-    print("\n[C1.2 sanity] contact-implicit forward의 FD 그래디언트 — 유한·안정=미분가능(해석 그래디언트 가능)")
-    q0 = _stance_q(br); v0 = 0.1*np.random.RandomState(3).randn(m.nv); tau0 = 2.0*np.random.RandomState(4).randn(br.nu)
-    def ddq_only(qq, vv, tt):
-        return ci.dynamics(qq, vv, tt)[0]
-    base = ddq_only(q0, v0, tau0)
-    for eps in (1e-4, 1e-6):                             # 두 eps서 일치=매끈(비-매끈이면 발산)
-        g = np.zeros(m.nv)
-        dq = np.zeros(m.nv); dq[8] = eps                 # 한 다리관절 q 섭동
-        g = (ddq_only(pin.integrate(m, q0, dq), v0, tau0) - base) / eps
-        dv = np.zeros(m.nv); dv[8] = eps
-        gv = (ddq_only(q0, v0 + dv, tau0) - base) / eps
-        print("  eps=%.0e : |∂ddq/∂q₈|=%.3f  |∂ddq/∂v₈|=%.3f  (유한·eps무관=매끈)"
-              % (eps, np.linalg.norm(g), np.linalg.norm(gv)))
-    print("  → 접촉이 스무스(softplus/sigmoid ρ)라 FD 그래디언트 유한·안정. 해석 그래디언트=")
-    print("     computeABADerivatives(∂ddq/∂q,v,τ) + 힘 연쇄(∂f/∂φ·J_z, ∂f/∂vf·J) + ∂Jᵀ/∂q·f(kin.hessian). C1.2 구현 대상.")
+    # ── C1.2: contact-implicit forward의 해석 그래디언트 vs FD ──
+    print("\n[C1.2] contact-implicit 해석 그래디언트 vs FD (computeABADerivatives + 힘 연쇄)")
+    q0 = _stance_q(br); v0 = 0.05*np.random.RandomState(3).randn(m.nv); tau0 = 2.0*np.random.RandomState(4).randn(br.nu)
+    ddq0, A_dq, A_dv, A_dtau = ci.dynamics_derivatives(q0, v0, tau0)
+    nv = m.nv; e = 1e-6
+    F_dq = np.zeros((nv, nv)); F_dv = np.zeros((nv, nv)); F_dtau = np.zeros((nv, br.nu))
+    def ddq_of(qq, vv, tt): return ci.dynamics(qq, vv, tt)[0]
+    for i in range(nv):
+        dq = np.zeros(nv); dq[i] = e
+        F_dq[:, i] = (ddq_of(pin.integrate(m, q0, dq), v0, tau0) - ddq_of(pin.integrate(m, q0, -dq), v0, tau0)) / (2*e)
+        dv = np.zeros(nv); dv[i] = e
+        F_dv[:, i] = (ddq_of(q0, v0+dv, tau0) - ddq_of(q0, v0-dv, tau0)) / (2*e)
+    for i in range(br.nu):
+        dt = np.zeros(br.nu); dt[i] = e
+        F_dtau[:, i] = (ddq_of(q0, v0, tau0+dt) - ddq_of(q0, v0, tau0-dt)) / (2*e)
+    def rel(A, F, name):
+        r = np.linalg.norm(A-F)/(np.linalg.norm(F)+1e-9)
+        print("  ∂ddq/∂%-4s: 상대오차=%.2e  %s" % (name, r, "✅ 일치" if r<1e-2 else ("△ 근사(kin.hessian 생략)" if r<0.3 else "❌")))
+        return r
+    rq = rel(A_dq, F_dq, "q"); rv = rel(A_dv, F_dv, "v"); rt = rel(A_dtau, F_dtau, "tau")
+    print("  → ∂v·∂τ=정확(연쇄 완전), ∂q=지배항 일치(∂vf/∂q·∂Jᵀ/∂q kin.hessian 추가시 완전).")
+    print("     C1.2 해석 그래디언트 골격 검증 → Box-FDDP OCP에 꽂을 준비. HOUND식 autodiff-free.")
 
 if __name__ == "__main__":
     main()

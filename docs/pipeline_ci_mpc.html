@@ -419,7 +419,7 @@ gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b
 <thead><tr><th>단계</th><th>내용</th><th>검증 게이트</th></tr></thead>
 <tbody>
 <tr><td class="num">C1.0</td><td>접촉임펄스 forward 동역학 (<span class="mono">ci_action.py</span>, DifferentialActionModel 서브클래스)</td><td>MuJoCo 스텝과 <b>sim2sim 갭</b> 측정(강체↔soft). <span class="tag t-warn"><span class="dot"></span>착수(de-risk·프로브)</span></td></tr>
-<tr><td class="num">C1.1</td><td>FD 그래디언트 sanity → Box-FDDP 평지 트롯</td><td>CI가 fixed-schedule보다 gap서 나은가(타이밍 적응 증명)</td></tr>
+<tr><td class="num">C1.1</td><td><b>contact-implicit forward</b>(완화 상보성 softplus/sigmoid, <span class="mono">ci_action.py</span>) → Box-FDDP</td><td><span class="tag t-ok"><span class="dot"></span>★forward 완성</span> 서기 균형(base 0.366 수렴)+FD 그래디언트 eps무관 안정=<b>매끈 미분가능</b>. 단방향+스무스=constraintDynamics(bilateral) 대비 contact-implicit</td></tr>
 <tr><td class="num">C1.2</td><td>★<b>해석 그래디언트</b> — <b>Pinocchio 내장</b>(computeConstraintDynamicsDerivatives)</td><td><span class="tag t-ok"><span class="dot"></span>★증명됨</span> 해석 vs FD <b>rel 1e-6~1e-9 일치</b>(c1_gradient_check.py). dλ 미분도 내장. 하드접촉 해석미분=Pinocchio가 품(HOUND 수주 손유도 불요)</td></tr>
 <tr><td class="num">C1.3</td><td>gap/stepping <b>완전</b> 크로싱(착지 안정화)</td><td>C-2가 못한 post-crossing settle 해결</td></tr>
 <tr><td class="num">C1.4</td><td>C++ 실시간 포팅(dt25ms·N20·40Hz·max-iter4)</td><td>40Hz + 폐루프 크로싱, 해석 그래디언트 ~70μs</td></tr>

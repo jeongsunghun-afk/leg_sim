@@ -1,0 +1,16 @@
+<mujoco model="ci_mpc_gap_wide">
+  <!-- F1 심화: baseline(0.05m gap)보다 넓은 0.12m 2-gap 코스 — C-2 접촉타이밍 적응 한계 테스트.
+       플랫폼 top z=0(서기면 flush), DISABLE_FLOOR=1로 gap=진짜 void. 발이 gap에 놓이면 추락. -->
+  <include file="quad_real_17dof_waist_sphere.mjcf"/>
+  <worldbody>
+    <!-- start platform: x in [-0.55, 0.45] -->
+    <geom name="plat0" type="box" group="2" size="0.50 0.7 0.1" pos="-0.05 0 -0.1"
+          rgba="0.50 0.55 0.62 1" friction="1.3 0.02 0.001" condim="3"/>
+    <!-- gap 0.12 @ x=0.45..0.57 -->
+    <geom name="plat1" type="box" group="2" size="0.39 0.7 0.1" pos="0.96 0 -0.1"
+          rgba="0.44 0.50 0.60 1" friction="1.3 0.02 0.001" condim="3"/>
+    <!-- gap 0.12 @ x=1.35..1.47 -->
+    <geom name="plat2" type="box" group="2" size="0.53 0.7 0.1" pos="2.00 0 -0.1"
+          rgba="0.50 0.55 0.62 1" friction="1.3 0.02 0.001" condim="3"/>
+  </worldbody>
+</mujoco>

@@ -71,8 +71,18 @@ def build_and_solve(kind='flat', tkw=None, N=40, dt=0.02, Tg=0.40, duty=0.5,
 
     # ── 접촉 스케줄: 각 발이 각 노드에서 stance인지(1/0) ──
     _CRAWL_ORDER = ['FL','HR','FR','HL']         # crawl 스윙 순서(지지삼각형 유지)
+    # ★가변 cadence(variable timing): 플랫폼=느린 stance(추종용)·갭 근처=짧은 stance(feasibility).
+    #   tg_slow>Tg면 켬. 위상 누적 ph_arr[k]=Σ dt/Tg_local(x). 갭 반경 GAP_R 안=Tg(빠름), 밖=tg_slow.
+    _tgs = float(tkw.get('tg_slow', Tg)) if isinstance(tkw, dict) else Tg
+    _gap_c = 0.5*(tkw.get('x0',0)+tkw.get('x1',0)) if (isinstance(tkw,dict) and 'x0' in tkw and _tgs>Tg) else None
+    _gap_r = float(tkw.get('gap_r', 0.45)) if isinstance(tkw,dict) else 0.45
+    _ph_arr = np.zeros(N+1)
+    for _k in range(1, N+1):
+        _xk = x_goal*(_k-0.5)/N                   # 노드 x 추정(균일)
+        _tgl = Tg if (_gap_c is not None and abs(_xk-_gap_c) < _gap_r) else _tgs
+        _ph_arr[_k] = _ph_arr[_k-1] + dt/_tgl
     def in_stance(foot, k):
-        t = k*dt; ph = ((t + phase_off*Tg) % Tg)/Tg   # 0~1 (phase_off=전역 위상 오프셋)
+        ph = (_ph_arr[k] + phase_off) % 1.0       # 0~1 (누적 위상, 가변 cadence)
         if gait == 'crawl':                       # 4구간, 각 구간서 1발만 스윙(swing=duty만큼)
             idx = _CRAWL_ORDER.index(foot)
             win_lo = idx*0.25; sw = 0.25*duty     # 이 발의 스윙 창
@@ -195,7 +205,8 @@ if __name__ == '__main__':
     tkw  = {}
     if kind=='step': tkw={'x0':float(os.environ.get('X0','0.6')),'h':float(os.environ.get('H','0.10'))}
     if kind=='gap':  tkw={'x0':float(os.environ.get('X0','0.6')),'x1':float(os.environ.get('X1','0.85')),'depth':float(os.environ.get('DEPTH','0.30'))}
-    if kind=='platgap': tkw={'x0':float(os.environ.get('X0','1.0')),'x1':float(os.environ.get('X1','1.3')),'plat':float(os.environ.get('PLAT','0.20'))}
+    if kind=='platgap': tkw={'x0':float(os.environ.get('X0','1.0')),'x1':float(os.environ.get('X1','1.3')),'plat':float(os.environ.get('PLAT','0.20')),
+                             'tg_slow':float(os.environ.get('TG_SLOW',os.environ.get('TG','0.40'))),'gap_r':float(os.environ.get('GAP_R','0.45'))}
     r = build_and_solve(kind=kind, tkw=tkw, N=N, dt=dt, x_goal=xg, Tg=Tg, duty=duty,
                         gait=gait, verbose=bool(os.environ.get('VERBOSE')))
     if r is not None:

@@ -30,6 +30,7 @@ DT_SIM = float(os.environ.get("DT_SIM", "0.002"))  # stable MuJoCo sim step (con
 
 MJCF_PATH = os.environ.get("MJCF_PATH", MJCF)          # override to a terrain scene
 DISABLE_FLOOR = os.environ.get("DISABLE_FLOOR", "0") == "1"
+BRAKE = float(os.environ.get("BRAKE", "1.0"))          # base-x 참조 제동: 1=VX(제동, lunge억제) · 0=vx_pred(4차 크로싱 거동)
 
 
 def build_mjx(mjcf=None, foot_r=FOOT_R):
@@ -377,7 +378,7 @@ def _mpc_run():
                     tgt[L] = np.array([fworld[L][0] - base_xk, fworld[L][1] - base_y0, FOOT_R])
             q_prev = ik_feet(br, 0.42, tgt, q_init=q_prev)
             ref[k, :nq] = q_mj
-            ref[k, 0] = base_x0 + VX * k * DT       # controlled advancing line (brakes lunge)
+            ref[k, 0] = base_x0 + (BRAKE * VX + (1.0 - BRAKE) * vx_pred) * k * DT  # BRAKE=1 제동·0=vx_pred(4차)
             ref[k, 7:nq] = br.pin_to_mj_qpos(q_prev)[7:]
             ref[k, nq + 0] = VX
         return ref

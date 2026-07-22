@@ -427,6 +427,11 @@ gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b
 </table>
 </div>
 <p style="margin:8px 0 0;font-size:13px;color:var(--ink2)"><b>리스크(정직):</b> ① <s>C1.2 하드접촉 해석미분=관문</s> → <b>★해소</b>(Pinocchio 내장이 FD와 일치 증명, 위 표) ② <b>남은 관문=완화 상보성/스무스 active-set</b>(고정 active-set constraintDynamics를 타이밍-발견형으로, dλ 미분 활용) ③ sim2sim 갭(Pinocchio 하드↔MuJoCo soft) ④ C++ 실시간(C1.4). <b>착수 조건</b>: RL 하이브리드 결과 후 게이트(RL이 험지 풀면 불필요). <b>C1.2 de-risk로 C-1 난이도·기간 대폭↓.</b></p>
+<div class="callout" style="margin-top:10px">
+<p style="margin:0;font-size:13px;color:var(--ink2)"><b>남은 C1.2 설계(완화 상보성 레이어) — 3안 조사:</b> Pinocchio <span class="mono">setCompliance</span>(순응)·Baumgarte는 있으나 <b>bilateral</b>(발이 떠도 당김)이라 contact-implicit 직접 불가.
+(A) <b>완화 상보성(HOUND)</b>: λ≥0·gap≥0·λ·gap=ρ 임펄스 솔버(ρ 완화=스무스). (B) <b>gap-의존 compliance</b>: gap&gt;0이면 순응↑(힘~0)·gap&lt;0이면 stiff(단방향 근사). (C) <b>스무스 active-set</b>: gap 문턱 σ(−gap/ε) 가중.
+셋 다 <b>내장 dλ/dq 미분 위에</b> 얹음(per-mode 동역학·그래디언트는 이미 정확). → C1.1(FD sanity)에서 (A)~(C) 중 선택 프로토타이핑.</p>
+</div>
 
 <div class="callout" style="border-left-color:var(--warn,#c9791f)">
 <h2 style="font-size:15px;margin:0 0 8px"><span class="n" style="color:var(--warn,#c9791f)">!</span> C-2 실시간성 판정 — 완성해도 실시간 불가, offline 검증/교사 도구</h2>

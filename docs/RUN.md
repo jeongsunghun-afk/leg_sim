@@ -116,11 +116,15 @@ DISPLAY=:0 obs &                                 # 2) OBS 실행 → Start Recor
 - 구조 B/C(FullDynamics·Centroidal, marginal): `simple_mpc/` (심링크). 반응형 발배치 거부라 본선 아님.
 - **CI-MPC 제2트랙(그래디언트 CI iLQR, offline 연구·검증)**: 접촉타이밍 최적화. C-2=완성해도 실시간 불가(offline 교사 도구). 상세=`pipeline_ci_mpc.html`·`params_ci_mpc.html`·메모리 ci-mpc-track.
 ```bash
-# gap 크로싱(경로 무관 자기완결). GAIT=crawl|trot · ILQR_ITERS=3 최적 · MJCF_PATH·PXI 절대경로
+# gap 크로싱(경로 무관 자기완결). ★STIFF=0.002 기본(배포 파리티)·BRAKE=0(크로싱 거동)·GAP_AWARE=1(고plateau)
+#   marginal(2 실패모드: 발갭착지·크로싱후 lunge). rollout 저장=QPOS_OUT, 뷰어=replay_viewer.py. 상세=pipeline_ci_mpc.html §12
 (cd /home/jsh/문서/jsh/simulation/quad/ci_mpc && XLA_PYTHON_CLIENT_PREALLOCATE=false \
   MJCF_PATH=/home/jsh/문서/jsh/simulation/quad/mjcf/ci_mpc_gap.mjcf DISABLE_FLOOR=1 \
-  GAIT=crawl VX=0.2 NCTRL=320 NH=12 ILQR_ITERS=3 STEP_H=0.08 \
+  GAIT=trot VX=0.35 NCTRL=250 NH=12 ILQR_ITERS=3 STEP_H=0.08 GAP_AWARE=1 BRAKE=0 \
+  QPOS_OUT=/home/jsh/문서/jsh/simulation/quad/ci_mpc/crossing.npy \
   /home/jsh/miniforge3/envs/proxddp/bin/python -c "import mjx_ilqr; mjx_ilqr._mpc_run()")
+#   뷰어 replay: QPOS=crossing.npy MJCF_PATH=..ci_mpc_gap.mjcf DISABLE_FLOOR=1 $PXI replay_viewer.py
+#   C1.2 de-risk 검증: $PXI c1_gradient_check.py (Pinocchio 접촉 해석그래디언트=FD 일치)
 #   평지 프로파일: 위에서 MJCF_PATH·DISABLE_FLOOR 빼고 PROFILE=1 NCTRL=40 (build_ref/ilqr/sim 분해)
 ```
 - 파일: A=quad_mpc_wbic.py(14) · **A'=quad_mpc_wbic_17dof.py + teleop_gui_17dof.py(배포)** · cpp/(C++).

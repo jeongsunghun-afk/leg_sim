@@ -392,6 +392,8 @@ def _mpc_run():
     t_ref = t_ilqr = t_sim = 0.0
     print(f"iLQR-MPC gait walk: VX={VX} Nh={Nh} iters={ITERS} NCYC={NCYC} sub={dyn.sub}")
     falls = 0; fmax = {}
+    _qout = os.environ.get("QPOS_OUT", "")          # rollout qpos 저장(뷰어 replay용)
+    _qhist = []
     for c in range(NCTRL):
         x_meas = np.concatenate([md.qpos, md.qvel])
         fworld = {L: md.geom_xpos[fgid_all[L]].copy() for L in FEET}   # actual planted foot positions
@@ -406,6 +408,7 @@ def _mpc_run():
             xm = np.concatenate([md.qpos, md.qvel])
             md.ctrl[:] = np.clip(u0 + K0 @ (xm - xs0), -200, 200)
             mujoco.mj_step(mm, md)
+            if _qout: _qhist.append(md.qpos.copy())
         if PROFILE:
             t_ref += t1 - t0; t_ilqr += t2 - t1; t_sim += _time.perf_counter() - t2
         us = np.vstack([us[1:], us[-1]]); phase += 1   # shift warm-start + advance gait clock
@@ -418,6 +421,8 @@ def _mpc_run():
             falls = 1; print(f"  FELL at c{c}"); break
     print(f"RESULT VX={VX} ctrl={c+1} falls={falls} x={md.qpos[0]:+.3f} z={md.qpos[2]:.3f} vx={md.qvel[0]:+.3f} "
           f"foot_lift_max FL={fmax.get('FL',0):.3f} HL={fmax.get('HL',0):.3f} (>0.04=stepping, ~0.024=sliding)")
+    if _qout and _qhist:
+        np.save(_qout, np.asarray(_qhist)); print(f"[rollout] {len(_qhist)} qpos 저장: {_qout}")
     if PROFILE:
         n = c + 1; tot = t_ref + t_ilqr + t_sim
         print(f"PROFILE/step[ms]: build_ref(CPU IK) {1e3*t_ref/n:.1f} | ilqr(GPU) {1e3*t_ilqr/n:.1f} | "

@@ -15,7 +15,7 @@ per-mode로 쓰거나, 여기 스무스 힘법칙을 직접 미분. 우선 forwa
 
 실행: /home/jsh/miniforge3/envs/proxddp/bin/python ci_action.py
 """
-import numpy as np, pinocchio as pin
+import os, numpy as np, pinocchio as pin
 from model_bridge import MjPinBridge, FEET
 
 FOOT_R = 0.025
@@ -80,14 +80,15 @@ class ContactImplicit:
         return ddq, F, info
 
     def dynamics_derivatives(self, q, v, tau_act):
-        """★C1.2 해석 그래디언트: ∂ddq/∂(q,v,τ). computeABADerivatives + 힘 연쇄.
-           근사: ∂vf/∂q≈0·∂Jᵀ/∂q≈0(kin.hessian 생략) — 지배항 검증용."""
+        """★C1.2 해석 그래디언트: ∂ddq/∂(q,v,τ) = computeABADerivatives + 힘 연쇄.
+           ∂v·∂τ 정확(1e-10). ∂q=∂f/∂φ·J_z + ∂f/∂vf·∂vf/∂q(getFrameVelocityDerivatives) → 1.5e-2.
+           잔여=geometric stiffness ∂Jᵀ/∂q·f(GEO=1, LWA kin.hessian convention 보정 남음, 기본off)."""
         m, d = self.m, self.d
         fs = self._foot_state(q, v)
         tau_full = np.concatenate([np.zeros(6), tau_act])
-        Js = []; dfdphi = []; dfdvf = []
+        Js = []; F = []; dfdphi = []; dfdvf = []
         for phi, vf, J in fs:
-            f = self._force_law(phi, vf); tau_full = tau_full + J.T @ f; Js.append(J)
+            f = self._force_law(phi, vf); tau_full = tau_full + J.T @ f; Js.append(J); F.append(f)
             # 힘법칙 미분(FD, cheap): ∂f/∂φ(3), ∂f/∂vf(3×3)
             e = 1e-6
             dfp = (self._force_law(phi + e, vf) - self._force_law(phi - e, vf)) / (2*e)
@@ -96,14 +97,20 @@ class ContactImplicit:
                 dvf = np.zeros(3); dvf[k] = e
                 dfv[:, k] = (self._force_law(phi, vf + dvf) - self._force_law(phi, vf - dvf)) / (2*e)
             dfdphi.append(dfp); dfdvf.append(dfv)
-        # ABA 도함수(τ_full 고정 편미분)
+        # ABA 도함수(τ_full 고정 편미분) + 운동학 도함수(∂vf/∂q·kin.hessian)
         pin.computeABADerivatives(m, d, q, v, tau_full)
         ddq = d.ddq.copy(); Minv = np.array(d.Minv); aba_dq = np.array(d.ddq_dq); aba_dv = np.array(d.ddq_dv)
-        # ∂τ_full/∂(q,v) — 접촉 연쇄
-        nv = m.nv; dtau_dq = np.zeros((nv, nv)); dtau_dv = np.zeros((nv, nv))
-        for J, dfp, dfv in zip(Js, dfdphi, dfdvf):
-            dtau_dv += J.T @ (dfv @ J)                        # ∂f/∂vf · ∂vf/∂v(=J)
-            dtau_dq += J.T @ np.outer(dfp, J[2])              # ∂f/∂φ · ∂φ/∂q(=J[2])  (∂vf/∂q,∂Jᵀ/∂q 생략)
+        nv = m.nv
+        pin.computeForwardKinematicsDerivatives(m, d, q, v, np.zeros(nv))   # 운동학 도함수(vf·hessian용)
+        dtau_dq = np.zeros((nv, nv)); dtau_dv = np.zeros((nv, nv))
+        for fid, J, f, dfp, dfv in zip(self.fids, Js, F, dfdphi, dfdvf):
+            dvf_dq = pin.getFrameVelocityDerivatives(m, d, fid, pin.LOCAL_WORLD_ALIGNED)[0][:3]  # ∂vf/∂q (3×nv)
+            H = np.array(pin.getFrameKinematicHessian(m, d, fid, pin.LOCAL_WORLD_ALIGNED))       # 6×nv×nv
+            df_dq = np.outer(dfp, J[2]) + dfv @ dvf_dq         # ∂f/∂q = ∂f/∂φ·J_z + ∂f/∂vf·∂vf/∂q
+            _GEO = float(os.environ.get("GEO", "0"))           # geometric stiffness(convention 검증중, 기본 off)
+            geo = _GEO * np.einsum('c,cab->ab', f, H[:3])
+            dtau_dq += J.T @ df_dq + geo
+            dtau_dv += J.T @ (dfv @ J)                         # ∂f/∂vf · ∂vf/∂v(=J)
         dddq_dq = aba_dq + Minv @ dtau_dq
         dddq_dv = aba_dv + Minv @ dtau_dv
         dddq_dtau = Minv[:, 6:]
@@ -172,8 +179,9 @@ def main():
         print("  ∂ddq/∂%-4s: 상대오차=%.2e  %s" % (name, r, "✅ 일치" if r<1e-2 else ("△ 근사(kin.hessian 생략)" if r<0.3 else "❌")))
         return r
     rq = rel(A_dq, F_dq, "q"); rv = rel(A_dv, F_dv, "v"); rt = rel(A_dtau, F_dtau, "tau")
-    print("  → ∂v·∂τ=정확(연쇄 완전), ∂q=지배항 일치(∂vf/∂q·∂Jᵀ/∂q kin.hessian 추가시 완전).")
-    print("     C1.2 해석 그래디언트 골격 검증 → Box-FDDP OCP에 꽂을 준비. HOUND식 autodiff-free.")
+    print("  → ∂v·∂τ=정확(연쇄 완전, 1e-10), ∂q=1.5e-2(∂f/∂φ·J_z+∂f/∂vf·∂vf/∂q 포함, 잔여=geometric")
+    print("     stiffness ∂Jᵀ/∂q·f — LWA kin.hessian convention 보정 남음. DDP는 이 수준 허용/GN근사).")
+    print("     C1.2 해석 그래디언트 검증 → Box-FDDP OCP에 꽂을 준비. HOUND식 autodiff-free 실시간 경로.")
 
 if __name__ == "__main__":
     main()

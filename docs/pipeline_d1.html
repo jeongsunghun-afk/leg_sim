@@ -151,7 +151,7 @@
       <tr><td class="rowh" style="color:var(--full)">C</td><td>FullDyn OCP</td><td><span class="no">❌ (평지 전용)</span></td><td><span class="no">❌</span></td><td>지형 플래너 미적용</td></tr>
       <tr><td class="rowh" style="color:var(--d1)">D1</td><td>Perceptive NMPC (OCS2, SDF)</td><td colspan="2" class="dim" style="text-align:center">우리 환경 미검증 — 외부선 지형 파쿠르 시연(AMP→RL 배포 단계)</td><td>미구축·공통벤치 없음</td></tr>
       <tr><td class="rowh" style="color:var(--d1)">TOWR</td><td>오프라인 phase-based</td><td class="dim" style="text-align:center">(planning)</td><td><span class="yes">✅ 최적 planning</span> · <span class="no">❌ 개루프 추종 slow만</span></td><td>갭/계단 궤적 완벽 생성(갭회피0)·STEP 크로싱OK, fast 실행=개루프 벽</td></tr>
-      <tr><td class="rowh" style="color:var(--warn)">CI-MPC</td><td>gradient-CI iLQR (C-2)<br><span class="dim">MJX autodiff·접촉타이밍 적응</span></td><td><span class="yes">✅ falls=0</span> <span class="dim">(평지·저속 ~0.12)</span></td><td><span class="wa">⚠️ gap 도달·크로싱 재현 조사중</span> · <span class="no">❌ offline만</span></td><td>gap1 가장자리서 lunge-dive 낙상(2026-07-22 재현). 문서화된 크로싱=config 민감/미재현. jacfwd 병목=실시간 불가(교사·검증 도구)</td></tr>
+      <tr><td class="rowh" style="color:var(--warn)">CI-MPC</td><td>gradient-CI iLQR (C-2)<br><span class="dim">MJX autodiff·접촉타이밍 적응</span></td><td><span class="yes">✅ falls=0</span> <span class="dim">(평지·저속 ~0.12)</span></td><td><span class="no">❌ gap 크로싱 미재현(marginal)</span> · <span class="no">❌ offline만</span></td><td>trot·crawl 모두 gap1 가장자리서 낙상(2026-07-22 재현). 크로싱=1회 marginal(base0.67)·"참조 레버 소진"·sphere변경 후 미재현. robust=C-1/RL. jacfwd 병목=실시간 불가(교사 도구)</td></tr>
     </tbody>
   </table>
   </div>

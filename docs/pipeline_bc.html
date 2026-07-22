@@ -72,7 +72,7 @@
   <h1>B · C 제어 파이프라인 &amp; OCP 문제 정의</h1>
   <p class="sub"><b class="kino">B (Centroidal)</b> = Kinodynamics OCP가 <b>접촉력+관절가속</b>을 계획 → TSID 전신 QP가 토크로 변환.
   <b class="full">C (FullDynamics)</b> = 전신 강체 OCP가 <b>관절토크를 직접</b> 출력 → Riccati 피드백. 둘 다 aligator <code>SolverProxDDP</code> RTI(max_iters=1).</p>
-  <div class="note-nb">⚠️ <b>연구·비실시간 브랜치.</b> OCP solve가 무거워 실시간 GUI 조종은 <b>A(MPC+WBIC, 1 kHz)</b> 전용. B·C는 헤드리스 정량검증·뷰어 관찰용(B~0.2 m/s·C~0.27 m/s marginal). 배포 파이프라인은 <code>pipeline.html</code>(A) 참조.</div>
+  <div class="note-nb">⚠️ <b>연구·비실시간 브랜치.</b> OCP solve가 무거워 실시간 GUI 조종은 <b>A(MPC+WBIC, 1 kHz)</b> 전용. B·C는 헤드리스 정량검증·뷰어 관찰용(17-DOF B~0.4 m/s·C~0.27 m/s marginal, A~1.85). 배포 파이프라인은 <code>pipeline.html</code>(A) 참조.</div>
 </header>
 
 <section id="shared">

@@ -68,7 +68,7 @@
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">02_Leg 14-DOF · quad/simple_mpc/ · aligator OCP (연구용 B·C)</div>
+  <div class="eyebrow">02_Leg 17-DOF · quad/simple_mpc/ (quad_centroidal_17dof) · aligator OCP (연구용 B·C)</div>
   <h1>B · C 제어 파이프라인 &amp; OCP 문제 정의</h1>
   <p class="sub"><b class="kino">B (Centroidal)</b> = Kinodynamics OCP가 <b>접촉력+관절가속</b>을 계획 → TSID 전신 QP가 토크로 변환.
   <b class="full">C (FullDynamics)</b> = 전신 강체 OCP가 <b>관절토크를 직접</b> 출력 → Riccati 피드백. 둘 다 aligator <code>SolverProxDDP</code> RTI(max_iters=1).</p>
@@ -76,13 +76,13 @@
 </header>
 
 <section id="shared">
-  <h2>1 · 공통 골격 <span class="dim">02_Leg 14-DOF (nu=nv−6, 앞발목 고정) · URDF _9 · free-flyer · 4 point-feet</span></h2>
+  <h2>1 · 공통 골격 <span class="dim">02_Leg 17-DOF (nu=nv−6=17, 전4발목+허리) · URDF _3 · free-flyer · 4 point-feet</span></h2>
   <p>두 컨트롤러 모두 <b>2-레이트</b> 구조다. 무거운 <b>OCP</b>를 풀어 계획을 만들고(<code>mpc.iterate(x)</code>), 그 계획을 <b>1 kHz 내부 루프</b>에서 보간(<code>Interpolator</code>)해 매 스텝 저수준 명령으로 실현한다. 상태 <var>x=[q;v]</var> (<code>MultibodyPhaseSpace</code>, dim <var>nq+nv</var>), 호라이즌 <var>T=50</var> 노드, <var>dt=0.01</var>, trot(더블서포트+대각스윙). 발배치·속도 기준은 <code>MPC::updateStepTrackerReferences</code>(Raibert + capture-point)에서 생성, 매 사이클 receding-warm-start.</p>
   <div class="note-nb">* <b>재계산 속도 주의</b>: <code>dt_mpc=0.01</code>은 OCP <b>노드 간격</b>(계획 해상도 100 Hz)일 뿐, <code>mpc.iterate</code> <b>실제 solve 벽시계는 ~40 ms → 재계산 ~20–30 Hz(비실시간)</b>. 1 kHz 내부 루프는 그 사이 <b>stale 계획을 보간·전개</b>해 메운다(<code>MPC_DECIM</code>). 이 solve 병목이 B·C를 배포에서 제외한 이유(고속보행 한계=언어 아닌 OCP 수렴).</div>
 
   <div class="flowlabel kino">B — Kinodynamics OCP → TSID (2단 캐스케이드)</div>
   <div class="flow">
-    <div class="stage"><span class="n">state</span><span class="t">measureState (pinocchio)</span><div class="d">q, v (base SE3 + 14 관절)</div></div>
+    <div class="stage"><span class="n">state</span><span class="t">measureState (pinocchio)</span><div class="d">q, v (base SE3 + 17 관절)</div></div>
     <div class="arrow">↓</div>
     <div class="stage kino"><span class="rate">~20–30 Hz*</span><span class="n">OCP</span><span class="t">KinodynamicsOCP · mpc.iterate</span><div class="d">→ us = [ <b>forces[4×3]</b> , <b>q<sup>¨</sup>[14]</b> ] · xs(상태궤적) · 접촉스케줄</div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">Interpolator (계획 보간, 100→1000 Hz)</span></div>
@@ -111,7 +111,7 @@
 
     <h3>상태 &amp; 결정변수</h3>
     <div class="eq"><span class="lbl">x = </span>[ q (nq) ; v (nv) ]&nbsp;&nbsp;<span class="lbl">base SE3(7)+14관절, base twist(6)+14관절속</span></div>
-    <div class="eq"><span class="lbl">u = </span>[ <b>f<sub>0..3</sub></b> (4×3 접촉력) , <b>q<sup>¨</sup></b> (nv−6=14 관절가속) ]&nbsp;&nbsp;<span class="lbl">u<sub>0</sub>=[f<sub>ref</sub>×4, 0], f<sub>ref,z</sub>=mg/n<sub>k</sub></span></div>
+    <div class="eq"><span class="lbl">u = </span>[ <b>f<sub>0..3</sub></b> (4×3 접촉력) , <b>q<sup>¨</sup></b> (nv−6=17 관절가속) ]&nbsp;&nbsp;<span class="lbl">u<sub>0</sub>=[f<sub>ref</sub>×4, 0], f<sub>ref,z</sub>=mg/n<sub>k</sub></span></div>
 
     <h3>비용 (per-stage)</h3>
     <div class="scroll"><table>
@@ -162,7 +162,7 @@
 
     <h3>상태 &amp; 결정변수</h3>
     <div class="eq"><span class="lbl">x = </span>[ q (nq) ; v (nv) ]&nbsp;&nbsp;<span class="lbl">B와 동일 구조</span></div>
-    <div class="eq"><span class="lbl">u = </span><b>τ</b> (nv−6 = 14 관절토크)&nbsp;&nbsp;<span class="lbl">액추에이션 행렬=단위, u<sub>0</sub>=0. 접촉력은 제약 Lagrange 승수로 내부 복원</span></div>
+    <div class="eq"><span class="lbl">u = </span><b>τ</b> (nv−6 = 17 관절토크)&nbsp;&nbsp;<span class="lbl">액추에이션 행렬=단위, u<sub>0</sub>=0. 접촉력은 제약 Lagrange 승수로 내부 복원</span></div>
 
     <h3>비용 (per-stage)</h3>
     <div class="scroll"><table>
@@ -254,8 +254,13 @@
   — MuJoCo-native 그래디언트가 필요하면 이쪽이 정답. <b>요약: OCS2 솔버는 적합하나, Pinocchio 모델의 sim2sim 갭은 B/C와 동일 수준</b>이다.</div>
 </section>
 
+<section>
+  <h2>지형 확장 <span class="dim">B의 TAMOLS · TOWR 브리지</span></h2>
+  <div class="note-nb">B(17-DOF)는 <b>TAMOLS 지형 발판</b> 폐루프를 씀: <code>mpc.setHeightmap</code>로 전역 heightmap 주입 → <code>updateStepTrackerReferences</code>가 매 iterate Raibert 발판을 <b>지형고+갭회피(최근접 유효셀)</b>로 조정 → <code>setReferencePose</code>. <b>base 높이 지형적응</b>(<code>mpc.x_reference</code> base-z 슬루)으로 <b>15° 램프 등반 실증</b>(tilt&lt;5°). 단 <b>불연속 험지(갭/징검다리)는 붕괴</b>(마진 밖). ★<b>TOWR 오프라인 궤적을 B의 TSID로 추종하는 브리지</b>=<code>simple_mpc/towr_track_B.py</code>(slow 견고·fast 개루프 벽). 상세=<a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a>·<a href="pipeline_d1.html">A·B·C·D1 비교</a>.</div>
+</section>
+
 <footer>
-  소스: <code>quad/simple_mpc/quad_centroidal.py</code> (B) · <code>quad_fulldynamics.py</code> (C) · 라이브러리 <code>simple-mpc</code>(kinodynamics.cpp·kinodynamics-id.cpp·fulldynamics.cpp·mpc.cpp), 솔버 aligator <code>SolverProxDDP</code>(proxddp) + TSID proxqp. 배포 컨트롤러 A(MPC+WBIC, 1 kHz)=<code>pipeline.html</code>. I/O 비교=메모리 <code>quad-abc-io-structure</code>.
+  소스: <code>quad/simple_mpc/quad_centroidal_17dof.py</code> (B) · <code>quad_fulldynamics.py</code> (C) · 라이브러리 <code>simple-mpc</code>(kinodynamics.cpp·kinodynamics-id.cpp·fulldynamics.cpp·mpc.cpp), 솔버 aligator <code>SolverProxDDP</code>(proxddp) + TSID proxqp. 배포 컨트롤러 A(MPC+WBIC)=<a href="pipeline.html">pipeline.html</a>. 비교: <a href="pipeline_d1.html">A·B·C·D1</a>. I/O=메모리 <code>quad-abc-io-structure</code>.
   D1/OCS2 분석=메모리 <code>d1-navbothub-mpc-amp-analysis</code> · repo github.com/NavBotHub/D1(legged_control=OCS2 NMPC+계층 WBC).
 </footer>
 </div>

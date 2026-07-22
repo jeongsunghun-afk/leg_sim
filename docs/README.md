@@ -9,7 +9,9 @@
 | **[MAINTENANCE.md](MAINTENANCE.md)** | 품질 프로세스(하네스·스킬·파리티·문서동기화 규칙) | md |
 | **[params.html](params.html)** | 파라미터 값 **전체** + Python↔C++ 파리티 + 튕김조절 | 아티팩트 |
 | **[pipeline.html](pipeline.html)** | **A** — MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수(배포) | 아티팩트 |
-| **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구) | 아티팩트 |
+| **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구, 17-DOF·TAMOLS·TOWR 브리지) | 아티팩트 |
+| **[pipeline_d1.html](pipeline_d1.html)** | **D1 + 비교** — OCS2 NMPC+계층 WBC 파이프라인(외부·분석) + **A·B·C·D1 비교** + 지형유형 정직 비교 | 아티팩트 |
+| **[TOWR_모델기반지형_리포트.md](TOWR_모델기반지형_리포트.md)** | **TOWR 트랙** — 오프라인 지형 planning·추종 한계·폐루프 조사 결론(모델기반 상한→RL) | md |
 | **[pipeline_rl.html](pipeline_rl.html)** | **RL** — RGA `RobotSW_IsaacLab` 파쿠르 정책(RMA MLP teacher-student, 비순환) 파이프라인 + A/B·C(MPC/OCP) 대조 | 아티팩트 |
 | **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·후보3안(§15)·모델구조·입출력·비용·샘플링 CI(MJX/GPU) 파이프라인·진행(연구, `quad/ci_mpc/`) | 아티팩트 |
 | **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |

@@ -130,8 +130,9 @@
 
 <section id="ilqr">
   <h2><span class="num">01</span> iLQR 코어 <span class="muted" style="font-size:13px;font-weight:400">MjxDynamics + Riccati</span></h2>
-  <p class="note">상태 <code>x=[qpos24, qvel23]=47</code>, 제어 <code>u=17</code>. <code>f(x,u)=mjx.step</code>(soft 접촉).
-  선형화 <code>fx,fu ← jax.jacfwd</code>(★forward-mode가 접촉 while_loop 통과, reverse는 막힘).</p>
+  <p class="note">상태 <code>x=[qpos24, qvel23]=47</code>, 제어 <code>u=17</code>. <code>f(x,u)=mjx.step</code>.
+  선형화 <code>fx,fu ← jax.jacfwd</code>(★forward-mode가 접촉 while_loop 통과, reverse는 막힘).
+  <br>★<b>접촉 강성</b>: <code>STIFF=0.002</code> 기본(2026-07-22 배포 표준 <code>quad_centroidal</code> 파리티로 동일화). 이전=soft(발 penetrate)라 gap서 mushy push-off→다이빙. STIFF=crisp 물리로 크로싱 개선(<code>STIFF=0</code>로 soft 복귀 가능). soft=최적화 그래디언트 매끈하나 물리 mushy=<b>C-1(hard forward+완화상보성 그래디언트)의 존재 이유</b>.</p>
   <div class="scroll">
     <table>
       <thead><tr><th>파라미터</th><th>값</th><th>훅</th><th>의미</th></tr></thead>

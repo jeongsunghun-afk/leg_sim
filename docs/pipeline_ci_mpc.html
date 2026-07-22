@@ -396,8 +396,8 @@ gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b
   <div class="card"><span class="tag t-ok"><span class="dot"></span>★C1.0 de-risk</span>
     <h3 style="margin:10px 0 4px;font-size:15px">Pinocchio가 접촉 해석도함수 내장</h3>
     <p style="margin:0;color:var(--ink2);font-size:13.5px">Pinocchio 4.0이 <span class="mono">constraintDynamics</span>(강체접촉 forward) +
-    <span class="mono">computeConstraintDynamicsDerivatives</span>(<b>해석 도함수</b>) 내장 → C-1 최고난도 <b>C1.2(해석 그래디언트)를 손코딩 대신 Pinocchio 내장으로</b> 대폭 de-risk.
-    단 <span class="mono">constraintDynamics</span>=고정 active-set이라 contact-implicit(타이밍 발견)엔 완화 상보성 레이어 잔여.</p>
+    <span class="mono">computeConstraintDynamicsDerivatives</span>(<b>해석 도함수</b>) 내장. ★<b>해석 vs FD 일치 증명</b>(rel 1e-6~1e-9, §13) → C-1 최고난도 <b>C1.2(해석 그래디언트)가 Pinocchio 내장으로 정확히 풀림</b>=C-1 최대리스크 해소.
+    단 <span class="mono">constraintDynamics</span>=고정 active-set이라 contact-implicit(타이밍 발견)엔 완화 상보성 레이어 잔여(dλ 미분 활용).</p>
   </div>
   <div class="card"><span class="tag t-warn"><span class="dot"></span>marginal 확정</span>
     <h3 style="margin:10px 0 4px;font-size:15px">크로싱 2 실패모드 · sim2sim 프로브</h3>
@@ -420,13 +420,13 @@ gap 크로싱은 crisp 임펄스 필요 → <b>물리 지배 → STIFF 유리</b
 <tbody>
 <tr><td class="num">C1.0</td><td>접촉임펄스 forward 동역학 (<span class="mono">ci_action.py</span>, DifferentialActionModel 서브클래스)</td><td>MuJoCo 스텝과 <b>sim2sim 갭</b> 측정(강체↔soft). <span class="tag t-warn"><span class="dot"></span>착수(de-risk·프로브)</span></td></tr>
 <tr><td class="num">C1.1</td><td>FD 그래디언트 sanity → Box-FDDP 평지 트롯</td><td>CI가 fixed-schedule보다 gap서 나은가(타이밍 적응 증명)</td></tr>
-<tr><td class="num">C1.2</td><td>★<b>해석 그래디언트</b>(완화 상보성 닫힌형식)</td><td>해석≈FD(rel&lt;1e-3)·Box-FDDP 수렴. <b>최고난도</b></td></tr>
+<tr><td class="num">C1.2</td><td>★<b>해석 그래디언트</b> — <b>Pinocchio 내장</b>(computeConstraintDynamicsDerivatives)</td><td><span class="tag t-ok"><span class="dot"></span>★증명됨</span> 해석 vs FD <b>rel 1e-6~1e-9 일치</b>(c1_gradient_check.py). dλ 미분도 내장. 하드접촉 해석미분=Pinocchio가 품(HOUND 수주 손유도 불요)</td></tr>
 <tr><td class="num">C1.3</td><td>gap/stepping <b>완전</b> 크로싱(착지 안정화)</td><td>C-2가 못한 post-crossing settle 해결</td></tr>
 <tr><td class="num">C1.4</td><td>C++ 실시간 포팅(dt25ms·N20·40Hz·max-iter4)</td><td>40Hz + 폐루프 크로싱, 해석 그래디언트 ~70μs</td></tr>
 </tbody>
 </table>
 </div>
-<p style="margin:8px 0 0;font-size:13px;color:var(--ink2)"><b>리스크(정직):</b> ① C1.2 하드접촉 해석미분=관문(미묘·참조코드 없음) ② sim2sim 갭(Pinocchio 하드↔MuJoCo soft, C1.0서 정량화 선행) ③ 수주 규모(Python-first C1.0-3→C++ C1.4). C1.2 정체 시 폴백=RL 증류. <b>착수 조건</b>: RL 하이브리드 결과 후 게이트(RL이 험지 풀면 불필요)·선행=C1.0 sim2sim 갭.</p>
+<p style="margin:8px 0 0;font-size:13px;color:var(--ink2)"><b>리스크(정직):</b> ① <s>C1.2 하드접촉 해석미분=관문</s> → <b>★해소</b>(Pinocchio 내장이 FD와 일치 증명, 위 표) ② <b>남은 관문=완화 상보성/스무스 active-set</b>(고정 active-set constraintDynamics를 타이밍-발견형으로, dλ 미분 활용) ③ sim2sim 갭(Pinocchio 하드↔MuJoCo soft) ④ C++ 실시간(C1.4). <b>착수 조건</b>: RL 하이브리드 결과 후 게이트(RL이 험지 풀면 불필요). <b>C1.2 de-risk로 C-1 난이도·기간 대폭↓.</b></p>
 
 <div class="callout" style="border-left-color:var(--warn,#c9791f)">
 <h2 style="font-size:15px;margin:0 0 8px"><span class="n" style="color:var(--warn,#c9791f)">!</span> C-2 실시간성 판정 — 완성해도 실시간 불가, offline 검증/교사 도구</h2>

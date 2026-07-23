@@ -13,7 +13,7 @@ env: VX MPC_STEPS N DT NSUB SOLVE_ITERS CF AIR_W W_BASE VXVEL
 import os, numpy as np, pinocchio as pin
 from model_bridge import MjPinBridge
 from ci_action import ContactImplicit, _stance_q, FEET, FOOT_R
-from ci_ocp import lin_AB, lin_AB_kkt
+from ci_ocp import lin_AB, lin_AB_kkt, lin_AB_relaxed
 
 def main():
     br=MjPinBridge(); m=br.model; dd=br.data; nv=m.nv; nu=br.nu
@@ -32,6 +32,7 @@ def main():
     #   해석 그래디언트** ∂λ/∂(q,v,u)가 ∂ddq에 흘러듦. Pinocchio computeConstraintDynamicsDerivatives
     #   가 제공(C1.0 FD검증). 기존 lin_AB는 soft force 그래디언트라 hard impulse ∂λ 아님 → KKT 그래디언트로.
     HARD_PLAN=int(os.environ.get("HARD_PLAN","0")); PLAN_NSUB=int(os.environ.get("PLAN_NSUB","10"))
+    RELAX_EPS=float(os.environ.get("RELAX_EPS","0.0"))  # ★>0=완화 상보성 λ그래디언트(lin_AB_relaxed). make/break smooth
     MPC_STEPS=int(os.environ.get("MPC_STEPS","120")); VX=float(os.environ.get("VX","0.3"))
     CF=float(os.environ.get("CF","2000")); AIR_W=float(os.environ.get("AIR_W","100")); C1S=-30.0
     W_BASE=float(os.environ.get("W_BASE","40")); VXVEL=float(os.environ.get("VXVEL","80"))
@@ -91,9 +92,10 @@ def main():
     def fwd(q,v,u):                                                  # ★optimizer forward
         if HARD_FWD: return ci.step_kkt(q,v,u,DT,PLAN_NSUB)[:2]
         return ci.step(q,v,u,DT,NSUB)[:2]
-    def linAB(q,v,u):                                               # ★backward: HARD_PLAN=1→exact λ그래디언트
-        if HARD_PLAN: return lin_AB_kkt(ci,q,v,u,DT)
-        return lin_AB(ci,q,v,u,DT,NSUB)
+    def linAB(q,v,u):                                               # ★backward
+        if RELAX_EPS>0: return lin_AB_relaxed(ci,q,v,u,DT,RELAX_EPS)  # 완화 상보성 λ그래디언트(논문)
+        if HARD_PLAN: return lin_AB_kkt(ci,q,v,u,DT)               # exact clamping λ그래디언트(ε=0)
+        return lin_AB(ci,q,v,u,DT,NSUB)                            # soft force 그래디언트(구)
     def solve(x0, Xref, U, X):
         """짧은 horizon FDDP 몇 iter(warm-start). return X,U."""
         X=[x0]+list(X[1:])                                           # 현재 실제상태로 앵커

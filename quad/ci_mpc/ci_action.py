@@ -197,6 +197,45 @@ class ContactImplicit:
         pin.computeConstraintDynamicsDerivatives(m, d, cms, cds)   # ∂ddq/∂(q,v,τ)=∂λ 내포
         return ddq, np.array(d.ddq_dq).copy(), np.array(d.ddq_dv).copy(), np.array(d.ddq_dtau)[:, 6:].copy()
 
+    def dyn_derivs_relaxed(self, q, v, tau_act, eps=1e-4, dt=0.002, active=None):
+        """★★논문 relaxed 상보성 그래디언트(커스텀, HOUND식·broken API 우회). velocity-impulse:
+        A_cc=J M⁻¹ Jᵀ, λ=-(A_cc+εI)⁻¹ b_cc (ε=완화, v·λ=ρ 실현). ddq_eff=a_free+M⁻¹Jᵀλ/dt.
+        ∂λ 이미지공식(해석 역행렬)+ABA도함수(해석)+기하항(∂A_cc/∂q·∂b_cc/∂q·∂W/∂q만 FD, 작은 행렬).
+        FD검증 EXACT. ε↑=make/break 경계 smooth(접촉 발견). return ddq_eff, ∂/∂(q,v,τ)."""
+        m, d = self.m, self.d; nv = m.nv
+        tau_full = np.concatenate([np.zeros(6), tau_act])
+        pin.forwardKinematics(m, d, q); pin.updateFramePlacements(m, d)
+        if active is None:
+            active = [i for i, fid in enumerate(self.fids)
+                      if (d.oMf[fid].translation + d.oMf[fid].rotation @ np.array([0.,0.,-FOOT_R]))[2]
+                      - self.ground < getattr(self, 'margin', 0.003)]
+        pin.computeABADerivatives(m, d, q, v, tau_full)             # a_free + 해석 도함수
+        a_free = d.ddq.copy(); aq = np.array(d.ddq_dq); av = np.array(d.ddq_dv); Minv = np.array(d.Minv)
+        au = Minv[:, 6:]
+        if not active: return a_free, aq, av, au
+        def geom(qq):                                              # (A_cc, b_cc의 Jᵀ부분=Jcc, W=M⁻¹Jcc) @ qq
+            pin.computeJointJacobians(m, d, qq); pin.updateFramePlacements(m, d)
+            Mi = np.array(pin.computeMinverse(m, d, qq))
+            Jcc = np.vstack([pin.getFrameJacobian(m, d, self.fids[i], pin.LOCAL_WORLD_ALIGNED)[:3].copy() for i in active])
+            return Jcc, Mi @ Jcc.T, Jcc @ Mi @ Jcc.T               # Jcc, W, A_cc
+        Jcc, W, Acc = geom(q); qdot_free = v + dt * a_free
+        Ar = Acc + eps*np.eye(Acc.shape[0]); Ari = np.linalg.inv(Ar); bcc = Jcc @ qdot_free; lam = -Ari @ bcc
+        ddq = a_free + W @ lam / dt
+        # 기하 도함수(∂/∂q): ∂A_cc/∂q·∂(Jcc qdot_free)/∂q[qdot_free 고정]·∂W/∂q = FD(순수 kinematic)
+        e = 1e-6; dAcc = np.zeros((Acc.shape[0], Acc.shape[1], nv)); dbg = np.zeros((bcc.shape[0], nv)); dWl = np.zeros((nv, nv))
+        for j in range(nv):
+            dq = np.zeros(nv); dq[j] = e
+            Jp, Wp, Ap = geom(pin.integrate(m, q, dq)); Jm, Wm, Am = geom(pin.integrate(m, q, -dq))
+            dAcc[:, :, j] = (Ap - Am)/(2*e); dbg[:, j] = (Jp - Jm)@qdot_free/(2*e); dWl[:, j] = (Wp - Wm)@lam/(2*e)
+        # ∂λ/∂z (이미지 공식): ∂b_cc/∂q=dbg+Jcc·dt·aq, ∂b_cc/∂v=Jcc(I+dt av), ∂b_cc/∂u=Jcc·dt·au
+        dl_dq = np.einsum('ab,bcj,c->aj', Ari, dAcc, Ari@bcc) - Ari@(dbg + Jcc@(dt*aq))
+        dl_dv = -Ari@(Jcc@(np.eye(nv) + dt*av)); dl_du = -Ari@(Jcc@(dt*au))
+        # ∂ddq/∂z = ABA + ∂(Wλ)/∂z /dt.  ∂(Wλ)/∂q=(∂W/∂q)λ+W ∂λ/∂q
+        ddq_dq = aq + (dWl + W@dl_dq)/dt
+        ddq_dv = av + (W@dl_dv)/dt
+        ddq_dtau = au + (W@dl_du)/dt
+        return ddq, ddq_dq, ddq_dv, ddq_dtau
+
     def step_hard(self, q, v, tau_act, dt, nsub=1):
         """★HOUND §5.2 hard 임펄스 forward: 속도공간 Signorini LCP+Coulomb, Hwangbo projected block
         Gauss-Seidel. penetration-launch 없음(soft spring 대비). 접촉=impulse로 속도 투영.

@@ -197,9 +197,12 @@ class ContactImplicit:
         pin.computeConstraintDynamicsDerivatives(m, d, cms, cds)   # ∂ddq/∂(q,v,τ)=∂λ 내포
         return ddq, np.array(d.ddq_dq).copy(), np.array(d.ddq_dv).copy(), np.array(d.ddq_dtau)[:, 6:].copy()
 
-    def dyn_derivs_relaxed(self, q, v, tau_act, eps=1e-4, dt=0.002, active=None):
-        """★★논문 relaxed 상보성 그래디언트(커스텀, HOUND식·broken API 우회). velocity-impulse:
-        A_cc=J M⁻¹ Jᵀ, λ=-(A_cc+εI)⁻¹ b_cc (ε=완화, v·λ=ρ 실현). ddq_eff=a_free+M⁻¹Jᵀλ/dt.
+    def dyn_derivs_relaxed(self, q, v, tau_act, eps=1e-4, dt=0.002, active=None, relax=None, rho=None):
+        """★★relaxed 상보성 그래디언트(커스텀, HOUND식·broken API 우회). velocity-impulse.
+        relax 모드(env RELAX_MODE로도 지정):
+          'eps'(기본): λ=-(A_cc+εI)⁻¹ b_cc = Tikhonov 정규화. 실현 상보성=v∘λ=−ε·λ²(상수 아님).
+          'D'(논문 정확판): vⁿ∘λⁿ=ρ Newton solve(법선전용)+Ari=(A_cc+ρD)⁻¹, D=diag(1/λ_n²)(법선만·접선0).
+        ddq_eff=a_free+M⁻¹Jᵀλ/dt. gradient δλ/δz=−Ari(δA_cc/δz·λ + δb_cc/δz) (두 모드 공통, Ari만 다름).
         ∂λ 이미지공식(해석 역행렬)+ABA도함수(해석)+기하항(∂A_cc/∂q·∂b_cc/∂q·∂W/∂q만 FD, 작은 행렬).
         FD검증 EXACT. ε↑=make/break 경계 smooth(접촉 발견). return ddq_eff, ∂/∂(q,v,τ)."""
         m, d = self.m, self.d; nv = m.nv
@@ -218,8 +221,26 @@ class ContactImplicit:
             Mi = np.array(pin.computeMinverse(m, d, qq))
             Jcc = np.vstack([pin.getFrameJacobian(m, d, self.fids[i], pin.LOCAL_WORLD_ALIGNED)[:3].copy() for i in active])
             return Jcc, Mi @ Jcc.T, Jcc @ Mi @ Jcc.T               # Jcc, W, A_cc
-        Jcc, W, Acc = geom(q); qdot_free = v + dt * a_free
-        Ar = Acc + eps*np.eye(Acc.shape[0]); Ari = np.linalg.inv(Ar); bcc = Jcc @ qdot_free; lam = -Ari @ bcc
+        Jcc, W, Acc = geom(q); qdot_free = v + dt * a_free; bcc = Jcc @ qdot_free
+        nc = Acc.shape[0]
+        relax = relax or os.environ.get('RELAX_MODE', 'eps')
+        rho = rho if rho is not None else float(os.environ.get('RELAX_RHO', '1e-4'))
+        if relax == 'D':                                    # ★논문 정확판: vⁿ∘λⁿ=ρ (법선전용) Newton
+            nrm = [3*k+2 for k in range(len(active))]        # 3D블록 [x,y,z] 중 z=법선
+            lam = -np.linalg.solve(Acc + 1e-6*np.eye(nc), bcc)
+            for l in nrm:
+                if lam[l] < 1e-4: lam[l] = 1e-4              # 법선 λ>0(내부점)
+            for _ in range(12):
+                Dm = np.zeros((nc, nc)); r = np.zeros(nc)
+                for l in nrm: Dm[l, l] = 1.0/lam[l]**2; r[l] = rho/lam[l]
+                lam = lam - np.linalg.solve(Acc + rho*Dm, Acc @ lam + bcc - r)
+                for l in nrm:
+                    if lam[l] < 1e-9: lam[l] = 1e-9
+            Dm = np.zeros((nc, nc))
+            for l in nrm: Dm[l, l] = 1.0/lam[l]**2
+            Ari = np.linalg.inv(Acc + rho*Dm)                # gradient용 Jacobian 역행렬
+        else:                                                # εI Tikhonov(v∘λ=−ελ²)
+            Ari = np.linalg.inv(Acc + eps*np.eye(nc)); lam = -Ari @ bcc
         ddq = a_free + W @ lam / dt
         # 기하 도함수(∂/∂q): ∂A_cc/∂q·∂(Jcc qdot_free)/∂q[qdot_free 고정]·∂W/∂q = FD(순수 kinematic)
         e = 1e-6; dAcc = np.zeros((Acc.shape[0], Acc.shape[1], nv)); dbg = np.zeros((bcc.shape[0], nv)); dWl = np.zeros((nv, nv))
@@ -228,7 +249,7 @@ class ContactImplicit:
             Jp, Wp, Ap = geom(pin.integrate(m, q, dq)); Jm, Wm, Am = geom(pin.integrate(m, q, -dq))
             dAcc[:, :, j] = (Ap - Am)/(2*e); dbg[:, j] = (Jp - Jm)@qdot_free/(2*e); dWl[:, j] = (Wp - Wm)@lam/(2*e)
         # ∂λ/∂z (이미지 공식): ∂b_cc/∂q=dbg+Jcc·dt·aq, ∂b_cc/∂v=Jcc(I+dt av), ∂b_cc/∂u=Jcc·dt·au
-        dl_dq = np.einsum('ab,bcj,c->aj', Ari, dAcc, Ari@bcc) - Ari@(dbg + Jcc@(dt*aq))
+        dl_dq = -np.einsum('ab,bcj,c->aj', Ari, dAcc, lam) - Ari@(dbg + Jcc@(dt*aq))   # −Ari(δA·λ + δb), Ari@bcc=−lam(εI)와 동치
         dl_dv = -Ari@(Jcc@(np.eye(nv) + dt*av)); dl_du = -Ari@(Jcc@(dt*au))
         # ∂ddq/∂z = ABA + ∂(Wλ)/∂z /dt.  ∂(Wλ)/∂q=(∂W/∂q)λ+W ∂λ/∂q
         ddq_dq = aq + (dWl + W@dl_dq)/dt

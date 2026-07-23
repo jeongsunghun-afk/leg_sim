@@ -989,6 +989,7 @@ class QuadSim:
             falls = 0
             _logj = os.environ.get('LOG_JOINTS')             # ★관절 각속도·토크 로깅 → npz(그래프용)
             _Lt, _Ldq, _Ltau, _Lq, _Lquat, _Lse, _Lfho = [], [], [], [], [], [], []
+            _qout = os.environ.get('QPOS_OUT'); _Lqpos = []  # ★qpos 궤적 저장(CI-MPC 비교 뷰어용, 20ms 샘플)
             _decomp = os.environ.get('LOG_DECOMP')           # ★토크 분해: 관성(Mq̈)/중력(G)/코리올리(Cq̇)/접촉(Jᵀλ)/수동
             _Lin, _Lgr, _Lco, _Lct, _Lpa = [], [], [], [], []
             _push = os.environ.get('PUSH')                    # ★외란 테스트: 지정시각에 base에 측방 임펄스
@@ -1010,6 +1011,7 @@ class QuadSim:
                 if _push:                                     # 측방(y) 힘 주입 후 해제
                     d.xfrc_applied[1, 1] = _pf if _pt <= d.time < _pt + _pdur else 0.0
                 control_fn(); mujoco.mj_step(m, d)
+                if _qout and s % 10 == 0: _Lqpos.append(d.qpos.copy())   # 20ms 샘플(dt2ms×10)
                 if _vid and s % _vevery == 0:                 # 로봇 추적 카메라로 프레임 캡처
                     _cam.lookat = [d.qpos[0], d.qpos[1], 0.30]
                     _ren.update_scene(d, _cam); _frames.append(_ren.render().copy())
@@ -1057,6 +1059,8 @@ class QuadSim:
                 np.savez(_logj, t=np.array(_Lt), dq=np.array(_Ldq), tau=np.array(_Ltau), names=np.array(_names),
                          q=np.array(_Lq), quat=np.array(_Lquat), swerr=np.array(_Lse), fho=np.array(_Lfho), **_extra)
                 print('[hl] 관절로그 저장: %s (%d스텝 %d관절)' % (_logj, len(_Lt), self.nu), flush=True)
+            if _qout and _Lqpos:
+                np.save(_qout, np.asarray(_Lqpos)); print('[hl] qpos 저장: %s (%d프레임, CI-MPC 비교뷰어용)' % (_qout, len(_Lqpos)), flush=True)
             if _vid and _frames:
                 import imageio
                 imageio.mimsave(_vid, _frames, fps=30, quality=8, macro_block_size=8)

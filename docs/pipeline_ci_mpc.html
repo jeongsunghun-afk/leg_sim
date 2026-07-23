@@ -213,7 +213,9 @@
 <p><b>구성 파일</b> (<span class="mono">simulation/quad/ci_mpc/</span>) · <span class="mono">model_bridge.py</span>(브리지) ·
 <span class="mono">ci_action.py</span>(접촉 forward + <b>relaxed λ 그래디언트</b> + step_kkt) · <span class="mono">ci_ocp.py</span>(tangent 선형화) ·
 <span class="mono">ci_ocp_ms.py</span>(multiple-shooting FDDP) · <span class="mono">ci_mpc_walk.py</span>(receding MPC walking) ·
-<span class="mono">cpp/ci_mpc/</span>(C++ 포트). 개발 상세=<span class="mono">docs/CI-MPC_개발_리포트.md</span>.</p>
+<span class="mono">ci_mpc_gui.py</span>/<span class="mono">ci_mpc_viewer.py</span>(A vs CI 비교 뷰어) ·
+<span class="mono">cpp/ci_mpc/</span>(C++ 포트=<b>그래디언트 코어만</b> 안정화·Python과 iter단위 일치, hard forward·FDDP·실시간 루프는 미포팅).
+개발 상세=<span class="mono">docs/CI-MPC_개발_리포트.md</span>.</p>
 <p>02_Leg 17-DOF · 참조 Kim et al. 2023 CI-MPC(KAIST HOUND). 배포 컨트롤러 A는 불변, 본 트랙은 모델기반 접촉 타이밍 연구.</p>
 </div>
 </div>

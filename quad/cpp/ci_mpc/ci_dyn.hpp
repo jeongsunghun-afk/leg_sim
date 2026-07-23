@@ -135,7 +135,8 @@ struct CiDyn {
     VectorXd ddq; MatrixXd dq_,dv_,du_; dyn_relaxed(q,v,u,dt,ddq,dq_,dv_,du_);
     VectorXd v_next=v+dt*ddq, w=dt*v_next;
     MatrixXd dvn_dq=dt*dq_, dvn_dv=MatrixXd::Identity(nv,nv)+dt*dv_, dvn_du=dt*du_;
-    MatrixXd dInt0(nv,nv),dInt1(nv,nv); dIntegrate(model,q,w,dInt0,ARG0); dIntegrate(model,q,w,dInt1,ARG1);
+    // ★dIntegrate는 블록대각만 쓰고 off-diagonal은 안 지움 → 반드시 setZero 선행(안 하면 쓰레기값 폭발)
+    MatrixXd dInt0=MatrixXd::Zero(nv,nv),dInt1=MatrixXd::Zero(nv,nv); dIntegrate(model,q,w,dInt0,ARG0); dIntegrate(model,q,w,dInt1,ARG1);
     MatrixXd dqn_dq=dInt0+dInt1*(dt*dvn_dq), dqn_dv=dInt1*(dt*dvn_dv), dqn_du=dInt1*(dt*dvn_du);
     A.resize(2*nv,2*nv); A<<dqn_dq,dqn_dv,dvn_dq,dvn_dv; B.resize(2*nv,nu); B<<dqn_du,dvn_du;
   }

@@ -10,6 +10,7 @@
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/aba-derivatives.hpp>
 #include <pinocchio/algorithm/center-of-mass.hpp>
+#include "ci_dyn.hpp"
 #include <Eigen/Dense>
 #include <cstdio>
 #include <fstream>
@@ -39,7 +40,7 @@ int main(){
   for(int leg=0;leg<4;leg++) for(int j=0;j<4;j++) model.armature[6+leg*4+j]=arm[j];
   std::vector<std::string> feet={"FL","FR","HL","HR"};
   std::vector<FrameIndex> fids; for(auto&L:feet) fids.push_back(model.getFrameId(L+"_foot_contact_link"));
-  const double eps=1e-3, dt=0.002;
+  const double eps=1e-3, dt=0.001;
   const std::string sp="/home/jsh/문서/jsh/simulation/quad/cpp/ci_mpc/state.txt";
   VectorXd q=readvec(sp,"q",nq), v=readvec(sp,"v",nv), u=readvec(sp,"u",nu);
   VectorXd tau_full(nv); tau_full.head(6).setZero(); tau_full.tail(nu)=u;
@@ -81,7 +82,7 @@ int main(){
   // ── tangent 선형화 A,B (lin_AB_relaxed): dIntegrate 연쇄 ──
   VectorXd v_next=v+dt*ddq, w=dt*v_next;
   MatrixXd dvn_dq=dt*ddq_dq, dvn_dv=MatrixXd::Identity(nv,nv)+dt*ddq_dv, dvn_du=dt*ddq_dtau;
-  MatrixXd dInt0(nv,nv),dInt1(nv,nv);
+  MatrixXd dInt0=MatrixXd::Zero(nv,nv),dInt1=MatrixXd::Zero(nv,nv);   // ★dIntegrate 전 setZero 필수(블록대각만 씀)
   dIntegrate(model,q,w,dInt0,ARG0); dIntegrate(model,q,w,dInt1,ARG1);
   MatrixXd dqn_dq=dInt0+dInt1*(dt*dvn_dq), dqn_dv=dInt1*(dt*dvn_dv), dqn_du=dInt1*(dt*dvn_du);
   MatrixXd A(2*nv,2*nv); A<<dqn_dq,dqn_dv,dvn_dq,dvn_dv;
@@ -90,7 +91,13 @@ int main(){
   std::printf("[C++ ci_relaxed] nq=%d nv=%d nu=%d mass=%.4f\n",nq,nv,nu,computeTotalMass(model));
   std::printf("  ddq[:3]= %.4f %.4f %.4f\n",ddq[0],ddq[1],ddq[2]);
   std::printf("  ddq_dq_fro=%.4f ddq_dv_fro=%.4f ddq_dtau_fro=%.4f\n",ddq_dq.norm(),ddq_dv.norm(),ddq_dtau.norm());
-  std::printf("  ★tangent A_fro=%.6f B_fro=%.6f  (Python: A 18.867775 · B 0.322238)\n",A.norm(),B.norm());
-  std::printf("  (Python ddq 기준: 0.3397 -0.1537 -9.1195 · ddq_dq_fro=926.8784 · ddq_dtau_fro=161.1185)\n");
+  std::printf("  ★tangent A_fro=%.6f B_fro=%.6f\n",A.norm(),B.norm());
+  // ── ci_dyn.hpp CiDyn(라이브러리)의 lin_AB/dyn_relaxed와 대조 = 회귀 가드 ──
+  //   ★dIntegrate setZero 버그 재발 방지: 미초기화면 CiDyn 쪽 A가 부풀어 불일치로 잡힘.
+  { cimpc::CiDyn cd(urdf_path); cd.eps=eps;
+    MatrixXd Acd,Bcd; cd.lin_AB(q,v,u,dt,Acd,Bcd);
+    double dA=(A-Acd).norm();
+    std::printf("  ★[대조] 수동 A_fro=%.6f  vs  CiDyn.lin_AB A_fro=%.6f  ‖diff‖=%.2e  %s\n",
+                A.norm(),Acd.norm(),dA, dA<1e-9?"✅ 일치":"✗ 불일치(setZero 확인)"); }
   return 0;
 }

@@ -2,7 +2,7 @@
 
 > 02_Leg 17-DOF 사족보행 로봇 · 모델기반 제2트랙(접촉 타이밍 온라인 발견)
 > 기준 논문: **Kim et al. 2023, "Contact-Implicit MPC: Controlling Diverse Quadruped Motions Without Pre-Planned Contact Modes or Trajectories"** (KAIST HOUND)
-> 작성: 2026-07-23 · 코드: `simulation/quad/ci_mpc/`
+> 작성: 2026-07-23 (C++ 포팅 안정화 반영) · 코드: `simulation/quad/ci_mpc/` · C++: `simulation/quad/cpp/ci_mpc/`
 
 ---
 
@@ -10,7 +10,9 @@
 
 - **목표**: 접촉 스케줄·발판을 **고정 입력으로 두지 않고**, 몸통 목표(desired pose)만 주면 **어느 발이 언제 어디를 딛을지를 online으로 발견**하는 모델기반 제어기(HOUND식 CI-MPC)를 우리 스택(Pinocchio + 직접구현 FDDP)에 구현.
 - **달성**: 논문의 두 핵심 — **① hard 접촉 forward**(penetration-launch 없음) + **② 접촉 임펄스 λ의 해석 그래디언트 ∂λ/∂(q,v,u)**(FD 대비 **EXACT**) — 를 구현·검증. **평지 walking 2.7~3.6s 안정 실증**(base 직립·전진 스텝·발산 없음).
-- **미완**: 완전 sustained walking(무한 보행)은 optimizer의 **hard forward**가 fine dt를 요구 → Python 긴 horizon 불가 = **C++ 프론티어**. 현재는 soft forward + exact λ그래디언트 하이브리드. 다양한 동작(rearing/선회/앉기·서기·눕기)은 미실증(구조는 지원).
+- **미완**: 완전 sustained walking(무한 보행)은 optimizer의 **hard forward**가 fine dt를 요구 → Python 긴 horizon 불가 = **C++ 프론티어**. 현재는 soft forward + exact λ그래디언트 하이브리드.
+- **자세 전환(desired pose)**: walk·crouch·sit(nose-up)·lie를 desired pose만 주고 online 실증(§4.7) + GUI/뷰어(A vs CI 비교).
+- **C++ 포팅(그래디언트 코어)**: relaxed 그래디언트(dyn_relaxed)·tangent 선형화(lin_AB)를 C++로 포팅, **Python과 iteration 단위 정확 일치**로 검증(§4.8). 단 solver 아키텍처(hard forward·Box-FDDP·실시간 루프)는 아직 미포팅 = C1.5 프론티어.
 
 ---
 
@@ -122,6 +124,13 @@
 
 6. **★논문 핵심 (λ 그래디언트)로 runaway 해결**: 사용자 지적("핵심은 λ의 그래디언트")대로 접촉 임펄스의 해석 그래디언트를 구현(`dyn_derivs_kkt`/`lin_AB_kkt`, FD **EXACT**). soft 그래디언트(1.5~13% 오차)를 대체 → **runaway 소멸**(2.7s → 3.6s 발산없음, vx 폭발 사라짐). 접촉 임펄스의 정확한 그래디언트가 optimizer에 올바른 정보를 줘 공격적 lunge를 방지.
 
+7. **자세 전환(desired pose) 실증**: 몸통 목표(base_z·pitch·발 목표)만 주면 CI-MPC가 online 수행. `_stance_q` IK + POSE 모드(VX=0·foot-slip 자동 off). walk(전진 0.16m)·crouch(0.42→0.28)·sit(0.22+nose-up 0.25rad=진짜 개-앉기)·lie(0.20) 전부 발산 없음. A 컨트롤러의 룰베이스 전환을 일반 solver로 대체 실증. GUI(Tkinter)+MuJoCo 뷰어로 A vs CI 비교.
+
+8. **★★C++ 포팅 안정화 — `dIntegrate` setZero 함정**: 그래디언트 코어(dyn_relaxed·lin_AB)를 C++로 포팅하니 서기 OCP가 `Vxx=1e50` 폭발 + crash. 격리 디버깅으로 근본원인 규명:
+   - `dyn_relaxed`(ddq_dq=1058.68)는 Python과 완전 일치인데 `lin_AB`의 tangent A만 불일치(28→204) → tangent 단계로 격리. 수동 블록 dqn_dq=4.89 vs 재유도 69.59(같은 공식·같은 w·같은 model) → 차이는 `dIntegrate` 출력행렬뿐.
+   - **★근본원인: pinocchio `dIntegrate`는 블록대각만 쓰고 off-diagonal은 안 지운다** → 출력행렬 `setZero()` 선행 필수. 미초기화 재사용 메모리의 쓰레기값이 A를 7배 부풀려 Vxx 25스텝 누적 폭발. `ci_relaxed.cpp`가 "검증됨"이던 건 **fresh malloc이 우연히 0**이라 통과한 것(운).
+   - **수정 후**: Vxx=7171(Python 7678 일치)·crash 소멸·J 18→16.8 단조 수렴. **결정적 검증**: Python OCP를 relaxed 그래디언트로 돌리면 J 18→16.8, 각 iter α·J가 C++와 완전 동일 → **C++가 Python relaxed-gradient OCP를 iteration 단위 정확 재현**. (16.8 vs soft-데모 11.1 = relaxed 그래디언트[논문핵심, soft forward와 불일치] vs soft-force 그래디언트 방법차이, 버그 아님.)
+
 ---
 
 ## 5. 핵심 발견·교훈
@@ -132,6 +141,8 @@
 4. **soft spring의 한계**: gentle 모션 OK, 동적 touchdown서 penetration-launch. walking엔 hard 필수.
 5. **걸음은 처방이 아니라 창발**: 발궤적/발판 처방 금지. foot-slip cost + 몸통 참조 → 접촉 online 발견.
 6. **성능 = fine dt**: constraintDynamics forward는 정확하나 fine dt 필요 → Python 긴 horizon 느림. 실시간은 C++.
+7. **★C++ 포팅 함정 = `dIntegrate` setZero**: pinocchio `dIntegrate`는 출력 Jacobian의 블록대각만 쓰고 off-diagonal은 안 지운다. 출력행렬을 `MatrixXd::Zero`로 초기화하지 않으면 재사용 메모리의 쓰레기값이 tangent A를 부풀려 backward가 폭발. **pinocchio 포팅 시 dIntegrate/dDifference 출력은 항상 setZero 선행.** 회귀 가드 = `ci_relaxed.cpp`가 수동 계산 vs 라이브러리(CiDyn) A를 대조(‖diff‖<1e-9).
+8. **동일 이름 다른 함수 주의**: Python OCP 데모의 `lin_AB`(generic)=soft-force 도함수(forward와 일치), C++ `ci.lin_AB`=relaxed 해석 그래디언트(논문 핵심). 둘 다 유효하나 수렴 깊이가 다름(11.1 vs 16.8). 포팅·비교 시 어느 그래디언트인지 명확히.
 
 ---
 
@@ -145,7 +156,17 @@
 | **`ci_mpc_walk.py`** | **receding-horizon MPC walking** (planner + λ그래디언트 + hard sim + PD+FF 추종) |
 | `c1_gradient_check.py` | 제약동역학 해석 도함수 vs FD 검증(de-risk) |
 | `model_bridge.py` | URDF↔MJCF Pinocchio 브리지 |
+| `ci_mpc_gui.py` · `ci_mpc_viewer.py` | GUI(Tkinter)+뷰어(A vs CI 비교 replay) |
 | `sim2sim_probe.py` | 궤적 sim2sim 갭 프로브 |
+
+### C++ 포팅 (`simulation/quad/cpp/ci_mpc/`)
+| 파일 | 역할 |
+|---|---|
+| `ci_dyn.hpp` | CiDyn 라이브러리: 모델 로드·stance IK·step_soft·**dyn_relaxed(relaxed 그래디언트)·lin_AB(tangent 선형화)**. ★`dIntegrate` 전 setZero |
+| `ci_relaxed.cpp` | 그래디언트 값 대조 검증 + **회귀 가드**(수동 vs CiDyn ‖diff‖<1e-9) |
+| `ci_ocp_test.cpp` | single-shooting iLQR 서기 OCP. Python relaxed OCP와 iter단위 일치 검증 |
+
+> C++는 **그래디언트 코어만** 포팅·안정화. solver 아키텍처(hard forward=step_kkt·multiple-shooting FDDP·40Hz 실시간 루프)는 미포팅 = C1.5 프론티어.
 
 ---
 
@@ -174,22 +195,29 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 
 ## 8. 현재 상태 · 남은 작업
 
-**✅ 완성·검증**
+**✅ 완성·검증 (Python)**
 - solver 스택(relaxed backward·multiple-shooting FDDP)
 - hard 접촉 forward(step_kkt) — penetration-launch 없음
 - **λ 해석 그래디언트 ∂λ/∂(q,v,u) — FD EXACT** (논문 핵심)
+- **relaxed 상보성 그래디언트(dyn_derivs_relaxed) — FD EXACT** (커스텀, ε 완화)
 - walking 실증 — 2.7~3.6s 안정(base 직립·전진 스텝·발산 없음)
+- **자세 전환(desired pose)** — walk·crouch·sit·lie online 실증 + GUI/뷰어
+
+**✅ 완성·검증 (C++)**
+- 그래디언트 코어(dyn_relaxed·lin_AB) 포팅 — **Python과 iteration 단위 정확 일치**
+- 서기 iLQR OCP 안정화 — `dIntegrate` setZero 버그 수정(Vxx 1e50→7171, crash 소멸)
+- 회귀 가드(ci_relaxed 대조)
 
 **⏳ 남음**
 | 항목 | 이유/방향 |
 |---|---|
 | 완전 sustained walking | runaway 지연됐으나 완전 제거 아님 |
 | optimizer의 hard forward(HARD_FWD) | fine dt 필요 → **C++ 프론티어**(velocity-impulse 대dt 솔버 또는 fine dt) |
-| 웅크림(base 0.31→0.40) 튜닝 | refinement |
-| 다양한 동작(rearing·선회·앉기/서기/눕기) | 미실증. **구조는 지원**(desired pose만 바꾸면 됨) |
-| C++ 실시간(40Hz) | 미착수 |
+| **C++ solver 아키텍처** | step_kkt(hard)·multiple-shooting FDDP·40Hz 루프 미포팅. 현재 C++=그래디언트 코어+single-shooting 서기 검증만 |
+| 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시 |
+| 다양한 동작(rearing·선회) | 미실증. **구조는 지원** |
 
-**다음 후보**: 자세 전환(앉기/서기/눕기)을 desired pose로 실증 — 준정적이라 walking보다 안정적일 수 있고, A 컨트롤러의 룰베이스 전환을 일반 solver로 대체하는 검증.
+**다음 후보**: (1) C++ solver 아키텍처 확장(step_kkt hard forward + Box-FDDP 포팅) → 실시간 경로, (2) friction cone 추가(slip 실증).
 
 ---
 

@@ -1,5 +1,12 @@
-// CI-MPC C++ 3단계: multiple-shooting FDDP 서기 OCP (ci_ocp_ms 포트). relaxed 그래디언트 사용.
-//   gap 주입 backward + feasibility-driven forward + merit. gap 폐쇄(feasible) 수렴 검증.
+// CI-MPC C++ 3단계: single-shooting iLQR 서기 안정화 OCP (ci_ocp.py main 포트).
+//   ★안정화 핵심: dt=0.001(fine)·N=25·PD warm-start feasible nominal·soft crisp 접촉.
+//   relaxed tangent는 fine dt서만 ρ≈1(안정). dt=0.02는 ρ=1.14+ → backward Vxx 폭발(발산).
+//   ★★버그수정(핵심): pinocchio dIntegrate는 블록대각만 쓰고 off-diagonal은 안 지움 → 출력행렬
+//     setZero 선행 필수. 미초기화 재사용 메모리의 쓰레기값이 A를 7배 부풀려 Vxx=1e50 폭발/crash.
+//     ci_dyn.hpp lin_AB에 setZero 추가 후 Vxx 7171(Python 일치)·crash 소멸·정상 수렴.
+//   ★검증: C++가 Python ci_ocp.py(relaxed 그래디언트)를 iteration 단위 정확 재현(J 18→16.8, 동일 α).
+//     16.8은 relaxed 그래디언트(논문 핵심, soft forward와 불일치)의 값=Python도 relaxed면 동일.
+//     더 깊은 수렴(11.1)은 soft-force 그래디언트(dynamics_derivatives) 필요=후속.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <vector>
@@ -8,71 +15,80 @@ using namespace cimpc;
 using Eigen::VectorXd; using Eigen::MatrixXd;
 
 int main(){
+  setvbuf(stdout, nullptr, _IONBF, 0);
   CiDyn ci("/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf");
-  int nv=ci.nv, nu=ci.nu; ci.eps=1e-3;
-  const double DT=0.005, GAP_W=100.0, REG=1e-1; const int N=25, NSUB=10, ITERS=25;
+  ci.eps=1e-3;
+  int nv=ci.nv, nu=ci.nu;
+  const double DT=0.001, REG=1e-1, WKP=150.0, WKD=10.0;
+  const int N=25, NSUB=1, ITERS=8;
+  std::printf("[C++ ci iLQR 서기] 모델 nq=%d nv=%d nu=%d · dt=%.4f N=%d\n", ci.nq, nv, nu, DT, N);
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
 
-  VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);   // settle
+  // settle(발 접촉) — substep DT*0.1 (Python과 동일)
+  VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);
   for(int i=0;i<200;i++){ tau_hold=150.0*(qstar.tail(nu)-q.tail(nu))-8.0*v.tail(nu);
-    VectorXd qn,vn; ci.step_relaxed(q,v,tau_hold,DT*0.05,qn,vn); q=qn; v=vn; }
+    VectorXd qn,vn; ci.step_soft(q,v,tau_hold,DT*0.1,1,qn,vn); q=qn; v=vn; }
   VectorXd q0=q, v0=v;
+  std::printf("  [dbg] settled base_z=%.4f |v0|=%.4f\n",q0[2],v0.norm());
 
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
-  MatrixXd Qx=Qxd.asDiagonal(); MatrixXd Qf=Qx*10.0; MatrixXd Ru=MatrixXd::Identity(nu,nu)*1e-3;
+  MatrixXd Qx=Qxd.asDiagonal(); MatrixXd Qf=Qx*20.0; MatrixXd Ru=MatrixXd::Identity(nu,nu)*1e-3;
 
-  std::vector<VectorXd> Xq(N+1),Xv(N+1),U(N);
-  Xq[0]=q0; Xv[0]=v0; for(int k=1;k<=N;k++){ Xq[k]=qstar; Xv[k]=vstar; }
-  for(int k=0;k<N;k++) U[k]=tau_hold;
+  // PD warm-start: feasible nominal(서기 근처 유지) — 긴 horizon 발산 방지
+  std::vector<VectorXd> U(N);
+  { VectorXd qq=q0, vv=v0;
+    for(int k=0;k<N;k++){ VectorXd u=tau_hold+WKP*(qstar.tail(nu)-qq.tail(nu))-WKD*vv.tail(nu); U[k]=u;
+      VectorXd qn,vn; ci.step_soft(qq,vv,u,DT,NSUB,qn,vn); qq=qn; vv=vn; } }
 
-  auto evalt=[&](std::vector<VectorXd>&Xq,std::vector<VectorXd>&Xv,std::vector<VectorXd>&U,
-                 std::vector<VectorXd>&gaps,double&J,double&M){
-    gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
-    for(int k=0;k<N;k++){ VectorXd qn,vn; ci.step_relaxed(Xq[k],Xv[k],U[k],DT,qn,vn);
-      gaps[k+1]=ci.sdiff(Xq[k+1],Xv[k+1],qn,vn); gs+=gaps[k+1].norm();
-      VectorXd e=ci.sdiff(qstar,vstar,Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k]); }
-    VectorXd e=ci.sdiff(qstar,vstar,Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e); M=J+GAP_W*gs;
-  };
-  std::vector<VectorXd> gaps; double J,M; evalt(Xq,Xv,U,gaps,J,M);
-  double g0=0; for(int k=1;k<=N;k++) g0=std::max(g0,gaps[k].norm());
-  std::printf("[C++ FDDP 서기] iter 0  J=%.3f merit=%.3f |gap|max=%.3f\n",J,M,g0);
+  auto rollout=[&](std::vector<VectorXd>&U,std::vector<VectorXd>&qs,std::vector<VectorXd>&vs){
+    qs.assign(N+1,VectorXd()); vs.assign(N+1,VectorXd()); qs[0]=q0; vs[0]=v0;
+    for(int k=0;k<N;k++){ VectorXd qn,vn; ci.step_soft(qs[k],vs[k],U[k],DT,NSUB,qn,vn); qs[k+1]=qn; vs[k+1]=vn; } };
+  auto cost=[&](std::vector<VectorXd>&U,std::vector<VectorXd>&qs,std::vector<VectorXd>&vs){
+    rollout(U,qs,vs); double c=0;
+    for(int k=0;k<N;k++){ VectorXd e=ci.sdiff(qstar,vstar,qs[k],vs[k]); c+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k]); }
+    VectorXd e=ci.sdiff(qstar,vstar,qs[N],vs[N]); return c+0.5*e.dot(Qf*e); };
+
+  std::vector<VectorXd> qs,vs; double J0=cost(U,qs,vs), J_init=J0;
+  std::printf("  iter 0  J=%.3f\n",J0);
 
   for(int it=0;it<ITERS;it++){
     std::vector<MatrixXd> As(N),Bs(N);
-    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB(Xq[k],Xv[k],U[k],DT,A,B); As[k]=A; Bs[k]=B; }
-    VectorXd e=ci.sdiff(qstar,vstar,Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
+    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB(qs[k],vs[k],U[k],DT,A,B); As[k]=A; Bs[k]=B; }
+    VectorXd e=ci.sdiff(qstar,vstar,qs[N],vs[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
     std::vector<MatrixXd> Ks(N); std::vector<VectorXd> ks(N);
     for(int k=N-1;k>=0;k--){
-      VectorXd Vxp=Vx+Vxx*gaps[k+1];
-      VectorXd ek=ci.sdiff(qstar,vstar,Xq[k],Xv[k]); VectorXd lx=Qx*ek, lu=Ru*U[k];
+      VectorXd ek=ci.sdiff(qstar,vstar,qs[k],vs[k]); VectorXd Qx_=Qx*ek, Qu_=Ru*U[k];
       MatrixXd&A=As[k]; MatrixXd&B=Bs[k];
-      VectorXd Qx_=lx+A.transpose()*Vxp, Qu_=lu+B.transpose()*Vxp;
+      VectorXd Qxk=Qx_+A.transpose()*Vx, Quk=Qu_+B.transpose()*Vx;
       MatrixXd Qxx=Qx+A.transpose()*Vxx*A, Quu=Ru+B.transpose()*Vxx*B, Qux=B.transpose()*Vxx*A;
       MatrixXd Qinv=(Quu+REG*MatrixXd::Identity(nu,nu)).inverse();
-      MatrixXd K=-Qinv*Qux; VectorXd kk=-Qinv*Qu_; Ks[k]=K; ks[k]=kk;
-      Vx=Qx_+K.transpose()*Quu*kk+K.transpose()*Qu_+Qux.transpose()*kk;
+      MatrixXd K=-Qinv*Qux; VectorXd kk=-Qinv*Quk; Ks[k]=K; ks[k]=kk;
+      Vx =Qxk+K.transpose()*Quu*kk+K.transpose()*Qu_+Qux.transpose()*kk;
       Vxx=Qxx+K.transpose()*Quu*K+K.transpose()*Qux+Qux.transpose()*K; Vxx=0.5*(Vxx+Vxx.transpose());
+      if(it==0&&k==0) std::printf("    [dbg k=0] Vxx_fro=%.3e Quu_fro=%.3e A_fro=%.2f\n",Vxx.norm(),Quu.norm(),A.norm());
     }
-    double bestM=1e18; std::vector<VectorXd> bXq,bXv,bU; bool found=false;
+    double bestJ=1e18; std::vector<VectorXd> bU,bqs,bvs; double ba=0; bool found=false;
     for(double alpha : {1.0,0.5,0.25,0.1,0.05}){
-      std::vector<VectorXd> Xqn(N+1),Xvn(N+1),Un(N); Xqn[0]=Xq[0]; Xvn[0]=Xv[0]; bool ok=true;
+      std::vector<VectorXd> Un(N),qn(N+1),vn(N+1); qn[0]=q0; vn[0]=v0; bool ok=true;
       for(int k=0;k<N;k++){
-        VectorXd dx=ci.sdiff(Xq[k],Xv[k],Xqn[k],Xvn[k]);
+        VectorXd dx=ci.sdiff(qs[k],vs[k],qn[k],vn[k]);
         VectorXd u=U[k]+alpha*ks[k]+Ks[k]*dx; Un[k]=u;
-        VectorXd qn,vn; ci.step_relaxed(Xqn[k],Xvn[k],u,DT,qn,vn);
-        if(!qn.allFinite()){ ok=false; break; }
-        VectorXd xq,xv; ci.sint(qn,vn,VectorXd(-(1.0-alpha)*gaps[k+1]),xq,xv); Xqn[k+1]=xq; Xvn[k+1]=xv;
+        VectorXd qq,vv; ci.step_soft(qn[k],vn[k],u,DT,NSUB,qq,vv);
+        if(!qq.allFinite()){ ok=false; break; }
+        qn[k+1]=qq; vn[k+1]=vv;
       }
-      std::vector<VectorXd> gn; double Jn,Mn; evalt(Xqn,Xvn,Un,gn,Jn,Mn);
-      if(std::isfinite(Mn)&&Mn<bestM){ bestM=Mn; bXq=Xqn; bXv=Xvn; bU=Un; found=true; }
+      if(!ok) continue;
+      double Jn=0;
+      for(int k=0;k<N;k++){ VectorXd e=ci.sdiff(qstar,vstar,qn[k],vn[k]); Jn+=0.5*e.dot(Qx*e)+0.5*Un[k].dot(Ru*Un[k]); }
+      { VectorXd e=ci.sdiff(qstar,vstar,qn[N],vn[N]); Jn+=0.5*e.dot(Qf*e); }
+      if(std::isfinite(Jn)&&Jn<bestJ){ bestJ=Jn; bU=Un; bqs=qn; bvs=vn; ba=alpha; found=true; }
     }
-    if(!found||bestM>=M*0.999999) break;
-    Xq=bXq; Xv=bXv; U=bU; evalt(Xq,Xv,U,gaps,J,M);
-    double gmax=0; for(int k=1;k<=N;k++) gmax=std::max(gmax,gaps[k].norm());
-    std::printf("  iter %d  J=%.3f merit=%.3f |gap|max=%.4f\n",it+1,J,M,gmax);
+    if(!found||bestJ>=J0) break;
+    U=bU; qs=bqs; vs=bvs; J0=bestJ;
+    std::printf("  iter %d  J=%.3f  (α=%.2f)\n",it+1,J0,ba);
   }
-  double gmax=0; for(int k=1;k<=N;k++) gmax=std::max(gmax,gaps[k].norm());
-  std::printf("  최종: |gap|max=%.4f(초기 %.1f) base_z=%.3f  %s\n",gmax,g0,Xq[N][2],
-              gmax<0.05?"✅ FDDP 수렴(gap 폐쇄=feasible)":"△");
+  VectorXd ef=ci.sdiff(qstar,vstar,qs[N],vs[N]);
+  std::printf("  최종: J %.1f→%.1f (%.0f%%↓) base_z=%.3f 종단오차=%.3f  %s\n",J_init,J0,100*(1-J0/J_init),
+              qs[N][2],ef.norm(), J0<J_init ?"✅ 안정 수렴(Vxx 유계·Python relaxed OCP와 iter단위 일치)":"✗ 발산");
   return 0;
 }

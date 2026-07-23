@@ -105,18 +105,21 @@ struct CiDyn {
     }
     return lam;
   }
-  // relaxed forward(도함수 없이, rollout용): lin_AB와 일관. v_next=qdot_free+M⁻¹Jᵀλ
-  void step_relaxed(const VectorXd&q,const VectorXd&v,const VectorXd&u,double dt,VectorXd&qn,VectorXd&vn){
-    VectorXd tau(nv); tau.head(6).setZero(); tau.tail(nu)=u;
-    VectorXd a_free=aba(model,data,q,v,tau);
-    computeJointJacobians(model,data,q); updateFramePlacements(model,data);
-    computeMinverse(model,data,q); MatrixXd Mi=data.Minv;
-    Mi.triangularView<Eigen::StrictlyLower>()=Mi.transpose().triangularView<Eigen::StrictlyLower>();
-    MatrixXd Jcc(12,nv);
-    for(int k=0;k<4;k++){ MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[k],LOCAL_WORLD_ALIGNED,J6); Jcc.middleRows(3*k,3)=J6.topRows(3); }
-    MatrixXd W=Mi*Jcc.transpose(), Acc=Jcc*W;
-    VectorXd qdot_free=v+dt*a_free, lam=relaxed_lambda(Acc,Jcc*qdot_free,12);
-    vn=qdot_free+W*lam; qn=integrate(model,q,VectorXd(dt*vn));
+  // relaxed forward(도함수 없이, rollout용): lin_AB와 일관. v_next=qdot_free+M⁻¹Jᵀλ. nsub=multi-rate 서브스텝
+  void step_relaxed(const VectorXd&q0,const VectorXd&v0,const VectorXd&u,double dt,VectorXd&qn,VectorXd&vn,int nsub=1){
+    double h=dt/nsub; VectorXd q=q0,v=v0; VectorXd tau(nv); tau.head(6).setZero(); tau.tail(nu)=u;
+    for(int s=0;s<nsub;s++){
+      VectorXd a_free=aba(model,data,q,v,tau);
+      computeJointJacobians(model,data,q); updateFramePlacements(model,data);
+      computeMinverse(model,data,q); MatrixXd Mi=data.Minv;
+      Mi.triangularView<Eigen::StrictlyLower>()=Mi.transpose().triangularView<Eigen::StrictlyLower>();
+      MatrixXd Jcc(12,nv);
+      for(int k=0;k<4;k++){ MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[k],LOCAL_WORLD_ALIGNED,J6); Jcc.middleRows(3*k,3)=J6.topRows(3); }
+      MatrixXd W=Mi*Jcc.transpose(), Acc=Jcc*W;
+      VectorXd qdot_free=v+h*a_free, lam=relaxed_lambda(Acc,Jcc*qdot_free,12);
+      v=qdot_free+W*lam; q=integrate(model,q,VectorXd(h*v));
+    }
+    qn=q; vn=v;
   }
 
   // ★relaxed 상보성 ddq + tangent A,B (검증됨)
@@ -156,7 +159,8 @@ struct CiDyn {
     MatrixXd dl_dv=-Ari*(Jcc*(MatrixXd::Identity(nv,nv)+dt*av)), dl_du=-Ari*(Jcc*(dt*au));
     ddq_dq=aq+(dWl+W*dl_dq)/dt; ddq_dv=av+(W*dl_dv)/dt; ddq_du=au+(W*dl_du)/dt;
   }
-  void lin_AB(const VectorXd&q,const VectorXd&v,const VectorXd&u,double dt,MatrixXd&A,MatrixXd&B){
+  // 단일 스텝 tangent 선형화 A,B + 다음 상태(qn,vn) 반환(multi-rate 합성용)
+  void lin_AB(const VectorXd&q,const VectorXd&v,const VectorXd&u,double dt,MatrixXd&A,MatrixXd&B,VectorXd&qn,VectorXd&vn){
     VectorXd ddq; MatrixXd dq_,dv_,du_; dyn_relaxed(q,v,u,dt,ddq,dq_,dv_,du_);
     VectorXd v_next=v+dt*ddq, w=dt*v_next;
     MatrixXd dvn_dq=dt*dq_, dvn_dv=MatrixXd::Identity(nv,nv)+dt*dv_, dvn_du=dt*du_;
@@ -164,6 +168,19 @@ struct CiDyn {
     MatrixXd dInt0=MatrixXd::Zero(nv,nv),dInt1=MatrixXd::Zero(nv,nv); dIntegrate(model,q,w,dInt0,ARG0); dIntegrate(model,q,w,dInt1,ARG1);
     MatrixXd dqn_dq=dInt0+dInt1*(dt*dvn_dq), dqn_dv=dInt1*(dt*dvn_dv), dqn_du=dInt1*(dt*dvn_du);
     A.resize(2*nv,2*nv); A<<dqn_dq,dqn_dv,dvn_dq,dvn_dv; B.resize(2*nv,nu); B<<dqn_du,dvn_du;
+    vn=v_next; qn=integrate(model,q,w);
+  }
+  void lin_AB(const VectorXd&q,const VectorXd&v,const VectorXd&u,double dt,MatrixXd&A,MatrixXd&B){
+    VectorXd qn,vn; lin_AB(q,v,u,dt,A,B,qn,vn); }
+  // ★multi-rate 노드 Jacobian: A_node=∏Aₖ · B_node=Σ연쇄율(Python lin_AB nsub 합성). u는 노드 내 상수
+  void lin_AB_multi(const VectorXd&q0,const VectorXd&v0,const VectorXd&u,double dt,int nsub,MatrixXd&A,MatrixXd&B){
+    double h=dt/nsub; VectorXd q=q0,v=v0;
+    A=MatrixXd::Identity(2*nv,2*nv); B=MatrixXd::Zero(2*nv,nu); bool first=true;
+    for(int s=0;s<nsub;s++){
+      MatrixXd Ak,Bk; VectorXd qn,vn; lin_AB(q,v,u,h,Ak,Bk,qn,vn);
+      A=Ak*A; B = first ? Bk : (Ak*B+Bk).eval(); first=false;
+      q=qn; v=vn;
+    }
   }
 
   // foot-slip/clearance(eq22)+air-time(φ²) 값

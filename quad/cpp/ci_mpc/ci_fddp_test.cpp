@@ -2,10 +2,10 @@
 //   각 노드 상태=결정변수 + gap(dynamics defect)이 물리 불일치 흡수 → nominal=전 노드 서기
 //   (open-loop 발산 원천 제거). gap 주입 backward + feasibility-driven forward + merit=J+GAP_W·Σ|gap|.
 //   ★setZero 수정 후 안정. forward=step_relaxed(FWD_REL=1 기본, backward와 일관) · backward=lin_AB(relaxed ρD).
-//   ★1차 검증(dt=0.001·NSUB=1·N=100=0.1s): gap 완전폐쇄(0.0000=feasible)·전 iter α=1.0 clean Newton
-//     하강(J 412→71)·종단오차 0.338(Python soft FDDP 0.907보다 우수). single-shooting(N25 0.025s) 4배 horizon.
-//     ★consistency 필수: soft forward(FWD_REL=0)+relaxed backward는 불일치라 gap 미폐쇄(정체). relaxed 일관=수렴.
-//   후속: multi-rate lin_AB(substep Jacobian 합성)로 dt=0.01·N50(0.5s)+VX 전진+foot-slip cost=보행.
+//   ★검증: (a)dt0.001·nsub1·N100(0.1s) gap폐쇄·종단오차0.338. (b)★multi-rate(lin_AB_multi·step_relaxed nsub)
+//     dt0.01·nsub10·N50(0.5s=5배 horizon) gap 완전폐쇄(0.0000)·전 iter α=1.0·종단오차 0.184(더 우수).
+//     ★consistency 필수: soft forward(FWD_REL=0)+relaxed backward는 gap 미폐쇄(정체). relaxed 일관=수렴.
+//   후속: VX 전진 reference + foot-slip cost(HOUND eq22) = 보행 창발.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -20,14 +20,14 @@ int main(){
   setvbuf(stdout,nullptr,_IONBF,0);
   CiDyn ci("/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf");
   int nv=ci.nv, nu=ci.nu;
-  double DT=envd("DT",0.001), REG=envd("REG",0.1), GAP_W=envd("GAP_W",50.0);
-  int N=envi("N",100), NSUB=envi("NSUB",1), ITERS=envi("ITERS",30);
+  double DT=envd("DT",0.01), REG=envd("REG",0.1), GAP_W=envd("GAP_W",50.0);
+  int N=envi("N",50), NSUB=envi("NSUB",10), ITERS=envi("ITERS",30);   // dt0.01·N50·nsub10=0.5s(multi-rate)
   std::printf("[C++ FDDP 서기] nq=%d nv=%d nu=%d · dt=%.4f N=%d nsub=%d relax=%s\n",
               ci.nq,nv,nu,DT,N,NSUB,ci.relax_mode.c_str());
   bool FWD_REL=envi("FWD_REL",1);   // 1=relaxed forward(backward와 일관, 기본)·0=soft
   std::printf("  [cfg] forward=%s\n", FWD_REL?"relaxed(backward 일관)":"soft");
   auto fwd=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
-    if(FWD_REL) ci.step_relaxed(q,v,u,DT,qn,vn); else ci.step_soft(q,v,u,DT,NSUB,qn,vn); };
+    if(FWD_REL) ci.step_relaxed(q,v,u,DT,qn,vn,NSUB); else ci.step_soft(q,v,u,DT,NSUB,qn,vn); };
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
   VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);
   for(int i=0;i<200;i++){ tau_hold=150.0*(qstar.tail(nu)-q.tail(nu))-8.0*v.tail(nu);
@@ -57,7 +57,7 @@ int main(){
 
   for(int it=0;it<ITERS;it++){
     std::vector<MatrixXd> As(N),Bs(N);
-    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB(Xq[k],Xv[k],U[k],DT,A,B); As[k]=A; Bs[k]=B; }
+    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB_multi(Xq[k],Xv[k],U[k],DT,NSUB,A,B); As[k]=A; Bs[k]=B; }
     VectorXd e=ci.sdiff(qstar,vstar,Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
     std::vector<MatrixXd> Ks(N); std::vector<VectorXd> ks(N);
     for(int k=N-1;k>=0;k--){

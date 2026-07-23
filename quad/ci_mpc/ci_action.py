@@ -34,13 +34,21 @@ class ContactImplicit:
         self.rho, self.kn, self.bn, self.bt, self.mu = rho, kn, bn, bt, mu
         self.ground = ground
         self.fids = [br.foot_fid[L] for L in FEET]
+        # ★HOUND식 backward 완화: forward는 stiff(위 kn/rho)로 물리 crisp, gradient는 별도 완화 파라미터로
+        #   smooth → well-conditioned. 기본=forward와 동일(매칭). RHO_G/KN_G/BN_G/BT_G로 완화.
+        self.rho_g = float(os.environ.get("RHO_G", rho))
+        self.kn_g  = float(os.environ.get("KN_G",  kn))
+        self.bn_g  = float(os.environ.get("BN_G",  bn))
+        self.bt_g  = float(os.environ.get("BT_G",  bt))
 
-    def _force_law(self, phi, vf):
-        """접촉력 법칙 f(φ, vf) → world 3D. φ=지면위높이, vf=접촉점 선속도. (미분용 순수함수)"""
-        w = sigmoid(-phi, self.rho)                                       # 접촉 활성 0~1
-        depth = softplus(-phi, self.rho)                                 # 단방향 침투
-        fn = softplus(self.kn * depth - self.bn * vf[2] * w, 1.0)         # 법선(스프링+감쇠, ≥0 스무스)
-        ft = -self.bt * vf[:2] * w                                       # 접선 감쇠(no-slip 근사)
+    def _force_law(self, phi, vf, relax=False):
+        """접촉력 법칙 f(φ, vf) → world 3D. φ=지면위높이, vf=접촉점 선속도. (미분용 순수함수)
+           relax=True면 gradient용 완화 파라미터(rho_g/kn_g/…) 사용=HOUND hard-forward/soft-backward."""
+        rho, kn, bn, bt = (self.rho_g, self.kn_g, self.bn_g, self.bt_g) if relax else (self.rho, self.kn, self.bn, self.bt)
+        w = sigmoid(-phi, rho)                                            # 접촉 활성 0~1
+        depth = softplus(-phi, rho)                                      # 단방향 침투
+        fn = softplus(kn * depth - bn * vf[2] * w, 1.0)                   # 법선(스프링+감쇠, ≥0 스무스)
+        ft = -bt * vf[:2] * w                                            # 접선 감쇠(no-slip 근사)
         ftn = np.linalg.norm(ft) + 1e-9
         cap = self.mu * fn                                              # 마찰콘(스무스 클립)
         scale = cap / ftn if ftn > cap else 1.0
@@ -89,13 +97,13 @@ class ContactImplicit:
         Js = []; F = []; dfdphi = []; dfdvf = []
         for phi, vf, J in fs:
             f = self._force_law(phi, vf); tau_full = tau_full + J.T @ f; Js.append(J); F.append(f)
-            # 힘법칙 미분(FD, cheap): ∂f/∂φ(3), ∂f/∂vf(3×3)
+            # 힘법칙 미분(FD, cheap): ∂f/∂φ(3), ∂f/∂vf(3×3). ★relax=True=완화 파라미터(HOUND backward)
             e = 1e-6
-            dfp = (self._force_law(phi + e, vf) - self._force_law(phi - e, vf)) / (2*e)
+            dfp = (self._force_law(phi + e, vf, relax=True) - self._force_law(phi - e, vf, relax=True)) / (2*e)
             dfv = np.zeros((3, 3))
             for k in range(3):
                 dvf = np.zeros(3); dvf[k] = e
-                dfv[:, k] = (self._force_law(phi, vf + dvf) - self._force_law(phi, vf - dvf)) / (2*e)
+                dfv[:, k] = (self._force_law(phi, vf + dvf, relax=True) - self._force_law(phi, vf - dvf, relax=True)) / (2*e)
             dfdphi.append(dfp); dfdvf.append(dfv)
         # ABA 도함수(τ_full 고정 편미분) + 운동학 도함수(∂vf/∂q·kin.hessian)
         pin.computeABADerivatives(m, d, q, v, tau_full)

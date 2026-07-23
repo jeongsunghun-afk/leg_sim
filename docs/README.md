@@ -13,7 +13,8 @@
 | **[pipeline_d1.html](pipeline_d1.html)** | **D1 + 비교** — OCS2 NMPC+계층 WBC 파이프라인(외부·분석) + **A·B·C·D1 비교** + 지형유형 정직 비교 | 아티팩트 |
 | **[TOWR_모델기반지형_리포트.md](TOWR_모델기반지형_리포트.md)** | **TOWR 트랙** — 오프라인 지형 planning·추종 한계·폐루프 조사 결론(모델기반 상한→RL) | md |
 | **[pipeline_rl.html](pipeline_rl.html)** | **RL** — RGA `RobotSW_IsaacLab` 파쿠르 정책(RMA MLP teacher-student, 비순환) 파이프라인 + A/B·C(MPC/OCP) 대조 | 아티팩트 |
-| **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·후보3안(§15)·모델구조·입출력·비용·샘플링 CI(MJX/GPU) 파이프라인·진행(연구, `quad/ci_mpc/`) | 아티팩트 |
+| **[CI-MPC_개발_리포트.md](CI-MPC_개발_리포트.md)** | **CI-MPC 개발 종합 리포트** — C1.0~C1.5 단계·아키텍처·개발여정(막힘·돌파)·**★hard 접촉+λ 해석 그래디언트(논문핵심) 완성·walking 2.7~3.6s 실증**·파라미터·남은작업(C++) | md |
+| **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·모델구조·입출력·비용·파이프라인 §13 C1.0~C1.5(hard접촉·λ그래디언트·walking) | 아티팩트 |
 | **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
 | **[biped.html](biped.html)** | **biped** — 2족 MPC+WBIC. 점발(동적보행)/평발(정적서기) 접촉모드·통합 1점/2점 전환·상태·개발여정·평발보행 진행(C++ 배포) | 아티팩트 |

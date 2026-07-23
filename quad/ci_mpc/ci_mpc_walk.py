@@ -42,9 +42,10 @@ def main():
     POSE_Z=float(os.environ.get("POSE_Z","0")); POSE_PITCH=float(os.environ.get("POSE_PITCH","0"))
     if POSE_Z>0:
         tgt=None
-        if POSE_PITCH>0:   # sit(nose-up)=앞발 전방 확장(앞다리 폄 느낌)
-            fr=float(os.environ.get("FRONT_REACH","0.08"))
-            tgt={'FL':[0.30+fr,0.16],'FR':[0.30+fr,-0.16],'HL':[-0.30,0.16],'HR':[-0.30,-0.16]}
+        if POSE_PITCH>0:   # ★진짜 개-앉기(dog sit): 앞다리 펴 상체↑(앞발 전방) + 뒷다리 접어 하체↓(뒷발 몸아래로 tuck)
+            fr=float(os.environ.get("FRONT_REACH","0.10"))    # 앞발 전방(앞다리 폄=상체 듦)
+            rt=float(os.environ.get("REAR_TUCK","0.16"))      # 뒷발 몸아래로 당김(뒷다리 접힘=하체 낮춤)
+            tgt={'FL':[0.30+fr,0.16],'FR':[0.30+fr,-0.16],'HL':[-0.30+rt,0.16],'HR':[-0.30+rt,-0.16]}
         qref=_stance_q(br, POSE_Z, POSE_PITCH, tgt); VX=0.0
         CF=0.0; AIR_W=0.0   # ★자세=발 planted 추종, 걸음생성(foot-slip) 불필요 → 자동 끔
         print("[POSE] 목표 자세: base_z=%.3f pitch=%.2frad (서기 0.42→전환, foot-slip off)"%(POSE_Z,POSE_PITCH))

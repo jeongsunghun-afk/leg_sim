@@ -41,10 +41,17 @@ def main():
 
     Qx=np.diag(np.concatenate([np.full(nv,20.0), np.full(nv,1.0)]))
     Qf=Qx*20.0; Ru=np.eye(nu)*1e-3
-    xstar=(qstar,vstar)
+    # ★전진 task: VX>0이면 per-node reference의 base_x가 VX·k·dt로 전진(+base_vx=VX). 접촉으로 몸 전진 유도.
+    VX=float(os.environ.get("VX","0.0"))
+    Xref=[]
+    for k in range(N+1):
+        qk=qstar.copy(); qk[0]=qstar[0]+VX*k*dt          # base_x 전진
+        vk=vstar.copy(); vk[0]=VX                          # base 전진속도
+        Xref.append((qk,vk))
+    if VX>0: Qx[0]*=20.0; Qx[nv]*=10.0                     # base_x·vx 추종 강조
+
     # ★nominal 초기화: 모든 노드=서기(발산 불가, gap이 불일치 흡수) · U=지지토크
-    X=[(q0.copy(),v0.copy())]+[(qstar.copy(),vstar.copy()) for _ in range(N)]
-    X[0]=(q0.copy(),v0.copy())
+    X=[(q0.copy(),v0.copy())]+[(Xref[k][0].copy(),Xref[k][1].copy()) for k in range(1,N+1)]
     U=[tau_hold.copy() for _ in range(N)]
 
     GAP_W=float(os.environ.get("GAP_W","50"))    # merit gap 벌점(feasibility 구동)
@@ -55,8 +62,8 @@ def main():
             qs,vs,_=ci.step(X[k][0],X[k][1],U[k],dt,nsub)
             gaps[k+1]=sdiff(X[k+1],(qs,vs))          # step ⊖ x_{k+1}
             gsum+=np.linalg.norm(gaps[k+1])
-            e=sdiff(xstar,X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]
-        e=sdiff(xstar,X[N]); J+=0.5*e@Qf@e
+            e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]
+        e=sdiff(Xref[N],X[N]); J+=0.5*e@Qf@e
         return gaps,J,J+GAP_W*gsum
 
     print("[C1.3] multiple-shooting FDDP — contact-implicit (gap 주입 + feasibility-driven)")
@@ -68,11 +75,11 @@ def main():
         for k in range(N):
             A,B=lin_AB(ci,X[k][0],X[k][1],U[k],dt,nsub); As.append(A);Bs.append(B)
         # backward (gap 주입)
-        e=sdiff(xstar,X[N]); Vx=Qf@e; Vxx=Qf.copy()
+        e=sdiff(Xref[N],X[N]); Vx=Qf@e; Vxx=Qf.copy()
         Ks=[None]*N; ks=[None]*N
         for k in range(N-1,-1,-1):
             Vxp=Vx+Vxx@gaps[k+1]                     # ★gap 주입 V_x⁺
-            e=sdiff(xstar,X[k]); lx=Qx@e; lu=Ru@U[k]
+            e=sdiff(Xref[k],X[k]); lx=Qx@e; lu=Ru@U[k]
             A,B=As[k],Bs[k]
             Qx_=lx+A.T@Vxp; Qu_=lu+B.T@Vxp
             Qxx=Qx+A.T@Vxx@A; Quu=Ru+B.T@Vxx@B; Qux=B.T@Vxx@A
@@ -99,11 +106,14 @@ def main():
         gaps,J,M=eval_traj(X,U)
         gmax=max(np.linalg.norm(g) for g in gaps[1:])
         print("  iter %d  J=%.3f  merit=%.3f (α=%.2f) |gap|max=%.4f"%(it+1,J,M,alpha,gmax))
-    gmax=max(np.linalg.norm(g) for g in gaps[1:]); g0=7.594  # 초기 gap
-    ef=sdiff(xstar,X[N])
-    print("  최종: J=%.1f base_z=%.3f 종단오차=%.3f |gap|max=%.4f(초기%.1f)  %s"%(
-          J,X[N][0][2],np.linalg.norm(ef),gmax,g0,
-          "✅ FDDP 수렴(gap 폐쇄=feasible 긴 horizon OCP)" if gmax<0.05 else
+    gmax=max(np.linalg.norm(g) for g in gaps[1:]); g0=max(np.linalg.norm(g) for g in eval_traj(
+        [(q0.copy(),v0.copy())]+[(Xref[k][0].copy(),Xref[k][1].copy()) for k in range(1,N+1)],
+        [tau_hold.copy() for _ in range(N)])[0][1:])
+    ef=sdiff(Xref[N],X[N])
+    dx_base=X[N][0][0]-q0[0]; dx_ref=Xref[N][0][0]-q0[0]   # 실제 vs 목표 전진 변위
+    print("  최종: J=%.1f base_z=%.3f 전진=%.3fm(목표%.3f) 종단오차=%.3f |gap|max=%.4f  %s"%(
+          J,X[N][0][2],dx_base,dx_ref,np.linalg.norm(ef),gmax,
+          "✅ FDDP 수렴(gap 폐쇄=feasible)" if gmax<0.05 else
           "△ 부분 폐쇄(%.0f%%)"%(100*(1-gmax/g0)) if gmax<g0*0.9 else "✗ 미폐쇄"))
 
 if __name__=="__main__":

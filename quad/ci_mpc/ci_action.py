@@ -133,6 +133,45 @@ class ContactImplicit:
             q = pin.integrate(self.m, q, h * v)
         return q, v, info
 
+    def step_hard(self, q, v, tau_act, dt, nsub=1):
+        """★HOUND §5.2 hard 임펄스 forward: 속도공간 Signorini LCP+Coulomb, Hwangbo projected block
+        Gauss-Seidel. penetration-launch 없음(soft spring 대비). 접촉=impulse로 속도 투영.
+        forward만 hard, 그래디언트(dynamics_derivatives)는 relaxed 유지=논문 설계."""
+        m, d = self.m, self.d; h = dt / nsub
+        tau_full = np.concatenate([np.zeros(6), tau_act])
+        margin = getattr(self, 'margin', 0.002); beta = getattr(self, 'beta', 0.2)
+        pgs = getattr(self, 'pgs_iters', 12); mu = self.mu
+        for _ in range(nsub):
+            a_free = pin.aba(m, d, q, v, tau_full)                  # 무접촉 자유가속도
+            v_free = v + h * a_free
+            pin.forwardKinematics(m, d, q); pin.updateFramePlacements(m, d); pin.computeJointJacobians(m, d, q)
+            Minv = np.array(pin.computeMinverse(m, d, q))
+            Js = []; phis = []
+            for fid in self.fids:
+                oMf = d.oMf[fid]; p = oMf.translation + oMf.rotation @ np.array([0., 0., -FOOT_R])
+                phi = p[2] - self.ground
+                if phi < margin:                                   # 활성 접촉(지면 근처/침투)
+                    Js.append(pin.getFrameJacobian(m, d, fid, pin.LOCAL_WORLD_ALIGNED)[:3].copy()); phis.append(phi)
+            if Js:
+                Gs = [J @ Minv @ J.T for J in Js]                  # Delassus(3×3)
+                Gi = [np.linalg.inv(G + 1e-7*np.eye(3)) for G in Gs]
+                P = [np.zeros(3) for _ in Js]
+                for _it in range(pgs):                             # projected block Gauss-Seidel
+                    for i,(J,G,Ginv,phi) in enumerate(zip(Js,Gs,Gi,phis)):
+                        vo = v_free + Minv @ sum((Js[k].T @ P[k] for k in range(len(Js)) if k!=i), np.zeros(m.nv))
+                        vc = J @ vo                                # 다른 임펄스 반영 접촉속도
+                        b = np.array([0.,0., -beta*min(phi,0.0)/h])  # 목표: 접선0·법선 침투밀어냄(Baumgarte)
+                        pn = Ginv @ (b - vc)                       # 목표 접촉속도 만드는 임펄스
+                        if pn[2] <= 0: P[i] = np.zeros(3)          # 분리 중=임펄스 없음(단방향)
+                        else:
+                            pt = pn[:2]; ptn = np.linalg.norm(pt); cap = mu*pn[2]
+                            if ptn > cap: pn[:2] = pt*(cap/ptn)    # Coulomb 콘 투영
+                            P[i] = pn
+                v_free = v_free + Minv @ sum((Js[k].T @ P[k] for k in range(len(Js))), np.zeros(m.nv))
+            v = v_free
+            q = pin.integrate(m, q, h * v)
+        return q, v, None
+
 
 def _stance_q(br):
     m, d = br.model, br.data

@@ -169,8 +169,33 @@ class ContactImplicit:
                 pulling = [active[j] for j in range(len(active)) if cds[j].contact_force.linear[2] < 0.0]
                 if not pulling: break                              # 모든 접촉력 밀어냄(법선≥0)=수렴
                 active = [i for i in active if i not in pulling]   # 당기는 발 분리
+            lam = np.zeros((len(self.fids), 3))                    # ★λ(접촉력) 발별 반환(λ-weight용)
+            if active:
+                for j, i in enumerate(active): lam[i] = np.asarray(cds[j].contact_force.linear)
             v = v + h * a; q = pin.integrate(m, q, h * v)
-        return q, v, None
+        return q, v, lam
+
+    def dyn_derivs_kkt(self, q, v, tau_act, active=None):
+        """★★논문 핵심(HOUND eq26): λ(접촉임펄스)의 해석 그래디언트. constraintDynamics로 ddq(하드 impulse)
+        + computeConstraintDynamicsDerivatives로 ∂ddq/∂(q,v,τ) — **∂λ/∂(q,v,τ)를 내포**. soft force
+        그래디언트(dynamics_derivatives) 대체. active=활성접촉 인덱스(None=phi<margin 자동감지)."""
+        m, d = self.m, self.d
+        tau_full = np.concatenate([np.zeros(6), tau_act])
+        if active is None:
+            pin.forwardKinematics(m, d, q); pin.updateFramePlacements(m, d)
+            active = [i for i, fid in enumerate(self.fids)
+                      if (d.oMf[fid].translation + d.oMf[fid].rotation @ np.array([0.,0.,-FOOT_R]))[2]
+                      - self.ground < getattr(self, 'margin', 0.003)]
+        if not active:                                             # 접촉 없음=자유 동역학 도함수
+            pin.computeABADerivatives(m, d, q, v, tau_full)
+            return d.ddq.copy(), np.array(d.ddq_dq), np.array(d.ddq_dv), np.array(d.Minv)[:, 6:]
+        cms = pin.StdVec_RigidConstraintModel(); cds = pin.StdVec_RigidConstraintData()
+        for i in active: cm = self._make_cm(self.fids[i]); cms.append(cm); cds.append(cm.createData())
+        prox = pin.ProximalSettings(1e-10, 1e-8, 40)
+        pin.initConstraintDynamics(m, d, cms, cds)
+        ddq = pin.constraintDynamics(m, d, q, v, tau_full, cms, cds, prox).copy()
+        pin.computeConstraintDynamicsDerivatives(m, d, cms, cds)   # ∂ddq/∂(q,v,τ)=∂λ 내포
+        return ddq, np.array(d.ddq_dq).copy(), np.array(d.ddq_dv).copy(), np.array(d.ddq_dtau)[:, 6:].copy()
 
     def step_hard(self, q, v, tau_act, dt, nsub=1):
         """★HOUND §5.2 hard 임펄스 forward: 속도공간 Signorini LCP+Coulomb, Hwangbo projected block

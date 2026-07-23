@@ -13,7 +13,7 @@ env: VX MPC_STEPS N DT NSUB SOLVE_ITERS CF AIR_W W_BASE VXVEL
 import os, numpy as np, pinocchio as pin
 from model_bridge import MjPinBridge
 from ci_action import ContactImplicit, _stance_q, FEET, FOOT_R
-from ci_ocp import lin_AB
+from ci_ocp import lin_AB, lin_AB_kkt
 
 def main():
     br=MjPinBridge(); m=br.model; dd=br.data; nv=m.nv; nu=br.nu
@@ -28,6 +28,10 @@ def main():
     CTRL_DT=float(os.environ.get("CTRL_DT","0.001"))# 저수준 제어 갱신간격(≤0.001=안정)
     KKT_NSUB=int(os.environ.get("KKT_NSUB","2"))    # step_kkt substep(CTRL_DT/KKT_NSUB=sim h≈0.0005)
     KP_T=float(os.environ.get("KP_T","150")); KD_T=float(os.environ.get("KD_T","12"))  # 추종 PD 게인
+    # ★★논문 핵심(§5.3 eq26): optimizer forward=hard impulse(step_kkt) + backward=**λ(접촉임펄스)의
+    #   해석 그래디언트** ∂λ/∂(q,v,u)가 ∂ddq에 흘러듦. Pinocchio computeConstraintDynamicsDerivatives
+    #   가 제공(C1.0 FD검증). 기존 lin_AB는 soft force 그래디언트라 hard impulse ∂λ 아님 → KKT 그래디언트로.
+    HARD_PLAN=int(os.environ.get("HARD_PLAN","0")); PLAN_NSUB=int(os.environ.get("PLAN_NSUB","10"))
     MPC_STEPS=int(os.environ.get("MPC_STEPS","120")); VX=float(os.environ.get("VX","0.3"))
     CF=float(os.environ.get("CF","2000")); AIR_W=float(os.environ.get("AIR_W","100")); C1S=-30.0
     W_BASE=float(os.environ.get("W_BASE","40")); VXVEL=float(os.environ.get("VXVEL","80"))
@@ -83,13 +87,20 @@ def main():
             if AIR_W>0 and phi>0: c+=AIR_W*phi*phi; g[:nv]+=AIR_W*2*phi*Jz; H[:nv,:nv]+=AIR_W*2*np.outer(Jz,Jz)
         return c,g,H
 
+    HARD_FWD=int(os.environ.get("HARD_FWD","0"))   # forward: 1=step_kkt(fine dt 필요), 0=soft(빠름·안정)
+    def fwd(q,v,u):                                                  # ★optimizer forward
+        if HARD_FWD: return ci.step_kkt(q,v,u,DT,PLAN_NSUB)[:2]
+        return ci.step(q,v,u,DT,NSUB)[:2]
+    def linAB(q,v,u):                                               # ★backward: HARD_PLAN=1→exact λ그래디언트
+        if HARD_PLAN: return lin_AB_kkt(ci,q,v,u,DT)
+        return lin_AB(ci,q,v,u,DT,NSUB)
     def solve(x0, Xref, U, X):
         """짧은 horizon FDDP 몇 iter(warm-start). return X,U."""
         X=[x0]+list(X[1:])                                           # 현재 실제상태로 앵커
         def evalt(X,U):
             gaps=[None]*(N+1); J=0.0; gs=0.0
             for k in range(N):
-                qs,vs,_=ci.step(X[k][0],X[k][1],U[k],DT,NSUB)
+                qs,vs=fwd(X[k][0],X[k][1],U[k])
                 gaps[k+1]=sdiff(X[k+1],(qs,vs)); gs+=np.linalg.norm(gaps[k+1])
                 e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_val(X[k][0],X[k][1])
             e=sdiff(Xref[N],X[N]); J+=0.5*e@Qf@e
@@ -97,7 +108,7 @@ def main():
         gaps,J,M=evalt(X,U)
         for _ in range(ITERS):
             As=[];Bs=[]
-            for k in range(N): A,B=lin_AB(ci,X[k][0],X[k][1],U[k],DT,NSUB); As.append(A);Bs.append(B)
+            for k in range(N): A,B=linAB(X[k][0],X[k][1],U[k]); As.append(A);Bs.append(B)
             e=sdiff(Xref[N],X[N]); Vx=Qf@e; Vxx=Qf.copy(); Ks=[None]*N; ks=[None]*N
             for k in range(N-1,-1,-1):
                 Vxp=Vx+Vxx@gaps[k+1]; e=sdiff(Xref[k],X[k]); lx=Qx@e; lu=Ru@U[k]
@@ -113,7 +124,7 @@ def main():
                 Xn=[X[0]]; Un=[]; ok=True
                 for k in range(N):
                     dx=sdiff(X[k],Xn[k]); u=U[k]+alpha*ks[k]+Ks[k]@dx; Un.append(u)
-                    qs,vs,_=ci.step(Xn[k][0],Xn[k][1],u,DT,NSUB)
+                    qs,vs=fwd(Xn[k][0],Xn[k][1],u)
                     if not np.all(np.isfinite(qs)): ok=False; break
                     Xn.append(sint((qs,vs),-(1.0-alpha)*gaps[k+1]))
                 if not ok or not np.all(np.isfinite(Xn[-1][0])): continue

@@ -34,6 +34,17 @@ def _lin_sub(ci, q, v, u, h):
     q_next = pin.integrate(m, q, w)
     return A, B, q_next, v_next
 
+def lin_AB_kkt(ci, q, v, u, dt):
+    """★★논문 핵심 선형화: λ(접촉임펄스)의 해석 그래디언트(dyn_derivs_kkt=constraintDynamics 도함수)로
+       A,B 구성. soft force 그래디언트(_lin_sub) 대체=hard impulse의 ∂λ/∂(q,v,u)가 backward에 흘러듦."""
+    m = ci.m; nv = m.nv
+    ddq, ddq_dq, ddq_dv, ddq_dtau = ci.dyn_derivs_kkt(q, v, u)   # ∂λ 내포
+    v_next = v + dt * ddq; w = dt * v_next
+    dvn_dq = dt * ddq_dq; dvn_dv = np.eye(nv) + dt * ddq_dv; dvn_du = dt * ddq_dtau
+    dInt0 = pin.dIntegrate(m, q, w, pin.ARG0); dInt1 = pin.dIntegrate(m, q, w, pin.ARG1)
+    dqn_dq = dInt0 + dInt1 @ (dt * dvn_dq); dqn_dv = dInt1 @ (dt * dvn_dv); dqn_du = dInt1 @ (dt * dvn_du)
+    return np.block([[dqn_dq, dqn_dv], [dvn_dq, dvn_dv]]), np.vstack([dqn_du, dvn_du])
+
 def lin_AB(ci, q, v, u, dt, nsub=1):
     """노드(dt) tangent 선형화. nsub>1=multi-rate: 노드 Jacobian=서브스텝 Jacobian들의 합성.
        A_node=∏A_k · B_node=Σ_k(∏_{j>k}A_j)B_k (u는 노드 내 상수). horizon 확보하며 crisp 접촉 유지."""

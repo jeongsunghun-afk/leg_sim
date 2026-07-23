@@ -53,7 +53,6 @@ int main(){
       Vx=Qx_+K.transpose()*Quu*kk+K.transpose()*Qu_+Qux.transpose()*kk;
       Vxx=Qxx+K.transpose()*Quu*K+K.transpose()*Qux+Qux.transpose()*K; Vxx=0.5*(Vxx+Vxx.transpose());
     }
-    if(it==0){ double kmax=0,Kmax=0; for(int k=0;k<N;k++){kmax=std::max(kmax,ks[k].norm());Kmax=std::max(Kmax,Ks[k].norm());}
     double bestM=1e18; std::vector<VectorXd> bXq,bXv,bU; bool found=false;
     for(double alpha : {1.0,0.5,0.25,0.1,0.05}){
       std::vector<VectorXd> Xqn(N+1),Xvn(N+1),Un(N); Xqn[0]=Xq[0]; Xvn[0]=Xv[0]; bool ok=true;

@@ -15,30 +15,40 @@ import os, numpy as np, pinocchio as pin
 from model_bridge import MjPinBridge
 from ci_action import ContactImplicit, _stance_q
 
-def lin_AB(ci, q, v, u, dt):
-    """tangent 선형화: A[2nv×2nv], B[2nv×nu]. ddq 해석도함수 + dIntegrate 연쇄."""
-    m = ci.m; nv = m.nv; nu = u.shape[0]
+def _lin_sub(ci, q, v, u, h):
+    """단일 서브스텝(h) tangent 선형화: A[2nv×2nv], B[2nv×nu] + (q⁺,v⁺). ddq 해석도함수 + dIntegrate 연쇄."""
+    m = ci.m; nv = m.nv
     ddq, ddq_dq, ddq_dv, ddq_dtau = ci.dynamics_derivatives(q, v, u)
-    v_next = v + dt * ddq
-    w = dt * v_next                                   # integrate 증분
-    # ∂v⁺/∂(q,v,u)
-    dvn_dq = dt * ddq_dq
-    dvn_dv = np.eye(nv) + dt * ddq_dv
-    dvn_du = dt * ddq_dtau
-    # ∂q⁺/∂(q,v,u): q⁺=integrate(q,w). dInt0=∂/∂q, dInt1=∂/∂w
+    v_next = v + h * ddq
+    w = h * v_next                                    # integrate 증분
+    dvn_dq = h * ddq_dq
+    dvn_dv = np.eye(nv) + h * ddq_dv
+    dvn_du = h * ddq_dtau
     dInt0 = pin.dIntegrate(m, q, w, pin.ARG0)
     dInt1 = pin.dIntegrate(m, q, w, pin.ARG1)
-    dqn_dq = dInt0 + dInt1 @ (dt * dvn_dq)
-    dqn_dv = dInt1 @ (dt * dvn_dv)
-    dqn_du = dInt1 @ (dt * dvn_du)
+    dqn_dq = dInt0 + dInt1 @ (h * dvn_dq)
+    dqn_dv = dInt1 @ (h * dvn_dv)
+    dqn_du = dInt1 @ (h * dvn_du)
     A = np.block([[dqn_dq, dqn_dv], [dvn_dq, dvn_dv]])
     B = np.vstack([dqn_du, dvn_du])
-    return A, B
+    q_next = pin.integrate(m, q, w)
+    return A, B, q_next, v_next
 
-def rollout(ci, q0, v0, U, dt):
+def lin_AB(ci, q, v, u, dt, nsub=1):
+    """노드(dt) tangent 선형화. nsub>1=multi-rate: 노드 Jacobian=서브스텝 Jacobian들의 합성.
+       A_node=∏A_k · B_node=Σ_k(∏_{j>k}A_j)B_k (u는 노드 내 상수). horizon 확보하며 crisp 접촉 유지."""
+    h = dt / nsub
+    A_acc = np.eye(2*ci.m.nv); B_acc = None
+    for _ in range(nsub):
+        Ak, Bk, q, v = _lin_sub(ci, q, v, u, h)
+        A_acc = Ak @ A_acc
+        B_acc = Bk if B_acc is None else (Ak @ B_acc + Bk)   # 연쇄율 누적
+    return A_acc, B_acc
+
+def rollout(ci, q0, v0, U, dt, nsub=1):
     qs=[q0]; vs=[v0]; q,v=q0.copy(),v0.copy()
     for u in U:
-        q,v,_ = ci.step(q,v,u,dt); qs.append(q); vs.append(v)
+        q,v,_ = ci.step(q,v,u,dt,nsub); qs.append(q); vs.append(v)
     return qs, vs
 
 def err_x(ci, q, v, qref, vref):
@@ -53,18 +63,19 @@ def main():
     ci = ContactImplicit(br, rho=float(os.environ.get("RHO","0.004")), kn=float(os.environ.get("KN","12000")),
                          bn=float(os.environ.get("BN","120")), bt=float(os.environ.get("BT","80")))
     nv=m.nv; nu=br.nu; dt=float(os.environ.get("DT","0.001")); N=int(os.environ.get("N","25"))
+    nsub=int(os.environ.get("NSUB","1"))   # ★multi-rate: 노드 dt는 커도 접촉은 dt/nsub 서브스텝(horizon 확보+crisp)
     qstar=_stance_q(br); vstar=np.zeros(nv)
     # settle 초기상태(발 접촉)
-    q,v=qstar.copy(),np.zeros(nv)
+    q,v=qstar.copy(),np.zeros(nv); tau_hold=np.zeros(nu)
     for _ in range(200):
-        tau=150.0*(qstar[7:]-q[7:])-8.0*v[6:]; q,v,_=ci.step(q,v,tau,dt*0.1)
-    q0,v0=q.copy(),v.copy()
+        tau_hold=150.0*(qstar[7:]-q[7:])-8.0*v[6:]; q,v,_=ci.step(q,v,tau_hold,dt*0.1)
+    q0,v0=q.copy(),v.copy()   # tau_hold=수렴 지지토크(중력보상)=긴 horizon warm start
     # 비용 가중
     Qx=np.diag(np.concatenate([np.full(nv,20.0), np.full(nv,1.0)]))   # 상태추종
     Qf=Qx*20.0; Ru=np.eye(nu)*1e-3
-    U=[np.zeros(nu) for _ in range(N)]                                # 초기 제어=0
+    U=[tau_hold.copy() for _ in range(N)]                             # 초기 제어=지지토크(중력보상 warm start)
     def cost(U):
-        qs,vs=rollout(ci,q0,v0,U,dt); c=0.0
+        qs,vs=rollout(ci,q0,v0,U,dt,nsub); c=0.0
         for k in range(N):
             e=err_x(ci,qs[k],vs[k],qstar,vstar); c+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]
         e=err_x(ci,qs[N],vs[N],qstar,vstar); c+=0.5*e@Qf@e
@@ -75,7 +86,7 @@ def main():
         # 선형화
         As=[];Bs=[]
         for k in range(N):
-            A,B=lin_AB(ci,qs[k],vs[k],U[k],dt); As.append(A);Bs.append(B)
+            A,B=lin_AB(ci,qs[k],vs[k],U[k],dt,nsub); As.append(A);Bs.append(B)
         # backward Riccati
         e=err_x(ci,qs[N],vs[N],qstar,vstar); Vx=Qf@e; Vxx=Qf.copy()
         Ks=[None]*N; ks=[None]*N
@@ -96,7 +107,7 @@ def main():
             for k in range(N):
                 dx=err_x(ci,q,v,qs[k],vs[k])                  # 현재 vs 명목 궤적(tangent)
                 u=U[k]+alpha*ks[k]+Ks[k]@dx; Un.append(u)
-                q,v,_=ci.step(q,v,u,dt); qn.append(q);vn.append(v)
+                q,v,_=ci.step(q,v,u,dt,nsub); qn.append(q);vn.append(v)
             Jn=0.0
             for k in range(N): e=err_x(ci,qn[k],vn[k],qstar,vstar); Jn+=0.5*e@Qx@e+0.5*Un[k]@Ru@Un[k]
             e=err_x(ci,qn[N],vn[N],qstar,vstar); Jn+=0.5*e@Qf@e

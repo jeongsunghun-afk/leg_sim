@@ -116,11 +116,14 @@ class ContactImplicit:
         dddq_dtau = Minv[:, 6:]
         return ddq, dddq_dq, dddq_dv, dddq_dtau
 
-    def step(self, q, v, tau_act, dt):
-        ddq, F, info = self.dynamics(q, v, tau_act)
-        v_next = v + dt * ddq
-        q_next = pin.integrate(self.m, q, dt * v_next)     # semi-implicit Euler
-        return q_next, v_next, info
+    def step(self, q, v, tau_act, dt, nsub=1):
+        """semi-implicit Euler. nsub>1=multi-rate(접촉 안정 위해 dt/nsub 서브스텝)=큰 노드dt서 crisp 유지."""
+        h = dt / nsub
+        for _ in range(nsub):
+            ddq, F, info = self.dynamics(q, v, tau_act)
+            v = v + h * ddq
+            q = pin.integrate(self.m, q, h * v)
+        return q, v, info
 
 
 def _stance_q(br):

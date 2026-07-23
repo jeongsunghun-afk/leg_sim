@@ -16,7 +16,7 @@ nominal이 물리적으로 안정할 필요 없음(모든 노드=서기로 초�
 """
 import os, numpy as np, pinocchio as pin
 from model_bridge import MjPinBridge
-from ci_action import ContactImplicit, _stance_q, FEET
+from ci_action import ContactImplicit, _stance_q, FEET, FOOT_R
 from ci_ocp import lin_AB, err_x
 
 def main():
@@ -49,32 +49,35 @@ def main():
         vk=vstar.copy(); vk[0]=VX                          # base 전진속도
         Xref.append((qk,vk))
     if VX>0: Qx[0]*=20.0; Qx[nv]*=10.0                     # base_x·vx 추종 강조
+    W_BASE=float(os.environ.get("W_BASE","1.0"))           # base 균형(z·자세) 가중 — 무너짐 방지
+    Qx[2]*=W_BASE; Qx[3]*=W_BASE; Qx[4]*=W_BASE            # base z·roll·pitch 추종 강화
 
     # ★nominal 초기화: 모든 노드=서기(발산 불가, gap이 불일치 흡수) · U=지지토크
     X=[(q0.copy(),v0.copy())]+[(Xref[k][0].copy(),Xref[k][1].copy()) for k in range(1,N+1)]
     U=[tau_hold.copy() for _ in range(N)]
 
     GAP_W=float(os.environ.get("GAP_W","50"))    # merit gap 벌점(feasibility 구동)
-    # ★gait 유도 cost(HOUND §5 실용판): trot 스윙 스케줄로 발 z를 주기적으로 들어올림(고정 스케줄).
-    #   contact-implicit TO는 gait 자발 미발견 → 스윙 발 z 목표를 처방(발이 gap 넘게 하는 열쇠).
-    GAIT_T=float(os.environ.get("GAIT_T","0")); SWING_H=float(os.environ.get("SWING_H","0.06"))
-    W_SW=float(os.environ.get("W_SW","3000"))
-    _OFF={'FL':0.0,'FR':0.5,'HL':0.5,'HR':0.0}   # trot: 대각쌍(FL,HR)/(FR,HL) 교대
-    off=[_OFF[L] for L in FEET]
-    def foot_z_targets(k):
-        if GAIT_T<=0: return None
-        t=k*dt; tz=[]
-        for o in off:
-            ph=((t/GAIT_T)+o)%1.0
-            tz.append(SWING_H*np.sin(np.pi*ph/0.5) if ph<0.5 else 0.0)   # swing 반주기=들림, stance=0
-        return tz
-    def foot_cost(q,v,k):
-        """스윙 발 z 추종 비용 c + ∂c/∂q(nv). ci._foot_state 재사용(phi=발높이, J[2]=∂phi/∂q)."""
-        tz=foot_z_targets(k)
-        if tz is None: return 0.0, np.zeros(nv), np.zeros((nv,nv))
-        c=0.0; g=np.zeros(nv); H=np.zeros((nv,nv))
-        for (phi,vf,J),zt in zip(ci._foot_state(q,v), tz):
-            r=phi-zt; c+=0.5*W_SW*r*r; g+=W_SW*r*J[2]; H+=W_SW*np.outer(J[2],J[2])  # GN 헤시안
+    dd=br.data
+    # ★★HOUND §5.1.3 foot-slip/clearance cost (eq22) — 발 궤적 처방 없이 걸음 창발.
+    #   l_f = c_f Σ S(c1·φ)·‖v_t‖²,  S=sigmoid, c1=-30. 발 낮으면(φ~0) S~0.5=접선속도 벌점(no-slip),
+    #   발 높으면(φ↑) S~0=벌점 완화(clearance). 몸통 전진(속도참조)하려면 발 들 수밖에→걸음 창발.
+    CF=float(os.environ.get("CF","1.0")); C1S=float(os.environ.get("C1S","-30.0"))
+    def foot_slip_cost(q,v,k):
+        if CF<=0: return 0.0, np.zeros(2*nv), np.zeros((2*nv,2*nv))
+        pin.computeForwardKinematicsDerivatives(m,dd,q,v,np.zeros(nv)); pin.updateFramePlacements(m,dd)
+        c=0.0; g=np.zeros(2*nv); H=np.zeros((2*nv,2*nv))
+        for L in FEET:
+            fid=br.foot_fid[L]; oMf=dd.oMf[fid]
+            phi=(oMf.translation+oMf.rotation@np.array([0.,0.,-FOOT_R]))[2]   # 발바닥 지면위 높이
+            dvq,dvv=pin.getFrameVelocityDerivatives(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)
+            Jlin=np.array(dvv[:3]); dv_dq=np.array(dvq[:3])                   # ∂vf/∂v=J, ∂vf/∂q
+            vf=Jlin@v; vt=vf[:2]; w2=vt@vt
+            S=1.0/(1.0+np.exp(-C1S*phi)); Sp=S*(1.0-S)
+            c+=CF*S*w2
+            Jz=Jlin[2]                                                        # ∂φ/∂q
+            g[:nv]+=CF*(Sp*C1S*Jz*w2 + S*2.0*(vt[0]*dv_dq[0]+vt[1]*dv_dq[1])) # ∂c/∂q
+            g[nv:]+=CF*S*2.0*(vt[0]*Jlin[0]+vt[1]*Jlin[1])                    # ∂c/∂v(∂vt/∂v=Jlin)
+            Jt=Jlin[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)                       # GN 헤시안(속도항)
         return c,g,H
     def eval_traj(X,U):
         """gap f̄_{k+1}, 비용 J(+gait), merit=J+GAP_W·Σ|gap|(feasibility 포함)."""
@@ -83,7 +86,7 @@ def main():
             qs,vs,_=ci.step(X[k][0],X[k][1],U[k],dt,nsub)
             gaps[k+1]=sdiff(X[k+1],(qs,vs))          # step ⊖ x_{k+1}
             gsum+=np.linalg.norm(gaps[k+1])
-            e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_cost(X[k][0],X[k][1],k)[0]
+            e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_slip_cost(X[k][0],X[k][1],k)[0]
         e=sdiff(Xref[N],X[N]); J+=0.5*e@Qf@e
         return gaps,J,J+GAP_W*gsum
 
@@ -101,9 +104,9 @@ def main():
         for k in range(N-1,-1,-1):
             Vxp=Vx+Vxx@gaps[k+1]                     # ★gap 주입 V_x⁺
             e=sdiff(Xref[k],X[k]); lx=Qx@e; lu=Ru@U[k]
-            _,fg,fH=foot_cost(X[k][0],X[k][1],k)     # ★gait cost 그래디언트/GN헤시안(q부)
-            lx=lx.copy(); lx[:nv]+=fg
-            Qxx_k=Qx.copy(); Qxx_k[:nv,:nv]+=fH
+            _,fg,fH=foot_slip_cost(X[k][0],X[k][1],k)   # ★foot-slip cost 그래디언트/GN헤시안(2nv 전체)
+            lx=lx+fg
+            Qxx_k=Qx+fH
             A,B=As[k],Bs[k]
             Qx_=lx+A.T@Vxp; Qu_=lu+B.T@Vxp
             Qxx=Qxx_k+A.T@Vxx@A; Quu=Ru+B.T@Vxx@B; Qux=B.T@Vxx@A

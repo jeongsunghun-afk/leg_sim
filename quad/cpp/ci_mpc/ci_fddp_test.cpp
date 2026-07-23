@@ -5,7 +5,10 @@
 //   ★검증: (a)dt0.001·nsub1·N100(0.1s) gap폐쇄·종단오차0.338. (b)★multi-rate(lin_AB_multi·step_relaxed nsub)
 //     dt0.01·nsub10·N50(0.5s=5배 horizon) gap 완전폐쇄(0.0000)·전 iter α=1.0·종단오차 0.184(더 우수).
 //     ★consistency 필수: soft forward(FWD_REL=0)+relaxed backward는 gap 미폐쇄(정체). relaxed 일관=수렴.
-//   후속: VX 전진 reference + foot-slip cost(HOUND eq22) = 보행 창발.
+//   ★보행(VX=0.3·CF=2000): VX 전진 reference + foot-slip cost(HOUND eq22, foot_slip_cost)+air-time 배선.
+//     gap 완전폐쇄(feasible)·α=1.0 수렴·전진 0.051m(서기 0.004 대비↑=foot-slip이 전진 유도). 단 발lift≈0
+//     =슬라이딩(진짜 스텝 아님)=Python ci_ocp_ms와 동일 거동. 깨끗한 스텝=receding MPC 창발(단일 OCP 아님).
+//   후속: receding-horizon MPC(ci_mpc_run C++) + 관절 gait 참조 = 스텝 보행 → step_kkt hard forward → 실시간.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -34,12 +37,20 @@ int main(){
     VectorXd qn,vn; ci.step_soft(q,v,tau_hold,DT*0.1,1,qn,vn); q=qn; v=vn; }
   VectorXd q0=q, v0=v;
 
+  // ★보행 task: VX 전진 + foot-slip cost(걸음 창발). ci.CF/C1S/AIR_W env로.
+  double VX=envd("VX",0.0); ci.CF=envd("CF",0.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",0.0);
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
-  MatrixXd Qx=Qxd.asDiagonal(); MatrixXd Qf=Qx*20.0; MatrixXd Ru=MatrixXd::Identity(nu,nu)*1e-3;
+  MatrixXd Qx=Qxd.asDiagonal();
+  if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0);   // base_x 위치 자유+속도 추종
+    double WB=envd("W_BASE",1.0); Qx(2,2)*=WB; Qx(3,3)*=WB; Qx(4,4)*=WB; }  // base z·roll·pitch 균형
+  MatrixXd Qf=Qx*20.0; MatrixXd Ru=MatrixXd::Identity(nu,nu)*1e-3;
+  // per-node reference: base_x=qstar[0]+VX·k·dt, base_vx=VX
+  std::vector<VectorXd> Rq(N+1),Rv(N+1);
+  for(int k=0;k<=N;k++){ Rq[k]=qstar; Rq[k][0]=qstar[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
 
-  // ★nominal: 노드0=settle, 나머지=서기(qstar). gap이 불일치 흡수 → 발산 안함
+  // ★nominal: 노드0=settle, 나머지=reference. gap이 불일치 흡수 → 발산 안함
   std::vector<VectorXd> Xq(N+1),Xv(N+1),U(N);
-  Xq[0]=q0; Xv[0]=v0; for(int k=1;k<=N;k++){ Xq[k]=qstar; Xv[k]=vstar; }
+  Xq[0]=q0; Xv[0]=v0; for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }
   for(int k=0;k<N;k++) U[k]=tau_hold;
 
   auto eval=[&](std::vector<VectorXd>&Xq,std::vector<VectorXd>&Xv,std::vector<VectorXd>&U,
@@ -47,8 +58,8 @@ int main(){
     gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
     for(int k=0;k<N;k++){ VectorXd qn,vn; fwd(Xq[k],Xv[k],U[k],qn,vn);
       gaps[k+1]=ci.sdiff(Xq[k+1],Xv[k+1],qn,vn); gs+=gaps[k+1].norm();
-      VectorXd e=ci.sdiff(qstar,vstar,Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k]); }
-    VectorXd e=ci.sdiff(qstar,vstar,Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e); M=J+GAP_W*gs; };
+      VectorXd e=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k])+ci.foot_val(Xq[k],Xv[k]); }
+    VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e); M=J+GAP_W*gs; };
   auto gmaxf=[&](std::vector<VectorXd>&g){ double x=0; for(int k=1;k<=N;k++) x=std::max(x,g[k].norm()); return x; };
 
   std::vector<VectorXd> gaps; double J,M; eval(Xq,Xv,U,gaps,J,M);
@@ -58,14 +69,16 @@ int main(){
   for(int it=0;it<ITERS;it++){
     std::vector<MatrixXd> As(N),Bs(N);
     for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB_multi(Xq[k],Xv[k],U[k],DT,NSUB,A,B); As[k]=A; Bs[k]=B; }
-    VectorXd e=ci.sdiff(qstar,vstar,Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
+    VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
     std::vector<MatrixXd> Ks(N); std::vector<VectorXd> ks(N);
     for(int k=N-1;k>=0;k--){
       VectorXd Vxp=Vx+Vxx*gaps[k+1];                       // ★gap 주입
-      VectorXd ek=ci.sdiff(qstar,vstar,Xq[k],Xv[k]); VectorXd lx=Qx*ek, lu=Ru*U[k];
+      VectorXd ek=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); VectorXd lx=Qx*ek, lu=Ru*U[k];
+      double fc; VectorXd fg; MatrixXd fH; ci.foot_slip_cost(Xq[k],Xv[k],fc,fg,fH);   // ★foot-slip grad/GN헤시안
+      lx+=fg; MatrixXd Qxx0=Qx+fH;
       MatrixXd&A=As[k]; MatrixXd&B=Bs[k];
       VectorXd Qx_=lx+A.transpose()*Vxp, Qu_=lu+B.transpose()*Vxp;
-      MatrixXd Qxx=Qx+A.transpose()*Vxx*A, Quu=Ru+B.transpose()*Vxx*B, Qux=B.transpose()*Vxx*A;
+      MatrixXd Qxx=Qxx0+A.transpose()*Vxx*A, Quu=Ru+B.transpose()*Vxx*B, Qux=B.transpose()*Vxx*A;
       MatrixXd Qinv=(Quu+REG*MatrixXd::Identity(nu,nu)).inverse();
       MatrixXd K=-Qinv*Qux; VectorXd kk=-Qinv*Qu_; Ks[k]=K; ks[k]=kk;
       Vx=Qx_+K.transpose()*Quu*kk+K.transpose()*Qu_+Qux.transpose()*kk;
@@ -90,8 +103,12 @@ int main(){
     std::printf("  iter %d  J=%.3f merit=%.3f (α=%.2f) |gap|max=%.4f\n",it+1,J,M,ba,gmaxf(gaps));
   }
   double gmax=gmaxf(gaps);
-  std::printf("  최종: J=%.1f(초기%.1f) base_z=%.3f 종단오차=%.3f |gap|max=%.4f(초기%.2f)  %s\n",
-              J,J_init,Xq[N][2],ci.sdiff(qstar,vstar,Xq[N],Xv[N]).norm(),gmax,g0,
+  // 발 lift 최대(스텝 여부): 노드별 최소 발높이의 최대
+  double lift=0; for(int k=0;k<=N;k++){ std::vector<double> phi; std::vector<MatrixXd> J; std::vector<Vector3d> vf;
+    ci.foot_kin(Xq[k],Xv[k],phi,J,vf); double mn=1e9; for(int i=0;i<4;i++) mn=std::min(mn,phi[i]); lift=std::max(lift,mn); }
+  double dx=Xq[N][0]-q0[0], dxref=Rq[N][0]-q0[0];
+  std::printf("  최종: J=%.1f base_z=%.3f 전진=%.3fm(목표%.3f) 발lift=%.3f |gap|max=%.4f(초기%.2f)  %s\n",
+              J,Xq[N][2],dx,dxref,lift,gmax,g0,
               gmax<0.05?"✅ FDDP 수렴(gap 폐쇄=feasible)":gmax<g0*0.9?"△ 부분폐쇄":"✗ 미폐쇄");
   return 0;
 }

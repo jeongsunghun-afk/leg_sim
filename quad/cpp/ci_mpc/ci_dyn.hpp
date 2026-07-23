@@ -191,6 +191,28 @@ struct CiDyn {
       c+=CF*S*w2; if(AIR_W>0&&phi[i]>0) c+=AIR_W*phi[i]*phi[i]; }
     return c;
   }
+  // ★foot-slip cost 값+gradient(2nv)+Gauss-Newton hessian(2nv²). ∂c/∂q=sigmoid높이항(exact)·∂c/∂v=∂vt/∂v(exact).
+  //   ∂vt/∂q 커플링은 LWA convention 미묘라 제외(Python과 동일=부분그래디언트가 틀린 것보다 나음).
+  void foot_slip_cost(const VectorXd&q,const VectorXd&v,double&c,VectorXd&g,MatrixXd&H){
+    c=0; g=VectorXd::Zero(2*nv); H=MatrixXd::Zero(2*nv,2*nv);
+    if(CF<=0 && AIR_W<=0) return;
+    std::vector<double> phi; std::vector<MatrixXd> J; std::vector<Vector3d> vf; foot_kin(q,v,phi,J,vf);
+    for(int i=0;i<4;i++){
+      VectorXd Jz=J[i].row(2).transpose();                  // ∂φ/∂q (nv)
+      double vx=vf[i][0], vy=vf[i][1], w2=vx*vx+vy*vy;
+      double S=1.0/(1.0+std::exp(-C1S*phi[i])), Sp=S*(1.0-S);
+      c += CF*S*w2;
+      g.head(nv) += CF*Sp*C1S*w2 * Jz;                       // ∂c/∂q (높이 sigmoid, exact)
+      g.tail(nv) += CF*S*2.0*(vx*J[i].row(0).transpose() + vy*J[i].row(1).transpose());  // ∂c/∂v
+      MatrixXd Jt=J[i].topRows(2);                           // 2×nv (접선)
+      H.bottomRightCorner(nv,nv) += CF*2.0*S*(Jt.transpose()*Jt);   // GN hessian(속도)
+      if(AIR_W>0 && phi[i]>0){                               // air-time φ²
+        c += AIR_W*phi[i]*phi[i];
+        g.head(nv) += AIR_W*2.0*phi[i]*Jz;
+        H.topLeftCorner(nv,nv) += AIR_W*2.0*(Jz*Jz.transpose());
+      }
+    }
+  }
 
   // 상태 매니폴드: sdiff(a→b tangent), sint(a⊕t)
   VectorXd sdiff(const VectorXd&qa,const VectorXd&va,const VectorXd&qb,const VectorXd&vb){

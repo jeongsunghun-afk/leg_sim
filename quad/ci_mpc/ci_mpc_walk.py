@@ -22,6 +22,12 @@ def main():
     DT=float(os.environ.get("DT","0.02")); N=int(os.environ.get("N","15"))
     NSUB=int(os.environ.get("NSUB","5")); ITERS=int(os.environ.get("SOLVE_ITERS","5"))
     SIM_NSUB=int(os.environ.get("SIM_NSUB","20"))   # ★적용(sim) 스텝은 finer substep=접촉 적분 안정(0.001급)
+    # ★★HOUND §6.3 아키텍처: sim=step_kkt(안정 hard 접촉)·저수준=PD+FF fine rate로 MPC 계획 추종.
+    #   planner=soft(빠름)·sim=hard·PD+FF가 다리(제어 유지간격 짧아야 안정=CTRL_DT≤0.001).
+    HARD=int(os.environ.get("HARD","1"))            # 1=step_kkt hard sim, 0=soft sim(구)
+    CTRL_DT=float(os.environ.get("CTRL_DT","0.001"))# 저수준 제어 갱신간격(≤0.001=안정)
+    KKT_NSUB=int(os.environ.get("KKT_NSUB","2"))    # step_kkt substep(CTRL_DT/KKT_NSUB=sim h≈0.0005)
+    KP_T=float(os.environ.get("KP_T","150")); KD_T=float(os.environ.get("KD_T","12"))  # 추종 PD 게인
     MPC_STEPS=int(os.environ.get("MPC_STEPS","120")); VX=float(os.environ.get("VX","0.3"))
     CF=float(os.environ.get("CF","2000")); AIR_W=float(os.environ.get("AIR_W","100")); C1S=-30.0
     W_BASE=float(os.environ.get("W_BASE","40")); VXVEL=float(os.environ.get("VXVEL","80"))
@@ -128,7 +134,16 @@ def main():
         for k in range(N+1):
             qk=qstar.copy(); qk[0]=bx+VX*k*DT; vk=vstar.copy(); vk[0]=VX; Xref.append((qk,vk))
         X,U=solve(x,Xref,U,X)
-        x=ci.step(x[0],x[1],U[0],DT,SIM_NSUB)                       # 첫 제어 적용=sim 한 스텝(finer 적분)
+        if HARD:                                                    # ★hard sim + PD+FF fine-rate 계획 추종
+            ci.margin=0.004
+            q_tgt,v_tgt=X[1]; u_ff=U[0]; q_c,v_c=x[0].copy(),x[1].copy()
+            for _ in range(int(round(DT/CTRL_DT))):                 # 저수준 제어 갱신(fine rate)
+                tau=u_ff+KP_T*(q_tgt[7:]-q_c[7:])+KD_T*(v_tgt[6:]-v_c[6:])   # FF+PD 계획 추종
+                q_c,v_c,_=ci.step_kkt(q_c,v_c,tau,CTRL_DT,nsub=KKT_NSUB)
+                if not np.all(np.isfinite(q_c)): break
+            x=(q_c,v_c)
+        else:
+            x=ci.step(x[0],x[1],U[0],DT,SIM_NSUB)                   # (구) soft sim
         hist_z.append(x[0][2]); hist_x.append(x[0][0]-x0_base)
         U=U[1:]+[U[-1].copy()]; X=X[1:]+[X[-1]]                     # warm-start shift
         if (s+1)%15==0 or not np.isfinite(x[0][2]):

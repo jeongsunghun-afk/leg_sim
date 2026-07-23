@@ -78,9 +78,19 @@ int main(){
   MatrixXd dl_du=-Ari*(Jcc*(dt*au));
   MatrixXd ddq_dq=aq+(dWl+W*dl_dq)/dt, ddq_dv=av+(W*dl_dv)/dt, ddq_dtau=au+(W*dl_du)/dt;
 
+  // ── tangent 선형화 A,B (lin_AB_relaxed): dIntegrate 연쇄 ──
+  VectorXd v_next=v+dt*ddq, w=dt*v_next;
+  MatrixXd dvn_dq=dt*ddq_dq, dvn_dv=MatrixXd::Identity(nv,nv)+dt*ddq_dv, dvn_du=dt*ddq_dtau;
+  MatrixXd dInt0(nv,nv),dInt1(nv,nv);
+  dIntegrate(model,q,w,dInt0,ARG0); dIntegrate(model,q,w,dInt1,ARG1);
+  MatrixXd dqn_dq=dInt0+dInt1*(dt*dvn_dq), dqn_dv=dInt1*(dt*dvn_dv), dqn_du=dInt1*(dt*dvn_du);
+  MatrixXd A(2*nv,2*nv); A<<dqn_dq,dqn_dv,dvn_dq,dvn_dv;
+  MatrixXd B(2*nv,nu);   B<<dqn_du,dvn_du;
+
   std::printf("[C++ ci_relaxed] nq=%d nv=%d nu=%d mass=%.4f\n",nq,nv,nu,computeTotalMass(model));
   std::printf("  ddq[:3]= %.4f %.4f %.4f\n",ddq[0],ddq[1],ddq[2]);
   std::printf("  ddq_dq_fro=%.4f ddq_dv_fro=%.4f ddq_dtau_fro=%.4f\n",ddq_dq.norm(),ddq_dv.norm(),ddq_dtau.norm());
-  std::printf("  (Python 기준: ddq[:3]=0.3397 -0.1537 -9.1195 · ddq_dq_fro=926.8784 · ddq_dtau_fro=161.1185)\n");
+  std::printf("  ★tangent A_fro=%.6f B_fro=%.6f  (Python: A 18.867775 · B 0.322238)\n",A.norm(),B.norm());
+  std::printf("  (Python ddq 기준: 0.3397 -0.1537 -9.1195 · ddq_dq_fro=926.8784 · ddq_dtau_fro=161.1185)\n");
   return 0;
 }

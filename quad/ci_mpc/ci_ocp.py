@@ -48,10 +48,11 @@ def err_x(ci, q, v, qref, vref):
 def main():
     br = MjPinBridge(); m = br.model
     m.armature[6:6+16] = np.tile([1e-4*7**2,1e-4*7**2,1e-4*10.5**2,1e-4*8.4**2], 4)
-    # OCP 프로토타입: 부드러운 접촉(rho↑·kn↓) = 이산 동역학 덜 stiff → iLQR 안정. crisp는 후속(작은 dt/implicit)
-    ci = ContactImplicit(br, rho=float(os.environ.get("RHO","0.010")), kn=float(os.environ.get("KN","2500")),
-                         bn=float(os.environ.get("BN","80")), bt=float(os.environ.get("BT","50")))
-    nv=m.nv; nu=br.nu; dt=float(os.environ.get("DT","0.004")); N=int(os.environ.get("N","25"))
+    # ★crisp 접촉(kn높음·rho작음) + 작은 dt(0.001) = 잘 수렴(J 97%↓·α=1.0). soft+큰dt보다 우수(발산 아님).
+    #   crisp=C-1 본질(gap 크로싱엔 crisp push-off 필수, soft는 다이빙). dt작음=stiff 접촉 안정.
+    ci = ContactImplicit(br, rho=float(os.environ.get("RHO","0.004")), kn=float(os.environ.get("KN","12000")),
+                         bn=float(os.environ.get("BN","120")), bt=float(os.environ.get("BT","80")))
+    nv=m.nv; nu=br.nu; dt=float(os.environ.get("DT","0.001")); N=int(os.environ.get("N","25"))
     qstar=_stance_q(br); vstar=np.zeros(nv)
     # settle 초기상태(발 접촉)
     q,v=qstar.copy(),np.zeros(nv)

@@ -129,7 +129,8 @@
 8. **★★C++ 포팅 안정화 — `dIntegrate` setZero 함정**: 그래디언트 코어(dyn_relaxed·lin_AB)를 C++로 포팅하니 서기 OCP가 `Vxx=1e50` 폭발 + crash. 격리 디버깅으로 근본원인 규명:
    - `dyn_relaxed`(ddq_dq=1058.68)는 Python과 완전 일치인데 `lin_AB`의 tangent A만 불일치(28→204) → tangent 단계로 격리. 수동 블록 dqn_dq=4.89 vs 재유도 69.59(같은 공식·같은 w·같은 model) → 차이는 `dIntegrate` 출력행렬뿐.
    - **★근본원인: pinocchio `dIntegrate`는 블록대각만 쓰고 off-diagonal은 안 지운다** → 출력행렬 `setZero()` 선행 필수. 미초기화 재사용 메모리의 쓰레기값이 A를 7배 부풀려 Vxx 25스텝 누적 폭발. `ci_relaxed.cpp`가 "검증됨"이던 건 **fresh malloc이 우연히 0**이라 통과한 것(운).
-   - **수정 후**: Vxx=7171(Python 7678 일치)·crash 소멸·J 18→16.8 단조 수렴. **결정적 검증**: Python OCP를 relaxed 그래디언트로 돌리면 J 18→16.8, 각 iter α·J가 C++와 완전 동일 → **C++가 Python relaxed-gradient OCP를 iteration 단위 정확 재현**. (16.8 vs soft-데모 11.1 = relaxed 그래디언트[논문핵심, soft forward와 불일치] vs soft-force 그래디언트 방법차이, 버그 아님.)
+   - **수정 후**: Vxx=7171(Python 7678 일치)·crash 소멸·J 18→16.8 단조 수렴. **검증1(Python 일치)**: Python OCP를 relaxed 그래디언트로 돌리면 J 18→16.8, 각 iter α·J가 C++와 완전 동일 → **C++가 Python relaxed-gradient OCP를 iteration 단위 정확 재현**. (16.8 vs soft-데모 11.1 = relaxed 그래디언트[논문핵심, soft forward와 불일치] vs soft-force 그래디언트 방법차이, 버그 아님.)
+   - **검증2(일관성=correctness)**: forward도 relaxed(`step_relaxed`)로 바꿔 backward와 동일 동역학으로 만들면(`FWD_REL=1`) **전 iter α=1.0 clean Newton 하강**(J 66→44). soft forward(불일치)는 α 0.1/0.05로 정체. → **relaxed 그래디언트가 relaxed 동역학의 정확한 도함수임을 확인**(단순 하강이 아니라 일관 Newton). 물리 결과(종단오차·base_z)는 두 forward 유사 = 25ms·|v0|1.03서 서기 한계.
 
 ---
 
@@ -141,7 +142,11 @@
 4. **soft spring의 한계**: gentle 모션 OK, 동적 touchdown서 penetration-launch. walking엔 hard 필수.
 5. **걸음은 처방이 아니라 창발**: 발궤적/발판 처방 금지. foot-slip cost + 몸통 참조 → 접촉 online 발견.
 6. **성능 = fine dt**: constraintDynamics forward는 정확하나 fine dt 필요 → Python 긴 horizon 느림. 실시간은 C++.
-7. **★C++ 포팅 함정 = `dIntegrate` setZero**: pinocchio `dIntegrate`는 출력 Jacobian의 블록대각만 쓰고 off-diagonal은 안 지운다. 출력행렬을 `MatrixXd::Zero`로 초기화하지 않으면 재사용 메모리의 쓰레기값이 tangent A를 부풀려 backward가 폭발. **pinocchio 포팅 시 dIntegrate/dDifference 출력은 항상 setZero 선행.** 회귀 가드 = `ci_relaxed.cpp`가 수동 계산 vs 라이브러리(CiDyn) A를 대조(‖diff‖<1e-9).
+7. **★C++ 포팅 함정 = `dIntegrate` setZero** (메커니즘):
+   - **왜 블록대각만 쓰나**: 상태가 매니폴드(free-flyer SE3 + 관절 R)라 적분 `q⊕v`가 관절별 독립 → Jacobian이 구조적 블록대각(base 6×6·관절 1×1). off-diagonal(관절 간 커플링)은 수학적으로 0. pinocchio는 성능상 **0이 아닌 대각 블록만 쓰고 off-diagonal은 안 건드림**(호출자가 0으로 넣었다 가정 = 규약).
+   - **왜 터졌나**: `MatrixXd J(nv,nv)`는 미초기화(힙 쓰레기값). dIntegrate가 대각만 덮어써 off-diagonal에 쓰레기 잔존 → `dqn_dq=dInt0+…`가 그 쓰레기 상속 → tangent A_fro 28→204(물리적으로 말 안 되는 DOF 커플링) → backward Riccati가 A를 25스텝 반복 곱 → **Vxx 기하 누적 폭발(1e50)** → 게인 NaN → crash.
+   - **왜 단독은 통과했나**: 갓 할당 행렬이 OS zero-page라 우연히 0(운). OCP 루프는 힙 재사용이라 쓰레기 노출.
+   - **교훈**: **pinocchio `dIntegrate`/`dDifference` 출력행렬은 항상 `MatrixXd::Zero` 선행.** 회귀 가드 = `ci_relaxed.cpp`가 수동 vs 라이브러리(CiDyn) A 대조(‖diff‖<1e-9).
 8. **동일 이름 다른 함수 주의**: Python OCP 데모의 `lin_AB`(generic)=soft-force 도함수(forward와 일치), C++ `ci.lin_AB`=relaxed 해석 그래디언트(논문 핵심). 둘 다 유효하나 수렴 깊이가 다름(11.1 vs 16.8). 포팅·비교 시 어느 그래디언트인지 명확히.
 
 ---

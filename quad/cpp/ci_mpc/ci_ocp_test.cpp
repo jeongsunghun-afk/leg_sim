@@ -4,13 +4,17 @@
 //   ★★버그수정(핵심): pinocchio dIntegrate는 블록대각만 쓰고 off-diagonal은 안 지움 → 출력행렬
 //     setZero 선행 필수. 미초기화 재사용 메모리의 쓰레기값이 A를 7배 부풀려 Vxx=1e50 폭발/crash.
 //     ci_dyn.hpp lin_AB에 setZero 추가 후 Vxx 7171(Python 일치)·crash 소멸·정상 수렴.
-//   ★검증: C++가 Python ci_ocp.py(relaxed 그래디언트)를 iteration 단위 정확 재현(J 18→16.8, 동일 α).
+//   ★검증1(Python 일치): C++가 Python ci_ocp.py(relaxed 그래디언트)를 iteration 단위 정확 재현(J 18→16.8, 동일 α).
 //     16.8은 relaxed 그래디언트(논문 핵심, soft forward와 불일치)의 값=Python도 relaxed면 동일.
 //     더 깊은 수렴(11.1)은 soft-force 그래디언트(dynamics_derivatives) 필요=후속.
+//   ★검증2(일관성=correctness): FWD_REL=1(relaxed forward=backward와 동일 동역학) → 전 iter α=1.0
+//     clean Newton 하강(J 66→44). soft forward(불일치)는 α 0.1/0.05 정체. = relaxed 그래디언트가
+//     relaxed 동역학의 정확한 도함수임을 확인. env FWD_REL(0=soft·1=relaxed).
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <vector>
 #include <cmath>
+#include <cstdlib>
 using namespace cimpc;
 using Eigen::VectorXd; using Eigen::MatrixXd;
 
@@ -23,6 +27,10 @@ int main(){
   const int N=25, NSUB=1, ITERS=8;
   std::printf("[C++ ci iLQR 서기] 모델 nq=%d nv=%d nu=%d · dt=%.4f N=%d\n", ci.nq, nv, nu, DT, N);
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
+  const char* fr=std::getenv("FWD_REL"); bool FWD_REL=(fr&&fr[0]=='1');   // 1=relaxed forward(backward와 일관)
+  std::printf("  [cfg] forward=%s (relaxed=backward 일관)\n", FWD_REL?"relaxed":"soft");
+  auto fwd=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
+    if(FWD_REL) ci.step_relaxed(q,v,u,DT,qn,vn); else ci.step_soft(q,v,u,DT,NSUB,qn,vn); };
 
   // settle(발 접촉) — substep DT*0.1 (Python과 동일)
   VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);
@@ -38,11 +46,11 @@ int main(){
   std::vector<VectorXd> U(N);
   { VectorXd qq=q0, vv=v0;
     for(int k=0;k<N;k++){ VectorXd u=tau_hold+WKP*(qstar.tail(nu)-qq.tail(nu))-WKD*vv.tail(nu); U[k]=u;
-      VectorXd qn,vn; ci.step_soft(qq,vv,u,DT,NSUB,qn,vn); qq=qn; vv=vn; } }
+      VectorXd qn,vn; fwd(qq,vv,u,qn,vn); qq=qn; vv=vn; } }
 
   auto rollout=[&](std::vector<VectorXd>&U,std::vector<VectorXd>&qs,std::vector<VectorXd>&vs){
     qs.assign(N+1,VectorXd()); vs.assign(N+1,VectorXd()); qs[0]=q0; vs[0]=v0;
-    for(int k=0;k<N;k++){ VectorXd qn,vn; ci.step_soft(qs[k],vs[k],U[k],DT,NSUB,qn,vn); qs[k+1]=qn; vs[k+1]=vn; } };
+    for(int k=0;k<N;k++){ VectorXd qn,vn; fwd(qs[k],vs[k],U[k],qn,vn); qs[k+1]=qn; vs[k+1]=vn; } };
   auto cost=[&](std::vector<VectorXd>&U,std::vector<VectorXd>&qs,std::vector<VectorXd>&vs){
     rollout(U,qs,vs); double c=0;
     for(int k=0;k<N;k++){ VectorXd e=ci.sdiff(qstar,vstar,qs[k],vs[k]); c+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k]); }
@@ -73,7 +81,7 @@ int main(){
       for(int k=0;k<N;k++){
         VectorXd dx=ci.sdiff(qs[k],vs[k],qn[k],vn[k]);
         VectorXd u=U[k]+alpha*ks[k]+Ks[k]*dx; Un[k]=u;
-        VectorXd qq,vv; ci.step_soft(qn[k],vn[k],u,DT,NSUB,qq,vv);
+        VectorXd qq,vv; fwd(qn[k],vn[k],u,qq,vv);
         if(!qq.allFinite()){ ok=false; break; }
         qn[k+1]=qq; vn[k+1]=vv;
       }

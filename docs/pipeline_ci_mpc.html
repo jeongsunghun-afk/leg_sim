@@ -140,7 +140,7 @@
 <thead><tr><th>조각</th><th>구현</th><th>역할</th></tr></thead>
 <tbody>
 <tr><td><b>① forward</b></td><td class="mono">step_kkt / MuJoCo</td><td>로버스트 hard 접촉(penetration-launch 없음). dt~2ms서 안정(A 컨트롤러 검증)</td></tr>
-<tr class="rec"><td><b>② λ 해석 그래디언트</b></td><td class="mono">dyn_derivs_relaxed / dyn_derivs_kkt</td><td>★논문 핵심. ∂λ/∂(q,v,u) 해석적(FD EXACT). relaxed(v·λ=ρ)=make/break 경계 smooth</td></tr>
+<tr class="rec"><td><b>② λ 해석 그래디언트</b></td><td class="mono">dyn_derivs_relaxed / dyn_derivs_kkt</td><td>★논문 핵심. ∂λ/∂(q,v,u) 해석적(FD EXACT). 완화=논문판 <span class="mono">ρD</span>(vⁿ∘λⁿ=ρ·법선전용, <span class="mono">RELAX_MODE=D</span>) 또는 기본 <span class="mono">εI</span>(Tikhonov, vⁿ∘λⁿ=−ελ²). firm contact선 동일, make/break서 ρD가 부드럽고 물리적</td></tr>
 <tr><td><b>③ 저수준 추종</b></td><td class="mono">PD+FF (CTRL_DT≤1ms)</td><td>MPC 계획을 fine rate로 추종. 제어 유지간격 짧아야 hard 접촉 안정</td></tr>
 </tbody>
 </table>

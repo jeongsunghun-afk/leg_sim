@@ -128,6 +128,31 @@
   </div>
 </section>
 
+<section id="walk">
+  <h2><span class="num">★</span> CI-MPC walking — hard 접촉 + λ 해석 그래디언트 <span class="pill">2026-07-23 논문핵심</span></h2>
+  <p class="muted" style="font-size:13px">파일 <code>ci_mpc_walk.py</code>. 아키텍처(HOUND식): planner soft forward + <b>exact λ 그래디언트</b> backward · sim=hard 접촉(<code>step_kkt</code>) · 저수준 PD+FF fine rate MPC계획 추종. walking 2.7~3.6s 안정 실증(runaway는 exact λ그래디언트가 소멸).</p>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>파라미터</th><th>기본</th><th>의미</th></tr></thead>
+      <tbody>
+      <tr><td><code>HARD</code></td><td>1</td><td>sim=step_kkt(안정 hard 접촉)+PD+FF fine추종. 0=soft sim(구, penetration-launch 발산)</td></tr>
+      <tr><td><code>HARD_PLAN</code></td><td>0→<b>1</b></td><td>backward=<b>exact λ그래디언트</b>(lin_AB_kkt). ★논문 핵심, runaway 소멸(soft 그래디언트 2.7s→3.6s+)</td></tr>
+      <tr><td><code>HARD_FWD</code></td><td>0</td><td>optimizer forward=step_kkt(hard). fine dt 필요→느림(C++ 프론티어). 0=soft(빠름·안정)</td></tr>
+      <tr><td><code>CTRL_DT</code></td><td>0.001</td><td>저수준 제어 갱신간격 [s]. <b>≤0.001 필수</b>(0.02 held=발산). hard 접촉 안정 핵심</td></tr>
+      <tr><td><code>KKT_NSUB</code></td><td>2</td><td>step_kkt substep(CTRL_DT/KKT_NSUB=접촉적분 h≈0.0005)</td></tr>
+      <tr><td><code>KP_T / KD_T</code></td><td>150 / 12</td><td>저수준 PD+FF 추종 게인(MPC 계획 q/v 추종)</td></tr>
+      <tr><td><code>CF</code></td><td>2500</td><td>foot-slip/clearance cost c_f(eq22, 발 낮으면 접선속도 벌점→걸음 창발). HOUND=1</td></tr>
+      <tr><td><code>C1S</code></td><td>-30</td><td>foot-slip sigmoid 기울기 c1(HOUND=-30). 발높이→접촉 활성 전이 급격도</td></tr>
+      <tr><td><code>AIR_W</code></td><td>100</td><td>air-time φ² 벌점(eq23 실용판, 발 오래 들지마→착지 지지)</td></tr>
+      <tr><td><code>W_BASE</code></td><td>50</td><td>base z·자세 균형 가중. ↑=직립 유지(과하면 웅크림·전진↓)</td></tr>
+      <tr><td><code>VXVEL / W_BVEL</code></td><td>120 / 50</td><td>base 전진속도 추종 / base 속도(vz·각) 감쇠(crash 억제)</td></tr>
+      <tr><td><code>KN_G / RHO_G</code></td><td>800 / 0.02</td><td>backward 완화 파라미터(soft 그래디언트 경로). HARD_PLAN=0시 사용</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:12.5px;color:var(--ink2)">★<b>핵심 교훈</b>: hard 발산은 접촉 아닌 <b>제어 유지간격</b>(0.02s held=발산·0.001s=안정)=HOUND §6.3(PD+FF fine rate 추종)이 필수인 이유. <b>λ 그래디언트</b>(dyn_derivs_kkt=constraintDynamics 도함수)=FD EXACT(soft 1.5~13% 대비)=논문 핵심. 완전 sustained=hard forward(C++).</p>
+</section>
+
 <section id="ilqr">
   <h2><span class="num">01</span> iLQR 코어 <span class="muted" style="font-size:13px;font-weight:400">MjxDynamics + Riccati</span></h2>
   <p class="note">상태 <code>x=[qpos24, qvel23]=47</code>, 제어 <code>u=17</code>. <code>f(x,u)=mjx.step</code>.

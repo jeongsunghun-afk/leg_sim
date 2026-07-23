@@ -38,6 +38,18 @@ def main():
     W_BASE=float(os.environ.get("W_BASE","40")); VXVEL=float(os.environ.get("VXVEL","80"))
     REG=float(os.environ.get("REG","1e-1")); GAP_W=float(os.environ.get("GAP_W","100"))
     qstar=_stance_q(br); vstar=np.zeros(nv)
+    # ★자세 전환(desired pose): POSE_Z 설정 시 목표 자세(crouch/sit)로 전환. VX=0. 시작=서기.
+    POSE_Z=float(os.environ.get("POSE_Z","0")); POSE_PITCH=float(os.environ.get("POSE_PITCH","0"))
+    if POSE_Z>0:
+        tgt=None
+        if POSE_PITCH>0:   # sit(nose-up)=앞발 전방 확장(앞다리 폄 느낌)
+            fr=float(os.environ.get("FRONT_REACH","0.08"))
+            tgt={'FL':[0.30+fr,0.16],'FR':[0.30+fr,-0.16],'HL':[-0.30,0.16],'HR':[-0.30,-0.16]}
+        qref=_stance_q(br, POSE_Z, POSE_PITCH, tgt); VX=0.0
+        CF=0.0; AIR_W=0.0   # ★자세=발 planted 추종, 걸음생성(foot-slip) 불필요 → 자동 끔
+        print("[POSE] 목표 자세: base_z=%.3f pitch=%.2frad (서기 0.42→전환, foot-slip off)"%(POSE_Z,POSE_PITCH))
+    else:
+        qref=qstar
     # settle → 초기상태·지지토크
     q,v=qstar.copy(),np.zeros(nv); tau_hold=np.zeros(nu)
     for _ in range(200): tau_hold=150.0*(qstar[7:]-q[7:])-8.0*v[6:]; q,v,_=ci.step(q,v,tau_hold,DT*0.05)
@@ -145,7 +157,7 @@ def main():
         bx=x[0][0]                                                   # 현재 base_x서 전진 참조
         Xref=[]
         for k in range(N+1):
-            qk=qstar.copy(); qk[0]=bx+VX*k*DT; vk=vstar.copy(); vk[0]=VX; Xref.append((qk,vk))
+            qk=qref.copy(); qk[0]=bx+VX*k*DT; vk=vstar.copy(); vk[0]=VX; Xref.append((qk,vk))   # qref=서기 또는 목표자세
         X,U=solve(x,Xref,U,X)
         if HARD:                                                    # ★hard sim + PD+FF fine-rate 계획 추종
             ci.margin=0.004

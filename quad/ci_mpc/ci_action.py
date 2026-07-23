@@ -276,10 +276,13 @@ class ContactImplicit:
         return q, v, None
 
 
-def _stance_q(br):
+def _stance_q(br, base_z=0.42, pitch=0.0, tgt=None):
+    """서기/자세 IK: base_z(높이)·pitch(nose-up)·발 목표 xy를 주면 발 z=0 접지 IK로 관절 계산.
+    crouch=base_z↓ · sit=base_z↓+pitch+앞발전방 · lie=base_z↓↓. 자세 전환의 desired pose 생성용."""
     m, d = br.model, br.data
-    q = pin.neutral(m); q[2] = 0.42
-    tgt = {'FL':[0.30,0.16],'FR':[0.30,-0.16],'HL':[-0.30,0.16],'HR':[-0.30,-0.16]}
+    q = pin.neutral(m); q[2] = base_z
+    q[3]=0.0; q[4]=np.sin(pitch/2); q[5]=0.0; q[6]=np.cos(pitch/2)   # base pitch (xyzw, y축 회전=nose-up)
+    if tgt is None: tgt = {'FL':[0.30,0.16],'FR':[0.30,-0.16],'HL':[-0.30,0.16],'HR':[-0.30,-0.16]}
     for _ in range(300):
         pin.forwardKinematics(m,d,q); pin.updateFramePlacements(m,d); pin.computeJointJacobians(m,d,q)
         err=np.zeros(12); J=np.zeros((12,m.nv))

@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+C1.3 — receding-horizon MPC (HOUND 40Hz 형태). 걸음은 단일 OCP가 아니라 **폐루프서 창발**.
+짧은 horizon FDDP를 매 제어스텝 재풀이 → 첫 제어 적용 → sim 한 스텝 → 재계획(warm-start).
+base는 현재 위치서 전진 속도 참조 + foot-slip cost(발 낮으면 no-slip) → 전진하려면 발 들수밖에→걸음.
+
+solver=multiple-shooting FDDP(gap 주입·feasibility-driven·merit), 접촉=forward stiff+backward 완화,
+cost=regulating(몸통SE3 속도) + foot-slip/clearance(eq22) + air-time(φ²). 발궤적 처방 없음.
+실행: /home/jsh/miniforge3/envs/proxddp/bin/python ci_mpc_walk.py
+env: VX MPC_STEPS N DT NSUB SOLVE_ITERS CF AIR_W W_BASE VXVEL
+"""
+import os, numpy as np, pinocchio as pin
+from model_bridge import MjPinBridge
+from ci_action import ContactImplicit, _stance_q, FEET, FOOT_R
+from ci_ocp import lin_AB
+
+def main():
+    br=MjPinBridge(); m=br.model; dd=br.data; nv=m.nv; nu=br.nu
+    m.armature[6:6+16]=np.tile([1e-4*7**2,1e-4*7**2,1e-4*10.5**2,1e-4*8.4**2],4)
+    ci=ContactImplicit(br, rho=0.004, kn=12000, bn=120, bt=80)   # forward stiff / backward=완화(env KN_G 등)
+    DT=float(os.environ.get("DT","0.02")); N=int(os.environ.get("N","15"))
+    NSUB=int(os.environ.get("NSUB","5")); ITERS=int(os.environ.get("SOLVE_ITERS","5"))
+    SIM_NSUB=int(os.environ.get("SIM_NSUB","20"))   # ★적용(sim) 스텝은 finer substep=접촉 적분 안정(0.001급)
+    MPC_STEPS=int(os.environ.get("MPC_STEPS","120")); VX=float(os.environ.get("VX","0.3"))
+    CF=float(os.environ.get("CF","2000")); AIR_W=float(os.environ.get("AIR_W","100")); C1S=-30.0
+    W_BASE=float(os.environ.get("W_BASE","40")); VXVEL=float(os.environ.get("VXVEL","80"))
+    REG=float(os.environ.get("REG","1e-1")); GAP_W=float(os.environ.get("GAP_W","100"))
+    qstar=_stance_q(br); vstar=np.zeros(nv)
+    # settle → 초기상태·지지토크
+    q,v=qstar.copy(),np.zeros(nv); tau_hold=np.zeros(nu)
+    for _ in range(200): tau_hold=150.0*(qstar[7:]-q[7:])-8.0*v[6:]; q,v,_=ci.step(q,v,tau_hold,DT*0.05)
+    q0,v0=q.copy(),v.copy()
+
+    def sdiff(a,b): return np.concatenate([pin.difference(m,a[0],b[0]), b[1]-a[1]])
+    def sint(a,t): return (pin.integrate(m,a[0],t[:nv]), a[1]+t[nv:])
+
+    # 비용 가중: 관절/base. base는 z·자세 강하게(균형)·x는 속도추종
+    Qx=np.diag(np.concatenate([np.full(nv,20.0), np.full(nv,1.0)]))
+    Qx[0]*=0.1; Qx[nv]*=VXVEL; Qx[2]*=W_BASE; Qx[3]*=W_BASE; Qx[4]*=W_BASE
+    Qf=Qx*10.0; Ru=np.eye(nu)*1e-3
+
+    def foot_cost(q,v):
+        """foot-slip/clearance(eq22)+air-time(φ²). 시간무관(걸음은 동역학서 창발). 반환 c,g[2nv],H."""
+        pin.computeForwardKinematicsDerivatives(m,dd,q,v,np.zeros(nv)); pin.updateFramePlacements(m,dd)
+        c=0.0; g=np.zeros(2*nv); H=np.zeros((2*nv,2*nv))
+        for L in FEET:
+            fid=br.foot_fid[L]; oMf=dd.oMf[fid]
+            phi=(oMf.translation+oMf.rotation@np.array([0.,0.,-FOOT_R]))[2]
+            _,dvv=pin.getFrameVelocityDerivatives(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)
+            Jlin=np.array(dvv[:3]); vf=Jlin@v; vt=vf[:2]; w2=vt@vt; Jz=Jlin[2]
+            S=1.0/(1.0+np.exp(-C1S*phi)); Sp=S*(1.0-S)
+            c+=CF*S*w2; g[:nv]+=CF*Sp*C1S*Jz*w2                       # ∂c/∂q(sigmoid 높이항 exact)
+            g[nv:]+=CF*S*2.0*(vt[0]*Jlin[0]+vt[1]*Jlin[1]); Jt=Jlin[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)
+            if AIR_W>0 and phi>0: c+=AIR_W*phi*phi; g[:nv]+=AIR_W*2*phi*Jz; H[:nv,:nv]+=AIR_W*2*np.outer(Jz,Jz)
+        return c,g,H
+
+    def solve(x0, Xref, U, X):
+        """짧은 horizon FDDP 몇 iter(warm-start). return X,U."""
+        X=[x0]+list(X[1:])                                           # 현재 실제상태로 앵커
+        def evalt(X,U):
+            gaps=[None]*(N+1); J=0.0; gs=0.0
+            for k in range(N):
+                qs,vs,_=ci.step(X[k][0],X[k][1],U[k],DT,NSUB)
+                gaps[k+1]=sdiff(X[k+1],(qs,vs)); gs+=np.linalg.norm(gaps[k+1])
+                e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_cost(X[k][0],X[k][1])[0]
+            e=sdiff(Xref[N],X[N]); J+=0.5*e@Qf@e
+            return gaps,J,J+GAP_W*gs
+        gaps,J,M=evalt(X,U)
+        for _ in range(ITERS):
+            As=[];Bs=[]
+            for k in range(N): A,B=lin_AB(ci,X[k][0],X[k][1],U[k],DT,NSUB); As.append(A);Bs.append(B)
+            e=sdiff(Xref[N],X[N]); Vx=Qf@e; Vxx=Qf.copy(); Ks=[None]*N; ks=[None]*N
+            for k in range(N-1,-1,-1):
+                Vxp=Vx+Vxx@gaps[k+1]; e=sdiff(Xref[k],X[k]); lx=Qx@e; lu=Ru@U[k]
+                _,fg,fH=foot_cost(X[k][0],X[k][1]); lx=lx+fg; Qxx_k=Qx+fH
+                A,B=As[k],Bs[k]; Qx_=lx+A.T@Vxp; Qu_=lu+B.T@Vxp
+                Qxx=Qxx_k+A.T@Vxx@A; Quu=Ru+B.T@Vxx@B; Qux=B.T@Vxx@A
+                try: Qinv=np.linalg.inv(Quu+REG*np.eye(nu))       # 발산 시 특이행렬 → pinv 폴백
+                except np.linalg.LinAlgError: Qinv=np.linalg.pinv(Quu+REG*np.eye(nu))
+                K=-Qinv@Qux; kk=-Qinv@Qu_; Ks[k]=K; ks[k]=kk
+                Vx=Qx_+K.T@Quu@kk+K.T@Qu_+Qux.T@kk; Vxx=Qxx+K.T@Quu@K+K.T@Qux+Qux.T@K; Vxx=0.5*(Vxx+Vxx.T)
+            best=None
+            for alpha in (1.0,0.5,0.25,0.1,0.05):
+                Xn=[X[0]]; Un=[]; ok=True
+                for k in range(N):
+                    dx=sdiff(X[k],Xn[k]); u=U[k]+alpha*ks[k]+Ks[k]@dx; Un.append(u)
+                    qs,vs,_=ci.step(Xn[k][0],Xn[k][1],u,DT,NSUB)
+                    if not np.all(np.isfinite(qs)): ok=False; break
+                    Xn.append(sint((qs,vs),-(1.0-alpha)*gaps[k+1]))
+                if not ok or not np.all(np.isfinite(Xn[-1][0])): continue
+                _,Jn,Mn=evalt(Xn,Un)
+                if np.isfinite(Mn) and (best is None or Mn<best[0]): best=(Mn,Xn,Un)
+            if best is None or best[0]>=M*0.999999: break
+            Mn,X,U=best; gaps,J,M=evalt(X,U)
+        return X,U
+
+    # ===== MPC 폐루프 =====
+    x=(q0.copy(),v0.copy()); U=[tau_hold.copy() for _ in range(N)]
+    X=[x]+[(qstar.copy(),vstar.copy()) for _ in range(N)]
+    print("[C1.3] receding-horizon MPC — 걸음 창발 (N=%d·DT=%.3f·%dHz재풀이·VX=%.2f)"%(N,DT,int(1/DT),VX))
+    x0_base=x[0][0]; hist_z=[]; hist_x=[]
+    for s in range(MPC_STEPS):
+        bx=x[0][0]                                                   # 현재 base_x서 전진 참조
+        Xref=[]
+        for k in range(N+1):
+            qk=qstar.copy(); qk[0]=bx+VX*k*DT; vk=vstar.copy(); vk[0]=VX; Xref.append((qk,vk))
+        X,U=solve(x,Xref,U,X)
+        x=ci.step(x[0],x[1],U[0],DT,SIM_NSUB)                       # 첫 제어 적용=sim 한 스텝(finer 적분)
+        hist_z.append(x[0][2]); hist_x.append(x[0][0]-x0_base)
+        U=U[1:]+[U[-1].copy()]; X=X[1:]+[X[-1]]                     # warm-start shift
+        if (s+1)%15==0 or not np.isfinite(x[0][2]):
+            print("  step %3d  t=%.2fs  전진=%.3fm  base_z=%.3f  vx=%.2f"%(s+1,(s+1)*DT,x[0][0]-x0_base,x[0][2],x[1][0]))
+        if not np.all(np.isfinite(x[0])): print("  ✗ 발산"); break
+    fwd=x[0][0]-x0_base; T=(s+1)*DT
+    zmin=min(hist_z) if hist_z else 0
+    print("  최종: %.2fs동안 전진 %.3fm (평균 %.2f m/s, 목표 %.2f) base_z 최저 %.3f  %s"%(
+        T,fwd,fwd/T,VX,zmin,
+        "✅ 걸음(전진+균형유지)" if fwd>0.15 and zmin>0.30 else
+        "△ 전진하나 균형약함" if fwd>0.15 else "✗ 전진 부족"))
+
+if __name__=="__main__":
+    main()

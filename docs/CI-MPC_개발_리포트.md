@@ -232,6 +232,7 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 - 그래디언트 코어(dyn_relaxed·lin_AB) 포팅 — **Python과 iteration 단위 정확 일치**
 - **논문판 ρD 포팅**(RELAX_MODE=D 기본) — make/break서 Python ρD와 6자리 일치(18.159240)
 - 서기 iLQR OCP 안정화 — `dIntegrate` setZero 버그 수정(Vxx 1e50→7171, crash 소멸)
+- **multiple-shooting FDDP 포팅**(`ci_fddp_test.cpp`) — gap 완전폐쇄(feasible)·α=1.0 clean 수렴·N=100(0.1s, single-shooting 4배)·종단오차 0.338. relaxed forward+backward 일관 필수(soft forward는 gap 미폐쇄).
 - 회귀 가드(ci_relaxed 대조, εI/ρD 양쪽)
 
 **⏳ 남음**
@@ -239,7 +240,9 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 |---|---|
 | 완전 sustained walking | runaway 지연됐으나 완전 제거 아님 |
 | optimizer의 hard forward(HARD_FWD) | fine dt 필요 → **C++ 프론티어**(velocity-impulse 대dt 솔버 또는 fine dt) |
-| **C++ solver 아키텍처** | step_kkt(hard)·multiple-shooting FDDP·40Hz 루프 미포팅. 현재 C++=그래디언트 코어+single-shooting 서기 검증만 |
+| **C++ multi-rate lin_AB** | 현 FDDP=dt0.001·nsub1(0.1s). 긴 horizon(dt0.01·N50=0.5s) 위해 substep Jacobian 합성(Python lin_AB nsub) 포팅 필요 |
+| **C++ 보행 FDDP** | VX 전진 reference + foot-slip cost(HOUND eq22) 포팅 → 걸음 창발. FDDP 머신러리는 완성 |
+| **C++ step_kkt(hard)·40Hz 루프** | sustained walking·실시간 = 남은 프론티어 |
 | 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시 |
 | 다양한 동작(rearing·선회) | 미실증. **구조는 지원** |
 

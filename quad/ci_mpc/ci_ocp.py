@@ -73,7 +73,15 @@ def main():
     # 비용 가중
     Qx=np.diag(np.concatenate([np.full(nv,20.0), np.full(nv,1.0)]))   # 상태추종
     Qf=Qx*20.0; Ru=np.eye(nu)*1e-3
-    U=[tau_hold.copy() for _ in range(N)]                             # 초기 제어=지지토크(중력보상 warm start)
+    # ★warm start: 상수 지지토크 open-loop은 긴 horizon서 발산 → PD 피드백 warm start(WARM=pd)로
+    #   nominal이 서기 근처에 머묾(non-diverging) → single-shooting도 긴 horizon 가능.
+    if os.environ.get("WARM","const")=="pd":
+        U=[]; q,v=q0.copy(),v0.copy()
+        for _ in range(N):
+            u=tau_hold+float(os.environ.get("WKP","150"))*(qstar[7:]-q[7:])-float(os.environ.get("WKD","10"))*v[6:]
+            U.append(u.copy()); q,v,_=ci.step(q,v,u,dt,nsub)      # PD 안정화 롤아웃=feasible nominal
+    else:
+        U=[tau_hold.copy() for _ in range(N)]                         # 상수 지지토크(중력보상)
     def cost(U):
         qs,vs=rollout(ci,q0,v0,U,dt,nsub); c=0.0
         for k in range(N):

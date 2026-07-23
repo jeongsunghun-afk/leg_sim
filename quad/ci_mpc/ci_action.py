@@ -133,6 +133,45 @@ class ContactImplicit:
             q = pin.integrate(self.m, q, h * v)
         return q, v, info
 
+    def _make_cm(self, fid):
+        """발 프레임 fid에 3D 접촉 제약모델(발바닥 offset·LWA)."""
+        fr = self.m.frames[fid]; pl = fr.placement * pin.SE3(np.eye(3), np.array([0.,0.,-FOOT_R]))
+        cm = pin.RigidConstraintModel(pin.ContactType.CONTACT_3D, self.m, fr.parentJoint, pl,
+                                      pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)
+        cm.setBaumgarteCorrectorParameters(pin.BaumgarteCorrectorParameters(
+            getattr(self,'bg_kp',10.0), getattr(self,'bg_kd',50.0)))   # 위치드리프트 보정
+        return cm
+
+    def step_kkt(self, q, v, tau_act, dt, nsub=1):
+        """★★안정 hard 접촉 forward: pin.constraintDynamics(proper KKT accel-level)+active-set(단방향).
+        발 phi<margin=활성후보 → KKT 풀고 접촉력 법선<0(당김)이면 분리, 재풀이. fine dt 필요(0.0005급).
+        velocity-projection(step_hard)이 explicit서 에너지주입 발산한 것 대체. 해석 도함수는 별도(C1.0)."""
+        m, d = self.m, self.d; h = dt / nsub
+        tau_full = np.concatenate([np.zeros(6), tau_act])
+        margin = getattr(self, 'margin', 0.003)
+        prox = pin.ProximalSettings(1e-10, 1e-8, 40)
+        for _ in range(nsub):
+            pin.forwardKinematics(m, d, q); pin.updateFramePlacements(m, d)
+            cand = []
+            for i, fid in enumerate(self.fids):
+                oMf = d.oMf[fid]; phi = (oMf.translation + oMf.rotation @ np.array([0.,0.,-FOOT_R]))[2] - self.ground
+                if phi < margin: cand.append(i)
+            active = list(cand); a = None
+            for _as in range(5):                                   # active-set 반복(단방향)
+                if not active:
+                    a = pin.aba(m, d, q, v, tau_full); break
+                cms = pin.StdVec_RigidConstraintModel(); cds = pin.StdVec_RigidConstraintData()
+                for i in active:
+                    cm = self._make_cm(self.fids[i]); cms.append(cm); cds.append(cm.createData())
+                pin.initConstraintDynamics(m, d, cms, cds)
+                a = pin.constraintDynamics(m, d, q, v, tau_full, cms, cds, prox)
+                if getattr(self, 'no_unilateral', False): break   # 디버그: 단방향 끄고 순수 bilateral
+                pulling = [active[j] for j in range(len(active)) if cds[j].contact_force.linear[2] < 0.0]
+                if not pulling: break                              # 모든 접촉력 밀어냄(법선≥0)=수렴
+                active = [i for i in active if i not in pulling]   # 당기는 발 분리
+            v = v + h * a; q = pin.integrate(m, q, h * v)
+        return q, v, None
+
     def step_hard(self, q, v, tau_act, dt, nsub=1):
         """★HOUND §5.2 hard 임펄스 forward: 속도공간 Signorini LCP+Coulomb, Hwangbo projected block
         Gauss-Seidel. penetration-launch 없음(soft spring 대비). 접촉=impulse로 속도 투영.

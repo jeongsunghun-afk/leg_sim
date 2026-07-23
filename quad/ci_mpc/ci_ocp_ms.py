@@ -48,7 +48,11 @@ def main():
         qk=qstar.copy(); qk[0]=qstar[0]+VX*k*dt          # base_x 전진
         vk=vstar.copy(); vk[0]=VX                          # base 전진속도
         Xref.append((qk,vk))
-    if VX>0: Qx[0]*=20.0; Qx[nv]*=10.0                     # base_x·vx 추종 강조
+    # ★HOUND식: base는 전진 위치가 아닌 **전진 속도**를 추종(위치는 자유 표류)+높이/자세 강하게 유지.
+    #   위치 강제=crouch-lunge 유발 → 속도 추종+균형이 깨끗한 보행.
+    if VX>0:
+        Qx[0]*=float(os.environ.get("VXPOS","0.1"))         # base_x 위치 가중 낮춤(표류 허용)
+        Qx[nv]*=float(os.environ.get("VXVEL","60"))         # base_x 속도 가중 높임(전진 구동)
     W_BASE=float(os.environ.get("W_BASE","1.0"))           # base 균형(z·자세) 가중 — 무너짐 방지
     Qx[2]*=W_BASE; Qx[3]*=W_BASE; Qx[4]*=W_BASE            # base z·roll·pitch 추종 강화
 
@@ -62,22 +66,26 @@ def main():
     #   l_f = c_f Σ S(c1·φ)·‖v_t‖²,  S=sigmoid, c1=-30. 발 낮으면(φ~0) S~0.5=접선속도 벌점(no-slip),
     #   발 높으면(φ↑) S~0=벌점 완화(clearance). 몸통 전진(속도참조)하려면 발 들 수밖에→걸음 창발.
     CF=float(os.environ.get("CF","1.0")); C1S=float(os.environ.get("C1S","-30.0"))
+    AIR_W=float(os.environ.get("AIR_W","0.0"))   # ★air-time(eq23 실용판): φ² 벌점=발 오래 들지마→착지 지지(균형)
     def foot_slip_cost(q,v,k):
-        if CF<=0: return 0.0, np.zeros(2*nv), np.zeros((2*nv,2*nv))
+        if CF<=0 and AIR_W<=0: return 0.0, np.zeros(2*nv), np.zeros((2*nv,2*nv))
         pin.computeForwardKinematicsDerivatives(m,dd,q,v,np.zeros(nv)); pin.updateFramePlacements(m,dd)
         c=0.0; g=np.zeros(2*nv); H=np.zeros((2*nv,2*nv))
         for L in FEET:
             fid=br.foot_fid[L]; oMf=dd.oMf[fid]
             phi=(oMf.translation+oMf.rotation@np.array([0.,0.,-FOOT_R]))[2]   # 발바닥 지면위 높이
-            dvq,dvv=pin.getFrameVelocityDerivatives(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)
-            Jlin=np.array(dvv[:3]); dv_dq=np.array(dvq[:3])                   # ∂vf/∂v=J, ∂vf/∂q
-            vf=Jlin@v; vt=vf[:2]; w2=vt@vt
+            _,dvv=pin.getFrameVelocityDerivatives(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)
+            Jlin=np.array(dvv[:3])                                            # ∂vf/∂v=J (vf=Jlin@v 정확)
+            vf=Jlin@v; vt=vf[:2]; w2=vt@vt; Jz=Jlin[2]                        # ∂φ/∂q=Jz(exact)
             S=1.0/(1.0+np.exp(-C1S*phi)); Sp=S*(1.0-S)
-            c+=CF*S*w2
-            Jz=Jlin[2]                                                        # ∂φ/∂q
-            g[:nv]+=CF*(Sp*C1S*Jz*w2 + S*2.0*(vt[0]*dv_dq[0]+vt[1]*dv_dq[1])) # ∂c/∂q
-            g[nv:]+=CF*S*2.0*(vt[0]*Jlin[0]+vt[1]*Jlin[1])                    # ∂c/∂v(∂vt/∂v=Jlin)
-            Jt=Jlin[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)                       # GN 헤시안(속도항)
+            c+=CF*S*w2                                                        # foot-slip/clearance
+            # ∂c/∂q=CF·Sp·c1·Jz·w2 (sigmoid 높이항, exact). ∂vt/∂q 커플링은 getFrameVelDeriv convention
+            #   틀려서 제외(부분 그래디언트가 틀린 것보다 나음). ∂c/∂v는 exact(∂vt/∂v=Jlin).
+            g[:nv]+=CF*Sp*C1S*Jz*w2
+            g[nv:]+=CF*S*2.0*(vt[0]*Jlin[0]+vt[1]*Jlin[1])
+            Jt=Jlin[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)
+            if AIR_W>0 and phi>0:                                            # air-time: c_a·φ²(발 든 높이 벌점)
+                c+=AIR_W*phi*phi; g[:nv]+=AIR_W*2.0*phi*Jz; H[:nv,:nv]+=AIR_W*2.0*np.outer(Jz,Jz)
         return c,g,H
     def eval_traj(X,U):
         """gap f̄_{k+1}, 비용 J(+gait), merit=J+GAP_W·Σ|gap|(feasibility 포함)."""

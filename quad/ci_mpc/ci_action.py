@@ -149,7 +149,7 @@ class ContactImplicit:
         m, d = self.m, self.d; h = dt / nsub
         tau_full = np.concatenate([np.zeros(6), tau_act])
         margin = getattr(self, 'margin', 0.003)
-        prox = pin.ProximalSettings(1e-10, 1e-8, 40)
+        prox = pin.ProximalSettings(1e-10, getattr(self,'rho_relax',1e-8), 40)  # proximal μ=KKT solver 정규화(gradient 조건수 완화). ★물리 완화(v·λ=ρ)는 아님: compliance API(pin4.0 바인딩 깨짐) 또는 custom LCP 필요
         for _ in range(nsub):
             pin.forwardKinematics(m, d, q); pin.updateFramePlacements(m, d)
             cand = []
@@ -191,7 +191,7 @@ class ContactImplicit:
             return d.ddq.copy(), np.array(d.ddq_dq), np.array(d.ddq_dv), np.array(d.Minv)[:, 6:]
         cms = pin.StdVec_RigidConstraintModel(); cds = pin.StdVec_RigidConstraintData()
         for i in active: cm = self._make_cm(self.fids[i]); cms.append(cm); cds.append(cm.createData())
-        prox = pin.ProximalSettings(1e-10, 1e-8, 40)
+        prox = pin.ProximalSettings(1e-10, getattr(self,'rho_relax',1e-8), 40)  # proximal μ=KKT solver 정규화(gradient 조건수 완화). ★물리 완화(v·λ=ρ)는 아님: compliance API(pin4.0 바인딩 깨짐) 또는 custom LCP 필요
         pin.initConstraintDynamics(m, d, cms, cds)
         ddq = pin.constraintDynamics(m, d, q, v, tau_full, cms, cds, prox).copy()
         pin.computeConstraintDynamicsDerivatives(m, d, cms, cds)   # ∂ddq/∂(q,v,τ)=∂λ 내포

@@ -94,10 +94,13 @@ int main(){
   std::printf("  ★tangent A_fro=%.6f B_fro=%.6f\n",A.norm(),B.norm());
   // ── ci_dyn.hpp CiDyn(라이브러리)의 lin_AB/dyn_relaxed와 대조 = 회귀 가드 ──
   //   ★dIntegrate setZero 버그 재발 방지: 미초기화면 CiDyn 쪽 A가 부풀어 불일치로 잡힘.
-  { cimpc::CiDyn cd(urdf_path); cd.eps=eps;
+  { cimpc::CiDyn cd(urdf_path); cd.eps=eps; cd.relax_mode="eps";   // 수동코드=εI라 εI로 대조(setZero 가드)
     MatrixXd Acd,Bcd; cd.lin_AB(q,v,u,dt,Acd,Bcd);
     double dA=(A-Acd).norm();
     std::printf("  ★[대조] 수동 A_fro=%.6f  vs  CiDyn.lin_AB A_fro=%.6f  ‖diff‖=%.2e  %s\n",
                 A.norm(),Acd.norm(),dA, dA<1e-9?"✅ 일치":"✗ 불일치(setZero 확인)"); }
+  { cimpc::CiDyn cd(urdf_path); cd.relax_mode="D"; cd.rho_relax=1e-4;   // 논문판 ρD → Python ρD와 대조
+    MatrixXd A2,B2; cd.lin_AB(q,v,u,dt,A2,B2);
+    std::printf("  ★[ρD] CiDyn.lin_AB(D) A_fro=%.6f  (Python ρD 값과 대조)\n", A2.norm()); }
   return 0;
 }

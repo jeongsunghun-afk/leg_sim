@@ -165,7 +165,9 @@
 - **★"v·λ=ρ 실현" 서술은 부정확했다**: εI는 Tikhonov 정규화라 `v=−ελ` → `vⁿ∘λⁿ=−ε·λ²`(상수 아님). forward 수치검증: εI판 `vⁿ∘λⁿ=−1.1e-5`(변동) vs ρD판 `1e-4`(상수 ρ). 기존 FD-EXACT 검증은 **εI 시스템의 자기일관성**을 확인한 것이지 논문 ρ 일치가 아니었다.
 - **논문판 ρD 구현·검증**(`RELAX_MODE=D`): 두 모드 다 **FD EXACT**(∂q~7e-10). D=diag(1/λ_n²) 법선전용, forward는 `vⁿλⁿ=ρ` Newton(법선 λⁿ>0 내부점).
 - **어디서 다른가(make/break 스윕)**: firm contact(λⁿ>0)선 εI=ρD **동일**(A_fro 비 1.00). 발 분리(λⁿ<0)로 갈수록 ρD가 ~30% 작고 부드러운 gradient + **λⁿ>0(단방향=발은 밀기만, 물리적) 강제**, εI는 λⁿ<0(당김=비물리) 허용 + gradient 더 큼.
-- **함의**: 서기/보행(firm contact)엔 εI 근사가 충분(그래서 지금까지 작동). **gap/stepping처럼 make/break가 잦은 상황엔 ρD가 부드럽고 물리적** = 논문이 ρD 쓰는 이유. C++엔 아직 εI만 포팅.
+- **★성능 실증(보행 receding MPC, VX=0.3)**: εI vs ρD 비교 — ρD가 보행 내내 **base를 ~0.05–0.13m 높게 유지**(스텝 중 덜 주저앉음)·붕괴 전 **48% 더 전진**(0.671 vs 0.606 최대). 둘 다 ~2.1s서 붕괴(근본 walking 불안정=soft planner, 완화선택 무관). firm contact선 차이 없음. (caveat: ε1e-3·ρ1e-4는 강도 단위 달라 완전통제 ablation 아님, 각자 합리적 기본값.)
+- **★★현재 기본=ρD**(Python·C++ 양쪽, 2026-07-23). `RELAX_MODE=D` 기본, `eps`는 하위호환 옵션. **C++ ρD Newton 포팅=Python과 정확 일치**(make/break서 εI 26.47·ρD 18.16 양쪽 6자리 일치). setZero 회귀 가드는 εI로 유지.
+- **함의**: 서기/보행(firm contact)엔 εI≈ρD. **gap/stepping처럼 make/break가 잦은 상황엔 ρD가 부드럽고 물리적**(λⁿ>0=발은 밀기만) = 논문이 ρD 쓰는 이유. 이제 논문 표준 채택.
 
 ---
 
@@ -228,8 +230,9 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 
 **✅ 완성·검증 (C++)**
 - 그래디언트 코어(dyn_relaxed·lin_AB) 포팅 — **Python과 iteration 단위 정확 일치**
+- **논문판 ρD 포팅**(RELAX_MODE=D 기본) — make/break서 Python ρD와 6자리 일치(18.159240)
 - 서기 iLQR OCP 안정화 — `dIntegrate` setZero 버그 수정(Vxx 1e50→7171, crash 소멸)
-- 회귀 가드(ci_relaxed 대조)
+- 회귀 가드(ci_relaxed 대조, εI/ρD 양쪽)
 
 **⏳ 남음**
 | 항목 | 이유/방향 |

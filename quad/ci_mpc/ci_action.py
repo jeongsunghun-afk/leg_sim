@@ -200,8 +200,8 @@ class ContactImplicit:
     def dyn_derivs_relaxed(self, q, v, tau_act, eps=1e-4, dt=0.002, active=None, relax=None, rho=None):
         """★★relaxed 상보성 그래디언트(커스텀, HOUND식·broken API 우회). velocity-impulse.
         relax 모드(env RELAX_MODE로도 지정):
-          'eps'(기본): λ=-(A_cc+εI)⁻¹ b_cc = Tikhonov 정규화. 실현 상보성=v∘λ=−ε·λ²(상수 아님).
-          'D'(논문 정확판): vⁿ∘λⁿ=ρ Newton solve(법선전용)+Ari=(A_cc+ρD)⁻¹, D=diag(1/λ_n²)(법선만·접선0).
+          'D'(★기본, 논문 정확판): vⁿ∘λⁿ=ρ Newton solve(법선전용)+Ari=(A_cc+ρD)⁻¹, D=diag(1/λ_n²)(법선만·접선0).
+          'eps'(구, 하위호환): λ=-(A_cc+εI)⁻¹ b_cc = Tikhonov 정규화. 실현 상보성=v∘λ=−ε·λ²(상수 아님).
         ddq_eff=a_free+M⁻¹Jᵀλ/dt. gradient δλ/δz=−Ari(δA_cc/δz·λ + δb_cc/δz) (두 모드 공통, Ari만 다름).
         ∂λ 이미지공식(해석 역행렬)+ABA도함수(해석)+기하항(∂A_cc/∂q·∂b_cc/∂q·∂W/∂q만 FD, 작은 행렬).
         FD검증 EXACT. ε↑=make/break 경계 smooth(접촉 발견). return ddq_eff, ∂/∂(q,v,τ)."""
@@ -223,7 +223,7 @@ class ContactImplicit:
             return Jcc, Mi @ Jcc.T, Jcc @ Mi @ Jcc.T               # Jcc, W, A_cc
         Jcc, W, Acc = geom(q); qdot_free = v + dt * a_free; bcc = Jcc @ qdot_free
         nc = Acc.shape[0]
-        relax = relax or os.environ.get('RELAX_MODE', 'eps')
+        relax = relax or os.environ.get('RELAX_MODE', 'D')   # ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). 'eps'=Tikhonov(구)
         rho = rho if rho is not None else float(os.environ.get('RELAX_RHO', '1e-4'))
         if relax == 'D':                                    # ★논문 정확판: vⁿ∘λⁿ=ρ (법선전용) Newton
             nrm = [3*k+2 for k in range(len(active))]        # 3D블록 [x,y,z] 중 z=법선

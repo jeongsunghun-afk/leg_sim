@@ -13,6 +13,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <cstdlib>
 
 namespace cimpc {
 using namespace pinocchio;
@@ -27,8 +28,11 @@ struct CiDyn {
   double FOOT_R=0.025, margin=0.05, eps=1e-3;
   double rho=0.004, kn=1.2e4, bn=120.0, bt=80.0, mu=0.8;      // soft force law (rollout)
   double CF=2500.0, C1S=-30.0, AIR_W=100.0;                    // foot-slip/air-time cost
+  std::string relax_mode="D"; double rho_relax=1e-4;           // ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). "eps"=Tikhonov
 
   CiDyn(const std::string& urdf_path){
+    if(const char*rm=std::getenv("RELAX_MODE")) relax_mode=rm;  // env로도 지정
+    if(const char*rr=std::getenv("RELAX_RHO"))  rho_relax=std::atof(rr);
     Model full; pinocchio::urdf::buildModel(urdf_path, JointModelFreeFlyer(), full);
     std::vector<JointIndex> lock={ full.getJointId("FB_waist_joint") };
     buildReducedModel(full, lock, neutral(full), model); data=Data(model);
@@ -87,6 +91,20 @@ struct CiDyn {
     qn=q; vn=v;
   }
 
+  // ★relaxed λ solve(모드공유): "D"=논문 ρD(vⁿλⁿ=ρ Newton·법선전용·λⁿ>0), "eps"=Tikhonov
+  VectorXd relaxed_lambda(const MatrixXd&Acc,const VectorXd&bcc,int nc){
+    if(relax_mode!="D") return -(Acc+eps*MatrixXd::Identity(nc,nc)).inverse()*bcc;
+    std::vector<int> nrm; for(int k=0;k<nc/3;k++) nrm.push_back(3*k+2);
+    VectorXd lam=-(Acc+1e-6*MatrixXd::Identity(nc,nc)).ldlt().solve(bcc);
+    for(int l:nrm) if(lam[l]<1e-4) lam[l]=1e-4;
+    for(int it=0;it<12;it++){
+      MatrixXd Dm=MatrixXd::Zero(nc,nc); VectorXd r=VectorXd::Zero(nc);
+      for(int l:nrm){ Dm(l,l)=1.0/(lam[l]*lam[l]); r[l]=rho_relax/lam[l]; }
+      lam-=(Acc+rho_relax*Dm).ldlt().solve(Acc*lam+bcc-r);
+      for(int l:nrm) if(lam[l]<1e-9) lam[l]=1e-9;
+    }
+    return lam;
+  }
   // relaxed forward(도함수 없이, rollout용): lin_AB와 일관. v_next=qdot_free+M⁻¹Jᵀλ
   void step_relaxed(const VectorXd&q,const VectorXd&v,const VectorXd&u,double dt,VectorXd&qn,VectorXd&vn){
     VectorXd tau(nv); tau.head(6).setZero(); tau.tail(nu)=u;
@@ -97,7 +115,7 @@ struct CiDyn {
     MatrixXd Jcc(12,nv);
     for(int k=0;k<4;k++){ MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[k],LOCAL_WORLD_ALIGNED,J6); Jcc.middleRows(3*k,3)=J6.topRows(3); }
     MatrixXd W=Mi*Jcc.transpose(), Acc=Jcc*W;
-    VectorXd qdot_free=v+dt*a_free, lam=-(Acc+eps*MatrixXd::Identity(12,12)).inverse()*(Jcc*qdot_free);
+    VectorXd qdot_free=v+dt*a_free, lam=relaxed_lambda(Acc,Jcc*qdot_free,12);
     vn=qdot_free+W*lam; qn=integrate(model,q,VectorXd(dt*vn));
   }
 
@@ -118,14 +136,21 @@ struct CiDyn {
       for(int k=0;k<4;k++){ MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[active[k]],LOCAL_WORLD_ALIGNED,J6); Jcc.middleRows(3*k,3)=J6.topRows(3); }
       W=Mi*Jcc.transpose(); Acc=Jcc*W; };
     MatrixXd Jcc,W,Acc; geom(q,Jcc,W,Acc);
-    VectorXd qdot_free=v+dt*a_free; MatrixXd Ari=(Acc+eps*MatrixXd::Identity(nc,nc)).inverse();
-    VectorXd bcc=Jcc*qdot_free, lam=-Ari*bcc; ddq=a_free+W*lam/dt;
+    VectorXd qdot_free=v+dt*a_free, bcc=Jcc*qdot_free;
+    VectorXd lam=relaxed_lambda(Acc,bcc,nc); MatrixXd Ari;   // ★모드공유 λ solve(D=ρD Newton·eps=Tikhonov)
+    if(relax_mode=="D"){                        // gradient용 Ari=(A_cc+ρD)⁻¹, D=diag(1/λ_n²) 법선전용
+      MatrixXd Dm=MatrixXd::Zero(nc,nc); for(int k=0;k<nc/3;k++){ int l=3*k+2; Dm(l,l)=1.0/(lam[l]*lam[l]); }
+      Ari=(Acc+rho_relax*Dm).inverse();
+    } else {                                    // εI Tikhonov(구)
+      Ari=(Acc+eps*MatrixXd::Identity(nc,nc)).inverse();
+    }
+    ddq=a_free+W*lam/dt;
     std::vector<MatrixXd> dAcc(nv,MatrixXd::Zero(nc,nc)); MatrixXd dbg=MatrixXd::Zero(nc,nv), dWl=MatrixXd::Zero(nv,nv);
     double e=1e-6;
     for(int j=0;j<nv;j++){ VectorXd dq=VectorXd::Zero(nv); dq[j]=e; MatrixXd Jp,Wp,Ap,Jm,Wm,Am;
       geom(integrate(model,q,dq),Jp,Wp,Ap); geom(integrate(model,q,VectorXd(-dq)),Jm,Wm,Am);
       dAcc[j]=(Ap-Am)/(2*e); dbg.col(j)=(Jp-Jm)*qdot_free/(2*e); dWl.col(j)=(Wp-Wm)*lam/(2*e); }
-    VectorXd y=Ari*bcc; MatrixXd dl_dq(nc,nv);
+    VectorXd y=-lam; MatrixXd dl_dq(nc,nv);       // δλ/δz=−Ari(δA·λ+δb) (εI선 Ari*bcc=−lam과 동치)
     for(int j=0;j<nv;j++) dl_dq.col(j)=Ari*(dAcc[j]*y);
     dl_dq-=Ari*(dbg+Jcc*(dt*aq));
     MatrixXd dl_dv=-Ari*(Jcc*(MatrixXd::Identity(nv,nv)+dt*av)), dl_du=-Ari*(Jcc*(dt*au));

@@ -140,7 +140,7 @@ def main():
     x=(q0.copy(),v0.copy()); U=[tau_hold.copy() for _ in range(N)]
     X=[x]+[(qstar.copy(),vstar.copy()) for _ in range(N)]
     print("[C1.3] receding-horizon MPC — 걸음 창발 (N=%d·DT=%.3f·%dHz재풀이·VX=%.2f)"%(N,DT,int(1/DT),VX))
-    x0_base=x[0][0]; hist_z=[]; hist_x=[]
+    x0_base=x[0][0]; hist_z=[]; hist_x=[]; hist_qpos=[br.pin_to_mj_qpos(x[0])]   # ★뷰어용 mj qpos 저장
     for s in range(MPC_STEPS):
         bx=x[0][0]                                                   # 현재 base_x서 전진 참조
         Xref=[]
@@ -157,7 +157,7 @@ def main():
             x=(q_c,v_c)
         else:
             x=ci.step(x[0],x[1],U[0],DT,SIM_NSUB)                   # (구) soft sim
-        hist_z.append(x[0][2]); hist_x.append(x[0][0]-x0_base)
+        hist_z.append(x[0][2]); hist_x.append(x[0][0]-x0_base); hist_qpos.append(br.pin_to_mj_qpos(x[0]))
         U=U[1:]+[U[-1].copy()]; X=X[1:]+[X[-1]]                     # warm-start shift
         if (s+1)%15==0 or not np.isfinite(x[0][2]):
             print("  step %3d  t=%.2fs  전진=%.3fm  base_z=%.3f  vx=%.2f"%(s+1,(s+1)*DT,x[0][0]-x0_base,x[0][2],x[1][0]))
@@ -168,6 +168,8 @@ def main():
         T,fwd,fwd/T,VX,zmin,
         "✅ 걸음(전진+균형유지)" if fwd>0.15 and zmin>0.30 else
         "△ 전진하나 균형약함" if fwd>0.15 else "✗ 전진 부족"))
+    _qout=os.environ.get("QPOS_OUT","")                          # ★뷰어용 mj qpos 궤적 저장
+    if _qout: np.save(_qout, np.asarray(hist_qpos)); print("  qpos 저장: %s (%d 프레임)"%(_qout,len(hist_qpos)))
 
 if __name__=="__main__":
     main()

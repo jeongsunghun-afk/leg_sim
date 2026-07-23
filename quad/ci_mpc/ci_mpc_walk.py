@@ -36,22 +36,44 @@ def main():
     def sint(a,t): return (pin.integrate(m,a[0],t[:nv]), a[1]+t[nv:])
 
     # 비용 가중: 관절/base. base는 z·자세 강하게(균형)·x는 속도추종
+    W_BVEL=float(os.environ.get("W_BVEL","30"))    # ★base 속도 감쇠(vz·각속도)=스텝 중 crash 억제
     Qx=np.diag(np.concatenate([np.full(nv,20.0), np.full(nv,1.0)]))
     Qx[0]*=0.1; Qx[nv]*=VXVEL; Qx[2]*=W_BASE; Qx[3]*=W_BASE; Qx[4]*=W_BASE
-    Qf=Qx*10.0; Ru=np.eye(nu)*1e-3
+    Qx[nv+2]*=W_BVEL; Qx[nv+3]*=W_BVEL; Qx[nv+4]*=W_BVEL; Qx[nv+5]*=W_BVEL   # base vz·roll·pitch·yaw rate 감쇠
+    Qf=Qx*10.0; Ru=np.eye(nu)*float(os.environ.get("RU_W","1e-3"))   # 제어 정규화(↑=부드러움·과보정 억제)
 
-    def foot_cost(q,v):
-        """foot-slip/clearance(eq22)+air-time(φ²). 시간무관(걸음은 동역학서 창발). 반환 c,g[2nv],H."""
-        pin.computeForwardKinematicsDerivatives(m,dd,q,v,np.zeros(nv)); pin.updateFramePlacements(m,dd)
-        c=0.0; g=np.zeros(2*nv); H=np.zeros((2*nv,2*nv))
-        for L in FEET:
-            fid=br.foot_fid[L]; oMf=dd.oMf[fid]
+    fids=[br.foot_fid[L] for L in FEET]
+    def _foot_kin(q,v):
+        """각 발 (phi, J[3×nv], vf). FK 1회."""
+        pin.forwardKinematics(m,dd,q,v); pin.updateFramePlacements(m,dd); pin.computeJointJacobians(m,dd,q)
+        out=[]
+        for fid in fids:
+            oMf=dd.oMf[fid]
             phi=(oMf.translation+oMf.rotation@np.array([0.,0.,-FOOT_R]))[2]
-            _,dvv=pin.getFrameVelocityDerivatives(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)
-            Jlin=np.array(dvv[:3]); vf=Jlin@v; vt=vf[:2]; w2=vt@vt; Jz=Jlin[2]
-            S=1.0/(1.0+np.exp(-C1S*phi)); Sp=S*(1.0-S)
-            c+=CF*S*w2; g[:nv]+=CF*Sp*C1S*Jz*w2                       # ∂c/∂q(sigmoid 높이항 exact)
-            g[nv:]+=CF*S*2.0*(vt[0]*Jlin[0]+vt[1]*Jlin[1]); Jt=Jlin[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)
+            J=pin.getFrameJacobian(m,dd,fid,pin.LOCAL_WORLD_ALIGNED)[:3].copy()
+            out.append((phi,J,J@v))
+        return out
+    def foot_val(q,v):
+        """foot-slip/clearance(eq22)+air-time(φ²) 값만(싸게, line search용)."""
+        c=0.0
+        for phi,J,vf in _foot_kin(q,v):
+            w2=vf[:2]@vf[:2]; S=1.0/(1.0+np.exp(-C1S*phi)); c+=CF*S*w2
+            if AIR_W>0 and phi>0: c+=AIR_W*phi*phi
+        return c
+    def foot_grad(q,v):
+        """c,g[2nv],H — ★∂vt/∂q를 FD로 정확히(getFrameVelocityDerivatives convention 회피). backward 전용."""
+        base=_foot_kin(q,v)
+        e=1e-6; dvf=[np.zeros((3,nv)) for _ in fids]                  # ∂vf/∂q FD 1스윕(전 발)
+        for j in range(nv):
+            dq=np.zeros(nv); dq[j]=e
+            for sgn,qq in ((1.0,pin.integrate(m,q,dq)),(-1.0,pin.integrate(m,q,-dq))):
+                for i,(_,_,vfp) in enumerate(_foot_kin(qq,v)): dvf[i][:,j]+=sgn*vfp/(2*e)
+        c=0.0; g=np.zeros(2*nv); H=np.zeros((2*nv,2*nv))
+        for (phi,J,vf),dvq in zip(base,dvf):
+            vt=vf[:2]; w2=vt@vt; Jz=J[2]; S=1.0/(1.0+np.exp(-C1S*phi)); Sp=S*(1.0-S)
+            c+=CF*S*w2
+            g[:nv]+=CF*(Sp*C1S*Jz*w2 + S*2.0*(vt[0]*dvq[0]+vt[1]*dvq[1]))  # ★∂vt/∂q 포함(정확)
+            g[nv:]+=CF*S*2.0*(vt[0]*J[0]+vt[1]*J[1]); Jt=J[:2]; H[nv:,nv:]+=CF*2.0*S*(Jt.T@Jt)
             if AIR_W>0 and phi>0: c+=AIR_W*phi*phi; g[:nv]+=AIR_W*2*phi*Jz; H[:nv,:nv]+=AIR_W*2*np.outer(Jz,Jz)
         return c,g,H
 
@@ -63,7 +85,7 @@ def main():
             for k in range(N):
                 qs,vs,_=ci.step(X[k][0],X[k][1],U[k],DT,NSUB)
                 gaps[k+1]=sdiff(X[k+1],(qs,vs)); gs+=np.linalg.norm(gaps[k+1])
-                e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_cost(X[k][0],X[k][1])[0]
+                e=sdiff(Xref[k],X[k]); J+=0.5*e@Qx@e+0.5*U[k]@Ru@U[k]+foot_val(X[k][0],X[k][1])
             e=sdiff(Xref[N],X[N]); J+=0.5*e@Qf@e
             return gaps,J,J+GAP_W*gs
         gaps,J,M=evalt(X,U)
@@ -73,7 +95,7 @@ def main():
             e=sdiff(Xref[N],X[N]); Vx=Qf@e; Vxx=Qf.copy(); Ks=[None]*N; ks=[None]*N
             for k in range(N-1,-1,-1):
                 Vxp=Vx+Vxx@gaps[k+1]; e=sdiff(Xref[k],X[k]); lx=Qx@e; lu=Ru@U[k]
-                _,fg,fH=foot_cost(X[k][0],X[k][1]); lx=lx+fg; Qxx_k=Qx+fH
+                _,fg,fH=foot_grad(X[k][0],X[k][1]); lx=lx+fg; Qxx_k=Qx+fH
                 A,B=As[k],Bs[k]; Qx_=lx+A.T@Vxp; Qu_=lu+B.T@Vxp
                 Qxx=Qxx_k+A.T@Vxx@A; Quu=Ru+B.T@Vxx@B; Qux=B.T@Vxx@A
                 try: Qinv=np.linalg.inv(Quu+REG*np.eye(nu))       # 발산 시 특이행렬 → pinv 폴백

@@ -312,6 +312,22 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 - **잔존 침하(3초간 0.42→0.24)는 미해결**: base 높이 Jᵀ 피드백(pitch 커플링으로 악화)·수직감쇠·control-reg(RU)·joint 가중·iters 모두 무효/미미. HARD_FWD시 forward는 일치하므로 남은 불일치는 backward 그래디언트(relaxed)뿐인데, **backward 완화는 HOUND의 의도된 설계**(hard 선형화=cond 1e7 ill-conditioned, §5.1). 즉 잔존은 저수준·cost 튜닝으로 안 풀리고 hard backward도 역효과 유력 = 짧은 horizon·relaxed 그래디언트 하의 marginal standing 문제(연구급).
 - **정직한 결론**: 참조-자세 추종은 **접촉모델이 일관되면 정확히 작동**(2mm). hard-KKT sim에선 HARD_FWD로 크게 개선되나 완전 유지엔 못 미침(잔존 침하). 배포 정지·자세는 A(WBIC) 담당 불변.
 
+### 10.1 CI-MPC 4액션 산출물 (2026-07-24, CI-MPC 트랙 마무리)
+
+목표: CI-MPC가 **눕기·앉기·서기·두발서기**를 잘 하는가. env `TGT_BZ`(높이)·`PITCH`(base nose-up)·`LIFT_FRONT`(앞두발 들기). 준정적이라 relaxed 일관 접촉(4발 자세는 물리적 타당).
+
+| 액션 | env | 결과 | 수치 |
+|---|---|---|---|
+| **서기** | TGT_BZ=0.42 | ✅ | base_z 0.411·tilt 2.3°·드리프트 3mm·3s |
+| **눕기** | TGT_BZ=0.20 | ✅ | base_z **0.206**(A 눕기와 일치)·tilt 2.3°·3s |
+| **앉기** | PITCH=0.35·TGT_BZ=0.32 | ✅ | nose-up ~20° 자세 유지·base_z 0.314·3s |
+| **두발서기** | LIFT_FRONT=1·COM_X뒤·PITCH | ✗ | 0.9s 붕괴(tilt 76°) = 축소 지지면 균형 프론티어 |
+
+- **3/4 성공**: 준정적 자세(서기·눕기·앉기)는 CI-MPC가 목표를 **정확히 수행·유지**(±수 mm, 3s). 눕기 0.206은 A의 haunch/lie 높이와 일치.
+- **두발서기만 붕괴**: 앞발은 정상적으로 뜸(step_kkt 변수접촉 작동)이나 **2발 축소 지지면 능동 균형에 실패**. 이는 marginal 균형 프론티어 = **RL/WBIC 균형층이 담당할 부분**(순수 CI-MPC 한계, HOUND 품질 미달).
+- **뷰어**: `act_stand.npy`·`act_lie.npy`·`act_sit.npy`(scratchpad, replay_viewer.py).
+- **CI-MPC 트랙 정리 결론**: **준정적 자세 생성·유지는 CI-MPC 강점(A보다 일반적=임의 목표 대응)**. 능동 균형이 필요한 동작(두발서기·동적 보행·gap)은 프론티어 → RL(DTC) 담당. 이 산출물이 CI-MPC의 검증된 능력 경계.
+
 ---
 
 ## 9. 관련 문서

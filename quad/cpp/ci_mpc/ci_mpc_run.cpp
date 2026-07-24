@@ -27,6 +27,7 @@
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <vector>
 #include <cmath>
 #include <chrono>
@@ -142,6 +143,9 @@ int main(){
   for(auto&p:pnom){ p[0]-=CX; p[1]-=CY; }              // 발을 반대로 shift=base가 CoM으로(IK 기하 동일)
   bool posemode = (TGT_BZ>0 || LIFT>=0 || LIFT_FRONT || PITCH!=0.0);
   VectorXd qref = posemode ? ci.ik_feet(pnom, TGT_BZ>0?TGT_BZ:0.42, PITCH) : qstar;
+  const char* qrf=std::getenv("QREF_FILE");   // ★저장된 참조자세(pin q, 예: A의 눕기) 로드
+  if(qrf){ std::ifstream fs(qrf); for(int i=0;i<ci.nq;i++) fs>>qref[i]; posemode=true;
+    std::printf("[QREF_FILE] %s 로드: base_z=%.4f\n", qrf, qref[2]); }
   // ★트롯 gait 참조: 발스케줄(대각쌍 FL/HR·FR/HL 교대, stance 후방sweep·swing 전방arc) IK → phase→관절 테이블
   double GAIT=envd("GAIT",VX>0?1.0:0.0), GT=envd("GAIT_T",0.4), STEP_H=envd("STEP_H",0.05), BZ=envd("BASE_Z",0.40);
   double stride=VX*GT*0.5, goff[4]={0.0,0.5,0.5,0.0};

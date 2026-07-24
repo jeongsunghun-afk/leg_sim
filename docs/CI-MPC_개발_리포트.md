@@ -283,9 +283,15 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 
 **★★C++ CI-MPC 스택 현황**: 그래디언트(ρD)·iLQR·FDDP·multi-rate·foot-slip·gait참조·receding MPC·**step_kkt(hard active-set)** 전부 완성·검증. **★진짜 스텝 보행 달성**(step_kkt sim+soft planner+gait→발 5.3cm 뜸). 모델기반 CI-MPC 파이프라인 전체가 C++로 동작. **남은=스텝 중 균형 튜닝**(base 붕괴 방지)+40Hz 실시간.
 
-**★해석 그래디언트 완성**(2026-07-24): HOUND 핵심(해석 접촉 그래디언트)을 C++서 구현·검증(exact=FD)·측정(2.4×). Python이 convention 벽으로 못 한 지점 돌파. 실시간(40Hz)+품질의 근본 병목이 열림.
+**★해석 그래디언트 완성**(2026-07-24): HOUND 핵심(해석 접촉 그래디언트)을 C++서 구현·검증(exact=FD)·측정(2.4×). Python이 convention 벽으로 못 한 지점 돌파. **foot-slip ∂c/∂q도 exact화**(∂vt/∂q kinematic Hessian + 접촉점 오프셋 높이항, rel 7.56e-11).
 
-**다음 후보**: (1) **해석+적당한 축소로 실시간+품질 동시**(진행중), (2) **foot-slip ∂vt/∂q도 해석 exact화**(gait 품질), (3) 스텝 중 균형 안정화(W_BASE·capture-point), (4) friction cone(slip).
+**★★실시간+품질 스윕 결론(2026-07-24)** — 정직한 핵심 발견:
+- **해석 그래디언트 = FD 폐루프 완전 동일**: 같은 config서 ANALYTIC=0(FD)·1(해석) 궤적이 **전진 1.792m·base_z·tilt 6자리 동일**(해석이 FD와 exact하므로 당연). 차이는 **solve 속도뿐**(33.9 vs 43.9ms). 속도 이득은 substep 수에 비례(N15·LIN2서 1.3×, N30·LIN10서 2.4×).
+- **∴ 붕괴는 그래디언트 정확도와 직교**: 지속 walk 붕괴는 **속도 폭주(terminal-value 부재) 프론티어**. FD·해석 똑같이 붕괴. 그래디언트를 exact화해도 안 풀림(cost/terminal 문제).
+- **속도 폭주 관찰**: 목표 vx=0.2인데 폐루프서 vx가 0.4→0.5→…→2.2로 가속(foot-slip 추진을 속도추종이 못 잡음). 강한 속도조절(VXVEL 60→400·W_BVX 8)로 초반 vx≈0.27(목표 근접)까지 잡으나 ~1.5s엔 붕괴. best config(N15·I4·LIN2·VXVEL400)=근실시간 34ms(40Hz 1.4×), 초반 0.6~0.9s는 walk 유사(base_z 0.40·발 lift 0.11).
+- **결론**: **실시간 속도는 해석 그래디언트로 달성**(exact·34ms). **지속 clean walk는 여전히 미해결 프론티어** = terminal value function / capture-point가 필요(속도 폭주 근절). 이 트랙의 배포 컨트롤러는 A(WBIC) 불변.
+
+**다음 후보**: (1) **terminal value function / capture-point로 속도 폭주 근절**(지속 walk 핵심), (2) 스텝 중 균형(W_BASE 재튜닝), (3) friction cone(slip 험지), (4) 해석 그래디언트 속도 추가 최적화(→HOUND 70μs).
 
 ---
 

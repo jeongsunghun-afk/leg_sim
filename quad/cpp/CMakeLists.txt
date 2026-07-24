@@ -79,7 +79,7 @@ if(pinocchio_FOUND AND aligator_FOUND)
     target_link_libraries(trot_sim PRIVATE aligator::aligator pinocchio::pinocchio)
   endif()
   # ★CI-MPC C++ 포트: relaxed 상보성 접촉 그래디언트 검증(1단계). pinocchio C++만.
-  foreach(CT ci_relaxed ci_ocp_test ci_fddp_test ci_mpc_run ci_kkt_test)
+  foreach(CT ci_relaxed ci_ocp_test ci_fddp_test ci_mpc_run ci_kkt_test ci_kinhess_test)
     add_executable(${CT} ci_mpc/${CT}.cpp)
     target_link_libraries(${CT} PRIVATE pinocchio::pinocchio ${ENV_PREFIX}/lib/libstdc++.so)
     set_target_properties(${CT} PROPERTIES BUILD_RPATH "${ENV_PREFIX}/lib" INSTALL_RPATH "${ENV_PREFIX}/lib")

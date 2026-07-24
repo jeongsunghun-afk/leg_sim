@@ -74,7 +74,7 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
     }
     K0=Ks[0];
     double bestM=1e18; std::vector<VectorXd> bXq,bXv,bU; bool found=false;
-    for(double alpha:{1.0,0.5,0.2,0.05}){   // line-search 후보 축소(속도)
+    for(double alpha:{1.0,0.5,0.25,0.1,0.05,0.02,0.01}){   // line-search(품질). 속도는 N/ITERS/LIN_NSUB로
       std::vector<VectorXd> Xqn(N+1),Xvn(N+1),Un(N); Xqn[0]=Xq[0]; Xvn[0]=Xv[0]; bool ok=true;
       for(int k=0;k<N;k++){
         VectorXd dx=ci.sdiff(Xq[k],Xv[k],Xqn[k],Xvn[k]);
@@ -149,7 +149,11 @@ int main(){
   auto footmax=[&](const VectorXd&q,const VectorXd&v){ std::vector<double>phi;std::vector<MatrixXd>J;std::vector<Vector3d>vf;
     ci.foot_kin(q,v,phi,J,vf); double mx=-1e9; for(int i=0;i<4;i++)mx=std::max(mx,phi[i]); return mx; };  // ★스텝=어느 발이든 뜨는가
 
-  double liftmax=0, solve_ms=0, sim_ms=0;   // ★실시간 프로파일
+  const char* qout=std::getenv("QPOS_OUT");   // ★뷰어용 pin q 궤적 덤프(텍스트, Python이 mj변환+replay)
+  std::vector<VectorXd> hist; if(qout) hist.push_back(q);
+  auto tilt_deg=[&](const VectorXd&q){ double x=q[3],y=q[4],z=q[5],w=q[6];   // ★base 기울기(자세 품질)
+    double rzz=1.0-2.0*(x*x+y*y); return std::acos(std::max(-1.0,std::min(1.0,rzz)))*180.0/M_PI; };
+  double liftmax=0, solve_ms=0, sim_ms=0, tiltmax=0, bzmin=1e9, bzmax=-1e9;   // ★실시간+품질 지표
   for(int s=0;s<STEPS;s++){
     std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
     for(int k=0;k<=N;k++){ Rq[k]= GAIT<0.5 ? qstar : (has_gap ? gref_gap(phase+k*DT/GT, q[0]+VX*k*DT) : gref(phase+k*DT/GT));   // ★gap 있으면 발판 회피
@@ -171,16 +175,24 @@ int main(){
     }
     sim_ms+=(now_ms()-_t1);
     if(!q.allFinite()){ std::printf("  ✗ 발산 step %d\n",s+1); break; }
+    if(qout) hist.push_back(q);
     liftmax=std::max(liftmax,footmax(q,v));
+    tiltmax=std::max(tiltmax,tilt_deg(q)); bzmin=std::min(bzmin,q[2]); bzmax=std::max(bzmax,q[2]);
     for(int k=0;k<N-1;k++) U[k]=U[k+1]; U[N-1]=tau_hold;   // warm-start shift
     if((s+1)%15==0) std::printf("  step %3d t=%.2fs 전진=%.3fm base_z=%.3f vx=%.2f 발높이[min %.3f max %.3f]\n",
                                 s+1,(s+1)*DT,q[0]-x0,q[2],v[0],footmin(q,v),footmax(q,v));
   }
+  bool clean = q[2]>0.30 && tiltmax<12.0 && (bzmax-bzmin)<0.10;   // ★깨끗=미붕괴+저기울기+저상하요동
   std::printf("  최종: %.2fs 전진 %.3fm(평균 %.2f m/s·목표 %.2f) base_z=%.3f 발lift최대=%.3f  %s\n",
               STEPS*DT,q[0]-x0,(q[0]-x0)/(STEPS*DT),VX,q[2],liftmax,
-              q[2]>0.30?"✅ 전진(균형유지)":"△ 균형약함/붕괴");
+              clean?"✅ 깨끗한 전진 보행":q[2]>0.30?"△ 미붕괴이나 거침(기울기/요동↑)":"✗ 붕괴");
+  std::printf("  [품질] base기울기 max=%.1f° · base_z 요동 %.3f~%.3f(폭 %.3f) (기울기<12°·요동<0.10=깨끗)\n",
+              tiltmax,bzmin,bzmax,bzmax-bzmin);
   int done=std::max(1,STEPS); double per=(solve_ms+sim_ms)/done;
   std::printf("  [프로파일] 스텝당 solve=%.1fms sim=%.1fms 합=%.1fms  → 실시간(DT=%.0fms) %s (RT계수 %.1fx느림, 40Hz엔 %.1fx)\n",
               solve_ms/done,sim_ms/done,per,DT*1000,per<=DT*1000?"✅달성":"✗미달",per/(DT*1000),per/25.0);
+  if(qout){ FILE*f=std::fopen(qout,"w");
+    for(auto&qq:hist){ for(int i=0;i<ci.nq;i++) std::fprintf(f,"%.10g ",qq[i]); std::fprintf(f,"\n"); }
+    std::fclose(f); std::printf("  qpos 덤프: %s (%zu 프레임, pin q) — Python이 mj변환+replay\n",qout,hist.size()); }
   return 0;
 }

@@ -242,7 +242,7 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 | optimizer의 hard forward(HARD_FWD) | fine dt 필요 → **C++ 프론티어**(velocity-impulse 대dt 솔버 또는 fine dt) |
 | **★★C++ step_kkt(hard active-set)** | ✅ **해소·스텝 달성**. `step_kkt`(constraintDynamics+active-set 단방향) 포팅·검증(FL굽힘→발 0.106m 뜸). ci_mpc_run 통합(SIM_KKT+PLAN_SOFT soft planner+gait)→**발 실제로 뜸(5.3cm)=진짜 스텝!** |
 | **★★C++ fine-rate PD+FF 추종** | ✅ HOUND §6.3(계획을 h≤0.001s로 PD+FF 추종, KP_T/KD_T). u0 held(0.01s)의 base 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝** |
-| **★★★C++ 안정 전진 보행(runaway 제거)** | ✅ anti-runaway 튜닝(VX0.2·W_BASE12·STEP_H0.04·N30) → **3s 지속·runaway 없음**(base 0.34~0.46·전진 0.478m·0.16m/s·발 스텝). Python 2.7s runaway 넘어섬. ~3.5s 이후 느린드리프트 발산=research급(튜닝 천장) |
+| **C++ 전진 보행(미붕괴, but 거침)** | △ anti-runaway 튜닝 → 3s 미붕괴·전진 0.478m. **★정직 교정(뷰어 확인)**: base_z 요동 12cm·기울기 8~19°·발 관통=**거친 전방 shuffle이지 깨끗한 보행 아님**. base_z만 본 이전 "안정" 판정은 과대평가. ★근본=CI-MPC로 basic walk 생성이 어긋난 접근(고정 관절테이블 추종=동역학 비일관). **walk엔 보행생성기 필요**(Raibert gait), CI-MPC 가치=험지 접촉발견 |
 | **★★C++ 40Hz 실시간 프로파일/최적화** | ✅ 병목=FDDP solve(288ms·sim step_kkt 0.4ms만)=FD 기하 도함수. knob(LIN_NSUB·PLAN_NSUB·4알파) 축소 → **N15·ITERS3=20.4ms/step=40Hz 실시간 달성**(14×↑). 단 품질저하. 실시간+풀품질=해석 그래디언트(HOUND ~70μs) 필요 |
 | **C++ 험지(gap) 크로싱** | ✅ 인프라: CiDyn.in_gap로 step_kkt 틈 위 발=지지없음 + gref_gap 발판 solid ground shift(재IK). baseline=걷다 gap서 앞발 빠져 붕괴(gap 물리 확인). 발판회피시 gap 너머 과신전→vx lunge runaway→붕괴 = Python perceptive-nav "gap-edge lunge" 동일 프론티어. 안정 크로싱=capture/RL(연구급) |
 | **C++ 40Hz 실시간** | 현 Python-급(offline). HOUND 해석 그래디언트 속도 최적화 |

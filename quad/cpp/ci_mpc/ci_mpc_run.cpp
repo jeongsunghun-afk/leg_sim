@@ -6,7 +6,11 @@
 //     ci_mpc_walk "약한 CF=안정하나 스텝안함(~0.027m)" 영역과 동일. 발lift≈0=슬라이딩/lean(planted 발론
 //     lean까지만, 전진엔 스텝 필요). ★깨끗한 스텝=관절 gait 참조 필요(Python C-2도 foot-slip만으론 슬라이딩,
 //     트롯 관절참조+강가중으로 스텝 달성). receding MPC 폐루프 머신러리는 완성·검증.
-//   후속: ①관절 gait 참조(트롯 발스케줄 IK)로 스텝 ②step_kkt hard sim(penetration-launch 제거) ③40Hz 실시간.
+//   ★관절 gait 참조 배선(GAIT=1·W_JOINT·GAIT_T·STEP_H·ik_feet 트롯테이블): 발스케줄 IK로 관절참조가
+//     발 lift를 요구·강가중 추종. BUT 실측 발lift≈0(footmin<0)=여전히 안 뜸. ★근본원인=relaxed forward가
+//     4발 항상 접촉(active={0,1,2,3} bilateral clamping·ρD도 λⁿ>0 floor)이라 발이 지면서 못 떨어짐.
+//     gait 참조 인프라는 준비됐으나 **진짜 스텝=step_kkt(hard active-set: 발이 접촉 떠남) 필수**(메모리 재확인).
+//   후속: ①step_kkt hard active-set forward 포팅(발 lift/land) → gait참조로 스텝 ②40Hz 실시간.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -80,9 +84,22 @@ int main(){
   MatrixXd Qx=Qxd.asDiagonal();
   if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0);
     double WB=envd("W_BASE",5.0); Qx(2,2)*=WB; Qx(3,3)*=WB; Qx(4,4)*=WB; }
+  double WJ=envd("W_JOINT",20.0); Qx.diagonal().segment(6,16).setConstant(WJ);   // ★다리 관절 gait 추종(스텝 강제)
   MatrixXd Qf=Qx*20.0, Ru=MatrixXd::Identity(nu,nu)*1e-3;
 
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
+  // ★트롯 gait 참조: 발스케줄(대각쌍 FL/HR·FR/HL 교대, stance 후방sweep·swing 전방arc) IK → phase→관절 테이블
+  double GAIT=envd("GAIT",VX>0?1.0:0.0), GT=envd("GAIT_T",0.4), STEP_H=envd("STEP_H",0.05), BZ=envd("BASE_Z",0.40);
+  double stride=VX*GT*0.5, goff[4]={0.0,0.5,0.5,0.0};
+  std::vector<Vector3d> gnom={{0.30,0.16,0.0},{0.30,-0.16,0.0},{-0.30,0.16,0.0},{-0.30,-0.16,0.0}};
+  const int MT=40; std::vector<VectorXd> gtab(MT);
+  for(int m=0;m<MT;m++){ double ph=(double)m/MT; std::vector<Vector3d> t(4);
+    for(int i=0;i<4;i++){ double pi=std::fmod(ph+goff[i],1.0); Vector3d n=gnom[i];
+      if(pi<0.5) n[0]+=stride*(0.5-pi/0.5);
+      else{ double sw=(pi-0.5)/0.5; n[0]+=stride*(sw-0.5); n[2]=STEP_H*std::sin(M_PI*sw); }
+      t[i]=n; }
+    gtab[m]=ci.ik_feet(t,BZ); }
+  auto gref=[&](double ph)->VectorXd{ ph=std::fmod(ph,1.0); if(ph<0)ph+=1; return gtab[((int)(ph*MT))%MT]; };
   VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);
   for(int i=0;i<200;i++){ tau_hold=150.0*(qstar.tail(nu)-q.tail(nu))-8.0*v.tail(nu);
     VectorXd qn,vn; ci.step_soft(q,v,tau_hold,DT*0.1,1,qn,vn); q=qn; v=vn; }
@@ -94,8 +111,9 @@ int main(){
 
   double liftmax=0;
   for(int s=0;s<STEPS;s++){
-    std::vector<VectorXd> Rq(N+1),Rv(N+1);
-    for(int k=0;k<=N;k++){ Rq[k]=qstar; Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
+    std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
+    for(int k=0;k<=N;k++){ Rq[k]= GAIT>0.5 ? gref(phase+k*DT/GT) : qstar;   // ★gait 관절참조 or 서기
+      Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
     std::vector<VectorXd> Xq(N+1),Xv(N+1); Xq[0]=q; Xv[0]=v;
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }
     MatrixXd K0=solve_fddp(ci,Xq,Xv,U,Rq,Rv,N,DT,NSUB,GAP_W,REG,ITERS,Qx,Qf,Ru);

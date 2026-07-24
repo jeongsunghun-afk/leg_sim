@@ -53,15 +53,15 @@ struct CiDyn {
       J[i]=J6.topRows(3); vf[i]=J[i]*v; }
   }
 
-  VectorXd stance_q(){
-    VectorXd q=neutral(model); q[2]=0.42;
-    double tx[4]={0.30,0.30,-0.30,-0.30}, ty[4]={0.16,-0.16,0.16,-0.16};
-    for(int it=0;it<300;it++){
+  // ★임의 4발 타겟(base frame) IK: base 고정(0,0,base_z)·발을 tgt[i]로. 관절 gait 참조용
+  VectorXd ik_feet(const std::vector<Vector3d>&tgt, double base_z){
+    VectorXd q=neutral(model); q[2]=base_z;
+    for(int it=0;it<200;it++){
       forwardKinematics(model,data,q); updateFramePlacements(model,data); computeJointJacobians(model,data,q);
       VectorXd err(12); MatrixXd Js(12,nv);
       for(int i=0;i<4;i++){ const auto&oMf=data.oMf[fids[i]];
         Vector3d p=oMf.translation()+oMf.rotation()*Vector3d(0,0,-FOOT_R);
-        err.segment(3*i,3)=Vector3d(tx[i],ty[i],0.0)-p;
+        err.segment(3*i,3)=tgt[i]-p;
         MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[i],LOCAL_WORLD_ALIGNED,J6); Js.middleRows(3*i,3)=J6.topRows(3); }
       Js.leftCols(6).setZero();
       if(err.norm()<1e-5) break;
@@ -69,6 +69,10 @@ struct CiDyn {
       q=integrate(model,q,VectorXd(0.5*dq));
     }
     return q;
+  }
+  VectorXd stance_q(){
+    std::vector<Vector3d> tgt={{0.30,0.16,0.0},{0.30,-0.16,0.0},{-0.30,0.16,0.0},{-0.30,-0.16,0.0}};  // FL,FR,HL,HR
+    return ik_feet(tgt, 0.42);
   }
 
   // soft force law f(phi,vf) → world 3D (rollout용)

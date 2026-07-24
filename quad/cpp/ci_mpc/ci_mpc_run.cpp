@@ -20,6 +20,10 @@
 //     =40Hz(25ms) 실시간 달성**. 단 품질저하(전진~0·안정만). 속도-품질 트레이드오프:
 //     실시간+풀품질은 FD기하→해석 그래디언트(HOUND ~70μs) 필요. 풀품질(3s보행)=96~288ms offline.
 //   후속: 해석 기하 도함수(kinematic hessian)로 실시간+품질 동시 · capture-point 지속성.
+//   ★험지(gap) 크로싱(GAP_X0/GAP_X1): CiDyn.in_gap로 step_kkt가 틈 위 발=지지없음(active제외)+gref_gap이
+//     발판을 solid ground로 shift(재IK). baseline=걷다 gap서 앞발 빠져 붕괴(gap 물리 작동 확인). 발판회피시
+//     발이 gap 너머로 과신전→vx lunge runaway→붕괴(Python perceptive-nav "gap-edge lunge"와 동일 프론티어).
+//     인프라(gap접촉·발판회피)는 작동, 안정 크로싱=capture-point 동적안정화/RL 필요=연구급.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -98,6 +102,7 @@ int main(){
   double VX=envd("VX",0.3);
   int SIM_KKT=envi("SIM_KKT",0);   // 1=sim을 step_kkt(hard active-set, 발 lift 가능)로 → 스텝 보행
   ci.CF=envd("CF",2000.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",100.0);
+  ci.gap_x0=envd("GAP_X0",1e9); ci.gap_x1=envd("GAP_X1",-1e9);   // ★험지: 틈 [x0,x1]
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
   MatrixXd Qx=Qxd.asDiagonal();
   if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0);
@@ -120,6 +125,19 @@ int main(){
       t[i]=n; }
     gtab[m]=ci.ik_feet(t,BZ); }
   auto gref=[&](double ph)->VectorXd{ ph=std::fmod(ph,1.0); if(ph<0)ph+=1; return gtab[((int)(ph*MT))%MT]; };
+  // ★gap-인지 발판: 발 world착지 x가 틈 안이면 solid ground(틈 너머/앞)로 shift + 재IK. 험지 크로싱
+  bool has_gap = ci.gap_x1 > ci.gap_x0;
+  auto gref_gap=[&](double ph,double base_x)->VectorXd{
+    ph=std::fmod(ph,1.0); if(ph<0)ph+=1; std::vector<Vector3d> t(4);
+    for(int i=0;i<4;i++){ double pi=std::fmod(ph+goff[i],1.0); if(pi<0)pi+=1; Vector3d n=gnom[i];
+      if(pi<0.5) n[0]+=stride*(0.5-pi/0.5);
+      else{ double sw=(pi-0.5)/0.5; n[0]+=stride*(sw-0.5); n[2]=STEP_H*std::sin(M_PI*sw); }
+      double wx=base_x+n[0];
+      if(ci.in_gap(wx)){ double mid=(ci.gap_x0+ci.gap_x1)/2;   // 틈 위 발 → 가까운 solid로(앞:틈전·뒤:틈후)
+        double twx = (wx<mid)? ci.gap_x0-0.03 : ci.gap_x1+0.03; n[0]=twx-base_x; }
+      t[i]=n; }
+    return ci.ik_feet(t,BZ);
+  };
   VectorXd q=qstar, v=VectorXd::Zero(nv), tau_hold=VectorXd::Zero(nu);
   for(int i=0;i<200;i++){ tau_hold=150.0*(qstar.tail(nu)-q.tail(nu))-8.0*v.tail(nu);
     VectorXd qn,vn; ci.step_soft(q,v,tau_hold,DT*0.1,1,qn,vn); q=qn; v=vn; }
@@ -134,7 +152,7 @@ int main(){
   double liftmax=0, solve_ms=0, sim_ms=0;   // ★실시간 프로파일
   for(int s=0;s<STEPS;s++){
     std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
-    for(int k=0;k<=N;k++){ Rq[k]= GAIT>0.5 ? gref(phase+k*DT/GT) : qstar;   // ★gait 관절참조 or 서기
+    for(int k=0;k<=N;k++){ Rq[k]= GAIT<0.5 ? qstar : (has_gap ? gref_gap(phase+k*DT/GT, q[0]+VX*k*DT) : gref(phase+k*DT/GT));   // ★gap 있으면 발판 회피
       Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
     std::vector<VectorXd> Xq(N+1),Xv(N+1); Xq[0]=q; Xv[0]=v;
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }

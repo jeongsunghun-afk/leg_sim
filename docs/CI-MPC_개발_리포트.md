@@ -244,6 +244,7 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 | **★★C++ fine-rate PD+FF 추종** | ✅ HOUND §6.3(계획을 h≤0.001s로 PD+FF 추종, KP_T/KD_T). u0 held(0.01s)의 base 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝** |
 | **★★★C++ 안정 전진 보행(runaway 제거)** | ✅ anti-runaway 튜닝(VX0.2·W_BASE12·STEP_H0.04·N30) → **3s 지속·runaway 없음**(base 0.34~0.46·전진 0.478m·0.16m/s·발 스텝). Python 2.7s runaway 넘어섬. ~3.5s 이후 느린드리프트 발산=research급(튜닝 천장) |
 | **★★C++ 40Hz 실시간 프로파일/최적화** | ✅ 병목=FDDP solve(288ms·sim step_kkt 0.4ms만)=FD 기하 도함수. knob(LIN_NSUB·PLAN_NSUB·4알파) 축소 → **N15·ITERS3=20.4ms/step=40Hz 실시간 달성**(14×↑). 단 품질저하. 실시간+풀품질=해석 그래디언트(HOUND ~70μs) 필요 |
+| **C++ 험지(gap) 크로싱** | ✅ 인프라: CiDyn.in_gap로 step_kkt 틈 위 발=지지없음 + gref_gap 발판 solid ground shift(재IK). baseline=걷다 gap서 앞발 빠져 붕괴(gap 물리 확인). 발판회피시 gap 너머 과신전→vx lunge runaway→붕괴 = Python perceptive-nav "gap-edge lunge" 동일 프론티어. 안정 크로싱=capture/RL(연구급) |
 | **C++ 40Hz 실시간** | 현 Python-급(offline). HOUND 해석 그래디언트 속도 최적화 |
 | 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시(옵션) |
 | 다양한 동작(rearing·선회) | 미실증. **구조는 지원** |

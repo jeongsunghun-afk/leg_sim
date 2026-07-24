@@ -31,6 +31,8 @@ struct CiDyn {
   double CF=2500.0, C1S=-30.0, AIR_W=100.0;                    // foot-slip/air-time cost
   std::string relax_mode="D"; double rho_relax=1e-4;           // ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). "eps"=Tikhonov
   double bg_kp=10.0, bg_kd=50.0;                                // step_kkt Baumgarte(위치 드리프트 보정)
+  double gap_x0=1e9, gap_x1=-1e9;                               // ★험지: 지면 없는 틈 [x0,x1](기본 없음)
+  bool in_gap(double x) const { return x>gap_x0 && x<gap_x1; }  // 틈 위=지지 없음(발 빠짐)
 
   CiDyn(const std::string& urdf_path){
     if(const char*rm=std::getenv("RELAX_MODE")) relax_mode=rm;  // env로도 지정
@@ -136,8 +138,8 @@ struct CiDyn {
       forwardKinematics(model,data,q); updateFramePlacements(model,data);
       std::vector<int> active;
       for(int i=0;i<4;i++){ const SE3&oMf=data.oMf[fids[i]];
-        double phi=(oMf.translation()+oMf.rotation()*Vector3d(0,0,-FOOT_R))[2];
-        if(phi<margin) active.push_back(i); }
+        Vector3d cp=oMf.translation()+oMf.rotation()*Vector3d(0,0,-FOOT_R);
+        if(cp[2]<margin && !in_gap(cp[0])) active.push_back(i); }   // ★틈 위 발=지지없음(active 제외→빠짐)
       VectorXd a;
       for(int as=0; as<5; as++){
         if(active.empty()){ a=aba(model,data,q,v,tau); break; }

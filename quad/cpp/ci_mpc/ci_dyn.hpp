@@ -62,8 +62,12 @@ struct CiDyn {
   }
 
   // ★임의 4발 타겟(base frame) IK: base 고정(0,0,base_z)·발을 tgt[i]로. 관절 gait 참조용
-  VectorXd ik_feet(const std::vector<Vector3d>&tgt, double base_z){
+  VectorXd ik_feet(const std::vector<Vector3d>&tgt, double base_z){ return ik_feet(tgt,base_z,0.0); }
+  // ★pitch 오버로드: base를 pitch(nose-up, y축) 만큼 기울인 자세(앉기·두발서기용)
+  VectorXd ik_feet(const std::vector<Vector3d>&tgt, double base_z, double pitch){
     VectorXd q=neutral(model); q[2]=base_z;
+    if(pitch!=0.0){ Eigen::Quaterniond quat(Eigen::AngleAxisd(pitch, Vector3d::UnitY()));
+      q[3]=quat.x(); q[4]=quat.y(); q[5]=quat.z(); q[6]=quat.w(); }   // base 자세=pitch
     for(int it=0;it<200;it++){
       forwardKinematics(model,data,q); updateFramePlacements(model,data); computeJointJacobians(model,data,q);
       VectorXd err(12); MatrixXd Js(12,nv);

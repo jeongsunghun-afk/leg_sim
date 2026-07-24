@@ -300,6 +300,20 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 
 ---
 
+## 10. 참조-자세 추종 검증 (2026-07-24)
+
+**질문**: 참조 자세(desired pose)를 주면 잘 추종하는가? 서기(VX=0, Rq=qstar 0.42)로 측정.
+
+- **접촉모델 일치가 관건**: planner·sim이 같은 접촉모델이면 잘 추종.
+  - relaxed planner + **relaxed sim**(일치): 3초 안정 — base_z 0.42→**0.418**(2mm)·tilt **2.4°**·드리프트 2mm.
+  - relaxed planner + **hard-KKT sim**(불일치): 침하·붕괴(base_z→0.033·tilt 17°).
+- **버그 수정**: `W_BASE`(base z·자세 가중)가 `if(VX>0)`에서만 적용돼 서기(VX=0)에선 무효였음(기본 20 고정) → VX 무관 적용. `RHO`·`RU` env도 노출.
+- **HARD_FWD**(planner forward=step_kkt, HOUND식 hard forward): hard-KKT sim에서 서기 크게 개선 — **tilt 17→4.8°·침하 0.033→0.235**. planner-sim forward 일치의 효과.
+- **잔존 침하(3초간 0.42→0.24)는 미해결**: base 높이 Jᵀ 피드백(pitch 커플링으로 악화)·수직감쇠·control-reg(RU)·joint 가중·iters 모두 무효/미미. HARD_FWD시 forward는 일치하므로 남은 불일치는 backward 그래디언트(relaxed)뿐인데, **backward 완화는 HOUND의 의도된 설계**(hard 선형화=cond 1e7 ill-conditioned, §5.1). 즉 잔존은 저수준·cost 튜닝으로 안 풀리고 hard backward도 역효과 유력 = 짧은 horizon·relaxed 그래디언트 하의 marginal standing 문제(연구급).
+- **정직한 결론**: 참조-자세 추종은 **접촉모델이 일관되면 정확히 작동**(2mm). hard-KKT sim에선 HARD_FWD로 크게 개선되나 완전 유지엔 못 미침(잔존 침하). 배포 정지·자세는 A(WBIC) 담당 불변.
+
+---
+
 ## 9. 관련 문서
 - 파이프라인: `docs/pipeline_ci_mpc.html` (§13 C1.0~C1.5)
 - 파라미터: `docs/params_ci_mpc.html` (CI-MPC walking 섹션)

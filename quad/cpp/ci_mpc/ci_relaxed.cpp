@@ -102,5 +102,11 @@ int main(){
   { cimpc::CiDyn cd(urdf_path); cd.relax_mode="D"; cd.rho_relax=1e-4;   // 논문판 ρD → Python ρD와 대조
     MatrixXd A2,B2; cd.lin_AB(q,v,u,dt,A2,B2);
     std::printf("  ★[ρD] CiDyn.lin_AB(D) A_fro=%.6f  (Python ρD 값과 대조)\n", A2.norm()); }
+  // ── ★해석 그래디언트 vs FD 대조(같은 relax 모드): kinematic Hessian+RNEA트릭이 FD와 일치해야 ──
+  { cimpc::CiDyn cf(urdf_path), ca(urdf_path); ca.analytic_grad=true;
+    MatrixXd Af,Bf,Aa,Ba; cf.lin_AB(q,v,u,dt,Af,Bf); ca.lin_AB(q,v,u,dt,Aa,Ba);
+    double dA=(Af-Aa).norm(), dB=(Bf-Ba).norm();
+    std::printf("  ★[해석] FD A_fro=%.6f vs 해석 A_fro=%.6f  ‖A diff‖=%.2e ‖B diff‖=%.2e  %s\n",
+                Af.norm(),Aa.norm(),dA,dB, dA<1e-5?"✅ 해석=FD(그래디언트 정확)":"✗ 불일치"); }
   return 0;
 }

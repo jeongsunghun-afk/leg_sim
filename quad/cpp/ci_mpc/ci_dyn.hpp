@@ -10,6 +10,9 @@
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/aba-derivatives.hpp>
 #include <pinocchio/algorithm/constrained-dynamics.hpp>   // step_kkt(hard active-set)
+#include <pinocchio/algorithm/kinematics-derivatives.hpp>  // ★해석 그래디언트: ∂J/∂q(kinematic Hessian)
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/rnea-derivatives.hpp>        // ★∂M/∂q(RNEA 도함수 트릭)
 #include <Eigen/Dense>
 #include <vector>
 #include <string>
@@ -31,6 +34,7 @@ struct CiDyn {
   double CF=2500.0, C1S=-30.0, AIR_W=100.0, SYM=0.0;           // foot-slip/air-time/symmetry cost(eq22-24)
   std::string relax_mode="D"; double rho_relax=1e-4;           // ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). "eps"=Tikhonov
   double bg_kp=10.0, bg_kd=50.0;                                // step_kkt Baumgarte(위치 드리프트 보정)
+  bool analytic_grad=false;                                    // ★해석 그래디언트(kinematic Hessian+RNEA, FD 대체)
   double gap_x0=1e9, gap_x1=-1e9;                               // ★험지: 지면 없는 틈 [x0,x1](기본 없음)
   bool in_gap(double x) const { return x>gap_x0 && x<gap_x1; }  // 틈 위=지지 없음(발 빠짐)
 
@@ -188,13 +192,33 @@ struct CiDyn {
       Ari=(Acc+eps*MatrixXd::Identity(nc,nc)).inverse();
     }
     ddq=a_free+W*lam/dt;
-    std::vector<MatrixXd> dAcc(nv,MatrixXd::Zero(nc,nc)); MatrixXd dbg=MatrixXd::Zero(nc,nv), dWl=MatrixXd::Zero(nv,nv);
-    double e=1e-6;
-    for(int j=0;j<nv;j++){ VectorXd dq=VectorXd::Zero(nv); dq[j]=e; MatrixXd Jp,Wp,Ap,Jm,Wm,Am;
-      geom(integrate(model,q,dq),Jp,Wp,Ap); geom(integrate(model,q,VectorXd(-dq)),Jm,Wm,Am);
-      dAcc[j]=(Ap-Am)/(2*e); dbg.col(j)=(Jp-Jm)*qdot_free/(2*e); dWl.col(j)=(Wp-Wm)*lam/(2*e); }
-    VectorXd y=-lam; MatrixXd dl_dq(nc,nv);       // δλ/δz=−Ari(δA·λ+δb) (εI선 Ari*bcc=−lam과 동치)
-    for(int j=0;j<nv;j++) dl_dq.col(j)=Ari*(dAcc[j]*y);
+    MatrixXd dbg=MatrixXd::Zero(nc,nv), dWl=MatrixXd::Zero(nv,nv), DAy(nc,nv);  // dbg=∂bcc/∂q·[Jcc부분], dWl=∂(Wλ)/∂q, DAy=∂A_cc/∂q·(−λ)
+    VectorXd y=-lam;
+    if(analytic_grad){   // ★해석: kinematic Hessian(∂Jcc/∂q)+RNEA트릭(∂M⁻¹/∂q), FD 44geom 제거
+      VectorXd Wlam=W*lam;                                          // Wλ (nv)
+      computeJointKinematicHessians(model,data,q);
+      MatrixXd Term1=MatrixXd::Zero(nc,nv), JTl=MatrixXd::Zero(nv,nv);
+      for(int k=0;k<4;k++){ Tensor<double,3> Hk(6,nv,nv); Hk.setZero();
+        getFrameKinematicHessian(model,data,fids[active[k]],LOCAL_WORLD_ALIGNED,Hk);
+        for(int a=0;a<3;a++) for(int jj=0;jj<nv;jj++){ double d=0,t1=0;
+          for(int b=0;b<nv;b++){ double h=Hk(a,b,jj); d+=h*qdot_free[b]; t1+=h*Wlam[b]; }
+          dbg(3*k+a,jj)=d; Term1(3*k+a,jj)=t1; }                    // dbg=(∂Jcc/∂q)qdot_free · Term1=(∂Jcc/∂q)Wλ
+        for(int b=0;b<nv;b++) for(int jj=0;jj<nv;jj++){ double s=0;
+          for(int a=0;a<3;a++) s+=Hk(a,b,jj)*lam[3*k+a]; JTl(b,jj)+=s; } }  // JTλ=∂(Jccᵀλ)/∂q
+      VectorXd z=VectorXd::Zero(nv);                                // DMy=∂(M·Wλ)/∂q = RNEAderiv(y)−RNEAderiv(0)
+      computeRNEADerivatives(model,data,q,z,Wlam); MatrixXd dq_y=data.dtau_dq;
+      computeRNEADerivatives(model,data,q,z,z);    MatrixXd DMy=dq_y-data.dtau_dq;
+      dWl=Minv*(JTl-DMy);                                           // ∂(Wλ)/∂q = M⁻¹(JTλ−DMy)
+      DAy=-(Term1+Jcc*dWl);                                         // ∂A_cc/∂q·(−λ) = −(Term1+Jcc·dWl)
+    } else {             // ── FD 기하 도함수(기존, 검증 기준) ──
+      std::vector<MatrixXd> dAcc(nv,MatrixXd::Zero(nc,nc)); double e=1e-6;
+      for(int j=0;j<nv;j++){ VectorXd dq=VectorXd::Zero(nv); dq[j]=e; MatrixXd Jp,Wp,Ap,Jm,Wm,Am;
+        geom(integrate(model,q,dq),Jp,Wp,Ap); geom(integrate(model,q,VectorXd(-dq)),Jm,Wm,Am);
+        dAcc[j]=(Ap-Am)/(2*e); dbg.col(j)=(Jp-Jm)*qdot_free/(2*e); dWl.col(j)=(Wp-Wm)*lam/(2*e); }
+      for(int j=0;j<nv;j++) DAy.col(j)=dAcc[j]*y;
+    }
+    MatrixXd dl_dq(nc,nv);       // δλ/δz=−Ari(δA·λ+δb)
+    for(int j=0;j<nv;j++) dl_dq.col(j)=Ari*DAy.col(j);
     dl_dq-=Ari*(dbg+Jcc*(dt*aq));
     MatrixXd dl_dv=-Ari*(Jcc*(MatrixXd::Identity(nv,nv)+dt*av)), dl_du=-Ari*(Jcc*(dt*au));
     ddq_dq=aq+(dWl+W*dl_dq)/dt; ddq_dv=av+(W*dl_dv)/dt; ddq_du=au+(W*dl_du)/dt;

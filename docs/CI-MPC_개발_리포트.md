@@ -291,7 +291,12 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 - **속도 폭주 관찰**: 목표 vx=0.2인데 폐루프서 vx가 0.4→0.5→…→2.2로 가속(foot-slip 추진을 속도추종이 못 잡음). 강한 속도조절(VXVEL 60→400·W_BVX 8)로 초반 vx≈0.27(목표 근접)까지 잡으나 ~1.5s엔 붕괴. best config(N15·I4·LIN2·VXVEL400)=근실시간 34ms(40Hz 1.4×), 초반 0.6~0.9s는 walk 유사(base_z 0.40·발 lift 0.11).
 - **결론**: **실시간 속도는 해석 그래디언트로 달성**(exact·34ms). **지속 clean walk는 여전히 미해결 프론티어** = terminal value function / capture-point가 필요(속도 폭주 근절). 이 트랙의 배포 컨트롤러는 A(WBIC) 불변.
 
-**다음 후보**: (1) **terminal value function / capture-point로 속도 폭주 근절**(지속 walk 핵심), (2) 스텝 중 균형(W_BASE 재튜닝), (3) friction cone(slip 험지), (4) 해석 그래디언트 속도 추가 최적화(→HOUND 70μs).
+**★★DCM(capture point) 터미널 cost — 속도 폭주 근절 building block**(2026-07-24):
+- **원리**: 유한 horizon MPC(0.15s)가 horizon 너머 발산 모드(CoM 속도)를 못 봐 폭주. DCM ξ=x+v/ω(ω=√(g/z))는 LIP 발산 성분에 집중 페널티(대각 Qf는 발산/수렴 모드에 가중 분산). d=e_x+e_vx/ω로 상태오차서 조립·rank-1 hessian. env `W_DCM`(기본 0=무회귀)·`DCM_TF`(터미널 배율). 러닝+터미널 노드+merit 반영.
+- **★결과(정직)**: DCM가 **수평 속도 폭주를 확실히 잡음**(step 0.6s에서 vx **1.07→0.02**, W_DCM1000·TF8·BVZ10·VXVEL120·N20). **그러나 실패가 높이-지지 붕괴로 이동**(~0.6–0.9s base_z 0.40→0.12 가라앉음 = 스윙 중 지지 부족, 다중접촉 타이밍 문제).
+- **함의**: 각 cost 항이 한 실패를 잡으면 **다음 결합 실패가 드러남** → **고정-게이트 + CI-MPC 지속 walk는 marginal**, 진짜 해법은 whole-body balance(컨트롤러 A의 WBIC). DCM은 원리적 building block으로 속도 폭주를 해결. 근실시간 유지(26~35ms, 40Hz 1.1~1.4×).
+
+**다음 갈림길**: (1) whole-body balance 항 추가로 모델기반 지속 walk 시도(높이-지지 결합 해결), (2) **RL 피벗**([[mpc-rl-hybrid-roadmap]]) — 지속 강건 walk를 RL로, CI-MPC는 교사/험지, (3) **CI-MPC를 험지 접촉-타이밍 전용**으로(walk는 A). **배포 컨트롤러 A(WBIC)는 불변** — 이 트랙은 모델기반 제2 트랙.
 
 ---
 

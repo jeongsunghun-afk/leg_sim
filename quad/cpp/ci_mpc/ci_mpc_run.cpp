@@ -116,12 +116,13 @@ int main(){
   double VX=envd("VX",0.3);
   int SIM_KKT=envi("SIM_KKT",0);   // 1=sim을 step_kkt(hard active-set, 발 lift 가능)로 → 스텝 보행
   ci.analytic_grad=envi("ANALYTIC",0);   // 1=해석 그래디언트(FD 44geom 제거, 실시간)
+  ci.rho_relax=envd("RHO",1e-4);   // ★relaxed 완화계수(작을수록 hard에 근접=planner-sim 불일치↓)
   ci.CF=envd("CF",2000.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",100.0); ci.SYM=envd("SYM",0.0);   // eq22-24
   ci.gap_x0=envd("GAP_X0",1e9); ci.gap_x1=envd("GAP_X1",-1e9);   // ★험지: 틈 [x0,x1]
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
   MatrixXd Qx=Qxd.asDiagonal();
-  if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0);
-    double WB=envd("W_BASE",5.0); Qx(2,2)*=WB; Qx(3,3)*=WB; Qx(4,4)*=WB; }
+  { double WB=envd("W_BASE",5.0); Qx(2,2)*=WB; Qx(3,3)*=WB; Qx(4,4)*=WB; }   // base z·roll·pitch 추종(서기·보행 공통)
+  if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0); }      // 전진 위치완화·속도추종(보행 전용)
   double WJ=envd("W_JOINT",20.0); Qx.diagonal().segment(6,16).setConstant(WJ);   // ★다리 관절 gait 추종(스텝 강제)
   Qx.diagonal()[nv+2]*=envd("W_BVZ",1.0);   // ★base 수직속도 감쇠(진동/드리프트 억제)
   Qx.diagonal()[nv+0]*=envd("W_BVX",1.0);   // base 전방속도 추가감쇠(뒷걸음 드리프트 억제)

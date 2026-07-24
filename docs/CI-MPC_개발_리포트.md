@@ -334,4 +334,29 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 - 파이프라인: `docs/pipeline_ci_mpc.html` (§13 C1.0~C1.5)
 - 파라미터: `docs/params_ci_mpc.html` (CI-MPC walking 섹션)
 - 논문: `quad/backup/docs/5.47650_Contact_implicit_Model_P.pdf`
+
+---
+
+## 11. ★트랙 종결 (2026-07-24)
+
+**결정(사용자)**: CI-MPC 트랙을 **수행분만 남기고 종결.** 추가 개발 중단.
+
+**결론 — 로버스트 험지극복 모델로 부적합**:
+- **우리 실험**: 폐루프가 현실(hard) 접촉에서 일관되게 균형 프론티어 붕괴(gap 낙상·walk 속도폭주·서기 외란 0.3 붕괴·두발/깊은앉기 붕괴). relaxed의 안정성은 발 접착 아티팩트.
+- **발명자 신호**: KAIST HOUND 팀조차 최신 험지 in-the-wild를 CI-MPC가 아니라 **RL(APT-RL, SRBD-TO pretrain)** 로 수행. CI-MPC가 답이면 그들이 썼을 것.
+- **구조**: 데이터 생성 = SRBD-TO(TOWR, 빠름·18만 궤적)·강건 실행 = RL·CI-MPC는 둘 사이에 끼어 어느 쪽도 최선 아님.
+- **파쿠르도 RL 지배**(Extreme Parkour·ANYmal Parkour·APT-RL 전부 RL). 모델기반은 오프라인 애자일 계획(점프 방식)만.
+- **AMP엔 retargeting이면 충분**(운동학 특징만, 토크 안 씀), **APT-RL엔 SRBD-TO(TOWR) 데이터** = 둘 다 CI-MPC 불필요.
+
+**CI-MPC의 존재 이유**: 학습 없이(zero-shot) 모델기반으로 접촉을 사전처방 없이 창발시키는 통합 제어기(rearing·비스크립트 접촉·복구). **연구 niche는 분명하나 우리 병목(강건성·지각·규모)과 안 겹침.**
+
+**트랙의 값**: 음성 결과(negative result)로 **RL 방향 결정을 근거 있게 확정** + 접촉-암시 방법·해석 그래디언트·DCM의 깊은 이해.
+
+**추가 개발 재개 시 TODO**:
+1. **자기충돌 cost**(캡슐 선분거리: 다리=thigh_joint→foot·몸통=Base±0.28 캡슐·seg-seg 최근접점 페널티. calf 프레임 degenerate라 미사용. 설계만 했고 미검증·되돌림).
+2. **보행 세팅**(walk 게이트/속도 튜닝 — 현재 walk 붕괴 상태).
+
+**이후 방향**: TOWR(SRBD-TO) 데이터 대량화 + RL(AMP/APT-RL).
+
+**완성·검증분(종결 시점 유효)**: 해석 그래디언트(=FD exact)·foot-slip exact·DCM·서기/눕기/앉기 준정적 자세·A 자세 캡처(QREF_FILE)·`dIntegrate` setZero 버그·C++ 전체 스택.
 </content>

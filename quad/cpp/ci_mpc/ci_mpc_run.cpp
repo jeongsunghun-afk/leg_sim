@@ -131,6 +131,10 @@ int main(){
   MatrixXd Qf=Qx*20.0, Ru=MatrixXd::Identity(nu,nu)*envd("RU",1e-3);   // ★control-reg(작을수록 지지토크 편향↓)
 
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
+  // ★자세 목표(desired pose): 로봇은 서기(0.42)서 시작, TGT_BZ>0이면 그 높이 자세로 전환·유지(크라우치/눕기).
+  double TGT_BZ=envd("TGT_BZ",-1.0);
+  std::vector<Vector3d> pnom={{0.30,0.16,0.0},{0.30,-0.16,0.0},{-0.30,0.16,0.0},{-0.30,-0.16,0.0}};
+  VectorXd qref = (TGT_BZ>0) ? ci.ik_feet(pnom, TGT_BZ) : qstar;   // 참조 자세(발 planted, base 높이 TGT_BZ)
   // ★트롯 gait 참조: 발스케줄(대각쌍 FL/HR·FR/HL 교대, stance 후방sweep·swing 전방arc) IK → phase→관절 테이블
   double GAIT=envd("GAIT",VX>0?1.0:0.0), GT=envd("GAIT_T",0.4), STEP_H=envd("STEP_H",0.05), BZ=envd("BASE_Z",0.40);
   double stride=VX*GT*0.5, goff[4]={0.0,0.5,0.5,0.0};
@@ -174,7 +178,7 @@ int main(){
   double liftmax=0, solve_ms=0, sim_ms=0, tiltmax=0, bzmin=1e9, bzmax=-1e9;   // ★실시간+품질 지표
   for(int s=0;s<STEPS;s++){
     std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
-    for(int k=0;k<=N;k++){ Rq[k]= GAIT<0.5 ? qstar : (has_gap ? gref_gap(phase+k*DT/GT, q[0]+VX*k*DT) : gref(phase+k*DT/GT));   // ★gap 있으면 발판 회피
+    for(int k=0;k<=N;k++){ Rq[k]= GAIT<0.5 ? qref : (has_gap ? gref_gap(phase+k*DT/GT, q[0]+VX*k*DT) : gref(phase+k*DT/GT));   // ★자세모드=qref 목표 / gap 있으면 발판 회피
       Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
     std::vector<VectorXd> Xq(N+1),Xv(N+1); Xq[0]=q; Xv[0]=v;
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }

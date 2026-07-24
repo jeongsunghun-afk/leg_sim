@@ -28,7 +28,7 @@ struct CiDyn {
   int nv,nq,nu; std::vector<FrameIndex> fids;
   double FOOT_R=0.025, margin=0.05, eps=1e-3;
   double rho=0.004, kn=1.2e4, bn=120.0, bt=80.0, mu=0.8;      // soft force law (rollout)
-  double CF=2500.0, C1S=-30.0, AIR_W=100.0;                    // foot-slip/air-time cost
+  double CF=2500.0, C1S=-30.0, AIR_W=100.0, SYM=0.0;           // foot-slip/air-time/symmetry cost(eq22-24)
   std::string relax_mode="D"; double rho_relax=1e-4;           // ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). "eps"=Tikhonov
   double bg_kp=10.0, bg_kd=50.0;                                // step_kkt Baumgarte(위치 드리프트 보정)
   double gap_x0=1e9, gap_x1=-1e9;                               // ★험지: 지면 없는 틈 [x0,x1](기본 없음)
@@ -229,16 +229,18 @@ struct CiDyn {
     double c=0;
     for(int i=0;i<4;i++){ double w2=vf[i].head(2).squaredNorm(); double S=1.0/(1.0+std::exp(-C1S*phi[i]));
       c+=CF*S*w2; if(AIR_W>0&&phi[i]>0) c+=AIR_W*phi[i]*phi[i]; }
+    if(SYM>0){ double d1=phi[0]-phi[3], d2=phi[1]-phi[2]; c+=SYM*(d1*d1+d2*d2); }   // 대각쌍 대칭
     return c;
   }
   // ★foot-slip cost 값+gradient(2nv)+Gauss-Newton hessian(2nv²). ∂c/∂q=sigmoid높이항(exact)·∂c/∂v=∂vt/∂v(exact).
   //   ∂vt/∂q 커플링은 LWA convention 미묘라 제외(Python과 동일=부분그래디언트가 틀린 것보다 나음).
   void foot_slip_cost(const VectorXd&q,const VectorXd&v,double&c,VectorXd&g,MatrixXd&H){
     c=0; g=VectorXd::Zero(2*nv); H=MatrixXd::Zero(2*nv,2*nv);
-    if(CF<=0 && AIR_W<=0) return;
+    if(CF<=0 && AIR_W<=0 && SYM<=0) return;
     std::vector<double> phi; std::vector<MatrixXd> J; std::vector<Vector3d> vf; foot_kin(q,v,phi,J,vf);
+    std::vector<VectorXd> Jzs(4);
     for(int i=0;i<4;i++){
-      VectorXd Jz=J[i].row(2).transpose();                  // ∂φ/∂q (nv)
+      VectorXd Jz=J[i].row(2).transpose(); Jzs[i]=Jz;        // ∂φ/∂q (nv)
       double vx=vf[i][0], vy=vf[i][1], w2=vx*vx+vy*vy;
       double S=1.0/(1.0+std::exp(-C1S*phi[i])), Sp=S*(1.0-S);
       c += CF*S*w2;
@@ -251,6 +253,11 @@ struct CiDyn {
         g.head(nv) += AIR_W*2.0*phi[i]*Jz;
         H.topLeftCorner(nv,nv) += AIR_W*2.0*(Jz*Jz.transpose());
       }
+    }
+    if(SYM>0){   // ★eq24 대칭: 대각쌍(FL0-HR3, FR1-HL2) 발높이 동기화 → 트롯 유도(바운싱 억제)
+      int pr[2][2]={{0,3},{1,2}};
+      for(auto&p:pr){ double d=phi[p[0]]-phi[p[1]]; VectorXd Jd=Jzs[p[0]]-Jzs[p[1]];
+        c+=SYM*d*d; g.head(nv)+=SYM*2.0*d*Jd; H.topLeftCorner(nv,nv)+=SYM*2.0*(Jd*Jd.transpose()); }
     }
   }
 

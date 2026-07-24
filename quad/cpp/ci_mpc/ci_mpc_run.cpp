@@ -101,7 +101,7 @@ int main(){
   int N=envi("N",30), NSUB=envi("NSUB",10), ITERS=envi("ITERS",5), STEPS=envi("MPC_STEPS",120);
   double VX=envd("VX",0.3);
   int SIM_KKT=envi("SIM_KKT",0);   // 1=sim을 step_kkt(hard active-set, 발 lift 가능)로 → 스텝 보행
-  ci.CF=envd("CF",2000.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",100.0);
+  ci.CF=envd("CF",2000.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",100.0); ci.SYM=envd("SYM",0.0);   // eq22-24
   ci.gap_x0=envd("GAP_X0",1e9); ci.gap_x1=envd("GAP_X1",-1e9);   // ★험지: 틈 [x0,x1]
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
   MatrixXd Qx=Qxd.asDiagonal();

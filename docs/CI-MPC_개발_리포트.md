@@ -331,8 +331,8 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 ---
 
 ## 9. 관련 문서
-- 파이프라인: `docs/pipeline_ci_mpc.html` (§13 C1.0~C1.5)
-- 파라미터: `docs/params_ci_mpc.html` (CI-MPC walking 섹션)
+- 파이프라인: `docs/pipeline_ci.html` (§13 C1.0~C1.5)
+- 파라미터: `docs/params_ci.html` (CI-MPC walking 섹션)
 - 논문: `quad/backup/docs/5.47650_Contact_implicit_Model_P.pdf`
 
 ---

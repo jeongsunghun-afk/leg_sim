@@ -87,7 +87,7 @@
   <div class="eyebrow">02_Leg · CI-MPC 제2트랙 · mjx_ilqr.py</div>
   <h1>CI-MPC 조정변수 레퍼런스</h1>
   <p class="sub">그래디언트 Contact-Implicit MPC — MJX forward-diff iLQR(§15 C-2). 배포 컨트롤러 A와는
-  <b>파라미터 집합이 완전히 별개</b>라 분리 관리. 입출력변수 정의는 <code>pipeline_ci_mpc.html</code>,
+  <b>파라미터 집합이 완전히 별개</b>라 분리 관리. 입출력변수 정의는 <code>pipeline_ci.html</code>,
   본 문서는 <b>조정변수(knob)</b>. 값은 코드 기본값이며 <span class="tag env">env</span>로 오버라이드.</p>
 </header>
 
@@ -346,7 +346,7 @@
 <footer>
   <p><b>소스</b>: <code>simulation/quad/ci_mpc/mjx_ilqr.py</code>(그래디언트 CI iLQR) · <code>mjx_mppi.py</code>(샘플링) ·
   <code>model_bridge.py</code>(브리지·gearbox·sphere) · <code>ocp_fixed.py</code>·<code>ci_mpc_run.py</code>(OCP baseline) · <code>mjcf/ci_mpc_gap.mjcf</code>(gap 코스).</p>
-  <p>입출력변수 정의·파이프라인 진행: <code>pipeline_ci_mpc.html</code>. 배포 컨트롤러 A 파라미터: <code>params.html</code>(완전 별개).
+  <p>입출력변수 정의·파이프라인 진행: <code>pipeline_ci.html</code>. 배포 컨트롤러 A 파라미터: <code>params_a.html</code>(완전 별개).
   본 트랙은 모델기반 접촉-타이밍 최적화 연구 — 배포 A는 불변.</p>
 </footer>
 </div>

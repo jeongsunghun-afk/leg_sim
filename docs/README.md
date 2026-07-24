@@ -3,25 +3,32 @@
 흩어진 문서·스크립트·메모리를 이 한 곳에서 매핑. **컨트롤러 배포 = 17-DOF (C++/Python)**.
 
 ## 📄 문서 (simulation/docs/)
+
+### 전체 파이프라인
+| 문서 | 역할 | 형식 |
+|---|---|---|
+| **[pipeline_fullstack.html](pipeline_fullstack.html)** | **전체 시스템 프레임워크** — 형태→기능(기구 4요소)·4계보(CI-MPC·DTC·APT·AMP) 통합 배포 아키텍처·지각/SLAM/계획/제어 층구조(F1–F3)·**실제 코드 대조·수정사항(F4–F5, DOF R¹⁶·다중 repo 통합)**·**부록: nav 통합·RL 정책 구조(구 pipeline_nav·pipeline_rl 흡수, F6–F7)** | 아티팩트 |
+
+### 제어기별 (pipeline · params)
+| 제어기 | pipeline | params | 비고 |
+|---|---|---|---|
+| **A** (MPC+WBIC, **배포**) | [pipeline_a.html](pipeline_a.html) | [params_a.html](params_a.html) | 솔버 문제정의·I/O·값전체+파리티+튕김조절 |
+| **B·C** (OCP, 연구) | [pipeline_bc.html](pipeline_bc.html) | (pipeline 내) | Kinodynamics OCP+TSID / FullDynamics OCP+Riccati (17-DOF·TAMOLS·TOWR 브리지) |
+| **D1** (OCS2 NMPC, 외부·비교) | [pipeline_d1.html](pipeline_d1.html) | (pipeline 내) | + **A·B·C·D1 비교** + 지형유형 정직 비교 |
+| **CI** (Contact-Implicit, **종결**) | [pipeline_ci.html](pipeline_ci.html) · [CI-MPC_개발_리포트.md](CI-MPC_개발_리포트.md) | [params_ci.html](params_ci.html) | 종결(§11): 로버스트 험지 부적합 확정. 완성분=해석그래디언트·자세(서기/눕기/앉기). 상세=리포트 |
+
+### 실행 · 품질 · 기타
 | 문서 | 역할 | 형식 |
 |---|---|---|
 | **[RUN.md](RUN.md)** | 실행 레시피(빌드·GUI·헤드리스·지형·회귀·데모) | md |
 | **[MAINTENANCE.md](MAINTENANCE.md)** | 품질 프로세스(하네스·스킬·파리티·문서동기화 규칙) | md |
-| **[params.html](params.html)** | 파라미터 값 **전체** + Python↔C++ 파리티 + 튕김조절 | 아티팩트 |
-| **[pipeline.html](pipeline.html)** | **A** — MPC+WBIC 파이프라인·솔버 문제정의·I/O 변수(배포) | 아티팩트 |
-| **[pipeline_bc.html](pipeline_bc.html)** | **B·C** — Kinodynamics OCP+TSID / FullDynamics OCP+Riccati 파이프라인(연구, 17-DOF·TAMOLS·TOWR 브리지) | 아티팩트 |
-| **[pipeline_d1.html](pipeline_d1.html)** | **D1 + 비교** — OCS2 NMPC+계층 WBC 파이프라인(외부·분석) + **A·B·C·D1 비교** + 지형유형 정직 비교 | 아티팩트 |
 | **[TOWR_모델기반지형_리포트.md](TOWR_모델기반지형_리포트.md)** | **TOWR 트랙** — 오프라인 지형 planning·추종 한계·폐루프 조사 결론(모델기반 상한→RL) | md |
-| **[pipeline_rl.html](pipeline_rl.html)** | **RL** — RGA `RobotSW_IsaacLab` 파쿠르 정책(RMA MLP teacher-student, 비순환) 파이프라인 + A/B·C(MPC/OCP) 대조 | 아티팩트 |
-| **[CI-MPC_개발_리포트.md](CI-MPC_개발_리포트.md)** | **CI-MPC 개발 종합 리포트** — C1.0~C1.5 단계·아키텍처·개발여정(막힘·돌파)·**★hard 접촉+λ 해석 그래디언트(논문핵심) 완성·walking 2.7~3.6s 실증**·파라미터·남은작업(C++) | md |
-| **[pipeline_ci_mpc.html](pipeline_ci_mpc.html)** | **CI-MPC** — 고정스케줄 한계·모델구조·입출력·비용·파이프라인 §13 C1.0~C1.5(hard접촉·λ그래디언트·walking) | 아티팩트 |
 | **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
-| **[biped.html](biped.html)** | **biped** — 2족 MPC+WBIC. 점발(동적보행)/평발(정적서기) 접촉모드·통합 1점/2점 전환·상태·개발여정·평발보행 진행(C++ 배포) | 아티팩트 |
-| [RECORDING.md](RECORDING.md) | 화면 녹화 가이드(NVENC/OBS) | md |
-| [DEVLOG.md](DEVLOG.md) | 개발일지 + 참조 메모(연대기) | md |
+| **[biped.html](biped.html)** | **biped** — 2족 MPC+WBIC. 점발/평발 접촉모드·1점/2점 전환·개발여정(C++ 배포) | 아티팩트 |
+| [RECORDING.md](RECORDING.md) · [DEVLOG.md](DEVLOG.md) | 화면 녹화 가이드 · 개발일지(연대기) | md |
 
-문서 원칙: **값은 params에만**, 나머지는 포인터로 위임(중복 금지). params=값 / pipeline=수식·구조 / sim2real=실기 갭.
+문서 원칙: **값은 params에만**, 나머지는 포인터로 위임(중복 금지). params=값 / pipeline=수식·구조 / sim2real=실기 갭. nav·RL은 fullstack으로 통합(개별 pipeline_nav·pipeline_rl 폐지).
 
 ## 🔧 코드·도구 (simulation/)
 | 위치 | 내용 |
@@ -31,7 +38,7 @@
 | `quad/run_gui.sh` · `run_gui_py.sh` | **원샷 런처**(뷰어+GUI, 기본=종합코스). C++ / Python |
 | `quad/gen_jump.sh` | 점프 궤적 생성(J1 OCP→J2 변환→/tmp/jump_traj.txt) |
 | `quad/cpp/verify.sh` | **하네스** — 표준 회귀 배터리(`./verify.sh [--python]`) |
-| `quad/PARAMS.md` | 파라미터 원본(md, = params.html 소스) |
+| `quad/PARAMS.md` | 파라미터 원본(md, = params_a.html 소스) |
 | `quad/make_terrains.py` + `quad_terrain_*.mjcf` | 테스트 지형(3레인 course·계단·험지·마찰·gap·stepping·soft) |
 | `quad/record_demo.sh` | 데모 녹화 |
 | `.claude/skills/controller-review/SKILL.md` | **스킬** — 검수 SOP(`/controller-review`) |

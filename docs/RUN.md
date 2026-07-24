@@ -1,7 +1,7 @@
 # 02_Leg 실행 레시피
 
 배포 = **17-DOF** (`quad_mpc_wbic_17dof` 허리 능동 + C++ 포팅). 물리 = convex MPC(GRF) + WBIC + 반응형 발배치.
-파라미터 값 전체=[params.html](params.html) · 파이프라인=[pipeline.html](pipeline.html) · 실기 갭=[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html) · 회귀검증=[MAINTENANCE.md](MAINTENANCE.md).
+파라미터 값 전체=[params_a.html](params_a.html) · 파이프라인=[pipeline_a.html](pipeline_a.html) · 실기 갭=[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html) · 회귀검증=[MAINTENANCE.md](MAINTENANCE.md).
 
 ```
 # 경로 무관 실행용 절대경로 (아래 모든 레시피는 이 변수로 자기완결)
@@ -114,10 +114,10 @@ DISPLAY=:0 obs &                                 # 2) OBS 실행 → Start Recor
 ## 연구용(비배포) · 14-DOF
 - 14-DOF: `env $CFG GEAR_CALF=1.0 TROT_V=1.0 PXI research/quad_mpc_wbic.py --robot ours_sphere --mode trot` (14dof는 calf 기본 8:1이라 GEAR_CALF=1.0로 10.5 복원). GUI=research/teleop_gui.py.
 - 구조 B/C(FullDynamics·Centroidal, marginal): `simple_mpc/` (심링크). 반응형 발배치 거부라 본선 아님.
-- **CI-MPC 제2트랙(그래디언트 CI iLQR, offline 연구·검증)**: 접촉타이밍 최적화. C-2=완성해도 실시간 불가(offline 교사 도구). 상세=`pipeline_ci_mpc.html`·`params_ci_mpc.html`·메모리 ci-mpc-track.
+- **CI-MPC 제2트랙(그래디언트 CI iLQR, offline 연구·검증)**: 접촉타이밍 최적화. C-2=완성해도 실시간 불가(offline 교사 도구). 상세=`pipeline_ci.html`·`params_ci.html`·메모리 ci-mpc-track.
 ```bash
 # gap 크로싱(경로 무관 자기완결). ★STIFF=0.002 기본(배포 파리티)·BRAKE=0(크로싱 거동)·GAP_AWARE=1(고plateau)
-#   marginal(2 실패모드: 발갭착지·크로싱후 lunge). rollout 저장=QPOS_OUT, 뷰어=replay_viewer.py. 상세=pipeline_ci_mpc.html §12
+#   marginal(2 실패모드: 발갭착지·크로싱후 lunge). rollout 저장=QPOS_OUT, 뷰어=replay_viewer.py. 상세=pipeline_ci.html §12
 (cd /home/jsh/문서/jsh/simulation/quad/ci_mpc && XLA_PYTHON_CLIENT_PREALLOCATE=false \
   MJCF_PATH=/home/jsh/문서/jsh/simulation/quad/mjcf/ci_mpc_gap.mjcf DISABLE_FLOOR=1 \
   GAIT=trot VX=0.35 NCTRL=250 NH=12 ILQR_ITERS=3 STEP_H=0.08 GAP_AWARE=1 BRAKE=0 \

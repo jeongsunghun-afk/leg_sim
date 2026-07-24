@@ -34,14 +34,14 @@ cd simulation/quad/cpp
 
 - **C++가 배포 기준.** 값 상충 시 C++/canonical 실행코드를 정본.
 - C++는 17dof(허리)모델 자동감지 → 게인(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234)을 기본 적용 = Python 기본과 정합(env 불요).
-- 남은 의도적 차이(perceptive 몸통높이 샘플·STANCE_KD·gallop·walk foot-lock)는 `docs/params.html` 파리티 표에 명시. 새 divergence 생기면 표 갱신 또는 포팅.
+- 남은 의도적 차이(perceptive 몸통높이 샘플·STANCE_KD·gallop·walk foot-lock)는 `docs/params_a.html` 파리티 표에 명시. 새 divergence 생기면 표 갱신 또는 포팅.
 
 ## 4. 문서 역할 분리 (중복 금지)
 
 | 문서 | 역할 | 갱신 트리거 |
 |---|---|---|
-| `quad/PARAMS.md` · `docs/params.html` | 파라미터 값 **전체** + 파리티 + 튕김조절 | 값·게인·게이트·발목·perceptive knob 변경 |
-| `docs/pipeline.html` | MPC+WBIC **수식·구조·I/O** | 파이프라인·솔버 문제 변경 |
+| `quad/PARAMS.md` · `docs/params_a.html` | 파라미터 값 **전체** + 파리티 + 튕김조절 | 값·게인·게이트·발목·perceptive knob 변경 |
+| `docs/pipeline_a.html` | MPC+WBIC **수식·구조·I/O** | 파이프라인·솔버 문제 변경 |
 | `docs/sim2real_checklist_17dof.html` | 실기 이식 **갭**(값은 params로 위임) | 액추에이터 물리·미모델·운용한계 변경 |
 | 메모리(`~/.claude/.../memory`) | 프로젝트 방향·진단·로드맵 | 결정·통찰·상태 변화 |
 
@@ -56,7 +56,7 @@ cd simulation/quad/cpp
 - **비물리 sim2real 수단 금지** — 상태절단·VEL_CLIP 등으로 한계를 숨기지 말 것. 물리적 수단(VEL_LIM·MOTOR_CURVE·기어·GEARBOX)만. 한계 못 지키면 정직히 드러낼 것.
 - 아티팩트 재배포: `docs/*.html` 편집 → `Artifact` 도구로 각 URL에 갱신. **★재배포 시 반드시 아래 고정 URL을 `url=`로 지정**(미지정 시 새 URL 발급되어 파편화·기존 링크 stale).
   - `pipeline_bc.html` → https://claude.ai/code/artifact/0aedd22e-f124-43a4-908c-11fda4823d49
-  - `pipeline.html` → https://claude.ai/code/artifact/952aa996-03ec-4264-9145-e519688dc893
+  - `pipeline_a.html` → https://claude.ai/code/artifact/952aa996-03ec-4264-9145-e519688dc893
   - `sim2real_checklist_17dof.html` → https://claude.ai/code/artifact/8b8d0604-d8b5-4bb8-8899-b4c15d847fba
-  - `pipeline_nav.html`(nav+TAMOLS perceptive 설계 제안) → https://claude.ai/code/artifact/5154b638-0a7c-4eea-82b8-34b00d6c72e7
-  - `params.html` → (URL 미기록 — 다음 재배포 시 발급되는 URL을 여기 기록할 것)
+  - `pipeline_fullstack.html`(nav+TAMOLS perceptive 설계 제안) → https://claude.ai/code/artifact/5154b638-0a7c-4eea-82b8-34b00d6c72e7
+  - `params_a.html` → (URL 미기록 — 다음 재배포 시 발급되는 URL을 여기 기록할 것)

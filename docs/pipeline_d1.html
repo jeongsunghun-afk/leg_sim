@@ -152,7 +152,7 @@
       <tr><td class="rowh" style="color:var(--d1)">D1</td><td>Perceptive NMPC (OCS2, SDF)</td><td colspan="2" class="dim" style="text-align:center">우리 환경 미검증 — 외부선 지형 파쿠르 시연(AMP→RL 배포 단계)</td><td>미구축·공통벤치 없음</td></tr>
       <tr><td class="rowh" style="color:var(--d1)">TOWR</td><td>오프라인 phase-based</td><td class="dim" style="text-align:center">(planning)</td><td><span class="yes">✅ 최적 planning</span> · <span class="no">❌ 개루프 추종 slow만</span></td><td>갭/계단 궤적 완벽 생성(갭회피0)·STEP 크로싱OK, fast 실행=개루프 벽</td></tr>
       <tr><td class="rowh" style="color:var(--warn)">CI-MPC<br><span class="dim">C-2</span></td><td>gradient-CI iLQR (C-2)<br><span class="dim">MJX autodiff·접촉타이밍 적응</span></td><td><span class="yes">✅ falls=0</span> <span class="dim">(평지·저속 ~0.12)</span></td><td><span class="wa">△ gap1 부분크로싱·직후 낙상 (marginal)</span> · <span class="no">❌ offline만</span></td><td>BRAKE 회귀복구+★<b>STIFF</b>(soft는 다이빙, base0.69~0.79 gap선 통과). 2 실패모드(발 갭착지 WHERE·크로싱후 lunge WHEN)=참조레버 천장. jacfwd 병목=실시간 불가(교사 도구)</td></tr>
-      <tr><td class="rowh" style="color:var(--ok)">CI-MPC<br><span class="dim">C-1</span></td><td>해석 그래디언트 CI (개발중)<br><span class="dim">Pinocchio·autodiff-free 실시간</span></td><td colspan="2" class="dim" style="text-align:center">지형 크로싱 미실증(forward·해석그래디언트 검증 단계, §12·pipeline_ci_mpc)</td><td>C-2가 못한 robust 타이밍 적응 목표. C1.0~1.2 통과(de-risk·contact-implicit forward·해석그래디언트 ∂v·∂τ 정확)</td></tr>
+      <tr><td class="rowh" style="color:var(--ok)">CI-MPC<br><span class="dim">C-1</span></td><td>해석 그래디언트 CI (개발중)<br><span class="dim">Pinocchio·autodiff-free 실시간</span></td><td colspan="2" class="dim" style="text-align:center">지형 크로싱 미실증(forward·해석그래디언트 검증 단계, §12·pipeline_ci)</td><td>C-2가 못한 robust 타이밍 적응 목표. C1.0~1.2 통과(de-risk·contact-implicit forward·해석그래디언트 ∂v·∂τ 정확)</td></tr>
     </tbody>
   </table>
   </div>
@@ -170,6 +170,6 @@
 </section>
 
 <footer>
-  02_Leg · D1 파이프라인 &amp; A·B·C·D1 비교 · 2026-07-22 · 관련: <a href="pipeline.html">pipeline(A)</a> · <a href="pipeline_bc.html">pipeline_bc(B·C)</a> · <a href="pipeline_rl.html">pipeline_rl</a> · <a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a> · 메모리 <code>d1-navbothub-mpc-amp-analysis</code>·<code>quad-abc-io-structure</code>
+  02_Leg · D1 파이프라인 &amp; A·B·C·D1 비교 · 2026-07-22 · 관련: <a href="pipeline_a.html">pipeline(A)</a> · <a href="pipeline_bc.html">pipeline_bc(B·C)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · <a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a> · 메모리 <code>d1-navbothub-mpc-amp-analysis</code>·<code>quad-abc-io-structure</code>
 </footer>
 </div>

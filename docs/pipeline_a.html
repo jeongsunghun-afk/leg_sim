@@ -68,7 +68,7 @@
   <h1>A 배포 제어 파이프라인 &amp; 솔버 문제 정의</h1>
   <p class="sub"><b>보행</b>: <b class="mpc">MPC</b>(Di Carlo Convex SRBD, 50 Hz)가 <b>최적 지면반력(GRF)</b>을 계획하고 <b class="wbic">WBIC</b>(단일 전신 QP, 1 kHz)가 그 GRF를 실현하는 <b>관절 토크</b>를 푼다(둘 다 eiquadprog).
   <b>기동</b>(§5): 점프=<b class="mpc">aligator OCP</b>+WBIC 추종 · 기립=기구학+PD/WBIC.<br>
-  <span class="dim">본 문서=파이프라인·입출력·솔버 구조 · <b>조정변수(파라미터 값)</b>는 <code>params.html</code>에서 별도 관리.</span></p>
+  <span class="dim">본 문서=파이프라인·입출력·솔버 구조 · <b>조정변수(파라미터 값)</b>는 <code>params_a.html</code>에서 별도 관리.</span></p>
 </header>
 
 <section id="pipeline">
@@ -108,7 +108,7 @@
       <b>② 표준 접촉기반 선형 KF</b>(<code>estimate_kf()</code>, <code>EST_KF=1</code> — MIT Cheetah·Bledt 2018) — <b>IMU 가속도 융합</b> 채택:
       상태 <code>[p, v, 발4위치]</code> 18차, 가속도로 <b>예측</b>(접촉 무관 고속) + 접촉발 상대위치·정지속도·지면z로 <b>보정</b>(칼만이득이 공분산으로 자동 가중, swing발=공분산 거대화로 무시). 가속도 예측이 <b>접촉불량 구간(기립 fold·점프 flight)을 이어줘</b> 속도가 안 튀는 게 핵심 — <b>폐루프 반복 기립을 안정화</b>(2사이클 전복 → 6사이클 tilt 4°). 자세는 IMU 직접(필터 밖).
       <br><br>
-      <b>InEKF</b>(Hartley 2020, Lie군 자세정합)는 이 선형 KF의 일반화이나 <b>미채택</b> — 우리는 IMU 자세를 직접 써 정확하고(자세를 필터로 감싸면 오히려 지연), 관측불가 모드(<b>절대 xy·yaw 드리프트</b>)는 어떤 필터도 못 잡아 실익이 없다. InEKF 이점(자세 일관성)은 공격적 기동·자이로 바이어스에서 나오므로 실기서 필요시 격상. 절대 xy·yaw는 exteroception(VoxelSLAM2, <a href="pipeline_nav.html">nav</a>)로 보정.
+      <b>InEKF</b>(Hartley 2020, Lie군 자세정합)는 이 선형 KF의 일반화이나 <b>미채택</b> — 우리는 IMU 자세를 직접 써 정확하고(자세를 필터로 감싸면 오히려 지연), 관측불가 모드(<b>절대 xy·yaw 드리프트</b>)는 어떤 필터도 못 잡아 실익이 없다. InEKF 이점(자세 일관성)은 공격적 기동·자이로 바이어스에서 나오므로 실기서 필요시 격상. 절대 xy·yaw는 exteroception(VoxelSLAM2, <a href="pipeline_fullstack.html">nav</a>)로 보정.
     </div>
   </div>
 

@@ -240,7 +240,8 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 |---|---|
 | 완전 sustained walking | runaway 지연됐으나 완전 제거 아님 |
 | optimizer의 hard forward(HARD_FWD) | fine dt 필요 → **C++ 프론티어**(velocity-impulse 대dt 솔버 또는 fine dt) |
-| **★★C++ step_kkt(hard active-set)** | ✅ **해소·스텝 달성**. `step_kkt`(constraintDynamics+active-set 단방향) 포팅·검증(FL굽힘→발 0.106m 뜸). ci_mpc_run 통합(SIM_KKT+PLAN_SOFT soft planner+gait)→**발 실제로 뜸(5.3cm)=진짜 스텝!** 스텝 중 균형(base 붕괴)은 튜닝 프론티어 |
+| **★★C++ step_kkt(hard active-set)** | ✅ **해소·스텝 달성**. `step_kkt`(constraintDynamics+active-set 단방향) 포팅·검증(FL굽힘→발 0.106m 뜸). ci_mpc_run 통합(SIM_KKT+PLAN_SOFT soft planner+gait)→**발 실제로 뜸(5.3cm)=진짜 스텝!** |
+| **★★C++ fine-rate PD+FF 추종** | ✅ HOUND §6.3(계획을 h≤0.001s로 PD+FF 추종, KP_T/KD_T). u0 held(0.01s)의 base 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝**=안정 스텝 보행 근접(0.6s 균형유지) |
 | **C++ 40Hz 실시간** | 현 Python-급(offline). HOUND 해석 그래디언트 속도 최적화 |
 | 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시(옵션) |
 | 다양한 동작(rearing·선회) | 미실증. **구조는 지원** |

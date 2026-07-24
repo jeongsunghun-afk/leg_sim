@@ -11,7 +11,10 @@
 //     BUT 스텝 중 base 붕괴(0.40→0.21)=균형 상실("강한 CF=스텝하나 발산" Python 영역). 스텝은 됨, 남은=균형.
 //   조합: planner=soft(발 lift 계획, PLAN_SOFT=1)·sim=step_kkt(발 lift 실행, SIM_KKT=1)·backward=relaxed ρ그래디언트
 //     ·gait 관절참조(W_JOINT 강가중). =HOUND식 soft/fast planner + hard sim.
-//   후속: ①스텝 중 균형 튜닝(W_BASE·gait·capture) ②40Hz 실시간.
+//   ★★균형 개선(HOUND §6.3 fine-rate PD+FF 추종, KP_T/KD_T): u0 held(0.01s) 대신 계획(Xq[1])을 h=DT/NSUB
+//     ≤0.001s로 PD+FF 추종 → hard 접촉 안정. 결과: base_z 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝**
+//     =안정 스텝 보행 근접(0.6s 균형유지). "제어 유지간격 짧아야 hard 안정"(메모리) 확정.
+//   후속: 장시간 지속성·속도(현 0.08m/s)·capture-point 발배치 튜닝 → 40Hz 실시간.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -124,10 +127,16 @@ int main(){
     std::vector<VectorXd> Xq(N+1),Xv(N+1); Xq[0]=q; Xv[0]=v;
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }
     MatrixXd K0=solve_fddp(ci,Xq,Xv,U,Rq,Rv,N,DT,NSUB,GAP_W,REG,ITERS,Qx,Qf,Ru);
-    VectorXd u0=U[0];                                   // δx=0(x_actual=Xq[0]) → K0항 생략
-    VectorXd qn,vn;                                     // apply first control, 1노드 전진(sim)
-    if(SIM_KKT) ci.step_kkt(q,v,u0,DT,NSUB,qn,vn); else ci.step_relaxed(q,v,u0,DT,qn,vn,NSUB);
-    q=qn; v=vn;
+    // ★HOUND §6.3: 계획(u0)을 fine-rate PD+FF로 추종(제어 유지간격 h=DT/NSUB≤0.001=hard 접촉 안정).
+    //   u = u_ff + Kp(q_plan−q) + Kd(v_plan−v). q_plan/v_plan=계획 다음노드(Xq[1]).
+    VectorXd u0=U[0], qtgt=Xq[1], vtgt=Xv[1]; double hc=DT/NSUB;
+    double KPT=envd("KP_T",150.0), KDT=envd("KD_T",12.0);
+    for(int sub=0; sub<NSUB; sub++){
+      VectorXd u = u0 + KPT*(qtgt.tail(nu)-q.tail(nu)) + KDT*(vtgt.tail(nu)-v.tail(nu));   // PD+FF
+      VectorXd qn,vn;
+      if(SIM_KKT) ci.step_kkt(q,v,u,hc,1,qn,vn); else ci.step_relaxed(q,v,u,hc,qn,vn,1);
+      q=qn; v=vn; if(!q.allFinite()) break;
+    }
     if(!q.allFinite()){ std::printf("  ✗ 발산 step %d\n",s+1); break; }
     liftmax=std::max(liftmax,footmax(q,v));
     for(int k=0;k<N-1;k++) U[k]=U[k+1]; U[N-1]=tau_hold;   // warm-start shift

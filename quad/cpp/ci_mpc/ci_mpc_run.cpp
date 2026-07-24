@@ -14,13 +14,21 @@
 //   ★★균형 개선(HOUND §6.3 fine-rate PD+FF 추종, KP_T/KD_T): u0 held(0.01s) 대신 계획(Xq[1])을 h=DT/NSUB
 //     ≤0.001s로 PD+FF 추종 → hard 접촉 안정. 결과: base_z 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝**
 //     =안정 스텝 보행 근접(0.6s 균형유지). "제어 유지간격 짧아야 hard 안정"(메모리) 확정.
-//   후속: 장시간 지속성·속도(현 0.08m/s)·capture-point 발배치 튜닝 → 40Hz 실시간.
+//   ★★실시간 프로파일/최적화: 병목=FDDP solve(288ms, sim step_kkt는 0.4ms만). 100% 선형화
+//     (lin_AB_multi가 노드×ITERS×NSUB×44 FD기하). knob LIN_NSUB(선형화 substep)·PLAN_NSUB(planner
+//     forward substep)·line-search 4알파로 축소 → **N15·ITERS3·LIN_NSUB1·PLAN_NSUB3=20.4ms/step
+//     =40Hz(25ms) 실시간 달성**. 단 품질저하(전진~0·안정만). 속도-품질 트레이드오프:
+//     실시간+풀품질은 FD기하→해석 그래디언트(HOUND ~70μs) 필요. 풀품질(3s보행)=96~288ms offline.
+//   후속: 해석 기하 도함수(kinematic hessian)로 실시간+품질 동시 · capture-point 지속성.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
 #include <cmath>
+#include <chrono>
 using namespace cimpc;
+static double now_ms(){ return std::chrono::duration<double,std::milli>(
+  std::chrono::steady_clock::now().time_since_epoch()).count(); }
 using Eigen::VectorXd; using Eigen::MatrixXd;
 static double envd(const char*k,double d){ const char*v=std::getenv(k); return v?std::atof(v):d; }
 static int    envi(const char*k,int d){ const char*v=std::getenv(k); return v?std::atoi(v):d; }
@@ -32,7 +40,8 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
   int nv=ci.nv,nu=ci.nu; MatrixXd K0=MatrixXd::Zero(nu,2*nv);
   int PS=envi("PLAN_SOFT",0);   // 1=planner forward=step_soft(발 lift 가능, gait 참조가 발 듦)·0=relaxed
   auto pf=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
-    if(PS) ci.step_soft(q,v,u,DT,NSUB,qn,vn); else ci.step_relaxed(q,v,u,DT,qn,vn,NSUB); };
+    int PN=envi("PLAN_NSUB",NSUB);   // planner forward substep(sim NSUB보다 작게=속도↑)
+    if(PS) ci.step_soft(q,v,u,DT,PN,qn,vn); else ci.step_relaxed(q,v,u,DT,qn,vn,PN); };
   auto eval=[&](std::vector<VectorXd>&Xq,std::vector<VectorXd>&Xv,std::vector<VectorXd>&U,std::vector<VectorXd>&gaps,double&J,double&M){
     gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
     for(int k=0;k<N;k++){ VectorXd qn,vn; pf(Xq[k],Xv[k],U[k],qn,vn);
@@ -42,7 +51,8 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
   std::vector<VectorXd> gaps; double J,M; eval(Xq,Xv,U,gaps,J,M);
   for(int it=0;it<ITERS;it++){
     std::vector<MatrixXd> As(N),Bs(N);
-    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB_multi(Xq[k],Xv[k],U[k],DT,NSUB,A,B); As[k]=A; Bs[k]=B; }
+    int LN=envi("LIN_NSUB",NSUB);   // ★선형화 substep(forward NSUB보다 작게=속도↑, FDDP gap이 mismatch 흡수)
+    for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB_multi(Xq[k],Xv[k],U[k],DT,LN,A,B); As[k]=A; Bs[k]=B; }
     VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
     std::vector<MatrixXd> Ks(N); std::vector<VectorXd> ks(N);
     for(int k=N-1;k>=0;k--){
@@ -60,7 +70,7 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
     }
     K0=Ks[0];
     double bestM=1e18; std::vector<VectorXd> bXq,bXv,bU; bool found=false;
-    for(double alpha:{1.0,0.5,0.25,0.1,0.05,0.02,0.01}){
+    for(double alpha:{1.0,0.5,0.2,0.05}){   // line-search 후보 축소(속도)
       std::vector<VectorXd> Xqn(N+1),Xvn(N+1),Un(N); Xqn[0]=Xq[0]; Xvn[0]=Xv[0]; bool ok=true;
       for(int k=0;k<N;k++){
         VectorXd dx=ci.sdiff(Xq[k],Xv[k],Xqn[k],Xvn[k]);
@@ -121,14 +131,16 @@ int main(){
   auto footmax=[&](const VectorXd&q,const VectorXd&v){ std::vector<double>phi;std::vector<MatrixXd>J;std::vector<Vector3d>vf;
     ci.foot_kin(q,v,phi,J,vf); double mx=-1e9; for(int i=0;i<4;i++)mx=std::max(mx,phi[i]); return mx; };  // ★스텝=어느 발이든 뜨는가
 
-  double liftmax=0;
+  double liftmax=0, solve_ms=0, sim_ms=0;   // ★실시간 프로파일
   for(int s=0;s<STEPS;s++){
     std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
     for(int k=0;k<=N;k++){ Rq[k]= GAIT>0.5 ? gref(phase+k*DT/GT) : qstar;   // ★gait 관절참조 or 서기
       Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }
     std::vector<VectorXd> Xq(N+1),Xv(N+1); Xq[0]=q; Xv[0]=v;
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }
+    double _t0=now_ms();
     MatrixXd K0=solve_fddp(ci,Xq,Xv,U,Rq,Rv,N,DT,NSUB,GAP_W,REG,ITERS,Qx,Qf,Ru);
+    double _t1=now_ms(); solve_ms+=(_t1-_t0);
     // ★HOUND §6.3: 계획(u0)을 fine-rate PD+FF로 추종(제어 유지간격 h=DT/NSUB≤0.001=hard 접촉 안정).
     //   u = u_ff + Kp(q_plan−q) + Kd(v_plan−v). q_plan/v_plan=계획 다음노드(Xq[1]).
     VectorXd u0=U[0], qtgt=Xq[1], vtgt=Xv[1]; double hc=DT/NSUB;
@@ -139,6 +151,7 @@ int main(){
       if(SIM_KKT) ci.step_kkt(q,v,u,hc,1,qn,vn); else ci.step_relaxed(q,v,u,hc,qn,vn,1);
       q=qn; v=vn; if(!q.allFinite()) break;
     }
+    sim_ms+=(now_ms()-_t1);
     if(!q.allFinite()){ std::printf("  ✗ 발산 step %d\n",s+1); break; }
     liftmax=std::max(liftmax,footmax(q,v));
     for(int k=0;k<N-1;k++) U[k]=U[k+1]; U[N-1]=tau_hold;   // warm-start shift
@@ -148,5 +161,8 @@ int main(){
   std::printf("  최종: %.2fs 전진 %.3fm(평균 %.2f m/s·목표 %.2f) base_z=%.3f 발lift최대=%.3f  %s\n",
               STEPS*DT,q[0]-x0,(q[0]-x0)/(STEPS*DT),VX,q[2],liftmax,
               q[2]>0.30?"✅ 전진(균형유지)":"△ 균형약함/붕괴");
+  int done=std::max(1,STEPS); double per=(solve_ms+sim_ms)/done;
+  std::printf("  [프로파일] 스텝당 solve=%.1fms sim=%.1fms 합=%.1fms  → 실시간(DT=%.0fms) %s (RT계수 %.1fx느림, 40Hz엔 %.1fx)\n",
+              solve_ms/done,sim_ms/done,per,DT*1000,per<=DT*1000?"✅달성":"✗미달",per/(DT*1000),per/25.0);
   return 0;
 }

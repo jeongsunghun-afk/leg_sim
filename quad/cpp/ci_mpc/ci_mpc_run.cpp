@@ -128,7 +128,7 @@ int main(){
   double WJ=envd("W_JOINT",20.0); Qx.diagonal().segment(6,16).setConstant(WJ);   // ★다리 관절 gait 추종(스텝 강제)
   Qx.diagonal()[nv+2]*=envd("W_BVZ",1.0);   // ★base 수직속도 감쇠(진동/드리프트 억제)
   Qx.diagonal()[nv+0]*=envd("W_BVX",1.0);   // base 전방속도 추가감쇠(뒷걸음 드리프트 억제)
-  MatrixXd Qf=Qx*20.0, Ru=MatrixXd::Identity(nu,nu)*1e-3;
+  MatrixXd Qf=Qx*20.0, Ru=MatrixXd::Identity(nu,nu)*envd("RU",1e-3);   // ★control-reg(작을수록 지지토크 편향↓)
 
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
   // ★트롯 gait 참조: 발스케줄(대각쌍 FL/HR·FR/HL 교대, stance 후방sweep·swing 전방arc) IK → phase→관절 테이블

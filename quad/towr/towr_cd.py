@@ -188,7 +188,7 @@ def build_and_solve(kind='flat', tkw=None, N=40, dt=0.02, Tg=0.40, duty=0.5,
            'P':sol.value(P).tolist(), 'Th':sol.value(Th).tolist(),
            'Ft':{f:sol.value(Ft[f]).tolist() for f in FEET},
            'Fr':{f:sol.value(Fr[f]).tolist() for f in FEET},
-           'contact':{f:contact[f] for f in FEET}}
+           'contact':{f:[int(bool(c)) for c in contact[f]] for f in FEET}}
     Pv = sol.value(P)
     print("[TOWR] ✅ solve 성공  x:%.3f→%.3f  z:%.3f~%.3f  총시간%.2fs  vx_avg=%.3f"
           % (Pv[0,0],Pv[0,-1],Pv[2].min(),Pv[2].max(),T,(Pv[0,-1]-Pv[0,0])/T))

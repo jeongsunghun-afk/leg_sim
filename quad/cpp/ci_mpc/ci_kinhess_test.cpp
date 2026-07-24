@@ -2,6 +2,9 @@
 //   convention(LWA) 맞으면 FD와 일치 → 전체 ∂A_cc/∂W 해석화 진행. (Python 트랙이 막힌 지점 재검증)
 #include "ci_dyn.hpp"
 #include <pinocchio/algorithm/kinematics-derivatives.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/rnea-derivatives.hpp>
+#include <pinocchio/algorithm/crba.hpp>
 #include <cstdio>
 using namespace cimpc; using namespace pinocchio;
 using Eigen::VectorXd; using Eigen::MatrixXd;
@@ -46,5 +49,18 @@ int main(){
   std::printf("[kinhess] ∂A_cc/∂q: ‖FD‖=%.3e · 부분해석(∂M⁻¹무시) rel오차=%.3e  %s\n",
     std::sqrt(fdA), std::sqrt(diffPart/(fdA+1e-20)),
     std::sqrt(diffPart/(fdA+1e-20))<0.05?"✅ ∂M⁻¹항 무시가능(부분해석 충분)":"△ ∂M⁻¹/∂q 필요");
+
+  // ── ∂(M·y)/∂q RNEA트릭 검증: dtau_dq(a=y)−dtau_dq(a=0) vs FD(M·y) ──
+  VectorXd y=VectorXd::Zero(nv); y.setConstant(0.3); VectorXd zero=VectorXd::Zero(nv);
+  auto My=[&](const VectorXd&qq){ VectorXd t1=rnea(m,d,qq,zero,y); VectorXd t2=rnea(m,d,qq,zero,zero); return VectorXd(t1-t2); };  // M·y=RNEA(q,0,y)−g (복사 필수: d.tau 참조 aliasing)
+  MatrixXd dMy_fd(nv,nv);
+  for(int c=0;c<nv;c++){ VectorXd dq=VectorXd::Zero(nv); dq[c]=e;
+    dMy_fd.col(c)=(My(integrate(m,q,dq))-My(integrate(m,q,VectorXd(-dq))))/(2*e); }
+  computeRNEADerivatives(m,d,q,zero,y); MatrixXd dq_y=d.dtau_dq;
+  computeRNEADerivatives(m,d,q,zero,zero); MatrixXd dq_0=d.dtau_dq;
+  MatrixXd dMy_an=dq_y-dq_0;
+  std::printf("[kinhess] ∂(M·y)/∂q RNEA트릭: ‖FD‖=%.3e ‖해석‖=%.3e rel오차=%.3e  %s\n",
+    dMy_fd.norm(),dMy_an.norm(),(dMy_fd-dMy_an).norm()/(dMy_fd.norm()+1e-12),
+    (dMy_fd-dMy_an).norm()/(dMy_fd.norm()+1e-12)<1e-4?"✅ RNEA트릭 정확=∂M⁻¹/∂q 해석 가능":"✗ 불일치");
   return 0;
 }

@@ -54,9 +54,11 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
       gx[ax]+=w*d; gx[nv+ax]+=w*d/om;
       Hxx(ax,ax)+=w; Hxx(ax,nv+ax)+=w/om; Hxx(nv+ax,ax)+=w/om; Hxx(nv+ax,nv+ax)+=w/(om*om); } };
   int PS=envi("PLAN_SOFT",0);   // 1=planner forward=step_soft(발 lift 가능, gait 참조가 발 듦)·0=relaxed
+  int HF=envi("HARD_FWD",0);    // ★1=planner forward=step_kkt(hard, sim과 접촉모델 일치=HOUND식 hard forward)
   auto pf=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
     int PN=envi("PLAN_NSUB",NSUB);   // planner forward substep(sim NSUB보다 작게=속도↑)
-    if(PS) ci.step_soft(q,v,u,DT,PN,qn,vn); else ci.step_relaxed(q,v,u,DT,qn,vn,PN); };
+    if(HF) ci.step_kkt(q,v,u,DT,PN,qn,vn);        // hard forward(불일치 제거) — backward 그래디언트는 relaxed 유지
+    else if(PS) ci.step_soft(q,v,u,DT,PN,qn,vn); else ci.step_relaxed(q,v,u,DT,qn,vn,PN); };
   auto eval=[&](std::vector<VectorXd>&Xq,std::vector<VectorXd>&Xv,std::vector<VectorXd>&U,std::vector<VectorXd>&gaps,double&J,double&M){
     gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
     for(int k=0;k<N;k++){ VectorXd qn,vn; pf(Xq[k],Xv[k],U[k],qn,vn);

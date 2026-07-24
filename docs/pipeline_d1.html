@@ -169,7 +169,40 @@
   <div class="note-nb">그림의 6개 elevation-map 플래너 매핑: <b>A</b>=Online foothold opt.(Jenelten2020) · <b>B</b>=TAMOLS · <b>D1</b>=Perceptive NMPC(Grandia) · <b>신규 TOWR</b>=TOWR(Winkler). 우리 스택이 4개 계보를 커버.</div>
 </section>
 
+<section>
+  <h2>5 · 지형 플래너 그림 매핑 &amp; 안정성 검증 범위 <span class="dim">제어기 → 논문 그림 행 · 어디까지 검증</span></h2>
+
+  <h3>5a · 그림 매핑 — 제어기별 지형 플래너 계보</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>제어기</th><th>코어</th><th>지형 플래너 (그림 매핑)</th><th>근거 · 현황</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh" style="color:var(--a)">A <span class="dim">quad_mpc_wbic_17dof · 배포</span></td><td>Convex SRBD MPC + WBIC</td><td><b>Online foothold opt.</b><br><span class="dim">Jenelten 2020</span></td><td>elevation-map <b>footScore/selectFoot</b>로 발판 최적화 + base는 SRBD MPC 별도. 정확히 이 그림 행의 구조 · <b>폐루프 배포</b>.</td></tr>
+      <tr><td class="rowh" style="color:var(--kino)">B <span class="dim">quad_centroidal_17dof · 연구</span></td><td>Kinodynamic centroidal OCP</td><td><b>TAMOLS</b><br><span class="dim">Grandia/Jenelten</span></td><td>elevation-map 직접(분할 없음) heightmap 발판-z + base높이 적용. 우리 최근 작업을 실제로 "TAMOLS"로 명명 · <b>무거운 다리 실시간 실패(연구)</b>.</td></tr>
+      <tr><td class="rowh" style="color:var(--full)">C <span class="dim">quad_fulldynamics · 연구</span></td><td>FullDynamics OCP</td><td class="no">없음 (평지 전용)</td><td>지형 플래너 미적용 연구 컨트롤러.</td></tr>
+      <tr><td class="rowh" style="color:var(--d1)">D1 <span class="dim">NavBotHub · 분석만</span></td><td>Centroidal NMPC(SLQ/SQP) + 계층 WBC</td><td><b>Perceptive NMPC</b><br><span class="dim">Grandia · OCS2</span></td><td>그림 2행이 곧 OCS2 Grandia. D1 생태계가 이 스택 (단, 우리는 <b>분석만·미구축</b>).</td></tr>
+      <tr><td class="rowh" style="color:var(--d1)">TOWR <span class="dim">신규 · 오프라인</span></td><td>phase-based SRBD TO</td><td><b>TOWR</b><br><span class="dim">Winkler 2018</span></td><td>오프라인 지형 궤적최적화(발판·타이밍). <b>RL 교사/참조</b>로 편입 · DTC/APT-RL 데이터 계열.</td></tr>
+      <tr><td class="rowh" style="color:var(--warn)">CI-MPC <span class="dim">종결</span></td><td>Contact-Implicit MPC (상보성)</td><td class="dim">그림 외 · 접촉 창발</td><td>고정 스케줄 탈피(접촉 타이밍 온라인 발견). <b>로버스트 험지 부적합 확정 → 트랙 종결</b>(2026-07-24). 완성분=해석 그래디언트·준정적 자세.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>5b · 안정성 검증 범위 — 연속 지형 vs 불연속 험지 (실측 근거)</h3>
+  <p class="dim">"어디까지 안정성을 검증했나"를 지형 유형별로. 실제 검증분만(D1은 우리 환경 미검증).</p>
+  <div class="scroll"><table>
+    <thead><tr><th>제어기</th><th>연속 지형 (경사·완만)</th><th>불연속 험지 (갭·계단·징검다리)</th><th>어디까지 검증</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh" style="color:var(--a)">A</td><td class="yes">✅ 반응형 (footScore)</td><td class="wa">⚠️ 완주하나 <b>속도-공명 취약</b> (정렬 간격만)</td><td>배포·GUI. selectFoot이 gap(0.32m)·stepping(0.44m) 완주 — 지형간격 정렬 의존(0.4/0.6/0.7 실패)</td></tr>
+      <tr><td class="rowh" style="color:var(--kino)">B</td><td class="yes">✅ 15° 램프 등반 (tilt&lt;5°)</td><td class="no">❌ 붕괴 · <span class="dim">platgap t0.3 즉시 텀블</span></td><td>연속만 실증(Py). 발이 수직면 걸림 → 즉시 붕괴(폐루프 heightmap도 동일)</td></tr>
+      <tr><td class="rowh" style="color:var(--full)">C</td><td class="no">❌ (평지 전용)</td><td class="no">❌</td><td>평지 기본기만. 지형 플래너 미적용</td></tr>
+      <tr><td class="rowh" style="color:var(--d1)">D1</td><td colspan="2" class="dim" style="text-align:center">우리 환경 미검증 — 외부선 지형 파쿠르 시연 (AMP→RL 배포)</td><td>미구축·공통벤치 없음</td></tr>
+      <tr><td class="rowh" style="color:var(--d1)">TOWR</td><td class="dim" style="text-align:center">(planning 층)</td><td class="yes">✅ 최적 planning · <span class="no">❌ 개루프 추종 slow만</span></td><td>갭/계단 궤적 완벽 생성(갭회피 0)·STEP 크로싱 OK. fast 실행=개루프 벽(SRBD↔풀동역학 불일치 누적)</td></tr>
+      <tr><td class="rowh" style="color:var(--warn)">CI-MPC</td><td class="yes">✅ 평지 falls=0 <span class="dim">(저속)</span></td><td class="wa">△ gap 부분크로싱→낙상 · <span class="no">❌ offline만</span></td><td>평지 보행·준정적 자세(서기/눕기/앉기 3s). 험지=marginal 균형 프론티어 → <b>종결</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note-nb warn">★ <b>안정성 검증 종합</b> — <b>연속 지형(경사·완만)</b>은 모델기반 폐루프(A footScore·B heightmap)가 <b>소유</b>(A 배포·B 15°램프). <b>불연속 험지(갭/계단/징검다리)</b>는 모델기반 폐루프가 <b>속도-공명/마진 한계</b>(A 정렬 의존·B 붕괴)이고 오프라인(TOWR planning ✅·개루프 실행 ❌)·CI-MPC(부분크로싱→낙상, 종결)도 못 넘음 → <b>robust 불연속 험지 = RL 피벗 확정</b>. 검증 근거=메모리 <code>perceptive-nav-tamols</code>·<code>ci-mpc-track</code>·<a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a>.</div>
+</section>
+
 <footer>
-  02_Leg · D1 파이프라인 &amp; A·B·C·D1 비교 · 2026-07-22 · 관련: <a href="pipeline_a.html">pipeline(A)</a> · <a href="pipeline_bc.html">pipeline_bc(B·C)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · <a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a> · 메모리 <code>d1-navbothub-mpc-amp-analysis</code>·<code>quad-abc-io-structure</code>
+  02_Leg · D1 파이프라인 &amp; A·B·C·D1 비교 · 2026-07-24 · 관련: <a href="pipeline_a.html">pipeline(A)</a> · <a href="pipeline_bc.html">pipeline_bc(B·C)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · <a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a> · 메모리 <code>d1-navbothub-mpc-amp-analysis</code>·<code>quad-abc-io-structure</code>
 </footer>
 </div>

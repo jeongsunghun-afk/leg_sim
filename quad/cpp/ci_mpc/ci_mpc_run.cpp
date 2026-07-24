@@ -93,6 +93,8 @@ int main(){
   if(VX>0){ Qx(0,0)*=envd("VXPOS",0.1); Qx(nv,nv)*=envd("VXVEL",60.0);
     double WB=envd("W_BASE",5.0); Qx(2,2)*=WB; Qx(3,3)*=WB; Qx(4,4)*=WB; }
   double WJ=envd("W_JOINT",20.0); Qx.diagonal().segment(6,16).setConstant(WJ);   // ★다리 관절 gait 추종(스텝 강제)
+  Qx.diagonal()[nv+2]*=envd("W_BVZ",1.0);   // ★base 수직속도 감쇠(진동/드리프트 억제)
+  Qx.diagonal()[nv+0]*=envd("W_BVX",1.0);   // base 전방속도 추가감쇠(뒷걸음 드리프트 억제)
   MatrixXd Qf=Qx*20.0, Ru=MatrixXd::Identity(nu,nu)*1e-3;
 
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);

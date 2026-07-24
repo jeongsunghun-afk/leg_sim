@@ -257,19 +257,34 @@ struct CiDyn {
     return c;
   }
   // ★foot-slip cost 값+gradient(2nv)+Gauss-Newton hessian(2nv²). ∂c/∂q=sigmoid높이항(exact)·∂c/∂v=∂vt/∂v(exact).
-  //   ∂vt/∂q 커플링은 LWA convention 미묘라 제외(Python과 동일=부분그래디언트가 틀린 것보다 나음).
+  //   ★analytic_grad=1: ∂vt/∂q 커플링도 kinematic Hessian(∂J/∂q·v)로 exact화(걸음 창발 gradient 완전). 0=제외(부분).
   void foot_slip_cost(const VectorXd&q,const VectorXd&v,double&c,VectorXd&g,MatrixXd&H){
     c=0; g=VectorXd::Zero(2*nv); H=MatrixXd::Zero(2*nv,2*nv);
     if(CF<=0 && AIR_W<=0 && SYM<=0) return;
     std::vector<double> phi; std::vector<MatrixXd> J; std::vector<Vector3d> vf; foot_kin(q,v,phi,J,vf);
+    if(analytic_grad) computeJointKinematicHessians(model,data,q);   // ∂J/∂q 준비(foot_kin이 FK·jointJac 선행)
     std::vector<VectorXd> Jzs(4);
     for(int i=0;i<4;i++){
-      VectorXd Jz=J[i].row(2).transpose(); Jzs[i]=Jz;        // ∂φ/∂q (nv)
+      VectorXd Jz=J[i].row(2).transpose(); Jzs[i]=Jz;        // ∂φ/∂q (nv, 프레임원점 근사)
+      if(analytic_grad){   // ★접촉점(오프셋 r=R·(0,0,-FOOT_R)) 정확 z-Jacobian: J_v−skew(r)J_ω 의 z행
+        const auto&oMf=data.oMf[fids[i]]; Vector3d r=oMf.rotation()*Vector3d(0,0,-FOOT_R);
+        MatrixXd J6=MatrixXd::Zero(6,nv); getFrameJacobian(model,data,fids[i],LOCAL_WORLD_ALIGNED,J6);
+        Jz=(J6.row(2)+r[1]*J6.row(3)-r[0]*J6.row(4)).transpose(); Jzs[i]=Jz;   // z: +ry·ωx−rx·ωy
+      }
       double vx=vf[i][0], vy=vf[i][1], w2=vx*vx+vy*vy;
       double S=1.0/(1.0+std::exp(-C1S*phi[i])), Sp=S*(1.0-S);
       c += CF*S*w2;
       g.head(nv) += CF*Sp*C1S*w2 * Jz;                       // ∂c/∂q (높이 sigmoid, exact)
       g.tail(nv) += CF*S*2.0*(vx*J[i].row(0).transpose() + vy*J[i].row(1).transpose());  // ∂c/∂v
+      if(analytic_grad){   // ★∂(CF·S·w2)/∂q 의 접선속도 항: ∂w2/∂q=2(vx·∂vx/∂q+vy·∂vy/∂q), ∂v_f=∂J/∂q·v
+        Tensor<double,3> Hk(6,nv,nv); Hk.setZero();
+        getFrameKinematicHessian(model,data,fids[i],LOCAL_WORLD_ALIGNED,Hk);
+        VectorXd dvx=VectorXd::Zero(nv), dvy=VectorXd::Zero(nv);
+        for(int jj=0;jj<nv;jj++){ double ax=0,ay=0;
+          for(int b=0;b<nv;b++){ ax+=Hk(0,b,jj)*v[b]; ay+=Hk(1,b,jj)*v[b]; }
+          dvx[jj]=ax; dvy[jj]=ay; }
+        g.head(nv) += CF*S*2.0*(vx*dvx + vy*dvy);            // ★∂vt/∂q (걸음 창발 gradient exact)
+      }
       MatrixXd Jt=J[i].topRows(2);                           // 2×nv (접선)
       H.bottomRightCorner(nv,nv) += CF*2.0*S*(Jt.transpose()*Jt);   // GN hessian(속도)
       if(AIR_W>0 && phi[i]>0){                               // air-time φ²

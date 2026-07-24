@@ -108,5 +108,14 @@ int main(){
     double dA=(Af-Aa).norm(), dB=(Bf-Ba).norm();
     std::printf("  ★[해석] FD A_fro=%.6f vs 해석 A_fro=%.6f  ‖A diff‖=%.2e ‖B diff‖=%.2e  %s\n",
                 Af.norm(),Aa.norm(),dA,dB, dA<1e-5?"✅ 해석=FD(그래디언트 정확)":"✗ 불일치"); }
+  // ── ★foot-slip cost ∂c/∂q(접선속도 ∂vt/∂q 포함) 해석 vs FD ──
+  { cimpc::CiDyn cd(urdf_path); cd.analytic_grad=true; cd.CF=2500; cd.AIR_W=100; cd.SYM=0;
+    double c0; VectorXd g; MatrixXd Hh; cd.foot_slip_cost(q,v,c0,g,Hh);
+    VectorXd gq_an=g.head(nv), gq_fd(nv); double e2=1e-6;
+    for(int j=0;j<nv;j++){ VectorXd dq=VectorXd::Zero(nv); dq[j]=e2;
+      gq_fd[j]=(cd.foot_val(integrate(model,q,dq),v)-cd.foot_val(integrate(model,q,VectorXd(-dq)),v))/(2*e2); }
+    double dg=(gq_an-gq_fd).norm(), rel=dg/(gq_fd.norm()+1e-12);
+    std::printf("  ★[foot-slip ∂c/∂q] 해석‖=%.4f FD‖=%.4f  ‖diff‖=%.2e rel=%.2e  %s\n",
+                gq_an.norm(),gq_fd.norm(),dg,rel, rel<1e-4?"✅ ∂vt/∂q exact":"✗ 불일치"); }
   return 0;
 }

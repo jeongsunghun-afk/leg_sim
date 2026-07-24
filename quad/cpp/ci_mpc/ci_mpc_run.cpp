@@ -42,6 +42,17 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
     std::vector<VectorXd>&Rq,std::vector<VectorXd>&Rv,int N,double DT,int NSUB,
     double GAP_W,double REG,int ITERS,const MatrixXd&Qx,const MatrixXd&Qf,const MatrixXd&Ru){
   int nv=ci.nv,nu=ci.nu; MatrixXd K0=MatrixXd::Zero(nu,2*nv);
+  // ★DCM(capture point) 항: ξ=x+v/ω, ω=√(g/z). 발산 모드 d=e_x+e_vx/ω를 페널티(속도폭주 근절).
+  //   대각 Qf는 발산/수렴 모드에 가중 분산 → DCM은 발산 성분 집중. 값·gradient·rank1 hessian.
+  double W_DCM=envd("W_DCM",0.0), GRV=9.81, DCM_TF=envd("DCM_TF",20.0);   // TF=터미널배율(Qf=Qx*20 대응)
+  auto dcm_val=[&](const VectorXd&Xqk,const VectorXd&Xvk,const VectorXd&Rqk,const VectorXd&Rvk,double w)->double{
+    if(w<=0)return 0; double om=std::sqrt(GRV/std::max(0.15,Rqk[2])); VectorXd e=ci.sdiff(Rqk,Rvk,Xqk,Xvk);
+    double c=0; for(int ax=0;ax<2;ax++){ double d=e[ax]+e[nv+ax]/om; c+=0.5*w*d*d; } return c; };
+  auto dcm_grad=[&](const VectorXd&Xqk,const VectorXd&Xvk,const VectorXd&Rqk,const VectorXd&Rvk,double w,VectorXd&gx,MatrixXd&Hxx){
+    if(w<=0)return; double om=std::sqrt(GRV/std::max(0.15,Rqk[2])); VectorXd e=ci.sdiff(Rqk,Rvk,Xqk,Xvk);
+    for(int ax=0;ax<2;ax++){ double d=e[ax]+e[nv+ax]/om;
+      gx[ax]+=w*d; gx[nv+ax]+=w*d/om;
+      Hxx(ax,ax)+=w; Hxx(ax,nv+ax)+=w/om; Hxx(nv+ax,ax)+=w/om; Hxx(nv+ax,nv+ax)+=w/(om*om); } };
   int PS=envi("PLAN_SOFT",0);   // 1=planner forward=step_soft(발 lift 가능, gait 참조가 발 듦)·0=relaxed
   auto pf=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
     int PN=envi("PLAN_NSUB",NSUB);   // planner forward substep(sim NSUB보다 작게=속도↑)
@@ -50,20 +61,23 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
     gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
     for(int k=0;k<N;k++){ VectorXd qn,vn; pf(Xq[k],Xv[k],U[k],qn,vn);
       gaps[k+1]=ci.sdiff(Xq[k+1],Xv[k+1],qn,vn); gs+=gaps[k+1].norm();
-      VectorXd e=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k])+ci.foot_val(Xq[k],Xv[k]); }
-    VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e); M=J+GAP_W*gs; };
+      VectorXd e=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k])+ci.foot_val(Xq[k],Xv[k])
+        +dcm_val(Xq[k],Xv[k],Rq[k],Rv[k],W_DCM); }
+    VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e)+dcm_val(Xq[N],Xv[N],Rq[N],Rv[N],DCM_TF*W_DCM); M=J+GAP_W*gs; };
   std::vector<VectorXd> gaps; double J,M; eval(Xq,Xv,U,gaps,J,M);
   for(int it=0;it<ITERS;it++){
     std::vector<MatrixXd> As(N),Bs(N);
     int LN=envi("LIN_NSUB",NSUB);   // ★선형화 substep(forward NSUB보다 작게=속도↑, FDDP gap이 mismatch 흡수)
     for(int k=0;k<N;k++){ MatrixXd A,B; ci.lin_AB_multi(Xq[k],Xv[k],U[k],DT,LN,A,B); As[k]=A; Bs[k]=B; }
     VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); VectorXd Vx=Qf*e; MatrixXd Vxx=Qf;
+    dcm_grad(Xq[N],Xv[N],Rq[N],Rv[N],DCM_TF*W_DCM,Vx,Vxx);   // ★DCM 터미널(발산 모드 cost-to-go)
     std::vector<MatrixXd> Ks(N); std::vector<VectorXd> ks(N);
     for(int k=N-1;k>=0;k--){
       VectorXd Vxp=Vx+Vxx*gaps[k+1];
       VectorXd ek=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); VectorXd lx=Qx*ek, lu=Ru*U[k];
       double fc; VectorXd fg; MatrixXd fH; ci.foot_slip_cost(Xq[k],Xv[k],fc,fg,fH);
       lx+=fg; MatrixXd Qxx0=Qx+fH;
+      dcm_grad(Xq[k],Xv[k],Rq[k],Rv[k],W_DCM,lx,Qxx0);   // ★DCM 러닝(발산 모드 억제)
       MatrixXd&A=As[k]; MatrixXd&B=Bs[k];
       VectorXd Qx_=lx+A.transpose()*Vxp, Qu_=lu+B.transpose()*Vxp;
       MatrixXd Qxx=Qxx0+A.transpose()*Vxx*A, Quu=Ru+B.transpose()*Vxx*B, Qux=B.transpose()*Vxx*A;

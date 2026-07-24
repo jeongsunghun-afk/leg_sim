@@ -241,7 +241,8 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 | 완전 sustained walking | runaway 지연됐으나 완전 제거 아님 |
 | optimizer의 hard forward(HARD_FWD) | fine dt 필요 → **C++ 프론티어**(velocity-impulse 대dt 솔버 또는 fine dt) |
 | **C++ multi-rate lin_AB** | 현 FDDP=dt0.001·nsub1(0.1s). 긴 horizon(dt0.01·N50=0.5s) 위해 substep Jacobian 합성(Python lin_AB nsub) 포팅 필요 |
-| **C++ 보행 FDDP** | ✅ VX+foot-slip cost 포팅(feasible·전진 0.051m·foot-slip 작동) but 발lift≈0=슬라이딩=Python 단일OCP와 동일. 깨끗한 스텝=receding MPC 창발(단일 OCP 아님)이 남음 |
+| **C++ 보행 FDDP** | ✅ VX+foot-slip cost 포팅(feasible·전진 0.051m·foot-slip 작동) but 발lift≈0=슬라이딩=Python 단일OCP와 동일 |
+| **C++ receding MPC** | ✅ `ci_mpc_run.cpp`: FDDP 40Hz 폐루프(apply-first+warm-start+shift). 안정(base 0.39·낙상0)·전진 0.035m(0.07m/s)=Python 약한CF 영역과 동일. 발lift≈0=슬라이딩. 깨끗한 스텝=관절 gait 참조 필요(다음) |
 | **C++ step_kkt(hard)·40Hz 루프** | sustained walking·실시간 = 남은 프론티어 |
 | 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시 |
 | 다양한 동작(rearing·선회) | 미실증. **구조는 지원** |

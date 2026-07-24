@@ -6,11 +6,12 @@
 //     ci_mpc_walk "약한 CF=안정하나 스텝안함(~0.027m)" 영역과 동일. 발lift≈0=슬라이딩/lean(planted 발론
 //     lean까지만, 전진엔 스텝 필요). ★깨끗한 스텝=관절 gait 참조 필요(Python C-2도 foot-slip만으론 슬라이딩,
 //     트롯 관절참조+강가중으로 스텝 달성). receding MPC 폐루프 머신러리는 완성·검증.
-//   ★관절 gait 참조 배선(GAIT=1·W_JOINT·GAIT_T·STEP_H·ik_feet 트롯테이블): 발스케줄 IK로 관절참조가
-//     발 lift를 요구·강가중 추종. BUT 실측 발lift≈0(footmin<0)=여전히 안 뜸. ★근본원인=relaxed forward가
-//     4발 항상 접촉(active={0,1,2,3} bilateral clamping·ρD도 λⁿ>0 floor)이라 발이 지면서 못 떨어짐.
-//     gait 참조 인프라는 준비됐으나 **진짜 스텝=step_kkt(hard active-set: 발이 접촉 떠남) 필수**(메모리 재확인).
-//   후속: ①step_kkt hard active-set forward 포팅(발 lift/land) → gait참조로 스텝 ②40Hz 실시간.
+//   ★★스텝 달성(SIM_KKT=1·PLAN_SOFT=1·GAIT=1): step_kkt(hard active-set) sim + soft planner(발 lift 계획)
+//     + gait 관절참조 → **발 실제로 뜸(발lift 5.3cm)=진짜 스텝**(relaxed는 4발 접착이라 불가였음).
+//     BUT 스텝 중 base 붕괴(0.40→0.21)=균형 상실("강한 CF=스텝하나 발산" Python 영역). 스텝은 됨, 남은=균형.
+//   조합: planner=soft(발 lift 계획, PLAN_SOFT=1)·sim=step_kkt(발 lift 실행, SIM_KKT=1)·backward=relaxed ρ그래디언트
+//     ·gait 관절참조(W_JOINT 강가중). =HOUND식 soft/fast planner + hard sim.
+//   후속: ①스텝 중 균형 튜닝(W_BASE·gait·capture) ②40Hz 실시간.
 #include "ci_dyn.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -26,9 +27,12 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
     std::vector<VectorXd>&Rq,std::vector<VectorXd>&Rv,int N,double DT,int NSUB,
     double GAP_W,double REG,int ITERS,const MatrixXd&Qx,const MatrixXd&Qf,const MatrixXd&Ru){
   int nv=ci.nv,nu=ci.nu; MatrixXd K0=MatrixXd::Zero(nu,2*nv);
+  int PS=envi("PLAN_SOFT",0);   // 1=planner forward=step_soft(발 lift 가능, gait 참조가 발 듦)·0=relaxed
+  auto pf=[&](const VectorXd&q,const VectorXd&v,const VectorXd&u,VectorXd&qn,VectorXd&vn){
+    if(PS) ci.step_soft(q,v,u,DT,NSUB,qn,vn); else ci.step_relaxed(q,v,u,DT,qn,vn,NSUB); };
   auto eval=[&](std::vector<VectorXd>&Xq,std::vector<VectorXd>&Xv,std::vector<VectorXd>&U,std::vector<VectorXd>&gaps,double&J,double&M){
     gaps.assign(N+1,VectorXd::Zero(2*nv)); J=0; double gs=0;
-    for(int k=0;k<N;k++){ VectorXd qn,vn; ci.step_relaxed(Xq[k],Xv[k],U[k],DT,qn,vn,NSUB);
+    for(int k=0;k<N;k++){ VectorXd qn,vn; pf(Xq[k],Xv[k],U[k],qn,vn);
       gaps[k+1]=ci.sdiff(Xq[k+1],Xv[k+1],qn,vn); gs+=gaps[k+1].norm();
       VectorXd e=ci.sdiff(Rq[k],Rv[k],Xq[k],Xv[k]); J+=0.5*e.dot(Qx*e)+0.5*U[k].dot(Ru*U[k])+ci.foot_val(Xq[k],Xv[k]); }
     VectorXd e=ci.sdiff(Rq[N],Rv[N],Xq[N],Xv[N]); J+=0.5*e.dot(Qf*e); M=J+GAP_W*gs; };
@@ -58,7 +62,7 @@ static MatrixXd solve_fddp(CiDyn&ci,std::vector<VectorXd>&Xq,std::vector<VectorX
       for(int k=0;k<N;k++){
         VectorXd dx=ci.sdiff(Xq[k],Xv[k],Xqn[k],Xvn[k]);
         VectorXd u=U[k]+alpha*ks[k]+Ks[k]*dx; Un[k]=u;
-        VectorXd qn,vn; ci.step_relaxed(Xqn[k],Xvn[k],u,DT,qn,vn,NSUB);
+        VectorXd qn,vn; pf(Xqn[k],Xvn[k],u,qn,vn);
         if(!qn.allFinite()){ ok=false; break; }
         VectorXd xq,xv; ci.sint(qn,vn,VectorXd(-(1.0-alpha)*gaps[k+1]),xq,xv); Xqn[k+1]=xq; Xvn[k+1]=xv;
       }
@@ -79,6 +83,7 @@ int main(){
   double DT=envd("DT",0.01), REG=envd("REG",0.1), GAP_W=envd("GAP_W",50.0);
   int N=envi("N",30), NSUB=envi("NSUB",10), ITERS=envi("ITERS",5), STEPS=envi("MPC_STEPS",120);
   double VX=envd("VX",0.3);
+  int SIM_KKT=envi("SIM_KKT",0);   // 1=sim을 step_kkt(hard active-set, 발 lift 가능)로 → 스텝 보행
   ci.CF=envd("CF",2000.0); ci.C1S=envd("C1S",-30.0); ci.AIR_W=envd("AIR_W",100.0);
   VectorXd Qxd(2*nv); Qxd.head(nv).setConstant(20.0); Qxd.tail(nv).setConstant(1.0);
   MatrixXd Qx=Qxd.asDiagonal();
@@ -108,6 +113,8 @@ int main(){
   std::printf("[C++ receding MPC] N=%d dt=%.3f %dHz재풀이 VX=%.2f CF=%.0f relax=%s\n",N,DT,(int)(1.0/DT),VX,ci.CF,ci.relax_mode.c_str());
   auto footmin=[&](const VectorXd&q,const VectorXd&v){ std::vector<double>phi;std::vector<MatrixXd>J;std::vector<Vector3d>vf;
     ci.foot_kin(q,v,phi,J,vf); double mn=1e9; for(int i=0;i<4;i++)mn=std::min(mn,phi[i]); return mn; };
+  auto footmax=[&](const VectorXd&q,const VectorXd&v){ std::vector<double>phi;std::vector<MatrixXd>J;std::vector<Vector3d>vf;
+    ci.foot_kin(q,v,phi,J,vf); double mx=-1e9; for(int i=0;i<4;i++)mx=std::max(mx,phi[i]); return mx; };  // ★스텝=어느 발이든 뜨는가
 
   double liftmax=0;
   for(int s=0;s<STEPS;s++){
@@ -118,12 +125,14 @@ int main(){
     for(int k=1;k<=N;k++){ Xq[k]=Rq[k]; Xv[k]=Rv[k]; }
     MatrixXd K0=solve_fddp(ci,Xq,Xv,U,Rq,Rv,N,DT,NSUB,GAP_W,REG,ITERS,Qx,Qf,Ru);
     VectorXd u0=U[0];                                   // δx=0(x_actual=Xq[0]) → K0항 생략
-    VectorXd qn,vn; ci.step_relaxed(q,v,u0,DT,qn,vn,NSUB); q=qn; v=vn;   // apply first control, 1노드 전진
+    VectorXd qn,vn;                                     // apply first control, 1노드 전진(sim)
+    if(SIM_KKT) ci.step_kkt(q,v,u0,DT,NSUB,qn,vn); else ci.step_relaxed(q,v,u0,DT,qn,vn,NSUB);
+    q=qn; v=vn;
     if(!q.allFinite()){ std::printf("  ✗ 발산 step %d\n",s+1); break; }
-    liftmax=std::max(liftmax,footmin(q,v));
+    liftmax=std::max(liftmax,footmax(q,v));
     for(int k=0;k<N-1;k++) U[k]=U[k+1]; U[N-1]=tau_hold;   // warm-start shift
-    if((s+1)%15==0) std::printf("  step %3d t=%.2fs 전진=%.3fm base_z=%.3f vx=%.2f footmin=%.3f\n",
-                                s+1,(s+1)*DT,q[0]-x0,q[2],v[0],footmin(q,v));
+    if((s+1)%15==0) std::printf("  step %3d t=%.2fs 전진=%.3fm base_z=%.3f vx=%.2f 발높이[min %.3f max %.3f]\n",
+                                s+1,(s+1)*DT,q[0]-x0,q[2],v[0],footmin(q,v),footmax(q,v));
   }
   std::printf("  최종: %.2fs 전진 %.3fm(평균 %.2f m/s·목표 %.2f) base_z=%.3f 발lift최대=%.3f  %s\n",
               STEPS*DT,q[0]-x0,(q[0]-x0)/(STEPS*DT),VX,q[2],liftmax,

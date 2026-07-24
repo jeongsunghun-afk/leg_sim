@@ -9,6 +9,7 @@
 #include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/aba-derivatives.hpp>
+#include <pinocchio/algorithm/constrained-dynamics.hpp>   // step_kkt(hard active-set)
 #include <Eigen/Dense>
 #include <vector>
 #include <string>
@@ -29,6 +30,7 @@ struct CiDyn {
   double rho=0.004, kn=1.2e4, bn=120.0, bt=80.0, mu=0.8;      // soft force law (rollout)
   double CF=2500.0, C1S=-30.0, AIR_W=100.0;                    // foot-slip/air-time cost
   std::string relax_mode="D"; double rho_relax=1e-4;           // ★기본=논문판 ρD(vⁿλⁿ=ρ·법선전용). "eps"=Tikhonov
+  double bg_kp=10.0, bg_kd=50.0;                                // step_kkt Baumgarte(위치 드리프트 보정)
 
   CiDyn(const std::string& urdf_path){
     if(const char*rm=std::getenv("RELAX_MODE")) relax_mode=rm;  // env로도 지정
@@ -122,6 +124,38 @@ struct CiDyn {
       MatrixXd W=Mi*Jcc.transpose(), Acc=Jcc*W;
       VectorXd qdot_free=v+h*a_free, lam=relaxed_lambda(Acc,Jcc*qdot_free,12);
       v=qdot_free+W*lam; q=integrate(model,q,VectorXd(h*v));
+    }
+    qn=q; vn=v;
+  }
+
+  // ★hard 접촉 forward: constraintDynamics(proper KKT)+active-set(단방향). 발이 접촉 떠날 수 있음=스텝 가능.
+  void step_kkt(const VectorXd&q0,const VectorXd&v0,const VectorXd&u,double dt,int nsub,VectorXd&qn,VectorXd&vn){
+    double h=dt/nsub; VectorXd q=q0,v=v0; VectorXd tau(nv); tau.head(6).setZero(); tau.tail(nu)=u;
+    ProximalSettings prox(1e-10, rho_relax, 40);
+    for(int s=0;s<nsub;s++){
+      forwardKinematics(model,data,q); updateFramePlacements(model,data);
+      std::vector<int> active;
+      for(int i=0;i<4;i++){ const SE3&oMf=data.oMf[fids[i]];
+        double phi=(oMf.translation()+oMf.rotation()*Vector3d(0,0,-FOOT_R))[2];
+        if(phi<margin) active.push_back(i); }
+      VectorXd a;
+      for(int as=0; as<5; as++){
+        if(active.empty()){ a=aba(model,data,q,v,tau); break; }
+        PINOCCHIO_ALIGNED_STD_VECTOR(RigidConstraintModel) cms;
+        PINOCCHIO_ALIGNED_STD_VECTOR(RigidConstraintData) cds;
+        for(int i:active){ const Frame&fr=model.frames[fids[i]];
+          SE3 pl=fr.placement*SE3(Eigen::Matrix3d::Identity(),Vector3d(0,0,-FOOT_R));
+          RigidConstraintModel cm(CONTACT_3D, model, fr.parentJoint, pl, LOCAL_WORLD_ALIGNED);
+          cms.push_back(cm); }
+        for(auto&cm:cms) cds.push_back(RigidConstraintData(cm));
+        initConstraintDynamics(model,data,cms,cds);
+        a=constraintDynamics(model,data,q,v,tau,cms,cds,prox);
+        std::vector<int> keep;                                  // 접촉력 법선<0(당김)=분리
+        for(size_t j=0;j<active.size();j++) if(cds[j].contact_force.linear()[2]>=0.0) keep.push_back(active[j]);
+        if(keep.size()==active.size()) break;
+        active=keep;
+      }
+      v=v+h*a; q=integrate(model,q,VectorXd(h*v));
     }
     qn=q; vn=v;
   }

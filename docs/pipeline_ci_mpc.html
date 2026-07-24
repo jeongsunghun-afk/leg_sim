@@ -140,7 +140,7 @@
 <thead><tr><th>조각</th><th>구현</th><th>역할</th></tr></thead>
 <tbody>
 <tr><td><b>① forward</b></td><td class="mono">step_kkt / MuJoCo</td><td>로버스트 hard 접촉(penetration-launch 없음). dt~2ms서 안정(A 컨트롤러 검증)</td></tr>
-<tr class="rec"><td><b>② λ 해석 그래디언트</b></td><td class="mono">dyn_derivs_relaxed / dyn_derivs_kkt</td><td>★논문 핵심. ∂λ/∂(q,v,u) 해석적(FD EXACT). 완화=논문판 <span class="mono">ρD</span>(vⁿ∘λⁿ=ρ·법선전용, <span class="mono">RELAX_MODE=D</span>) 또는 기본 <span class="mono">εI</span>(Tikhonov, vⁿ∘λⁿ=−ελ²). firm contact선 동일, make/break서 ρD가 부드럽고 물리적</td></tr>
+<tr class="rec"><td><b>② λ 해석 그래디언트</b></td><td class="mono">dyn_derivs_relaxed / dyn_derivs_kkt</td><td>★논문 핵심. ∂λ/∂(q,v,u) 해석적(FD EXACT). 완화=논문판 <span class="mono">ρD</span>(vⁿ∘λⁿ=ρ·법선전용, <span class="mono">RELAX_MODE=D</span>) 또는 기본 <span class="mono">εI</span>(Tikhonov, vⁿ∘λⁿ=−ελ²). firm contact선 동일, make/break서 ρD가 부드럽고 물리적. <b>★계산법 2가지</b>: FD(관절 44회 흔들어 차분, 195ms) vs <b>해석</b>(kinematic Hessian ∂J/∂q + RNEA트릭 ∂M⁻¹/∂q 조립, <b>82ms=2.4×</b>·값 exact=FD 1.66e-9). 해석=HOUND 실시간(~70μs) 방식, C++ <span class="mono">ANALYTIC=1</span></td></tr>
 <tr><td><b>③ 저수준 추종</b></td><td class="mono">PD+FF (CTRL_DT≤1ms)</td><td>MPC 계획을 fine rate로 추종. 제어 유지간격 짧아야 hard 접촉 안정</td></tr>
 </tbody>
 </table>
@@ -214,7 +214,7 @@
 <span class="mono">ci_action.py</span>(접촉 forward + <b>relaxed λ 그래디언트</b> + step_kkt) · <span class="mono">ci_ocp.py</span>(tangent 선형화) ·
 <span class="mono">ci_ocp_ms.py</span>(multiple-shooting FDDP) · <span class="mono">ci_mpc_walk.py</span>(receding MPC walking) ·
 <span class="mono">ci_mpc_gui.py</span>/<span class="mono">ci_mpc_viewer.py</span>(A vs CI 비교 뷰어) ·
-<span class="mono">cpp/ci_mpc/</span>(C++ 포트=<b>그래디언트 코어만</b> 안정화·Python과 iter단위 일치, hard forward·FDDP·실시간 루프는 미포팅).
+<span class="mono">cpp/ci_mpc/</span>(C++ 포트=<b>그래디언트·FDDP·step_kkt·receding MPC + ★해석 그래디언트</b> 완성·Python과 iter단위 일치. 해석 그래디언트 2.4×·값 exact, 남은=속도 추가 최적화).
 개발 상세=<span class="mono">docs/CI-MPC_개발_리포트.md</span>.</p>
 <p>02_Leg 17-DOF · 참조 Kim et al. 2023 CI-MPC(KAIST HOUND). 배포 컨트롤러 A는 불변, 본 트랙은 모델기반 접촉 타이밍 연구.</p>
 </div>

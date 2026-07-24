@@ -12,7 +12,7 @@
 - **달성**: 논문의 두 핵심 — **① hard 접촉 forward**(penetration-launch 없음) + **② 접촉 임펄스 λ의 해석 그래디언트 ∂λ/∂(q,v,u)**(FD 대비 **EXACT**) — 를 구현·검증. **평지 walking 2.7~3.6s 안정 실증**(base 직립·전진 스텝·발산 없음).
 - **미완**: 완전 sustained walking(무한 보행)은 optimizer의 **hard forward**가 fine dt를 요구 → Python 긴 horizon 불가 = **C++ 프론티어**. 현재는 soft forward + exact λ그래디언트 하이브리드.
 - **자세 전환(desired pose)**: walk·crouch·sit(nose-up)·lie를 desired pose만 주고 online 실증(§4.7) + GUI/뷰어(A vs CI 비교).
-- **C++ 포팅(그래디언트 코어)**: relaxed 그래디언트(dyn_relaxed)·tangent 선형화(lin_AB)를 C++로 포팅, **Python과 iteration 단위 정확 일치**로 검증(§4.8). 단 solver 아키텍처(hard forward·Box-FDDP·실시간 루프)는 아직 미포팅 = C1.5 프론티어.
+- **C++ 포팅(전체 스택)**: relaxed 그래디언트·tangent 선형화·FDDP·step_kkt(hard active-set)·receding MPC까지 포팅, **Python과 iteration 단위 정확 일치** 검증. **★★해석 그래디언트(HOUND 핵심) 구현·검증·측정 완료**(2026-07-24, §5.6): FD 44-geom을 kinematic Hessian+RNEA 트릭으로 대체 → 값 exact(=FD 1.66e-9)·**solve 195→82ms 2.4×**. Python이 convention 벽으로 못 한 지점을 C++서 돌파.
 
 ---
 
@@ -171,6 +171,33 @@
 
 ---
 
+## 5.6 FD 그래디언트 vs 해석 그래디언트 (실시간 핵심 레버)
+
+접촉 임펄스 그래디언트 `∂λ/∂q`(정확히는 `∂A_cc/∂q`·`∂b_cc/∂q`·`∂(M⁻¹Jᵀλ)/∂q`)를 구하는 **두 방식** — 결과값은 같고 속도가 다르다.
+
+| | FD 그래디언트 (유한차분) | 해석 그래디언트 (analytic) |
+|---|---|---|
+| 원리 | 관절 q를 ±ε 흔들어 결과 차이/ε | 미분 공식을 직접 조립(흔들지 않음) |
+| 계산 | **44회 기하 재평가**(nv=22 × ±2, `ci_relaxed.cpp:71`) | kinematic Hessian ×4발 + RNEA도함수 ×2 |
+| 사용 도구 | geom() 반복 호출 | `getFrameKinematicHessian`(∂J/∂q) + `computeRNEADerivatives`(∂M/∂q) |
+| solve/step | **195ms** | **82ms** |
+| 정확도 | 기준(ε 의존 미세오차) | FD와 **1.66e-9 일치**(exact) |
+
+**해석 조립 공식** (`dyn_relaxed`의 `analytic_grad` 분기):
+```
+dbg  = Σ_b H(a,b,j)·q̇_free[b]          ← ∂b_cc/∂q  (kinematic Hessian)
+Term1= Σ_b H(a,b,j)·(Wλ)[b] ;  JᵀΛ = Σ_a H(a,b,j)·λ[3k+a]
+DMy  = RNEAderiv(q,0,Wλ).dtau_dq − RNEAderiv(q,0,0)   ← ∂(M·y)/∂q (RNEA 트릭)
+dWl  = M⁻¹(JᵀΛ − DMy) ;  DA = Term1 + Jcc·dWl          ← ∂(M⁻¹Jᵀλ)/∂q
+dl_dq = A⁻¹·DA − A⁻¹·(dbg + Jcc·dt·aq)                 ← 최종 ∂λ/∂q
+```
+
+- **왜 중요**: FD의 44회 재평가가 solve의 지배적 비용. 해석은 이를 없애 **2.4× 가속** + **정확도 향상**(ε 없음). HOUND가 40Hz 실시간(그래디언트 ~70μs)을 낸 방법이 바로 이것.
+- **왜 Python이 못 했나**: Python 트랙은 `getFrameVelocityDerivatives`의 LWA(LOCAL_WORLD_ALIGNED) convention 불일치로 ∂q항이 1.5e-2 잔차. C++ `getFrameKinematicHessian`은 convention이 정확해 통과(de-risk: `ci_kinhess_test.cpp` ∂b_cc/∂q 1.2e-11·∂M⁻¹/∂q 5.7e-8).
+- **활성화**: `env ANALYTIC=1`(기본 0). 남은 = 해석 kinhess/RNEA 자체 최적화(→ HOUND 70μs) + foot-slip `∂vt/∂q`도 kinematic Hessian로 exact화(gait 품질).
+
+---
+
 ## 6. 파일 구성 (`simulation/quad/ci_mpc/`)
 
 | 파일 | 역할 |
@@ -187,11 +214,15 @@
 ### C++ 포팅 (`simulation/quad/cpp/ci_mpc/`)
 | 파일 | 역할 |
 |---|---|
-| `ci_dyn.hpp` | CiDyn 라이브러리: 모델 로드·stance IK·step_soft·**dyn_relaxed(relaxed 그래디언트)·lin_AB(tangent 선형화)**. ★`dIntegrate` 전 setZero |
-| `ci_relaxed.cpp` | 그래디언트 값 대조 검증 + **회귀 가드**(수동 vs CiDyn ‖diff‖<1e-9) |
+| `ci_dyn.hpp` | CiDyn 라이브러리: 모델 로드·stance IK·step_soft/step_kkt·**dyn_relaxed(FD+해석 그래디언트)·lin_AB(tangent)·lin_AB_multi(multi-rate)**·foot-slip·in_gap. ★`dIntegrate` 전 setZero |
+| `ci_relaxed.cpp` | 그래디언트 값 대조 검증 + **회귀 가드**(수동 vs CiDyn ‖diff‖<1e-9 + **해석 vs FD** 1.66e-9) |
 | `ci_ocp_test.cpp` | single-shooting iLQR 서기 OCP. Python relaxed OCP와 iter단위 일치 검증 |
+| `ci_fddp_test.cpp` | multiple-shooting FDDP(gap·feasibility·merit) |
+| `ci_kkt_test.cpp` | hard active-set forward(step_kkt) 발 뜸 검증 |
+| `ci_kinhess_test.cpp` | 해석 그래디언트 primitive de-risk(kinematic Hessian·RNEA 트릭 vs FD) |
+| **`ci_mpc_run.cpp`** | **receding-horizon MPC**(solve_fddp + step_kkt sim + PD+FF fine 추종 + gait/gap 참조 + 프로파일). `env ANALYTIC=1`=해석 그래디언트 |
 
-> C++는 **그래디언트 코어만** 포팅·안정화. solver 아키텍처(hard forward=step_kkt·multiple-shooting FDDP·40Hz 실시간 루프)는 미포팅 = C1.5 프론티어.
+> C++는 **그래디언트 코어 + FDDP + step_kkt + receding MPC + 해석 그래디언트**까지 포팅·검증. 남은 = 해석 그래디언트 속도 추가 최적화(→70μs)·스텝 중 균형 튜닝.
 
 ---
 
@@ -233,7 +264,8 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 - **논문판 ρD 포팅**(RELAX_MODE=D 기본) — make/break서 Python ρD와 6자리 일치(18.159240)
 - 서기 iLQR OCP 안정화 — `dIntegrate` setZero 버그 수정(Vxx 1e50→7171, crash 소멸)
 - **multiple-shooting FDDP 포팅**(`ci_fddp_test.cpp`) — gap 완전폐쇄(feasible)·α=1.0 clean 수렴·N=100(0.1s, single-shooting 4배)·종단오차 0.338. relaxed forward+backward 일관 필수(soft forward는 gap 미폐쇄).
-- 회귀 가드(ci_relaxed 대조, εI/ρD 양쪽)
+- **★★해석 그래디언트(HOUND 핵심) 포팅·검증·속도**(`ci_dyn.hpp` `analytic_grad`, 2026-07-24) — FD 44-geom 루프를 **kinematic Hessian(∂J/∂q)+RNEA 트릭(∂M⁻¹/∂q)** 해석 조립으로 대체. **값 exact**(해석=FD ‖diff‖1.66e-9)·**solve 195→82ms=2.4×↑**. Python이 kinematic 도함수 convention 벽으로 못 한 지점을 C++서 돌파(§5.6).
+- 회귀 가드(ci_relaxed 대조, εI/ρD 양쪽 + 해석 vs FD)
 
 **⏳ 남음**
 | 항목 | 이유/방향 |
@@ -243,7 +275,7 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 | **★★C++ step_kkt(hard active-set)** | ✅ **해소·스텝 달성**. `step_kkt`(constraintDynamics+active-set 단방향) 포팅·검증(FL굽힘→발 0.106m 뜸). ci_mpc_run 통합(SIM_KKT+PLAN_SOFT soft planner+gait)→**발 실제로 뜸(5.3cm)=진짜 스텝!** |
 | **★★C++ fine-rate PD+FF 추종** | ✅ HOUND §6.3(계획을 h≤0.001s로 PD+FF 추종, KP_T/KD_T). u0 held(0.01s)의 base 붕괴(0.21)→**유지(0.33~0.40)+발 5.3cm 스텝** |
 | **C++ 전진 보행(미붕괴, but 거침)** | △ anti-runaway 튜닝 → 3s 미붕괴·전진 0.478m. **★정직 교정(뷰어 확인)**: base_z 요동 12cm·기울기 8~19°·발 관통=**거친 전방 shuffle이지 깨끗한 보행 아님**. base_z만 본 이전 "안정" 판정은 과대평가. ★근본=CI-MPC로 basic walk 생성이 어긋난 접근(고정 관절테이블 추종=동역학 비일관). **walk엔 보행생성기 필요**(Raibert gait), CI-MPC 가치=험지 접촉발견 |
-| **★★C++ 40Hz 실시간 프로파일/최적화** | ✅ 병목=FDDP solve(288ms·sim step_kkt 0.4ms만)=FD 기하 도함수. knob(LIN_NSUB·PLAN_NSUB·4알파) 축소 → **N15·ITERS3=20.4ms/step=40Hz 실시간 달성**(14×↑). 단 품질저하. 실시간+풀품질=해석 그래디언트(HOUND ~70μs) 필요 |
+| **★★C++ 40Hz 실시간 프로파일/최적화** | ✅ 병목=FDDP solve(FD 기하 도함수 195ms·sim step_kkt 0.3ms만). ①knob(LIN_NSUB·N·ITERS) 축소=N15·ITERS3 20.4ms/step 실시간(단 품질저하). ②**★해석 그래디언트(ANALYTIC=1)로 195→82ms=2.4×↑·값 exact**(§5.6). 실시간+풀품질=해석+적당한 축소 조합(진행중), HOUND 70μs엔 해석 kinhess/RNEA 추가 최적화 |
 | **C++ 험지(gap) 크로싱** | ✅ 인프라: CiDyn.in_gap로 step_kkt 틈 위 발=지지없음 + gref_gap 발판 solid ground shift(재IK). baseline=걷다 gap서 앞발 빠져 붕괴(gap 물리 확인). 발판회피시 gap 너머 과신전→vx lunge runaway→붕괴 = Python perceptive-nav "gap-edge lunge" 동일 프론티어. 안정 크로싱=capture/RL(연구급) |
 | **C++ 40Hz 실시간** | 현 Python-급(offline). HOUND 해석 그래디언트 속도 최적화 |
 | 더 깊은 수렴(J 11.1) | soft-force 그래디언트(dynamics_derivatives) C++ 포팅 시(옵션) |
@@ -251,7 +283,9 @@ env HARD=1 HARD_PLAN=1 VX=0.15 CF=2500 W_BASE=50 CTRL_DT=0.001 \
 
 **★★C++ CI-MPC 스택 현황**: 그래디언트(ρD)·iLQR·FDDP·multi-rate·foot-slip·gait참조·receding MPC·**step_kkt(hard active-set)** 전부 완성·검증. **★진짜 스텝 보행 달성**(step_kkt sim+soft planner+gait→발 5.3cm 뜸). 모델기반 CI-MPC 파이프라인 전체가 C++로 동작. **남은=스텝 중 균형 튜닝**(base 붕괴 방지)+40Hz 실시간.
 
-**다음 후보**: (1) 스텝 중 **균형 안정화**(W_BASE·gait·capture-point 튜닝) = 안정 보행, (2) 40Hz 실시간(HOUND 해석 그래디언트 속도), (3) friction cone(slip).
+**★해석 그래디언트 완성**(2026-07-24): HOUND 핵심(해석 접촉 그래디언트)을 C++서 구현·검증(exact=FD)·측정(2.4×). Python이 convention 벽으로 못 한 지점 돌파. 실시간(40Hz)+품질의 근본 병목이 열림.
+
+**다음 후보**: (1) **해석+적당한 축소로 실시간+품질 동시**(진행중), (2) **foot-slip ∂vt/∂q도 해석 exact화**(gait 품질), (3) 스텝 중 균형 안정화(W_BASE·capture-point), (4) friction cone(slip).
 
 ---
 

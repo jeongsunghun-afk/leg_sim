@@ -132,9 +132,14 @@ int main(){
 
   VectorXd qstar=ci.stance_q(), vstar=VectorXd::Zero(nv);
   // ★자세 목표(desired pose): 로봇은 서기(0.42)서 시작, TGT_BZ>0이면 그 높이 자세로 전환·유지(크라우치/눕기).
-  double TGT_BZ=envd("TGT_BZ",-1.0);
+  //   ★LIFT: 지정 발(0=FL,1=FR,2=HL,3=HR)을 LIFT_H로 올린 참조=변수 접촉(step_kkt가 그 발 접촉 끊음, CI-MPC 핵심).
+  double TGT_BZ=envd("TGT_BZ",-1.0), LIFT_H=envd("LIFT_H",0.10);
+  int LIFT=envi("LIFT",-1);
   std::vector<Vector3d> pnom={{0.30,0.16,0.0},{0.30,-0.16,0.0},{-0.30,0.16,0.0},{-0.30,-0.16,0.0}};
-  VectorXd qref = (TGT_BZ>0) ? ci.ik_feet(pnom, TGT_BZ) : qstar;   // 참조 자세(발 planted, base 높이 TGT_BZ)
+  if(LIFT>=0 && LIFT<4) pnom[LIFT][2]=LIFT_H;   // 그 발 목표를 공중으로
+  double CX=envd("COM_X",0.0), CY=envd("COM_Y",0.0);   // ★base CoM을 (CX,CY)로 이동(3발 자세=지지삼각형 위로)
+  for(auto&p:pnom){ p[0]-=CX; p[1]-=CY; }              // 발을 반대로 shift=base가 CoM으로(IK 기하 동일)
+  VectorXd qref = (TGT_BZ>0 || LIFT>=0) ? ci.ik_feet(pnom, TGT_BZ>0?TGT_BZ:0.42) : qstar;
   // ★트롯 gait 참조: 발스케줄(대각쌍 FL/HR·FR/HL 교대, stance 후방sweep·swing 전방arc) IK → phase→관절 테이블
   double GAIT=envd("GAIT",VX>0?1.0:0.0), GT=envd("GAIT_T",0.4), STEP_H=envd("STEP_H",0.05), BZ=envd("BASE_Z",0.40);
   double stride=VX*GT*0.5, goff[4]={0.0,0.5,0.5,0.0};

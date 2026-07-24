@@ -181,7 +181,10 @@ int main(){
   auto tilt_deg=[&](const VectorXd&q){ double x=q[3],y=q[4],z=q[5],w=q[6];   // ★base 기울기(자세 품질)
     double rzz=1.0-2.0*(x*x+y*y); return std::acos(std::max(-1.0,std::min(1.0,rzz)))*180.0/M_PI; };
   double liftmax=0, solve_ms=0, sim_ms=0, tiltmax=0, bzmin=1e9, bzmax=-1e9;   // ★실시간+품질 지표
+  int PUSH_STEP=envi("PUSH_STEP",-1); double PUSH_VX=envd("PUSH_VX",0.0), PUSH_VY=envd("PUSH_VY",0.0);   // ★외란(base 속도 임펄스)
   for(int s=0;s<STEPS;s++){
+    if(s==PUSH_STEP){ v[0]+=PUSH_VX; v[1]+=PUSH_VY;   // ★외란 주입
+      std::printf("  ★외란 step %d: base v += (%.2f,%.2f) m/s\n",s,PUSH_VX,PUSH_VY); }
     std::vector<VectorXd> Rq(N+1),Rv(N+1); double phase=s*DT/GT;
     for(int k=0;k<=N;k++){ Rq[k]= GAIT<0.5 ? qref : (has_gap ? gref_gap(phase+k*DT/GT, q[0]+VX*k*DT) : gref(phase+k*DT/GT));   // ★자세모드=qref 목표 / gap 있으면 발판 회피
       Rq[k][0]=q[0]+VX*k*DT; Rv[k]=vstar; Rv[k][0]=VX; }

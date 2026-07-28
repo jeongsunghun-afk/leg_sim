@@ -181,7 +181,7 @@ struct TrotCtrl {
     int _Pg = cfg.walk?4:5;
     cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
     double vx0=d->qvel[0], vy0=d->qvel[1];
-    if(getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬(base 기준)
+    if(!tam_inj && getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬. 주입모드는 per-foot 회피(전역straddle 끔)
     tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);
     tam_ol_warm=true;
     // 샘플링 → tam_s/tam_c/tam_fh
@@ -657,8 +657,10 @@ struct TrotCtrl {
       bool frontleg=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");  // ★앞다리=앞몸통방향(허리반영)
       Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw;
       if(taminj && tam_N>0){ int mp[4]={2,3,0,1};   // ★A(HL,HR,FL,FR)↔TAMOLS(FL,FR,RL,RR) 매핑
-        double dx=tam_fh[mp[i]][0]-tam_ol.prm.hip_offsets(mp[i],0), dy=tam_fh[mp[i]][1]-tam_ol.prm.hip_offsets(mp[i],1);  // TAMOLS 계획 편차(명목 대비=gap회피분)
-        pe_xy+=Vector2d(cy*dx-sy*dy, sy*dx+cy*dy); }   // ★A 발판(검증됨)에 TAMOLS 편차만 더함(gap 협조)=A 타이밍·안정 유지
+        double dx=tam_fh[mp[i]][0]-tam_ol.prm.hip_offsets(mp[i],0), dy=tam_fh[mp[i]][1]-tam_ol.prm.hip_offsets(mp[i],1);  // TAMOLS 계획 편차(명목 대비, 평지=0)
+        pe_xy+=Vector2d(cy*dx-sy*dy, sy*dx+cy*dy); }   // ★A 발판(검증됨)에 TAMOLS 편차만 더함=A 타이밍·안정 유지
+      if(taminj && getenv("GAP_X0")){ double g0=atof(getenv("GAP_X0")), g1=atof(getenv("GAP_X1")), mg=0.05;   // ★per-foot gap 회피(A gait 연속보행 정합)
+        if(pe_xy[0]>g0-mg && pe_xy[0]<g1+mg) pe_xy[0]=(pe_xy[0]<0.5*(g0+g1))? g0-mg : g1+mg; }   // 갭에 빠질 발→가까운 안전 edge(앞/뒤)로
       if(foot_nudge){   // ★③ 발판 선택(밸런스-인지): 스윙시작 1회 도달반경내 footScore·밸런스 저울질로 발판 선택→오프셋 홀드(밸런스 피드백 보존)
         if(!have_prev[i]){ double bx,by;
           if(tmap.selectFoot(pe_xy[0],pe_xy[1],nudge_r,nudge_wbal,bx,by)){ Vector2d off(bx-pe_xy[0],by-pe_xy[1]);

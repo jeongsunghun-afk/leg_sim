@@ -39,7 +39,8 @@ inline void set_walk_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) 
 struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool warm = false;
   double gap_x0 = -1, gap_x1 = -1;   // ★로컬 프레임 gap [x0,x1](base 기준). <0 = gap 없음(평지 walk)
   int phase_off = 0;                 // ★horizon-shift 위상 오프셋(매 replan 증가 → swing 실행)
-  bool walk = false; };              // ★walk(crawl 4-phase 한발씩=정적안정) vs trot(5-phase 대각쌍)
+  bool walk = false;                 // ★walk(crawl 4-phase 한발씩=정적안정) vs trot(5-phase 대각쌍)
+  bool z0_terrain = false; };        // ★지형모드: base z 밴드를 z0 기준 상대로(계단 상승 허용)
 
 inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int map_size,
                               double z0, double yaw0, double vx0, double vy0,
@@ -76,6 +77,7 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
   }
   QpOptions o; o.max_iter = cfg.rti_iter;
   o.rp_max = 0.06; o.zlo = 0.48; o.zhi = 0.55; o.yaw_max = 0.10; o.x_target = xf * 0.9;
+  if (cfg.z0_terrain) { o.zlo = z0 - 0.06; o.zhi = z0 + 0.06; o.rp_max = 0.20; }   // ★지형: z밴드=z0 상대(계단 상승)·롤피치 여유↑(경사 흡수)
   o.gap = gap_near; o.gap_lo = cfg.gap_x0; o.gap_hi = cfg.gap_x1;   // ★gap 회피 발판 제약(로컬)
   return solve_fast(st, h, cell, map_size, o);
 }

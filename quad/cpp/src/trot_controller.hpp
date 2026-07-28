@@ -171,9 +171,22 @@ struct TrotCtrl {
   tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
+  double tam_z0=0.52;   // ★online_replan에 넘길 base z 기준(지형모드=지형+명목높이)
   void tamols_online_replan(mjData* d){
-    if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_ol_mapinit=true; }
-    double bx=d->qpos[0], by=d->qpos[1];
+    mjModel* m=q.m; double bx=d->qpos[0], by=d->qpos[1];
+    bool terr = getenv("TAMOLS_TERRAIN")!=nullptr;   // ★지형 heightmap을 솔버에 주입(flat_costmap 대체). off=평지회귀
+    if(terr){   // ── mj_ray 실측 지형 → 로컬 heightmap(yaw회전·월드z) ──
+      tmap.foot_r=q.fr[0]; tmap.update(m,d,bx,by,(uint64_t)(d->time*1e9));
+      double qw=d->qpos[3],qx=d->qpos[4],qy=d->qpos[5],qz=d->qpos[6];
+      double yaw=std::atan2(2*(qw*qz+qx*qy), 1-2*(qy*qy+qz*qz)), cs=std::cos(yaw), sn=std::sin(yaw);
+      int N=tam_ol_ms; double cell=tam_ol_cell, off=cell*N/2.0;
+      tam_ol_h=tamols::Grid::Zero(N,N);
+      for(int k=0;k<N;k++) for(int l=0;l<N;l++){
+        double lx=k*cell-off, ly=l*cell-off, wx=bx+cs*lx-sn*ly, wy=by+sn*lx+cs*ly;
+        double z=tmap.z(wx,wy); tam_ol_h(k,l)=(z<-50.0)?0.0:z; }   // 무효셀=0(평지)
+      tam_z0=tmap.z(bx,by); if(tam_z0<-50.0) tam_z0=0.0; tam_z0+=0.50;   // base=로봇밑 지형+명목높이
+      tam_ol_mapinit=true;
+    } else if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_z0=0.52; tam_ol_mapinit=true; }
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
     tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;   // ★주입=plan 정지(발판 명목·gap회피만, A gait가 전진)
@@ -182,7 +195,8 @@ struct TrotCtrl {
     cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
     double vx0=d->qvel[0], vy0=d->qvel[1];
     if(!tam_inj && getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬. 주입모드는 per-foot 회피(전역straddle 끔)
-    tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);
+    cfg.z0_terrain = getenv("TAMOLS_TERRAIN")!=nullptr;   // ★지형모드=z밴드를 z0 기준 상대로(계단 base 상승 허용)
+    tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, tam_z0,0.0,vx0,vy0, fmeas, cfg);
     tam_ol_warm=true;
     // 샘플링 → tam_s/tam_c/tam_fh
     std::vector<std::array<double,12>> smp; std::vector<std::array<int,4>> con; Eigen::Matrix<double,4,3> fh;

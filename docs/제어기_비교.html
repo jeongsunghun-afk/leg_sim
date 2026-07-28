@@ -137,32 +137,32 @@
 
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>
-    <thead><tr><th>구성</th><th>계획기(TO) — 입력 · 고정 · 최적화</th><th>추종기</th><th>실시간</th><th>험지 크로싱</th></tr></thead>
+    <thead><tr><th>구성</th><th>계획기(TO) — 입력 · 고정 · 최적화</th><th>추종기 — 입력 · 고정 · 최적화</th><th>실시간</th><th>험지 크로싱</th></tr></thead>
     <tbody>
       <tr><td><span class="chip cA">A</span></td>
         <td>online footScore/selectFoot<br><span class="mono">입력</span> heightmap·cmd_vel·상태<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>·base궤적<br><span class="mono">최적화</span> <b>발판위치만</b>(국소 nudge)</td>
-        <td>SRBD MPC + WBIC</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
+        <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+q̈,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
       <tr><td><span class="chip cB">B</span></td>
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
-        <td>B TSID/KinodynID</td><td class="no">~14 st/s</td><td class="no">❌ B 자체 3.3s 낙상</td></tr>
+        <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> q̈·접촉력→τ(계층 TSID QP)</td><td class="no">~14 st/s</td><td class="no">❌ B 자체 3.3s 낙상</td></tr>
       <tr><td><span class="chip cC">C</span></td>
         <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적·GRF (지형 X)</td>
-        <td>FullDyn OCP + Riccati</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
+        <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적·상태<br><span class="mono">고정</span> OCP 해·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span></td>
         <td>Perceptive NMPC(내장)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
-        <td>계층 WBC(HoQp)</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
+        <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→q̈,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
       <tr><td><span class="chip cCI">CI</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
-        <td>PD+FF</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
+        <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
       <tr><td class="acc"><b>TAMOLS</b>★</td>
         <td>TAMOLS(C++ 실시간)<br><span class="mono">입력</span> heightmap·<b>보행스케줄</b>·base/cmd 참조<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>(접촉스케줄)<br><span class="mono">최적화</span> base pose spline·<b>발판위치</b>(+GIAC 안정성)</td>
-        <td><b>RSL식 WBC 직접추종</b><br>+ <b>receding-horizon 온라인</b>(solve_fast 매 스텝 재계획)</td><td class="yes">~5000 st/s ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
+        <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> q̈,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">~5000 st/s ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
       <tr><td><b>TOWR</b></td>
         <td>TOWR(오프라인)<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서<br><span class="mono">최적화</span> base궤적·<b>발판·타이밍</b>(phase duration)·GRF</td>
-        <td>자작WBIC→B TSID</td><td class="no">비실시간</td><td class="no">❌ 부양base 불안정</td></tr>
+        <td>자작WBIC→B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> q̈,λ→τ(TSID QP)</td><td class="no">비실시간</td><td class="no">❌ 부양base 불안정</td></tr>
       <tr><td class="acc"><b>DTC</b>★목표</td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
-        <td><b>RL 정책</b></td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
+        <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
     </tbody>
   </table></div>
   <div class="box"><b>요지</b> — ★<b>RSL식 WBC 직접추종이 돌파구</b>: SRBD MPC(속도재계획=overshoot 주범)를 빼고 WBC가 base 위치를 직접 추종+자세 강홀드(w_ori=200)하니 <b>tilt 2~6°로 계획을 충실히 추종·overshoot 해소</b>. ★<b>receding-horizon 온라인 통합 작동</b>(solve_fast 재계획+RSL-WBC를 매 스텝 루프): 평지 저속 walk <b>falls=0·실시간(~10×)·10s</b>. <b>단 walk가 ~0.3m서 stall</b>(매 replan 재앵커가 swing 조정 교란=gait coordination 한계)→지형(gap 0.45)까지 못 감·크로싱 미달. 전진 authority↑시 z침하. <b>참고: 로봇 자체는 A로 1.4~2.0 m/s</b>(온라인 TAMOLS의 저속은 새 루프 미성숙, 로봇 한계 아님). 진짜 크로싱=horizon-shift(재앵커X)/gait 재설계 또는 <b>RL(DTC)</b>. <br><b>★sim2real(PACE 실기 액추에이터 식별)</b> — A·TAMOLS(RSL-WBC)는 <span class="mono">QuadControl GEARBOX</span>(반사관성 armature=Irot·N²·damping·friction) <b>구조 보유</b>(단 데이터시트 placeholder값 Irot1e-4·dmp0.1·frc0.5, PACE 실측 아님). B/C/CI/TOWR은 별도 Pinocchio 모델이라 <b>미보유</b> → <b>전 제어기 코드에 동일 액추에이터 물리 추가 필요</b>(하드웨어 확보 시 PACE 실측값으로 교체).</div>

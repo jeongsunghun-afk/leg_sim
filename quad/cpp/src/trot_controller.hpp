@@ -316,7 +316,10 @@ struct TrotCtrl {
     if(mode=="tamols"){
       bool online=getenv("RSL_ONLINE");
       if(online){ double RDT=getenv("REPLAN_DT")?atof(getenv("REPLAN_DT")):0.2;
-        if(tam_ol_last<0 || t-tam_ol_last>=RDT){ tamols_online_replan(d); tam_ol_last=t; tam_t=-1; } }  // ★온라인 재계획+재앵커
+        bool first=(tam_ol_last<0);
+        if(first || t-tam_ol_last>=RDT){ tamols_online_replan(d); tam_ol_last=t;
+          if(first) tam_t=-1;                                    // 첫 진입=아래 full 앵커+swing 리셋
+          else { tam_t0=t; tam_ax=d->qpos[0]; tam_ay=0.0; } } }  // ★proper receding-horizon: 후속=위치만 재앵커(swing 연속·저크 제거)
       else if(!tam_loaded) load_tamols(getenv("TAMOLS_TRAJ")?getenv("TAMOLS_TRAJ"):"/tmp/tamols_traj.txt");
       if(tam_N<=0){ q.wbic_stance(); armed=false; return; }             // 파일없음=제자리
       if(tam_t<0){ tam_t0=t; tam_ax=d->qpos[0]; tam_ay=online?0.0:d->qpos[1];   // 진입=현재 위치 앵커. ★온라인=y를 0고정(직선 유지, 드리프트 보정)
@@ -335,6 +338,7 @@ struct TrotCtrl {
         q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;
         q.w_ori=getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★RSL: 자세 강홀드(축소지지서 레벨링 모멘트 우선). 낮으면 첫swing tilt발산
         q.KD_BASE=getenv("KD_BASE")?atof(getenv("KD_BASE")):25.0;   // ★속도 추종 게인(전진 authority)
+        q.SW_TRACK_W=getenv("SW_TRACK_W")?atof(getenv("SW_TRACK_W")):90.0;   // ★swing 발 추종 가중(착지 정확)
         q.KP_BASE=getenv("KP_BASE")?atof(getenv("KP_BASE")):150.0;
         q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];   // 계획 base 위치. ★온라인 위치ref vadv전진은 z침하 유발→plan 추종 유지(안정 우선)
         q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;   // 계획 base 속도(★온라인=vadv 직접 명령해 연속 전진)

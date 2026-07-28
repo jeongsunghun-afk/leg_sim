@@ -37,6 +37,7 @@ struct QuadControl {
   double W_BASE_XY=0.0, KP_BASE=150.0, KD_BASE=25.0;      // ★RSL식: wbic_track이 base 수평(x,y) 위치를 직접 추종(>0=on). SRBD MPC 대신 계획 base궤적을 WBC가 execute
   Vector3d com_vel_ref=Vector3d::Zero(), com_acc_ref=Vector3d::Zero();  // 수평 base 속도·가속 참조(TAMOLS 계획)
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
+  double SW_TRACK_W=90.0;                                 // ★swing 발 task 가중(발이 목표 정확추종·↑=착지정확). horizon-shift 안정화
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
   int waist_idx=-1;                                       // ★허리(FB_waist) nu-index(없으면 -1=16DOF). 큰 몸통DOF라 전용 강홀드
@@ -371,7 +372,7 @@ struct QuadControl {
     std::set<int> sw_vidx;
     for(auto&kv:swing){ int leg=kv.first; Matrix<double,3,Dynamic> J=foot_jac(leg);
       Vector3d accel=2400.0*(kv.second.first-foot_point(leg))+110.0*(kv.second.second-J*qv);
-      P.topLeftCorner(nv,nv)+=90.0*(J.transpose()*J); g.head(nv)-=90.0*(J.transpose()*accel);
+      P.topLeftCorner(nv,nv)+=SW_TRACK_W*(J.transpose()*J); g.head(nv)-=SW_TRACK_W*(J.transpose()*accel);
       for(int t=0;t<leg_dof[leg];t++) sw_vidx.insert(legqv[leg][t]); }
     std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
     Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];

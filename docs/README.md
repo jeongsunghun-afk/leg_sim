@@ -13,8 +13,8 @@
 | 제어기 | pipeline | params | 비고 |
 |---|---|---|---|
 | **A** (MPC+WBIC, **배포**) | [pipeline_a.html](pipeline_a.html) | [params_a.html](params_a.html) | 솔버 문제정의·I/O·값전체+파리티+튕김조절 |
-| **B·C** (OCP, 연구) | [pipeline_bc.html](pipeline_bc.html) | (pipeline 내) | Kinodynamics OCP+TSID / FullDynamics OCP+Riccati (17-DOF·TAMOLS·TOWR 브리지) |
-| **D1** (OCS2 NMPC, 외부·비교) | [pipeline_d1.html](pipeline_d1.html) | (pipeline 내) | + **A·B·C·D1 비교** + 지형유형 정직 비교 |
+| **B·C·D1** (OCP/NMPC, 연구·분석) | [pipeline_bcd1.html](pipeline_bcd1.html) | (pipeline 내) | Kinodyn OCP+TSID / FullDyn OCP+Riccati / OCS2 NMPC — 각 **구조·입출력** |
+| **제어기 비교** (A·B·C·D1·CI) | [제어기_비교.html](제어기_비교.html) | — | 5종 **구조·솔버·I/O·실시간·지형·성능** 대조 + 지형유형 정직비교 |
 | **CI** (Contact-Implicit, **종결**) | [pipeline_ci.html](pipeline_ci.html) · [CI-MPC_개발_리포트.md](CI-MPC_개발_리포트.md) | [params_ci.html](params_ci.html) | 종결(§11): 로버스트 험지 부적합 확정. 완성분=해석그래디언트·자세(서기/눕기/앉기). 상세=리포트 |
 
 ### 실행 · 품질 · 기타
@@ -72,3 +72,4 @@
 ## 🗑️ 정리됨 (2026-07-09)
 - 삭제: `RBQGUI-x86_64.AppImage`(167M)·`squashfs-root/`(448M) = RBQ GUI 앱·압축해제본(써드파티, 재다운로드 가능).
 - 상위 흩어진 노트(`실행코드`·`obs.md`·`개발일지`·`메모`) → 이 docs/로 통합.
+- [모델기반 갭크로싱 탐색리포트](모델기반_갭크로싱_탐색리포트.html) — TOWR·TAMOLS·실행3시도·실시간측정 종합, C++ 착수 근거

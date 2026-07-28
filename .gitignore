@@ -38,3 +38,14 @@ quad/meshes_sim_17dof/
 /02_Leg_UFDF_260701/
 /02_Leg_UFDF_260703_2/
 quad/towr/towr_cd_bin
+
+# C++ 빌드산물·테스트 바이너리(재빌드)
+quad/cpp/CMakeCache.txt
+quad/cpp/CMakeFiles/
+quad/cpp/Makefile
+quad/cpp/cmake_install.cmake
+quad/cpp/tamols/test_*
+!quad/cpp/tamols/test_*.cpp
+quad/cpp/tamols/export_traj
+# 대용량 참조 PDF(메모리서 경로 참조·git 미추적)
+quad/backup/docs/*.pdf

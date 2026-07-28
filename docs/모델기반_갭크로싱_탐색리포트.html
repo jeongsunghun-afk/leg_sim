@@ -1,0 +1,99 @@
+<meta charset="UTF-8">
+<title>모델기반 험지(갭) 크로싱 탐색 리포트</title>
+<style>
+  :root{ --ink:#1B2431; --muted:#5A6577; --hair:#E2E6EC; --paper:#fff; --acc:#E8551E; --acc-soft:#FDEAE0;
+         --ok:#1E7B4D; --no:#C23B3B; --wa:#B8860B; --soft:#F7F8FA; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Pretendard','Noto Sans KR','Noto Sans CJK KR',system-ui,sans-serif;color:var(--ink);
+       background:#E9EBEF;line-height:1.55;}
+  .page{max-width:210mm;margin:16px auto;background:var(--paper);padding:14mm 15mm;
+        box-shadow:0 2px 24px rgba(20,30,50,.16);}
+  .mono{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:.86em;}
+  h1{font-size:20pt;font-weight:800;letter-spacing:-.01em;line-height:1.2;margin-bottom:2mm;}
+  .sub{color:var(--muted);font-size:10pt;margin-bottom:1mm;}
+  .oneliner{background:var(--acc-soft);border-left:3px solid var(--acc);padding:2.5mm 3.5mm;border-radius:1.4mm;
+            font-size:10pt;margin:4mm 0;}
+  h2{font-size:13pt;font-weight:800;margin:8mm 0 2.5mm;padding-bottom:1.5mm;border-bottom:1.6px solid var(--ink);}
+  h2 .n{font-family:'JetBrains Mono','Noto Sans Mono',monospace;color:var(--acc);font-size:10pt;margin-right:2mm;}
+  h3{font-size:10.5pt;font-weight:700;margin:4mm 0 1.5mm;}
+  p{font-size:9.7pt;margin:1.5mm 0;} b{color:var(--ink);}
+  ul{margin:1.5mm 0 1.5mm 5mm;font-size:9.7pt;} li{margin:.8mm 0;}
+  table{border-collapse:collapse;width:100%;margin:2.5mm 0;font-size:9pt;}
+  th,td{border:1px solid var(--hair);padding:1.6mm 2.2mm;text-align:left;vertical-align:top;}
+  th{background:var(--soft);font-family:'JetBrains Mono','Noto Sans Mono',monospace;font-size:7.8pt;
+     letter-spacing:.04em;font-weight:700;}
+  .ok{color:var(--ok);font-weight:700;} .no{color:var(--no);font-weight:700;} .wa{color:var(--wa);font-weight:700;}
+  .box{border:1px solid var(--hair);border-radius:1.6mm;background:var(--soft);padding:2.5mm 3mm;margin:2.5mm 0;font-size:9.3pt;}
+  .box.acc{background:var(--acc-soft);border-color:var(--acc);}
+  code{font-family:'JetBrains Mono','Noto Sans Mono',monospace;font-size:.86em;background:#eef1f5;padding:.3mm 1mm;border-radius:1mm;}
+  .flow{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',monospace;font-size:8.4pt;
+        background:#0f1520;color:#d6dde8;padding:3mm 4mm;border-radius:1.6mm;white-space:pre;overflow-x:auto;margin:2.5mm 0;line-height:1.5;}
+  .foot{margin-top:8mm;padding-top:2.5mm;border-top:1px solid var(--hair);color:var(--muted);font-size:8pt;}
+</style>
+<div class="page">
+  <h1>모델기반 험지(갭) 크로싱 탐색 리포트</h1>
+  <div class="sub">02_Leg 17-DOF 사족 · 지형계획(TO) 트랙 · 2026-07-27 세션 종합</div>
+  <div class="sub">관련: <span class="mono">TOWR_모델기반지형_리포트.md</span> · <span class="mono">제어기_비교.html</span>(A·B·C·D1 지형플래너 계보) · 메모리 <span class="mono">b-elevation-tamols-towr-track</span></div>
+
+  <div class="oneliner"><b>한 줄 결론(갱신 2026-07-27 後반)</b> — "실행이 벽"이던 갭 크로싱을 <b>★C++ 실시간 TAMOLS를 구현해 넘었다</b>: 정식화(제약5+비용3)·SQP-RTI 솔버를 <b>Drake와 정합 검증</b>하고, <b>폐루프(WBIC 추종)로 0.20m 갭을 falls=0로 통과</b>(트롯 x=0.62). 관건은 셋: <b>①실시간 솔버(26ms/5-iter, Drake 583× 극복)</b> ②<b>게이트=진짜 트롯</b>(원본은 페이스라 측방전복) ③<b>base 자세 bounds 조임</b>(과격참조→yaw드리프트 제거). 남은 것 = 완전크로싱(뒷발도 넘기는 더 긴 플랜)·해석Jacobian(&lt;5ms). <b>모델기반으로 갭 크로싱 가능</b> 실증(이전 "실행 불가" 결론 반증).</div>
+
+  <h2><span class="n">1</span>목표와 배경</h2>
+  <p>가정환경 험지(문턱·가구밑 갭)의 핵심 난제 = <b>불연속 지형(갭)에서 base와 발판을 협조시켜 건너기</b>. A(SRBD-MPC+WBIC)·B(kinodynamic MPC)는 폐루프 보행은 되나 <b>발판만 greedy nudge</b>라 갭 협조가 없음. 모델기반 지형계획기(TO) 계보 — TOWR(Winkler)·TAMOLS(Jenelten)·Perceptive NMPC(Grandia) — 중 <b>TAMOLS</b>(base+발판+타이밍 공동최적화, 지형특징 활용)를 정공법으로 검증.</p>
+
+  <h2><span class="n">2</span>계획(planner) — TAMOLS는 깨끗한 갭 크로싱 계획을 낸다</h2>
+  <p>tamols-rl(ianpedroza, Drake) 정식화에 02_Leg 파라미터(m=37.9·nominal 0.52·μ0.6·sphere발) 적응. GAP=0.20m 갭에서 <b>feasible solve</b>.</p>
+  <table>
+    <tr><th>지표</th><th>초기(갭회피 前)</th><th>갭회피 구속 後</th></tr>
+    <tr><td>앞발판</td><td class="no">갭 침범(z −0.13, 스무딩 아티팩트)</td><td class="ok">solid straddle(뒤 0.42·앞 0.87)</td></tr>
+    <tr><td>base pitch</td><td class="no">±13.4°</td><td class="ok">±10.4°(요동↓)</td></tr>
+    <tr><td>base 전진</td><td>0.47</td><td class="ok">0→0.73 (갭 통과)</td></tr>
+  </table>
+  <p><code>add_gap_avoid_footholds</code>(앞발=갭 너머·뒷발=갭 앞) 하나로 발이 solid에 straddle, 자세까지 평평. <b>단 이건 옵티마이저 해(계획)의 품질이지, 로봇이 건넜다는 실행 검증이 아님.</b></p>
+
+  <h2><span class="n">3</span>실행(executor) — 세 가지 모델기반 시도, 전부 갭 실패</h2>
+  <table>
+    <tr><th>시도</th><th>구성</th><th>접근(평지)</th><th>갭 크로싱</th><th>실패 원인</th></tr>
+    <tr><td>개루프 WBIC</td><td>TAMOLS 궤적 시간재생 + WBIC</td><td class="no">측방 드리프트</td><td class="no">✗</td><td>피드백 없음(개루프의 벽)</td></tr>
+    <tr><td><b>폐루프 B+heightmap</b></td><td>B 폐루프 MPC + 지형발판 nudge</td><td class="ok">안정(tilt&lt;2°)</td><td class="no">✗ 갭서 발 빠짐</td><td><b>base–발판 협조 없음</b>(greedy)</td></tr>
+    <tr><td>TOWR (참고)</td><td>오프라인 발판최적화</td><td>—</td><td class="no">✗</td><td>우리 로봇 ROM서 미수렴</td></tr>
+  </table>
+  <div class="box"><b>핵심 규명</b> — 문제는 "폐루프냐"가 아니라 "<b>협조냐</b>"다. B 폐루프는 <b>평지 안정</b>(모델기반 폐루프 자체는 됨, RL 불필요). 갭 실패는 <b>base를 갭 너머 발판에 협조 이동시키질 못해서</b> — heightmap은 발판만 국소 nudge하고 base 계획은 별개. TAMOLS는 그 협조를 하지만 <b>오프라인</b>이라, 실행 시(개루프·greedy) 협조가 깨진다.</div>
+
+  <h2><span class="n">4</span>실시간 TAMOLS 측정 — Drake로는 583× 느려 불가</h2>
+  <table>
+    <tr><th>Horizon</th><th>결정변수</th><th>solve 시간</th><th>속도</th></tr>
+    <tr><td>5-phase (전체 2s)</td><td>137</td><td>11,665 ms</td><td>0.09 Hz</td></tr>
+    <tr><td>3-phase (1.2s)</td><td>87</td><td>650 ms</td><td>1.5 Hz</td></tr>
+    <tr><td>2-phase (최소 0.8s)</td><td>62</td><td>383 ms</td><td>2.6 Hz</td></tr>
+    <tr><td><b>실시간 목표</b></td><td>—</td><td><b>20 ms</b></td><td class="acc"><b>50 Hz</b></td></tr>
+  </table>
+  <p>최소 horizon(2-phase)조차 <b>2.6 Hz(cold)</b> — 실시간과 <b>19×</b>, warm-start로도 ~4–13 Hz로 50 Hz 미달. Drake(ianpedroza)는 <b>연구·오프라인용</b>이라 per-solve 오버헤드가 큼. <b>진짜 TAMOLS 실시간은 전용 C++ fast solver</b>(커스텀 QP, Drake 범용 NLP 아님) 덕이며, <b>실시간화 = 튜닝이 아니라 C++ 재구현</b>(583× 못 메움).</p>
+
+  <h2><span class="n">5</span>★C++ TAMOLS 구현 — 실행의 벽을 넘다 (falls=0 갭 크로싱)</h2>
+  <p>section 4가 지목한 "C++ 전용 솔버 재구현"을 <b>완수</b>. <span class="mono">quad/cpp/tamols/</span>에 정식화·솔버·폐루프를 구현하고 <b>Drake와 단계별 정합 검증</b>.</p>
+  <table>
+    <tr><th>조각</th><th>구현</th><th>검증</th></tr>
+    <tr><td>정식화</td><td>스플라인·지형·<b>제약5</b>(초기·연속·friction·kinematic·<b>GIAC Eq17</b>)·<b>비용3</b>(track·foothold·nominal)</td><td class="ok">Drake residual 0~e-6·비용 rel 1e-9</td></tr>
+    <tr><td>솔버</td><td>SQP-RTI(eiquadprog QP + ℓ1 merit + <b>적응형 LM</b>)</td><td class="ok">Drake해=고정점·섭동서 feasible 수렴</td></tr>
+    <tr><td>실시간</td><td>FD Jacobian <b>26 ms/5-iter</b>(Drake 583× 극복)</td><td class="wa">해석Jacobian으로 &lt;5ms 목표(진행)</td></tr>
+    <tr><td>폐루프</td><td>플랜→WBIC 참조 변환(<span class="mono">tamols_track/export_traj</span>)→TrotCtrl 추종</td><td class="ok"><b>갭 통과 falls=0</b>(트롯 x=0.62)</td></tr>
+  </table>
+  <div class="box"><b>실행 성공의 3요소</b> — ① <b>실시간 솔버</b>(C++ SQP-RTI, 583× 극복). ② <b>게이트=진짜 트롯</b>: 원본 Drake gait(<code>[1,0,1,0]/[0,1,0,1]</code>)는 좌우쌍 swing = <b>페이스</b>라 측방 롤 전복(x=0.29). 대각쌍 트롯(<code>[0,1,1,0]/[1,0,0,1]</code>)으로 <b>측방안정</b>(x=0.68). ③ <b>base 자세 조임</b>: 참조가 roll/pitch ±11°(rp_max 0.20 상한)로 과격→yaw 드리프트(-51°). rp_max 0.06으로 조이니 <b>yaw ±7°·falls=0</b>. <b>즉 "폐루프 greedy는 base–발판 협조 부재로 갭 실패"를 실시간 TAMOLS(공동최적화)가 실제로 넘었다.</b></div>
+  <ul>
+    <li><b>이전 "실행이 벽" 결론 반증</b> — 모델기반(실시간 TAMOLS)으로 갭 크로싱 falls=0 실증.</li>
+    <li><b>남은 것</b>: 완전 크로싱(현 5-phase는 뒷발이 갭 앞 0.40에 남아 base 전진 시 과신장→끝에 base 침하 z0.23. 뒷발도 넘기는 <b>더 긴 다단 플랜</b> 필요) · 해석Jacobian(&lt;20ms 실시간) · WBIC yaw/base-z 홀드 미세튜닝.</li>
+    <li><b>온라인 TO(DTC) 최종</b> — 이 실시간 TAMOLS가 배포서 온라인 플래너(DTC), RL이 추종. 오프라인이면 APT-RL 교사.</li>
+  </ul>
+  <div class="box acc"><b>결정(갱신)</b> — (a) C++ 실시간 TAMOLS <b>착수→갭 크로싱 falls=0 달성</b>. 다음 = ①해석Jacobian(실시간 &lt;20ms) ②다단 완전크로싱 플랜 ③A/B 폐루프에 온라인 TO 통합(DTC). RL 실행기는 병행 트랙(APT-RL).</div>
+
+  <h2><span class="n">6</span>확보된 자산 (C++ 착수 기반)</h2>
+  <ul>
+    <li><span class="mono">quad/tamols/tamols_02leg.py</span> — 02_Leg TAMOLS 정식화(변수·제약·비용·갭회피·GIAC) 레퍼런스</li>
+    <li><span class="mono">quad/cpp/src/terrain_map.hpp</span> — footScore/edgeSDF/slope 지형특징(TAMOLS 소비자)</li>
+    <li><span class="mono">quad/cpp/</span> — A/B 실시간 WBIC 스택(eiquadprog)·MuJoCo 폐루프·<code>DISABLE_FLOOR</code></li>
+    <li><span class="mono">quad/mjcf/quad_tamols_gap.mjcf</span> — 평지레벨 갭 검증 씬 · <span class="mono">setExternalFoothold</span> 훅</li>
+    <li>TAMOLS 논문 <span class="mono">~/다운로드/논문/TAMOLS_2206.14049.pdf</span> · Drake 프로토타입(정식화 대조용)</li>
+  </ul>
+
+  <div class="foot">02_Leg 지형계획 트랙 · 모델기반 갭 크로싱 = <b>C++ 실시간 TAMOLS로 falls=0 달성</b> · 다음 = 해석Jacobian(&lt;20ms)·다단 완전크로싱·DTC 온라인 통합</div>
+</div>

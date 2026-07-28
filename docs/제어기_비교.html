@@ -1,0 +1,149 @@
+<meta charset="UTF-8">
+<title>02_Leg 제어기 비교 — A·B·C·D1·CI</title>
+<style>
+  :root{ --ink:#1B2431; --muted:#5A6577; --hair:#E2E6EC; --paper:#fff; --acc:#E8551E; --acc-soft:#FDEAE0;
+         --a:#1E7B4D; --b:#2563C9; --c:#8A56C9; --d1:#B8860B; --ci:#C23B6E;
+         --ok:#1E7B4D; --no:#C23B3B; --wa:#B8860B; --soft:#F7F8FA; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Pretendard','Noto Sans KR','Noto Sans CJK KR',system-ui,sans-serif;color:var(--ink);
+       background:#E9EBEF;line-height:1.5;}
+  .page{max-width:270mm;margin:16px auto;background:var(--paper);padding:13mm 15mm;
+        box-shadow:0 2px 24px rgba(20,30,50,.16);}
+  .mono{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:.85em;}
+  h1{font-size:19pt;font-weight:800;letter-spacing:-.01em;margin-bottom:2mm;}
+  .sub{color:var(--muted);font-size:9.5pt;margin-bottom:1mm;}
+  .oneliner{background:var(--acc-soft);border-left:3px solid var(--acc);padding:2.5mm 3.5mm;border-radius:1.4mm;
+            font-size:9.6pt;margin:4mm 0;}
+  h2{font-size:12.5pt;font-weight:800;margin:7mm 0 2.5mm;padding-bottom:1.5mm;border-bottom:1.6px solid var(--ink);}
+  h2 .n{font-family:'JetBrains Mono','Noto Sans Mono',monospace;color:var(--acc);font-size:9.5pt;margin-right:2mm;}
+  .scroll{overflow-x:auto;}
+  table{border-collapse:collapse;width:100%;margin:2.5mm 0;font-size:8.4pt;}
+  th,td{border:1px solid var(--hair);padding:1.5mm 2mm;text-align:left;vertical-align:top;}
+  thead th{background:var(--soft);font-family:'JetBrains Mono','Noto Sans Mono',monospace;font-size:8pt;letter-spacing:.02em;}
+  td.rowh{background:var(--soft);font-weight:700;white-space:nowrap;font-size:8.2pt;}
+  .chip{display:inline-block;padding:.3mm 1.6mm;border-radius:1mm;color:#fff;font-weight:700;font-size:7.6pt;font-family:'JetBrains Mono',monospace;}
+  .cA{background:var(--a);} .cB{background:var(--b);} .cC{background:var(--c);} .cD{background:var(--d1);} .cCI{background:var(--ci);}
+  th.a{color:var(--a);} th.b{color:var(--b);} th.c{color:var(--c);} th.d1{color:var(--d1);} th.ci{color:var(--ci);}
+  .yes{color:var(--ok);font-weight:700;} .no{color:var(--no);font-weight:700;} .wa{color:var(--wa);font-weight:700;}
+  .box{border:1px solid var(--hair);border-radius:1.6mm;background:var(--soft);padding:2.5mm 3mm;margin:2.5mm 0;font-size:9pt;}
+  .box.acc{background:var(--acc-soft);border-color:var(--acc);}
+  ul{margin:1.5mm 0 1.5mm 5mm;font-size:9pt;} li{margin:.8mm 0;}
+  .foot{margin-top:8mm;padding-top:2.5mm;border-top:1px solid var(--hair);color:var(--muted);font-size:8pt;}
+  a{color:var(--acc);}
+</style>
+<div class="page">
+  <h1>02_Leg 제어기 비교 — A · B · C · D1 · CI</h1>
+  <div class="sub">17-DOF 사족 · 모델기반 제어기 5종 구조·솔버·입출력·실시간·지형·성능 대조</div>
+  <div class="sub">각 파이프라인: <a href="pipeline_a.html">pipeline_a(A)</a> · <a href="pipeline_bcd1.html">pipeline_bcd1(B·C·D1)</a> · <a href="pipeline_ci.html">pipeline_ci(CI)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · 메모리 <span class="mono">quad-abc-io-structure</span></div>
+
+  <div class="oneliner"><b>개발방향 = 하이브리드(온라인 TO·DTC + RL 추종)</b>. <b>★이번 세션 신규: C++ 실시간 TAMOLS</b>(SQP-RTI + WBIC 추종) — 정식화(제약5+비용3)·솔버 Drake 검증, <b>폐루프로 갭 통과</b>(트롯 x=0.68 m, yaw 튜닝 남음). 기존 5종은 모델기반(<b>A만 실시간 배포·본선</b>). 참조논문 = <b>DTC</b>(2309.15462, 온라인 TO+RL 추종) · <b>APT-RL</b>(skillquad, 오프라인 TO 스킬증류→단일정책).</div>
+
+  <h2><span class="n">1</span>핵심 비교표</h2>
+  <div class="scroll"><table>
+    <thead><tr>
+      <th>항목</th>
+      <th class="a">A <span class="chip cA">배포·본선</span></th>
+      <th class="b">B <span class="chip cB">연구</span></th>
+      <th class="c">C <span class="chip cC">연구</span></th>
+      <th class="d1">D1 <span class="chip cD">분석·미구축</span></th>
+      <th class="ci">CI <span class="chip cCI">종결</span></th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="rowh">파일/출처</td>
+        <td class="mono">quad_mpc_wbic_17dof</td><td class="mono">quad_centroidal_17dof</td><td class="mono">quad_fulldynamics</td>
+        <td class="mono">legged_control (OCS2)</td><td class="mono">quad/ci_mpc (C++)</td></tr>
+      <tr><td class="rowh">방식 / 코어</td>
+        <td>Convex SRBD-MPC(GRF) + <b>WBIC QP</b></td>
+        <td>Kinodynamic OCP + <b>TSID</b></td>
+        <td>FullDynamics OCP + <b>Riccati</b></td>
+        <td>Centroidal NMPC + <b>계층 WBC(HoQp)</b></td>
+        <td>Contact-Implicit MPC + <b>PD+FF</b></td></tr>
+      <tr><td class="rowh">상위 MPC 모델</td>
+        <td>볼록 SRBD(단일강체)</td><td>kino-dynamic 센트로이달</td><td>full rigid-body</td>
+        <td>FullCentroidal(OCS2)</td><td>full-dyn + <b>접촉 상보성</b></td></tr>
+      <tr><td class="rowh">MPC 솔버</td>
+        <td class="mono">custom convex QP</td><td class="mono">aligator ProxDDP RTI</td><td class="mono">aligator ProxDDP RTI</td>
+        <td class="mono">OCS2 SLQ/SQP + HPIPM</td><td class="mono">Crocoddyl Box-FDDP</td></tr>
+      <tr><td class="rowh"><b>입력 — 명령</b></td>
+        <td>CMDFILE 전체: v/vy/w · gait · body_h · step_h · mode · 버튼</td>
+        <td>CMDFILE: <b>v/vy/w만</b></td>
+        <td>CMDFILE: v/vy/w · body_h · mode</td>
+        <td>cmd_vel + 지형(SDF)</td>
+        <td><b>desired 몸통 pose 참조</b> + nominal stance</td></tr>
+      <tr><td class="rowh"><b>입력 — 자기상태</b><br><span class="mono">proprio · 필수</span></td>
+        <td>qpos/qvel 직독(sim)<br>+선택 KF</td>
+        <td>measureState 직독<br>+선택 KF(EST)</td>
+        <td>measureState<br>+선택 추정기(EST)</td>
+        <td><b>상태추정</b>(InEKF, 실기)</td>
+        <td>q·v(측정)</td></tr>
+      <tr><td class="rowh"><b>입력 — 지형</b><br><span class="mono">perceptive · 옵션</span></td>
+        <td>heightmap→footScore<br><span class="mono">옵션(PERCEPTIVE)</span></td>
+        <td>heightmap(mj_ray)<br><span class="mono">옵션(HEIGHTMAP)</span></td>
+        <td class="no">없음(평지)</td>
+        <td><b>SDF</b>(depth/LiDAR)</td>
+        <td class="no">없음</td></tr>
+      <tr><td class="rowh"><b>출력 — 토크</b></td>
+        <td>WBIC QP <span class="mono">z=[q̈;λ]</span> 직접토크</td>
+        <td><span class="mono">kino_ID.solve</span>(TSID)→τ</td>
+        <td><span class="mono">us[0]−K·δx</span>(Riccati)</td>
+        <td>HoQp WBC → τ</td>
+        <td>저수준 PD+FF <span class="mono">u*/Kp+p_des</span></td></tr>
+      <tr><td class="rowh"><b>출력 — 발행</b></td>
+        <td>STATE_PUB v_cmd/v_act · 마커</td>
+        <td>STATE_PUB cmd · 오버레이</td>
+        <td>STATE_PUB cmd · 마커</td>
+        <td>ROS 토픽(odom·τ)</td>
+        <td>궤적·접촉(연구 덤프)</td></tr>
+      <tr><td class="rowh">제어율 / 실시간</td>
+        <td class="yes">1 kHz 실시간 ✅</td>
+        <td class="no">~14 step/s 비실시간</td>
+        <td class="no">~6–13 Hz 비실시간</td>
+        <td class="yes">실시간(OCS2 RTI)</td>
+        <td class="wa">40 Hz 목표(연구·오프라인)</td></tr>
+      <tr><td class="rowh">지형 플래너</td>
+        <td>Online foothold opt.<br><span class="mono">footScore/selectFoot(폐루프)</span></td>
+        <td>TAMOLS<br><span class="mono">heightmap 발판·base높이</span></td>
+        <td class="no">없음(평지)</td>
+        <td>Perceptive NMPC<br><span class="mono">SDF edge 제약</span></td>
+        <td>접촉모드 <b>창발</b>(계획 불요)</td></tr>
+      <tr><td class="rowh">성능(02_Leg)</td>
+        <td class="yes"><b>본선 1.75 m/s</b> trot</td>
+        <td>~0.2 m/s 연구</td>
+        <td>~0.27 m/s marginal</td>
+        <td>미구축(외부=파쿠르)</td>
+        <td>종결(음성결과)</td></tr>
+      <tr><td class="rowh">접촉모델 / MJCF</td>
+        <td>soft-native / <span class="mono">sphere</span></td>
+        <td>rigid(STIFF) / <span class="mono">pt</span></td>
+        <td>rigid / <span class="mono">pt</span></td>
+        <td>ROS/Gazebo(외부)</td>
+        <td>hard 접촉 임펄스 / <span class="mono">pt·gap</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2><span class="n">2</span>지형 유형별 정직한 비교 <span class="sub" style="font-weight:400">연속 vs 불연속</span></h2>
+  <div class="scroll"><table>
+    <thead><tr><th>제어기</th><th>코어</th><th>연속 지형(경사·rough)</th><th>불연속(갭·stepping)</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td><td>selectFoot이 정렬된 갭만 완주</td></tr>
+      <tr><td><span class="chip cB">B</span></td><td>Kinodyn+TSID</td><td class="wa">⚠️ 평지 안정</td><td class="no">❌ 갭서 발 빠짐</td><td>base–발판 협조 없음(greedy)</td></tr>
+      <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
+      <tr><td><span class="chip cD">D1</span></td><td>Perceptive NMPC</td><td class="wa">외부 시연</td><td class="wa">외부 파쿠르</td><td>우리 환경 미구축·공통벤치 없음</td></tr>
+      <tr><td><span class="chip cCI">CI</span></td><td>Contact-Implicit</td><td class="wa">△ 평지 falls=0(저속)·준정적 자세</td><td class="wa">△ gap 부분크로싱→낙상</td><td>완성분(해석그래디언트·서기/눕기/앉기) 있으나 <b>균형 프론티어(gap·walk·외란·두발) 붕괴</b>→종결·offline</td></tr>
+      <tr><td><span class="chip" style="background:var(--acc)">T</span></td><td><b>C++ TAMOLS(신규)</b><br>SQP-RTI+WBIC추종</td><td class="wa">미측정(갭 집중)</td><td class="yes">✅ <b>폐루프 갭 통과</b>(트롯 x=0.68m)</td><td>base+발판 폐루프 협조. ★페이스→트롯 수정이 관건(페이스는 측방전복). yaw 드리프트 튜닝 남음(clean falls=0 미달)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box"><b>공통 결론(갱신)</b> — 기존 5종은 갭 크로싱 한계였으나, <b>★이번 세션 C++ 실시간 TAMOLS가 base+발판을 폐루프로 협조해 갭 통과</b>(트롯 x=0.68m). "TAMOLS 오프라인 583× 느림"은 <b>C++ SQP-RTI로 극복</b>(26ms/5-iter, 해석Jacobian으로 &lt;5ms 목표). 즉 <b>"모델기반 갭 크로싱 불가"는 부분 반증</b> — 단 yaw 드리프트로 <b>아직 clean falls=0 미달</b>(튜닝 중). 로버스트 다스킬=RL, 정밀 크로싱=온라인 TO(DTC). 상세 <a href="모델기반_갭크로싱_탐색리포트.html">갭크로싱 리포트</a>.</div>
+
+  <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>
+  <ul>
+    <li><span class="chip cA">A</span> <b>본선 배포</b> — 1kHz 실시간, GUI 전기능 조종. 평지·중속·선회·기립. 연속지형 반응형.</li>
+    <li><span class="chip cB">B</span> <b>연구·TAMOLS 소비자</b> — 비실시간, 지형 발판 heightmap. TAMOLS 계획 검증용.</li>
+    <li><span class="chip cC">C</span> <b>연구·풀동역학 베이스라인</b> — 평지 전용, 지형 플래너 없음.</li>
+    <li><span class="chip cD">D1</span> <b>분석·청사진</b> — OCS2 생태계(외부). 우리 미구축. RL 배포의 실전 참조.</li>
+    <li><span class="chip cCI">CI</span> <b>종결</b> — 접촉창발 연구niche. 로버스트 험지 부적합 확정(음성결과=RL 방향 근거).</li>
+  </ul>
+  <div class="box acc"><b>APT-RL 방향</b> — 위 모델기반들은 <b>오프라인 교사·연속지형 배포(A)</b>로 역할이 정리됨. 험지 크로싱 본류는 <b>APT-RL</b>(RL 정책이 heightmap→발판·행동, TO/모델기반은 오프라인 교사 데이터). 각 제어기 상세 구조·I/O는 개별 pipeline 문서 참조.</div>
+
+  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · pipeline_d1에서 분리·확장 · 개발방향 APT-RL · 상세 I/O는 각 pipeline 문서</div>
+</div>

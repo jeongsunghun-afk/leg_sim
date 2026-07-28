@@ -73,6 +73,16 @@ def add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22):
         tmls.prog.AddConstraint(tmls.p[R, 1] <= -ymin); tmls.prog.AddConstraint(tmls.p[R, 1] >= -ymax)
 
 
+def add_gap_avoid_footholds(tmls, gap_lo=0.20, gap_hi=0.40, margin=0.03):
+    """★갭 회피 발판: 앞발(FL0·FR1)=갭 너머(x≥gap_hi+m)·뒷발(RL2·RR3)=갭 앞(x≤gap_lo-m).
+       스무딩(sigma1 gaussian)이 갭 깊이를 edge로 번지게 해 발이 갭 가장자리서 음수z로 빨리는 것 차단
+       → 발판을 solid 지면에 straddle 강제(앞=넘어·뒤=앞). 갭 크로싱 correctness 확보."""
+    for F in (0, 1):                       # 앞발 = 갭 너머
+        tmls.prog.AddConstraint(tmls.p[F, 0] >= gap_hi + margin)
+    for H in (2, 3):                       # 뒷발 = 갭 앞
+        tmls.prog.AddConstraint(tmls.p[H, 0] <= gap_lo - margin)
+
+
 def setup_02leg_state(tmls: TAMOLSState):
     # ── 02_Leg 로봇 파라미터 (Go2 기본값 → 02_Leg 17dof) ──
     tmls.mass = 37.9                 # Go2 6.921 → 02_Leg 17dof
@@ -111,10 +121,13 @@ def setup_02leg_state(tmls: TAMOLSState):
     if _os.environ.get("GAP", "0") != "0":
         off = tmls.cell_size * tmls.map_size / 2.0
         N = tmls.map_size
+        # ★갭 위치 env(초기 앞발 x≈0.225 앞이어야 스폰 시 발이 갭에 안 빠짐 → 기본 [0.45,0.65])
+        g_lo = float(_os.environ.get("GAP_LO", "0.45"))
+        g_hi = float(_os.environ.get("GAP_HI", "0.65"))
         elev = np.zeros((N, N), dtype=float)
         for i in range(N):
             x = i * tmls.cell_size - off
-            if 0.20 <= x <= 0.40:                  # 0.20m 갭
+            if g_lo <= x <= g_hi:                  # 갭
                 elev[i, :] = -0.5
     else:
         import manual_heightmaps as mhm
@@ -151,7 +164,9 @@ if __name__ == "__main__":
     add_foot_y_bounds(tmls, ymin=0.10, ymax=0.22)            # ★하드 foot-y bound(대칭 stance)
     import os as _o
     if _o.environ.get("GAP", "0") != "0":
-        add_base_forward_target(tmls, x_target=0.45)         # ★갭이면 전진 강제(갭 넘어까지)
+        _glo = float(_o.environ.get("GAP_LO", "0.45")); _ghi = float(_o.environ.get("GAP_HI", "0.65"))
+        add_base_forward_target(tmls, x_target=float(_o.environ.get("XTGT", str(_ghi + 0.08))))  # ★갭 넘어까지 전진
+        add_gap_avoid_footholds(tmls, gap_lo=_glo, gap_hi=_ghi, margin=0.03)  # ★발판 갭 회피(앞=넘어·뒤=앞)
     print("\n===== 02_Leg TAMOLS solve =====", flush=True)
     ok = run_single_optimization(tmls)
     print("solve 성공:", ok, flush=True)

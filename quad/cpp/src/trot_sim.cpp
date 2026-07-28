@@ -13,6 +13,10 @@ int main(int argc,char**argv){
   const char* path=argc>1?argv[1]:"../mjcf/quad_real_sphere.mjcf";
   int STEPS = (argc>2)?atoi(argv[2]) : (getenv("STEPS")?atoi(getenv("STEPS")):3000);
   QuadControl q; q.load(path); apply_env_gains(q); q.crouch_home(); q.build_qhome_lut(); q.setup_mpc();  // ★q_home LUT 시작시 빌드(RT-safe)
+  if(getenv("DISABLE_FLOOR")){   // ★갭 코스: 무한바닥 접촉off → 플랫폼 box(group2)만 접촉=갭이 진짜 구멍(발 빠짐)
+    int fid=mj_name2id(q.m,mjOBJ_GEOM,"floor");
+    if(fid>=0){ q.m->geom_contype[fid]=0; q.m->geom_conaffinity[fid]=0;
+      std::printf("[trot_sim] DISABLE_FLOOR: floor 접촉off → 갭=진짜 구멍\n"); } }
   if(getenv("LUT_CHECK")){   // ★LUT 보간 vs 직접IK 정확성 self-check(격자 어긋난 높이=최악)
     double maxdq=0, maxdc=0, wh=0;
     for(double h=0.20; h<=0.53; h+=0.0017){

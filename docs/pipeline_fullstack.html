@@ -11,15 +11,15 @@
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body{font-family:'Pretendard','Noto Sans KR','Apple SD Gothic Neo',system-ui,sans-serif;
+  body{font-family:'Pretendard','Noto Sans KR','Noto Sans CJK KR','Apple SD Gothic Neo',system-ui,sans-serif;
        color:var(--ink);background:#E9EBEF;}
   .page{width:210mm;min-height:296mm;margin:0 auto;background:var(--paper);
         padding:11mm 12mm 9mm;position:relative;}
   @media print{ body{background:#fff;} .page{margin:0;box-shadow:none;} @page{size:A4;margin:0;} }
   @media screen{ .page{box-shadow:0 2px 24px rgba(20,30,50,.18);margin:16px auto;} }
 
-  .mono{font-family:'JetBrains Mono','D2Coding',ui-monospace,monospace;}
-  .eyebrow{font-family:'JetBrains Mono','D2Coding',ui-monospace,monospace;
+  .mono{font-family:'JetBrains Mono','D2Coding','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;}
+  .eyebrow{font-family:'JetBrains Mono','D2Coding','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;
            font-size:8.2pt;letter-spacing:.14em;color:var(--acc);font-weight:700;}
   h1{font-size:19.5pt;font-weight:800;letter-spacing:-.02em;line-height:1.22;margin:1.2mm 0 1.6mm;}
   h1 .u{box-shadow:inset 0 -0.32em var(--acc-soft);}
@@ -31,7 +31,7 @@
   .doc-meta{text-align:right;font-size:7.6pt;color:var(--muted);line-height:1.6;}
   .doc-meta .mono{font-size:7.2pt;}
 
-  .sec-label{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:7.4pt;
+  .sec-label{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:7.4pt;
              letter-spacing:.13em;font-weight:700;color:var(--ink);
              display:flex;align-items:center;gap:2mm;margin-bottom:1.8mm;}
   .sec-label::after{content:"";flex:1;height:1px;background:var(--hair);}
@@ -51,13 +51,13 @@
   .hw-list{display:flex;flex-direction:column;gap:1.7mm;justify-content:center;}
   .hw{border-left:2.4px solid var(--acc);padding:0.4mm 0 0.6mm 2.6mm;}
   .hw h3{font-size:9.4pt;font-weight:800;letter-spacing:-.01em;}
-  .hw h3 .tag{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:6.8pt;
+  .hw h3 .tag{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:6.8pt;
               color:var(--acc);font-weight:700;letter-spacing:.06em;margin-left:1.2mm;}
   .hw p{font-size:8pt;line-height:1.46;color:var(--ink);margin-top:0.5mm;}
   .hw p b{background:var(--acc-soft);padding:0 .18em;border-radius:.14em;}
 
   table{width:100%;border-collapse:collapse;font-size:8.1pt;line-height:1.42;margin-bottom:3.6mm;}
-  th{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:6.9pt;letter-spacing:.09em;
+  th{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:6.9pt;letter-spacing:.09em;
      text-align:left;color:var(--muted);font-weight:700;border-bottom:1.3px solid var(--ink);
      padding:0 2mm 1.1mm 0;}
   td{border-bottom:1px solid var(--hair);padding:1.5mm 2.5mm 1.5mm 0;vertical-align:top;}
@@ -68,7 +68,7 @@
   .stack{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2.6mm;margin-bottom:2.2mm;}
   .card{border:1px solid var(--hair);border-radius:2mm;padding:2.2mm 2.4mm;background:#fff;}
   .card h4{font-size:8.8pt;font-weight:800;display:flex;align-items:baseline;gap:1.5mm;}
-  .card h4 .src{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:6.4pt;
+  .card h4 .src{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:6.4pt;
                 color:var(--muted);font-weight:500;letter-spacing:.03em;}
   .card p{font-size:7.5pt;line-height:1.46;color:var(--ink);margin-top:0.9mm;}
   .card .own{margin-top:1.2mm;font-size:7.1pt;line-height:1.4;color:var(--ink);
@@ -94,7 +94,7 @@
   .bx{border:1px solid var(--hair);border-radius:2mm;padding:2.4mm 3mm;background:#fff;}
   .bx h4{font-size:8.8pt;font-weight:800;margin-bottom:1mm;} .bx h4 .s{font-family:ui-monospace,monospace;font-size:6.6pt;color:var(--muted);font-weight:500;margin-left:1.4mm;}
   .bx ul{padding-left:4mm;} .bx li{font-size:7.9pt;line-height:1.5;margin-bottom:.7mm;}
-  .eq2{font-family:'STIX Two Math','Cambria Math',Georgia,serif;font-size:9.2pt;text-align:center;background:var(--soft);border:1px solid var(--hair);border-left:2.5px solid var(--acc);border-radius:1.4mm;padding:2mm 2.4mm;margin:1.6mm 0;display:block;letter-spacing:.01em;}
+  .eq2{font-family:'STIX Two Math','Cambria Math','DejaVu Math TeX Gyre','DejaVu Serif',Georgia,serif;font-size:9.2pt;text-align:center;background:var(--soft);border:1px solid var(--hair);border-left:2.5px solid var(--acc);border-radius:1.4mm;padding:2mm 2.4mm;margin:1.6mm 0;display:block;letter-spacing:.01em;}
   .eq2 i{font-style:italic;} .eq2 sub{font-size:70%;} .eq2 .c{color:var(--muted);font-size:7.6pt;margin-left:2.5mm;}
   .warn2{border:1px dashed #B9C1CC;border-radius:1.8mm;padding:2mm 2.8mm;font-size:7.5pt;line-height:1.5;background:#fff;margin-bottom:2.6mm;}
   .warn2 b{color:var(--acc);}
@@ -104,7 +104,7 @@
   .mile{display:flex;gap:0;align-items:stretch;}
   .m{flex:1;position:relative;padding:0 2mm 0 0;}
   .m+.m{border-left:1px solid var(--hair);padding-left:2.4mm;}
-  .m .mn{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:6.6pt;font-weight:700;
+  .m .mn{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:6.6pt;font-weight:700;
          color:var(--acc);letter-spacing:.08em;}
   .m p{font-size:7.6pt;line-height:1.4;margin-top:0.6mm;}
   .ask{font-size:8.4pt;line-height:1.5;}
@@ -142,7 +142,7 @@
           <rect x="252" y="98" width="76" height="80" rx="7" fill="#F1F3F6" stroke="#8A93A3" stroke-width="1.1"/>
           <rect x="252" y="98" width="76" height="16" rx="7" fill="#E2E6EC" stroke="#8A93A3" stroke-width="1.1"/>
           <path d="M258 130 q6 -5 12 0 M274 148 q6 -5 12 0 M296 126 q6 -5 12 0 M284 166 q6 -5 12 0" stroke="#AEB6C2" stroke-width="1" fill="none"/>
-          <text x="290" y="92" font-size="8.5" fill="#5A6577" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">쇼파·침대 (soft·高)</text>
+          <text x="290" y="92" font-size="8.5" fill="#5A6577" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">쇼파·침대 (soft·高)</text>
         </g>
         <!-- 톱뷰 인셋: 협폭 바디 -->
         <g>
@@ -150,7 +150,7 @@
           <rect x="43" y="8" width="19" height="34" rx="2" fill="#EDF0F4" stroke="#8A93A3" stroke-width="1"/>
           <rect x="32.2" y="12" width="7.6" height="27" rx="3.4" fill="#fff" stroke="#E8551E" stroke-width="1.6"/>
           <circle cx="36" cy="15.5" r="1.8" fill="#E8551E"/>
-          <text x="36" y="51" font-size="9" font-weight="bold" fill="#E8551E" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">④ 좁은 몸폭</text>
+          <text x="36" y="51" font-size="9" font-weight="bold" fill="#E8551E" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">④ 좁은 몸폭</text>
         </g>
         <!-- 뒷몸통 -->
         <rect x="52" y="92" width="66" height="26" rx="6" fill="#fff" stroke="#1B2431" stroke-width="1.6"/>
@@ -179,7 +179,7 @@
         <circle cx="228" cy="173" r="4.5" fill="#fff" stroke="#8A93A3" stroke-width="1.1"/>
         <rect x="238" y="169" width="9" height="9" rx="1.5" fill="#fff" stroke="#8A93A3" stroke-width="1.1" transform="rotate(18 242 173)"/>
         <!-- 콜아웃 -->
-        <g font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif" font-size="9" font-weight="bold">
+        <g font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif" font-size="9" font-weight="bold">
           <line x1="58" y1="132" x2="24" y2="118" stroke="#E8551E" stroke-width="1"/>
           <text x="10" y="112" fill="#E8551E">① 3-LINK 다리</text>
           <line x1="122" y1="95" x2="104" y2="52" stroke="#E8551E" stroke-width="1"/>
@@ -187,7 +187,7 @@
           <line x1="219" y1="53" x2="238" y2="34" stroke="#E8551E" stroke-width="1"/>
           <text x="240" y="30" fill="#E8551E">② 목 VISION</text>
         </g>
-        <text x="232" y="192" font-size="8" fill="#5A6577" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">디딤발 사각지대 직시</text>
+        <text x="232" y="192" font-size="8" fill="#5A6577" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">디딤발 사각지대 직시</text>
       </svg>
       <div class="cap">측면 개략도 — 뒷다리 도약 자세로 쇼파에 접근, 목 카메라가 터치다운 지점 직시, 허리 분리 조향. 좌상단 톱뷰: 좁은 몸폭으로 가구 사이 통과.</div>
     </div>
@@ -316,7 +316,7 @@
     <div class="bx">
       <h4>행동·토크 합성 <span class="s">APT Methods 원식</span></h4>
       <ul><li>정책 출력 <b>R²⁹</b> = <i>a</i><sub>latent</sub>(16, 100 Hz) + <i>a</i><sub>aux</sub>(12, 100 Hz) + gait logit(σ, <b>2 Hz 선택·0.5 s 유지</b>)</li></ul>
-      <span class="eq2"><i>τ</i><sub>input</sub> = <i>τ</i><sub>dec</sub>(<i>a</i><sub>latent</sub>) + <i>k</i><sub>p</sub> (<i>q</i><sub>default</sub> − <i>q</i> + 0.2 <i>a</i><sub>aux</sub>) − <i>k</i><sub>d</sub> <i>q̇</i><span class="c">(<i>k</i><sub>p</sub>=80, <i>k</i><sub>d</sub>=2)</span></span>
+      <span class="eq2"><i>τ</i><sub>input</sub> = <i>τ</i><sub>dec</sub>(<i>a</i><sub>latent</sub>) + <i>k</i><sub>p</sub> (<i>q</i><sub>default</sub> − <i>q</i> + 0.2 <i>a</i><sub>aux</sub>) − <i>k</i><sub>d</sub> <i><span style="font-family:'DejaVu Sans',sans-serif">q̇</span></i><span class="c">(<i>k</i><sub>p</sub>=80, <i>k</i><sub>d</sub>=2)</span></span>
       <ul>
         <li>사전학습 FF 토크 + RL 피드백 하이브리드 — <i>a</i><sub>aux</sub>가 3D·미지 지형·데이터 공백 보정</li>
         <li><i>a</i><sub>latent</sub>에 KL(𝒩(0,I)) 소프트 정규화 + 탐색 보너스 감쇠</li>
@@ -338,7 +338,7 @@
       <h4>S1 — 행동 사전학습 <span class="s">RL 없음</span></h4>
       <ul>
         <li>TVAE 인코더: s(69차×3프레임 — 몸 속도·높이·발높이·접촉·중력·관절 이력) → z∈R¹⁶, 손실 <i>L</i><sub>recon</sub> + 0.1·<i>L</i><sub>KL</sub></li>
-        <li>게이트별 토크 디코더(지도학습): latent → <i>τ̂</i> ∈ R¹⁶ <span style="color:#E8551E">(우리 로봇 16-DOF·발목 포함, +허리 R¹⁷)</span> — ★토크 주석 덕에 <b>참조추종 RL 단계 불요</b></li>
+        <li>게이트별 토크 디코더(지도학습): latent → <i><span style="font-family:'DejaVu Sans',sans-serif">τ̂</span></i> ∈ R¹⁶ <span style="color:#E8551E">(우리 로봇 16-DOF·발목 포함, +허리 R¹⁷)</span> — ★토크 주석 덕에 <b>참조추종 RL 단계 불요</b></li>
       </ul>
     </div>
     <div class="bx">
@@ -371,7 +371,7 @@
   </div>
   <div class="sec-label"><span class="n">S4</span> 런타임 블록구성도 — 신호 입출력 (실선=배포 100 Hz 루프 · 점선=훈련 전용/국면 한정)</div>
   <div style="border:1px solid var(--hair);border-radius:2mm;background:#fff;padding:2mm 2.5mm;margin-bottom:3mm;">
-  <svg viewBox="0 0 780 238" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">
+  <svg viewBox="0 0 780 238" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">
     <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1B2431"/></marker>
     <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#E8551E"/></marker></defs>
     <!-- 센서 -->
@@ -380,7 +380,7 @@
     <text x="51" y="78" font-size="8" text-anchor="middle" fill="#5A6577">외부 지각</text>
     <rect x="8" y="120" width="86" height="34" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
     <text x="51" y="134" font-size="9" text-anchor="middle" font-weight="bold">IMU · 관절 센서</text>
-    <text x="51" y="146" font-size="8" text-anchor="middle" fill="#5A6577">q, q̇, 접촉, ω</text>
+    <text x="51" y="146" font-size="8" text-anchor="middle" fill="#5A6577">q, <tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan>, 접촉, ω</text>
     <!-- 인코더/추정기 -->
     <rect x="128" y="52" width="104" height="34" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.3"/>
     <text x="180" y="66" font-size="9" text-anchor="middle" font-weight="bold">학생 인코더</text>
@@ -401,8 +401,8 @@
     <!-- 정책 -->
     <rect x="286" y="44" width="128" height="118" rx="5" fill="#fff" stroke="#1B2431" stroke-width="1.8"/>
     <text x="350" y="62" font-size="10.5" text-anchor="middle" font-weight="bold">정책 π (100 Hz)</text>
-    <text x="350" y="78" font-size="8" text-anchor="middle" fill="#5A6577">in: proprio(69)+지형잠재</text>
-    <text x="350" y="89" font-size="8" text-anchor="middle" fill="#5A6577">+v̂+[p_tgt·cs]</text>
+    <text x="350" y="78" font-size="8" text-anchor="middle" fill="#5A6577">in: proprio(69)+heightmap</text>
+    <text x="350" y="89" font-size="8" text-anchor="middle" fill="#5A6577">+<tspan font-family="'DejaVu Sans',sans-serif">v̂</tspan>+[p_tgt·cs]</text>
     <text x="350" y="106" font-size="8.5" text-anchor="middle">out: R²⁹</text>
     <text x="350" y="119" font-size="8" text-anchor="middle" fill="#5A6577">a_latent∈R¹⁶</text>
     <text x="350" y="130" font-size="8" text-anchor="middle" fill="#5A6577">a_aux∈R¹⁶</text>
@@ -410,7 +410,7 @@
     <line x1="232" y1="69" x2="286" y2="69" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
     <text x="258" y="63" font-size="7.5" text-anchor="middle" fill="#5A6577">e_t</text>
     <line x1="232" y1="137" x2="286" y2="137" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
-    <text x="258" y="131" font-size="7.5" text-anchor="middle" fill="#5A6577">v̂</text>
+    <text x="258" y="131" font-size="7.5" text-anchor="middle" fill="#5A6577"><tspan font-family="'DejaVu Sans',sans-serif">v̂</tspan></text>
     <line x1="278" y1="19" x2="340" y2="44" stroke="#E8551E" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ao)"/>
     <!-- APT 모듈 -->
     <path d="M446 24 L446 20 L650 20 L650 24" fill="none" stroke="#E8551E" stroke-width="1.1"/>
@@ -435,7 +435,7 @@
     <line x1="578" y1="138" x2="608" y2="138" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
     <text x="592" y="132" font-size="7.5" fill="#5A6577">τ_dec</text>
     <line x1="414" y1="152" x2="608" y2="188 " stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)" transform="translate(0,-38)"/>
-    <text x="500" y="176" font-size="7.5" fill="#5A6577" transform="translate(0,-6)">k_p(q_def−q+0.2·a_aux)−k_d·q̇</text>
+    <text x="500" y="176" font-size="7.5" fill="#5A6577" transform="translate(0,-6)">k_p(q_def−q+0.2·a_aux)−k_d·<tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan></text>
     <!-- 로봇 -->
     <rect x="662" y="112" width="108" height="52" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.6"/>
     <text x="716" y="132" font-size="10" text-anchor="middle" font-weight="bold">로봇 / 시뮬</text>
@@ -444,7 +444,7 @@
     <text x="649" y="131" font-size="7.5" fill="#5A6577">τ_input</text>
     <!-- 피드백 -->
     <path d="M716 164 L716 214 L51 214 L51 154" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
-    <text x="384" y="209" font-size="8" text-anchor="middle" fill="#5A6577">피드백: q, q̇, 접촉, IMU (proprio 이력 69차 구성)</text>
+    <text x="384" y="209" font-size="8" text-anchor="middle" fill="#5A6577">피드백: q, <tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan>, 접촉, IMU (proprio 이력 69차 구성)</text>
     <!-- 훈련 전용 -->
     <rect x="286" y="222" width="292" height="1" fill="none"/>
     <rect x="600" y="4" width="172" height="88" rx="4" fill="#fff" stroke="#8A93A3" stroke-width="1.1" stroke-dasharray="4 3"/>
@@ -474,7 +474,7 @@
 
   <div class="sec-label"><span class="n">F1</span> 프레임 사슬 — map → odom → base (REP-105 관례)</div>
   <div style="border:1px solid var(--hair);border-radius:2mm;background:var(--soft);padding:2.4mm 3mm;margin-bottom:3.5mm;">
-  <svg viewBox="0 0 780 64" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">
+  <svg viewBox="0 0 780 64" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">
     <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1B2431"/></marker></defs>
     <rect x="30" y="14" width="120" height="36" rx="5" fill="#fff" stroke="#8A93A3" stroke-width="1.3" stroke-dasharray="4 3"/>
     <text x="90" y="30" font-size="11" text-anchor="middle" font-weight="bold">map</text>
@@ -495,137 +495,154 @@
 
   <div class="sec-label"><span class="n">F2</span> 시스템 블록도 — 층별 입출력 (실선=배포 · 점선=추가 예정/훈련·국면 한정)</div>
   <div style="border:1px solid var(--hair);border-radius:2mm;background:#fff;padding:2.5mm;margin-bottom:3.5mm;">
-  <svg viewBox="0 0 780 452" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">
+  <svg viewBox="0 -21.6 780 498.0" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">
     <defs><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1B2431"/></marker>
     <marker id="go" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#E8551E"/></marker></defs>
 
-    <text x="14" y="18" font-size="8.5" font-weight="bold" fill="#5A6577">지각층</text>
-    <text x="176" y="18" font-size="8.5" font-weight="bold" fill="#5A6577">SLAM 추정층 · 로컬라이제이션</text>
-    <text x="360" y="18" font-size="8.5" font-weight="bold" fill="#5A6577">지도·계획층</text>
-    <text x="560" y="18" font-size="8.5" font-weight="bold" fill="#5A6577">제어층 (100 Hz)</text>
+    <text x="14" y="15.6" font-size="8.5" font-weight="bold" fill="#5A6577">지각층 <tspan font-size="7" font-weight="normal">(10 Hz–1 kHz)</tspan></text>
+    <text x="176" y="15.6" font-size="8.5" font-weight="bold" fill="#5A6577">SLAM 추정층 · 로컬라이제이션 <tspan font-size="7" font-weight="normal">(30–50 Hz)</tspan></text>
+    <text x="360" y="15.6" font-size="8.5" font-weight="bold" fill="#5A6577">지도·계획층 <tspan font-size="7" font-weight="normal">(10–30 Hz)</tspan></text>
+    <text x="560" y="15.6" font-size="8.5" font-weight="bold" fill="#5A6577">제어층 (정책 50 Hz · 저수준 PD ~1 kHz)</text>
 
     <!-- 지각층 -->
-    <rect x="14" y="32" width="124" height="48" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.5"/>
-    <text x="76" y="52" font-size="8.4" text-anchor="middle" font-weight="bold">몸통 depth (하향 고정)</text>
-    <text x="76" y="65" font-size="6.8" text-anchor="middle" fill="#5A6577">발밑 상시 관측 · 지도 공급 main</text>
-    <rect x="14" y="94" width="124" height="48" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
-    <text x="76" y="114" font-size="8.4" text-anchor="middle" font-weight="bold">목 depth (6-DOF · 보조)</text>
-    <text x="76" y="127" font-size="6.6" text-anchor="middle" fill="#5A6577">능동 시선 · 사각 봉합(지도 미주입)</text>
-    <rect x="14" y="156" width="124" height="44" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
-    <text x="76" y="174" font-size="8.4" text-anchor="middle" font-weight="bold">몸통 LiDAR</text>
-    <text x="76" y="187" font-size="6.4" text-anchor="middle" fill="#5A6577">강체 마운트 · SLAM/로컬 원천</text>
-    <rect x="14" y="214" width="124" height="44" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
-    <text x="76" y="232" font-size="8.4" text-anchor="middle" font-weight="bold">IMU · 관절 · 접촉</text>
-    <text x="76" y="245" font-size="6.9" text-anchor="middle" fill="#5A6577">proprio 원천</text>
+    <rect x="14" y="48" width="124" height="60" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.5"/>
+    <text x="76" y="72" font-size="7.6" text-anchor="middle" font-weight="bold">목 depth · 2D LiDAR</text>
+    <text x="76" y="87.6" font-size="6.4" text-anchor="middle" fill="#5A6577">6-DOF 능동 시선 · 사각 봉합</text>
+    <rect x="14" y="129.6" width="124" height="60" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
+    <text x="76" y="154.8" font-size="8.4" text-anchor="middle" font-weight="bold">몸통 depth (하향 고정)</text>
+    <text x="76" y="171.6" font-size="6.6" text-anchor="middle" fill="#5A6577">발밑 상시 관측 · SLAM 지형원천</text>
+    <rect x="14" y="211.2" width="124" height="55.2" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
+    <text x="76" y="235.2" font-size="8.2" text-anchor="middle" font-weight="bold">몸통 3D LiDAR · IMU</text>
+    <text x="76" y="252" font-size="6.4" text-anchor="middle" fill="#5A6577">IMU 내장(강체) · SLAM 원천</text>
+    <rect x="14" y="288" width="124" height="55.2" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
+    <text x="76" y="312" font-size="8.4" text-anchor="middle" font-weight="bold">IMU · 관절 · 접촉</text>
+    <text x="76" y="328.8" font-size="6.9" text-anchor="middle" fill="#5A6577">proprio 원천</text>
 
-    <!-- SLAM 추정층 · 로컬라이제이션 -->
-    <rect x="176" y="32" width="150" height="66" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.4"/>
-    <text x="251" y="50" font-size="8.5" text-anchor="middle" font-weight="bold">VoxelSLAM <tspan font-size="6.4" font-weight="normal" fill="#5A6577">SLAM 추정</tspan></text>
-    <text x="251" y="63" font-size="6.7" text-anchor="middle" fill="#5A6577">오프라인 PCD 맵 생성·저장</text>
-    <text x="251" y="75" font-size="6.7" text-anchor="middle" font-weight="bold" fill="#1B2431">out: map→odom 보정 (루프클로저)</text>
-    <text x="251" y="87" font-size="6.2" text-anchor="middle" fill="#E8551E">SLAM_VoxelSLAM2 · 수 Hz·점프 허용</text>
+    <!-- SLAM 로컬라이제이션 : VoxelSLAM 라이브 허브 (아키텍처 A) — 내부 3블록 -->
+    <rect x="176" y="48" width="150" height="259.2" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.8"/>
+    <text x="251" y="67.2" font-size="8.8" text-anchor="middle" font-weight="bold">VoxelSLAM <tspan font-size="6" font-weight="normal" fill="#5A6577">라이브 허브</tspan></text>
+    <text x="251" y="80.4" font-size="5.9" text-anchor="middle" fill="#5A6577">SLAM_VoxelSLAM2 · LIVO · 30–50 Hz</text>
+    <text x="251" y="96" font-size="6.4" text-anchor="middle" font-weight="bold" fill="#1B2431">in: 몸통 depth · LiDAR · IMU</text>
+    <!-- ① Estimator(ESIKF) -->
+    <rect x="182" y="103.2" width="138" height="43.2" rx="3" fill="#F7F8FA" stroke="#C9CED6" stroke-width="0.8"/>
+    <text x="251" y="117.6" font-size="6.3" text-anchor="middle" font-weight="bold">① Odometry <tspan font-size="5.5" font-weight="normal" fill="#5A6577">(ESIKF LIVO)</tspan></text>
+    <text x="251" y="129.6" font-size="5.7" text-anchor="middle" fill="#5A6577">deskew(motion_deblur)·스캔등록</text>
+    <text x="251" y="141.6" font-size="5.9" text-anchor="middle" font-weight="bold" fill="#E8551E">→ odom→base · /map_scan</text>
+    <!-- ② Localization -->
+    <rect x="182" y="151.2" width="138" height="38.4" rx="3" fill="#F7F8FA" stroke="#C9CED6" stroke-width="0.8"/>
+    <text x="251" y="165.6" font-size="6.3" text-anchor="middle" font-weight="bold">② Localization <tspan font-size="5.5" font-weight="normal" fill="#5A6577">(맵 정합)</tspan></text>
+    <text x="251" y="180" font-size="5.7" text-anchor="middle" fill="#5A6577">저장맵 대비 정합 <tspan font-weight="bold" fill="#E8551E">→ map→odom</tspan> (GICP 대체)</text>
+    <!-- ③ Loop closure -->
+    <rect x="182" y="194.4" width="138" height="40.8" rx="3" fill="#F7F8FA" stroke="#C9CED6" stroke-width="0.8"/>
+    <text x="251" y="208.8" font-size="6.3" text-anchor="middle" font-weight="bold">③ Loop closure <tspan font-size="5.5" font-weight="normal" fill="#5A6577">(백엔드 PGO)</tspan></text>
+    <text x="251" y="223.2" font-size="5.7" text-anchor="middle" fill="#5A6577">BTC·GTSAM 전역 <tspan font-weight="bold" fill="#E8551E">→ map→odom</tspan> 보정</text>
+    <text x="251" y="253.2" font-size="5.8" text-anchor="middle" fill="#5A6577">②/③이 map→odom (모드별)</text>
+    <text x="251" y="268.8" font-size="5.8" text-anchor="middle" fill="#5A6577">라이브 맵빌드 or 저장맵 로컬라이즈</text>
 
-    <rect x="176" y="164" width="150" height="66" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.6"/>
-    <text x="251" y="182" font-size="8.6" text-anchor="middle" font-weight="bold">GICP Localization <tspan font-size="6.4" font-weight="normal" fill="#5A6577">fast_gicp</tspan></text>
-    <text x="251" y="195" font-size="6.7" text-anchor="middle" fill="#5A6577">in: 몸통 LiDAR 스캔 + PCD 맵</text>
-    <text x="251" y="207" font-size="6.7" text-anchor="middle" font-weight="bold" fill="#1B2431">out: map→base pose (스캔매칭)</text>
-    <text x="251" y="219" font-size="6.2" text-anchor="middle" fill="#E8551E">사전지도 대비 위치추정 (주행 중 매핑 X)</text>
+    <!-- 지도·계획층 : TerrainMap(상) → 발판생성기(중) ← STGN(하) 수직 수렴 -->
+    <rect x="360" y="48" width="162" height="74.4" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.3"/>
+    <text x="441" y="72" font-size="9.5" text-anchor="middle" font-weight="bold">TerrainMap <tspan font-size="6.6" font-weight="normal" fill="#5A6577">지형 z</tspan></text>
+    <text x="441" y="91.2" font-size="6.8" text-anchor="middle" fill="#5A6577">in: /map_scan + odom→base(등록) → 높이융합</text>
+    <text x="441" y="108" font-size="6.8" text-anchor="middle" font-weight="bold" fill="#1B2431">out: elevation map = heightmap (2.5D·odom)</text>
+    <text x="441" y="118.8" font-size="5.2" text-anchor="middle" font-weight="bold" fill="#E8551E">★추후: raw-depth CNN이 흡수</text>
 
-    <!-- 프레임 사슬 라벨 (map→odom→base) -->
-    <text x="251" y="118" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#5A6577">↓ 추정 사슬 : map→odom(SLAM) · odom→base(Estimator)</text>
-    <text x="251" y="132" font-size="6.2" text-anchor="middle" fill="#5A6577">SLAM=저주파·점프 허용 · Estimator=연속(제어 소비)</text>
+    <!-- 발판·타이밍 생성기 (중간, ④ 채널·모델기반 개발방향) -->
+    <rect x="360" y="165.6" width="162" height="88.8" rx="4" fill="#FDEAE0" stroke="#E8551E" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="441" y="187.2" font-size="9" text-anchor="middle" font-weight="bold" fill="#E8551E">궤적최적화 TO <tspan font-size="6.4" font-weight="normal" fill="#5A6577">발판·타이밍</tspan></text>
+    <text x="441" y="204" font-size="6.1" text-anchor="middle" fill="#5A6577">in: heightmap · route · 상태·명령 · 게이트스케줄</text>
+    <text x="441" y="220.8" font-size="6.3" text-anchor="middle" fill="#E8551E" font-weight="bold">현재=TOWR(오프라인) · 실시간=TAMOLS(구축예정)</text>
+    <text x="441" y="237.6" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#1B2431">out: p_tgt · cs · base참조 (관절·힘 차단)</text>
+    <text x="441" y="248.4" font-size="5.2" text-anchor="middle" font-weight="bold" fill="#E8551E">★추후: 정책으로 흡수</text>
 
-    <!-- 지도·계획층 -->
-    <rect x="360" y="32" width="162" height="60" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.3"/>
-    <text x="441" y="50" font-size="9.5" text-anchor="middle" font-weight="bold">TerrainMap</text>
-    <text x="441" y="65" font-size="6.8" text-anchor="middle" fill="#5A6577">in: 몸통 depth + pose(GICP)</text>
-    <text x="441" y="78" font-size="6.8" text-anchor="middle" fill="#5A6577">out: heightmap (2.5D · odom 프레임)</text>
+    <!-- STGN 플래너 (맨 아래) -->
+    <rect x="360" y="288" width="162" height="103.2" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.4"/>
+    <text x="441" y="312" font-size="8.6" text-anchor="middle" font-weight="bold" fill="#1B2431">STGN 플래너 <tspan fill="#5A6577" font-size="6.4" font-weight="normal">stgn_core · A*</tspan></text>
+    <text x="441" y="333.6" font-size="6.7" text-anchor="middle" fill="#5A6577">in: PCD 전역지도 · /goal_pose · /livox · map→base</text>
+    <text x="441" y="349.2" font-size="6.7" text-anchor="middle" font-weight="bold" fill="#1B2431">out: /stgn/output/path · /stgn/replan_needed</text>
+    <text x="441" y="364.8" font-size="6.1" text-anchor="middle" fill="#E8551E">★추가: 스킬-인지 통행비용 — 정책 돌파가능 지형=↓ (경로만)</text>
+    <text x="441" y="380.4" font-size="6" text-anchor="middle" font-weight="bold" fill="#1B2431">path → Nav2 controller → cmd_vel(⑤)</text>
 
-    <rect x="360" y="126" width="162" height="76" rx="4" fill="#fff" stroke="#8A93A3" stroke-width="1.4" stroke-dasharray="4 3"/>
-    <text x="441" y="144" font-size="8.6" text-anchor="middle" font-weight="bold" fill="#1B2431">STGN 플래너 <tspan fill="#5A6577" font-size="6.4" font-weight="normal">stgn_core · A*</tspan></text>
-    <text x="441" y="157" font-size="6.8" text-anchor="middle" fill="#5A6577">in: PCD 전역지도 · /goal_pose</text>
-    <text x="441" y="168" font-size="6.8" text-anchor="middle" fill="#5A6577">· /livox/lidar_filtered · GICP pose</text>
-    <text x="441" y="180" font-size="6.8" text-anchor="middle" font-weight="bold" fill="#1B2431">out: /stgn/output/path · /stgn/replan_needed</text>
-    <text x="441" y="192" font-size="6.3" text-anchor="middle" fill="#E8551E">변형(제안): 스킬-인지 비용 — 도약스킬 시 통행↓</text>
-
-    <rect x="360" y="236" width="162" height="66" rx="4" fill="#FDEAE0" stroke="#E8551E" stroke-width="1.3" stroke-dasharray="4 3"/>
-    <text x="441" y="254" font-size="9" text-anchor="middle" font-weight="bold" fill="#E8551E">발판·타이밍 생성기 (DTC 채널)</text>
-    <text x="441" y="268" font-size="6.8" text-anchor="middle" fill="#5A6577">in: STGN 경로 · heightmap · 상태·명령</text>
-    <text x="441" y="279" font-size="6.8" text-anchor="middle" fill="#5A6577">(정밀 국면 게이팅 시 ON)</text>
-    <text x="441" y="291" font-size="6.8" text-anchor="middle" fill="#5A6577">out: p_tgt · cs · base참조 (관절·힘 차단)</text>
+    <!-- 내부 수직 수렴 : TerrainMap→발판생성기(heightmap ↓) · STGN→발판생성기(경로 ↑) -->
+    <line x1="441" y1="122.4" x2="441" y2="165.6" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
+    <text x="468" y="147.6" font-size="6.3" text-anchor="middle" font-weight="bold" fill="#1B2431">heightmap</text>
+    <line x1="441" y1="288" x2="441" y2="254.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
+    <text x="466" y="274.8" font-size="6.3" text-anchor="middle" font-weight="bold" fill="#1B2431">route</text>
 
     <!-- 제어층 π + MLP 추정기 -->
-    <rect x="560" y="44" width="150" height="196" rx="5" fill="#fff" stroke="#1B2431" stroke-width="1.9"/>
-    <text x="635" y="66" font-size="10.5" text-anchor="middle" font-weight="bold">통합 정책 π</text>
-    <text x="635" y="86" font-size="7.6" text-anchor="middle" font-weight="bold" fill="#1B2431">in ← 4 신호</text>
-    <text x="635" y="104" font-size="7.3" text-anchor="middle" fill="#5A6577">① proprio (69차 이력)</text>
-    <text x="635" y="120" font-size="7.3" text-anchor="middle" fill="#5A6577">② 지형잠재 (heightmap 인코딩)</text>
-    <text x="635" y="136" font-size="7.3" text-anchor="middle" fill="#5A6577">③ v&#770; (Estimator)</text>
-    <text x="635" y="152" font-size="7.3" text-anchor="middle" fill="#5A6577">④ p_tgt · cs (발판·타이밍)</text>
-    <text x="635" y="174" font-size="7" text-anchor="middle">APT: 게이트(2 Hz)→디코더→Σ</text>
-    <text x="635" y="196" font-size="8.6" text-anchor="middle" font-weight="bold">out: τ_input ∈ R¹⁶</text>
-    <text x="635" y="208" font-size="6.2" text-anchor="middle" fill="#E8551E">4관절/다리(발목 포함) · +허리 R¹⁷</text>
+    <rect x="560" y="62.4" width="150" height="252" rx="5" fill="#fff" stroke="#1B2431" stroke-width="1.9" stroke-dasharray="6 3"/>
+    <text x="635" y="86.4" font-size="10.5" text-anchor="middle" font-weight="bold">통합 정책 π</text>
+    <text x="635" y="118.8" font-size="7.4" text-anchor="middle" font-weight="bold" fill="#1B2431">in ← 5 신호</text>
+    <text x="635" y="136.8" font-size="7.1" text-anchor="middle" fill="#5A6577">① proprio (이력·69차 잠정)</text>
+    <text x="635" y="154.8" font-size="7.1" text-anchor="middle" fill="#5A6577">② heightmap → 내부 인코더(CNN)</text>
+    <text x="635" y="172.8" font-size="7.1" text-anchor="middle" fill="#5A6577">③ <tspan font-family="'DejaVu Sans',sans-serif">v&#770;</tspan> (Estimator)</text>
+    <text x="635" y="190.8" font-size="7.1" text-anchor="middle" fill="#5A6577">④ p_tgt · cs (발판·타이밍)</text>
+    <text x="635" y="208.8" font-size="7.1" text-anchor="middle" fill="#5A6577">⑤ cmd_vel (목표속도·Nav2)</text>
+    <text x="635" y="236.4" font-size="7" text-anchor="middle">APT: 게이트(2 Hz)→디코더→Σ</text>
+    <text x="635" y="264" font-size="8.6" text-anchor="middle" font-weight="bold" fill="#1B2431">out: τ_input ∈ R¹⁷</text>
+    <text x="635" y="280.8" font-size="6.2" text-anchor="middle" fill="#E8551E">다리 16(발목 포함) + 허리 1</text>
+    <text x="635" y="300" font-size="5.4" text-anchor="middle" font-weight="bold" fill="#E8551E">★엔드스테이트(B): 내부 = GRU + depth CNN · TO/TerrainMap 흡수</text>
 
-    <rect x="560" y="270" width="120" height="58" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.4"/>
-    <text x="620" y="288" font-size="8.2" text-anchor="middle" font-weight="bold">Estimator <tspan font-size="6" font-weight="normal" fill="#5A6577">odom→base</tspan></text>
-    <text x="620" y="302" font-size="6.4" text-anchor="middle" fill="#5A6577">in: 자기수용 피드백 (q·q&#775;·접촉·IMU)</text>
-    <text x="620" y="314" font-size="6.4" text-anchor="middle" fill="#5A6577">out: proprio 상태 + v&#770; (base 속도)</text>
+    <rect x="560" y="355.2" width="120" height="72" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.4"/>
+    <text x="620" y="376.8" font-size="8.2" text-anchor="middle" font-weight="bold">Estimator <tspan font-size="6" font-weight="normal" fill="#5A6577">odom→base</tspan></text>
+    <text x="620" y="390" font-size="6" text-anchor="middle" fill="#E8551E" font-weight="bold">MLP · concurrent SE (RMA)</text>
+    <text x="620" y="405.6" font-size="6.2" text-anchor="middle" fill="#5A6577">in: 자기수용 피드백 (q·<tspan font-family="'DejaVu Sans',sans-serif">q&#775;</tspan>·접촉·IMU)</text>
+    <text x="620" y="420" font-size="6.2" text-anchor="middle" font-weight="bold" fill="#1B2431">out: proprio 상태 + <tspan font-family="'DejaVu Sans',sans-serif">v&#770;</tspan> (base 속도)</text>
 
     <!-- 로봇 -->
-    <rect x="718" y="180" width="56" height="76" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.6"/>
-    <text x="746" y="214" font-size="9.5" text-anchor="middle" font-weight="bold">로봇</text>
-    <text x="746" y="228" font-size="6.6" text-anchor="middle" fill="#5A6577">접촉=물리</text>
+    <rect x="718" y="235.2" width="56" height="96" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.6"/>
+    <text x="746" y="278.4" font-size="9.5" text-anchor="middle" font-weight="bold">로봇</text>
+    <text x="746" y="295.2" font-size="6.6" text-anchor="middle" fill="#5A6577">접촉=물리</text>
 
-    <!-- 지각→ -->
-    <path d="M138 52 L152 52 L152 26 L351 26 L351 32" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
-    <text x="315" y="22" font-size="6.2" text-anchor="middle" fill="#5A6577">몸통 depth → 지도</text>
-    <line x1="138" y1="178" x2="176" y2="188" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
-    <path d="M138 168 L160 168 L160 62 L176 62" fill="none" stroke="#8A93A3" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#g)"/>
-    <text x="168" y="120" font-size="6.2" fill="#5A6577" transform="rotate(-90 168 120)">LiDAR</text>
+    <!-- (A) 지각 센서 배선 -->
+    <!-- 목 depth·2D LiDAR → 정책 상단 진입 (depth CNN 입력) -->
+    <path d="M138 66 L150 66 L150 40.8 L635 40.8 L635 62.4" fill="none" stroke="#E8551E" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#go)"/>
+    <text x="360" y="33" font-size="6" text-anchor="middle" fill="#E8551E" font-weight="bold">목 depth·2D LiDAR → 정책 CNN (보조 시선 · 사각 봉합)</text>
+    <!-- 몸통 depth → VoxelSLAM -->
+    <line x1="138" y1="159.6" x2="176" y2="159.6" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
+    <text x="157" y="154.8" font-size="5.8" text-anchor="middle" fill="#5A6577">depth</text>
+    <!-- 몸통 3D LiDAR·IMU → VoxelSLAM (LiDAR-관성 함께) -->
+    <line x1="138" y1="238.8" x2="176" y2="238.8" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
+    <text x="157" y="234" font-size="5.6" text-anchor="middle" fill="#5A6577">LiDAR · IMU</text>
+    <!-- (IMU·관절·접촉 → Estimator 전용, VoxelSLAM 직결 없음) -->
 
-    <!-- VoxelSLAM(SLAM 추정) → GICP -->
-    <path d="M251 98 L251 164" fill="none" stroke="#8A93A3" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#g)"/>
+    <!-- (A) VoxelSLAM 출력 (① → TerrainMap 단일 화살표에 변수 2개, ③ → STGN) -->
+    <!-- ①→ TerrainMap : /map_scan + odom→base (지형 클라우드 + 등록 pose) -->
+    <path d="M326 132 L347 132 L347 100.8 L360 100.8" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
+    <text x="352" y="117.6" font-size="5.6" fill="#E8551E" font-weight="bold" transform="rotate(-90 352 117.6)">/map_scan · odom→base</text>
+    <!-- ③→ map→base → STGN (전역 pose, 항법) -->
+    <path d="M326 216 L346 216 L346 338.4 L360 338.4" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#g)"/>
+    <text x="351" y="282" font-size="5.8" fill="#E8551E" font-weight="bold" transform="rotate(-90 351 282)">map→base</text>
 
-    <!-- GICP → STGN / TerrainMap (pose) -->
-    <line x1="326" y1="190" x2="360" y2="190" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
-    <text x="343" y="185" font-size="6.3" text-anchor="middle" fill="#5A6577">pose</text>
-    <path d="M326 172 L344 172 L344 62 L360 62" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#g)"/>
-    <text x="349" y="118" font-size="6.2" fill="#5A6577" transform="rotate(-90 349 118)">pose(GICP)</text>
+    <!-- TerrainMap → π : ② heightmap (좌측 진입 y120) -->
+    <path d="M522 85.2 L534 85.2 L534 144 L560 144" fill="none" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
+    <text x="531" y="76.8" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#1B2431">② heightmap(raw crop)</text>
+    <!-- 발판생성기 → π : ④ p_tgt·cs (중간 → 직진 y178, dashed) -->
+    <path d="M522 213.6 L560 213.6" fill="none" stroke="#E8551E" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#go)"/>
+    <text x="541" y="207.6" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#E8551E">④ p_tgt·cs</text>
+    <!-- STGN → π : ⑤ cmd_vel (하단 → 좌측 진입 y192) -->
+    <path d="M522 360 L548 360 L548 230.4 L560 230.4" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
+    <text x="540" y="223.2" font-size="6.4" text-anchor="middle" font-weight="bold" fill="#1B2431">⑤ cmd_vel</text>
+    <!-- Estimator → π : ① proprio + ③ v̂ (하단 진입 y262) -->
+    <line x1="598" y1="355.2" x2="598" y2="314.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
+    <text x="594" y="338.4" font-size="6.6" text-anchor="end" font-weight="bold" fill="#1B2431">① proprio</text>
+    <line x1="660" y1="355.2" x2="660" y2="314.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
+    <text x="666" y="338.4" font-size="6.6" font-weight="bold" fill="#1B2431">③ <tspan font-family="'DejaVu Sans',sans-serif">v&#770;</tspan></text>
+    <!-- IMU → Estimator : proprio (하단 우회 y408) -->
+    <path d="M110 343.2 L110 446.4 L620 446.4 L620 427.2" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
+    <text x="330" y="441.6" font-size="6.6" text-anchor="middle" fill="#1B2431" font-weight="bold">proprio → Estimator</text>
+    <!-- π → 로봇 (τ) : π 우측 y228 → 로봇 좌측 -->
+    <line x1="710" y1="273.6" x2="718" y2="273.6" stroke="#1B2431" stroke-width="1.5" marker-end="url(#g)"/>
+    <text x="714" y="266.4" font-size="7" fill="#5A6577">τ</text>
 
-    <!-- STGN → DTC -->
-    <line x1="441" y1="202" x2="441" y2="236" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
-    <text x="447" y="217" font-size="6.4" fill="#1B2431" font-weight="bold">경로 route</text>
-    <text x="447" y="227" font-size="6.2" fill="#E8551E">+ 게이팅 ON/OFF</text>
 
-    <!-- 제어층 4 입력 -->
-    <path d="M522 62 L540 62 L540 104 L560 104" fill="none" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
-    <text x="531" y="56" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#1B2431">② 지형잠재</text>
-    <path d="M522 268 L548 268 L548 152 L560 152" fill="none" stroke="#E8551E" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#go)"/>
-    <text x="545" y="228" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#E8551E">④ p_tgt·cs</text>
-    <!-- Estimator → π : ① proprio + ③ v̂ -->
-    <line x1="598" y1="270" x2="598" y2="240" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
-    <text x="592" y="256" font-size="6.6" text-anchor="end" font-weight="bold" fill="#1B2431">① proprio</text>
-    <line x1="660" y1="270" x2="660" y2="240" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
-    <text x="666" y="256" font-size="6.6" font-weight="bold" fill="#1B2431">③ v&#770;</text>
-    <!-- IMU → Estimator : proprio -->
-    <path d="M110 258 L110 372 L600 372 L600 328" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
-    <text x="300" y="367" font-size="6.6" text-anchor="middle" fill="#1B2431" font-weight="bold">proprio → Estimator</text>
-    <!-- 피드백 : 로봇 → 지각층 (자기수용 센싱) -->
-    <path d="M746 256 L746 420 L73 420 L73 258" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#g)"/>
-    <text x="405" y="416" font-size="6.8" text-anchor="middle" fill="#5A6577">자기수용 피드백: q · q&#775; · 접촉 · IMU  (로봇 → 지각층 센서)</text>
-
-    <!-- π → 로봇 (τ) -->
-    <line x1="710" y1="210" x2="718" y2="210" stroke="#1B2431" stroke-width="1.5" marker-end="url(#g)"/>
-    <text x="714" y="204" font-size="7" fill="#5A6577">τ</text>
-
-    <!-- 목 직시 보조 우회 -->
-    <path d="M14 114 L8 114 L8 396 L690 396 L690 256" fill="none" stroke="#E8551E" stroke-width="1.5" marker-end="url(#go)"/>
-    <text x="345" y="392" font-size="7.1" text-anchor="middle" font-weight="bold" fill="#E8551E">★ 목 직시(보조) — 지도·odom 사슬 우회 : 착지 직전 사각 봉합</text>
+    <!-- 피드백 : 로봇 → 지각층 (자기수용 센싱, 최하단 y476) -->
+    <path d="M746 331.2 L746 465.6 L73 465.6 L73 343.2" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#g)"/>
+    <text x="410" y="460.8" font-size="6.8" text-anchor="middle" fill="#5A6577">자기수용 피드백: q · <tspan font-family="'DejaVu Sans',sans-serif">q&#775;</tspan> · 접촉 · IMU  (로봇 → 지각층 센서)</text>
   </svg></div>
 
   <div class="sec-label" style="margin:1mm 0 1.6mm"><span class="n">F3</span> BehaviorTree.CPP v4 오케스트레이션 — stgn_bt 런타임 시퀀스 (STGN 계획 ↔ Nav2 추종을 엮는 상태머신)</div>
   <div style="border:1px solid var(--hair);border-radius:2mm;background:#fff;padding:2mm 2.5mm;margin-bottom:3mm;">
-  <svg viewBox="0 0 780 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, system-ui, sans-serif">
+  <svg viewBox="0 0 780 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="Pretendard, Noto Sans KR, Noto Sans CJK KR, Apple SD Gothic Neo, system-ui, sans-serif">
     <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1B2431"/></marker></defs>
     <text x="6" y="14" font-size="7.4" fill="#5A6577">Sequence · 1회 초기화</text>
     <rect x="6" y="20" width="104" height="34" rx="3" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.2"/>
@@ -638,7 +655,7 @@
     <line x1="234" y1="37" x2="254" y2="37" stroke="#1B2431" stroke-width="1.2" marker-end="url(#b)"/>
     <rect x="254" y="20" width="118" height="34" rx="3" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.2"/>
     <text x="313" y="34" font-size="8" text-anchor="middle" font-weight="bold">WaitForLocalization</text>
-    <text x="313" y="46" font-size="6.4" text-anchor="middle" fill="#5A6577">GICP TF 수렴 대기</text>
+    <text x="313" y="46" font-size="6.4" text-anchor="middle" fill="#5A6577">map→base TF 수렴 대기</text>
     <line x1="372" y1="37" x2="392" y2="37" stroke="#1B2431" stroke-width="1.2" marker-end="url(#b)"/>
 
     <text x="398" y="14" font-size="7.4" fill="#E8551E" font-weight="bold">Repeat(-1) · ReactiveSequence — 새 목표/리플랜 시 즉시 재진입</text>
@@ -658,7 +675,7 @@
     <text x="582" y="86" font-size="6.6" text-anchor="middle" fill="#5A6577">CheckReplanNeeded — /stgn/replan_needed 시 FollowPath 중단 → 재계획 루프</text>
   </svg></div>
   <div class="warn2" style="margin-bottom:2.6mm">
-    <b>소비 규칙 · STGN 실제 I/O (코드 기준)</b> — STGN in: <b>PCD 전역지도</b>(TerrainMap 비의존) · <b>/goal_pose</b> · <b>/livox/lidar_filtered</b> · <b>GICP pose</b> · out: <b>/stgn/output/path</b> → <b>Nav2 controller_server</b>(follow_path) → cmd_vel · 리플랜=<b>/stgn/replan_needed</b>. 위치추정은 <b>GICP 스캔매칭</b>(fast_gicp, 사전 PCD 맵 대비) — <b>VoxelSLAM은 주행 前 오프라인 맵 취득 전용</b>이며 주행 중엔 매핑을 돌리지 않음(연동=지도 물려받기). 상태추정은 두 갈래: <b>내비=GICP pose</b>(map→base), <b>제어=Estimator v&#770;</b>(제어층 온보드 속도추정·동시학습) — 정책의 <b>proprio·v&#770;는 Estimator 경유</b>(지각층 IMU 직결 아님).
+    <b>소비 규칙 · STGN I/O (아키텍처 A — VoxelSLAM 라이브 허브)</b> — STGN in: <b>PCD 전역지도</b>(TerrainMap 비의존) · <b>/goal_pose</b> · <b>/livox/lidar_filtered</b> · <b>map→base(VoxelSLAM)</b> · out: <b>/stgn/output/path</b> → <b>Nav2 controller_server</b>(follow_path) → cmd_vel · 리플랜=<b>/stgn/replan_needed</b>. (A)에선 위치추정을 <b>VoxelSLAM 라이브 허브</b>가 담당(내부 <b>①Estimator(ESIKF) ②Localization ③Loop closure</b>) → <b>map→base·odom→base·/map_scan</b> 공급, <b>GICP 불요</b>(자체 localization 겸함). ★<b>현재 STGN 코드는 GICP pose를 소비</b> → (A) 이식 시 <b>localization 소스만 VoxelSLAM으로 교체</b>(STGN 나머지 I/O 불변). 상태추정 분업: <b>내비=map→base</b>(전역·점프 허용), <b>TerrainMap 등록=odom→base</b>(매끄러움·점프금지), <b>제어=Estimator <span style="font-family:'DejaVu Sans',sans-serif">v&#770;</span></b>(온보드·동시학습, 지각층 IMU 직결 아님).
   </div>
   <div class="warn2" style="margin-bottom:2.8mm">
     <b>TerrainMap ↔ STGN 은 공존</b> — 대체 관계가 아니라 <b>층이 다른 보완 관계</b>입니다. <b>STGN</b>=전역 경로계획(3D 위상그래프 · <b>map</b> 프레임 · 목표까지 경로/리플랜)로 “<b>어디로 갈지</b>”를, <b>TerrainMap</b>=국소 지형(2.5D heightmap · <b>odom</b> 프레임 · 보행층 발밑 지형)으로 “<b>어떻게 디딜지</b>”를 담당. STGN 경로가 발판·타이밍 생성기(DTC)를 통해 국소 발판으로 내려오고, TerrainMap은 그 발판을 딛는 지형을 정책에 공급 — 두 지도는 프레임·주기·소비층이 모두 달라 동시 존재.
@@ -668,11 +685,11 @@
     <div class="bx"><h4>층 분업의 원칙 3</h4><ul>
       <li><b>시간 스케일 분업</b>: estimator=단기 상대 정밀(증분 정확, 절대는 드리프트) / SLAM=장기 절대 정밀(루프 클로저로 유계) — GT 대비 오차를 유계로 잡는 건 SLAM, 제어가 먹을 매끄러움은 estimator</li>
       <li><b>점프 격리</b>: 루프 클로저의 수십 cm 보정이 제어에 직접 닿으면 토크 폭주 — SLAM은 map→odom만 밀어 맞추고 odom→base는 불변</li>
-      <li><b>지도 우회</b>: 목 직시는 현재-프레임 기구학만 사용 — 지도가 틀려도 착지 직전 실측으로 봉합, 지도의 정밀도 요구 하향</li></ul></div>
+      <li><b>목 = 정책 직결(보조 시선)</b>: 목 depth·2D LiDAR(6-DOF 능동시선)를 <b>정책 depth CNN에 직결</b> — 몸통 하향뷰의 사각/가림 보완. <b>B 엔드스테이트(raw-depth CNN)와 일치</b>. 움직이는 마운트라 SLAM(강체 가정)엔 부적합하나, 정책 CNN은 목 pose와 함께 raw depth를 처리하므로 자연스러움</li></ul></div>
     <div class="bx"><h4>SLAM 추가 시 변경 범위</h4><ul>
       <li>기존 estimator·TerrainMap·정책·발판·타이밍 생성기 <b>무변경</b> — 위에 한 층 얹기(map→odom 변환 발행 + 항법 소비자 신설)</li>
       <li>관측원: 목 능동 시선의 랜드마크 재관측(구조물·가구 모서리) + LiDAR 스캔 매칭 — 목이 SLAM의 센서 겸용</li>
-      <li>estimator odom은 SLAM의 <b>입력</b>(키프레임 간 운동 사전) — 상류·하류 관계라 순환 없음</li></ul></div>
+      <li><b>IMU 팬아웃(추정기 독립)</b>: 지각층 raw IMU가 <b>제어 Estimator</b>와 <b>SLAM 자체 KF</b>(VoxelSLAM=LiDAR-관성 융합) 양쪽으로 <b>직접</b> 들어감 — 제어 estimator 출력을 SLAM에 물리지 않음(체이닝 X). 두 추정기가 목적별로 독립(제어=연속·저지연 / SLAM=map 일관·드리프트 유계)이라 오차 전파·순환 차단. 화해는 추정기가 아니라 <b>프레임 정합</b>(map→odom)에서만</li></ul></div>
   </div>
 </div>
 
@@ -694,7 +711,7 @@
     <tbody>
       <tr><td>지각</td><td>몸통·목 depth · 몸통 LiDAR</td><td>실 드라이버 없음. sim <span class="mono">mj_ray</span> 레이캐스트만 <span class="mono">quad/cpp/src/terrain_map.hpp</span></td><td><b style="color:#C0392B">미구축(실)</b> · sim 대체</td></tr>
       <tr><td>지각</td><td>IMU·관절·접촉 (proprio)</td><td>MuJoCo 센서 + estimator</td><td><b style="color:#1E7B4D">구축</b> (sim)</td></tr>
-      <tr><td>로컬</td><td>VoxelSLAM · GICP Localization</td><td><b>별도 repo 존재</b> — GICP <span class="mono">SLAM_STGN/src/gicp_localization · fast_gicp</span> · VoxelSLAM <span class="mono">RGA-Robotics/SLAM_VoxelSLAM2</span>(오프라인 맵 취득)</td><td><b style="color:#1E7B4D">구축</b> (별도 repo · 미통합)</td></tr>
+      <tr><td>로컬</td><td>VoxelSLAM 라이브 허브 <span class="mono">(A)</span></td><td><b>별도 repo 존재</b> — <span class="mono">RGA-Robotics/SLAM_VoxelSLAM2</span> = <b>라이브 SLAM</b>(맵빌드+로컬라이즈·deskew·map→odom·/map_scan). GICP <span class="mono">SLAM_STGN/gicp_localization·fast_gicp</span>는 <b>(A)에선 VoxelSLAM이 대체</b>(미사용)</td><td><b style="color:#1E7B4D">구축</b> (별도 repo · 미통합)</td></tr>
       <tr><td>지도</td><td>TerrainMap</td><td><span class="mono">terrain_map.hpp</span> (mj_ray, robot-centric, footScore/slope/edgeSDF)</td><td><b style="color:#E8551E">부분</b> (sim 백엔드만)</td></tr>
       <tr><td>계획</td><td>STGN 플래너 (A*)</td><td><b>별도 ROS2 repo 존재</b> <span class="mono">SLAM_STGN/src/stgn_core · stgn_bt · nav2_bridge · navigation2</span></td><td><b style="color:#1E7B4D">구축</b> (별도 repo · 미통합)</td></tr>
       <tr><td>DTC</td><td>발판·타이밍 생성기</td><td><b>TOWR·TAMOLS</b> <span class="mono">quad/towr/towr_cd.py · quad/tamols/</span></td><td><b style="color:#1E7B4D">구축</b> (오프라인 IPOPT)</td></tr>
@@ -775,7 +792,7 @@
   <div class="g2">
     <div class="bx"><h4>네트워크 (MLP·비순환)</h4><ul>
       <li><b>actor</b>=MLP[512,256,128] ELU, 입력 100 → <b>a∈R¹² (위치 잔차)</b> · q_tgt=0.25·a+q_def · PD(Kp25·Kd0.5·τclip23.5) 200Hz.</li>
-      <li><b>RMA teacher→student</b>: 교사=priv_latent(37)→20 · 학생=이력 CNN→20 · distill <span class="mono">‖priv−hist.detach()‖</span> · estimator=proprio→v̂.</li>
+      <li><b>RMA teacher→student</b>: 교사=priv_latent(37)→20 · 학생=이력 CNN→20 · distill <span class="mono">‖priv−hist.detach()‖</span> · estimator=proprio→<span style="font-family:'DejaVu Sans',sans-serif">v̂</span>.</li>
       <li>★baseline=<b>Go2 12-DOF·ActorCriticRMA</b>(RobotSW_IsaacLab 파쿠르 포크). 우리 목표는 <b>APT(page 2)</b>로 진화, 02_Leg는 <b>R¹⁶</b>(발목 포함).</li></ul></div>
     <div class="bx"><h4>RL vs A(MPC+WBIC) vs B·C(OCP)</h4>
       <div class="scroll" style="margin-top:2mm"><table style="min-width:0;font-size:7.4pt;margin:0">

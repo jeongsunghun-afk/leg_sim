@@ -1,7 +1,8 @@
 # TOWR·모델기반 지형계획 트랙 리포트
 
-**기간** 2026-07-21 ~ 07-22 · **작성** 2026-07-22
+**기간** 2026-07-21 ~ 07-27 · **작성** 2026-07-22 · **갱신** 2026-07-27
 **한 줄 결론** 모델기반 오프라인 지형 planning은 성공(TOWR), 그러나 **fast 험지 실시간 추종의 벽은 안정성**이고 주입 API가 아니다 → **robust 불연속 험지 = RL 하이브리드**로 확정. TOWR·브리지는 RL 교사/오프라인 참조로 편입.
+**07-27 확증** ①진짜 ethz-adrl/towr **빌드**해 우리 모델 적용(flat/block Optimal, towr_cd는 phase-timing 없는 **단순화판**임이 판명) ②§4.1이 지목한 **C++ 발판주입 훅을 실제 구현**(`setExternalFoothold`)·평지 falls=0 검증 ③**TOWR=오프라인 계획기(rviz 시각화)일 뿐 제어기 아님** 규명 ④옵션3 = **B heightmap도 갭 실패** → 로버스트 모델기반 갭 baseline 부재 재확인. **결론 불변**(RL 피벗), 근거만 더 단단해짐.
 
 관련: [MPC_RL 하이브리드 전략 리포트](MPC_RL_하이브리드_전략_리포트.md) · [RPET 지형맵 통합](RPET_TERRAIN_MAP_INTEGRATION.md) · 메모리 `b-elevation-tamols-towr-track` · `mpc-rl-hybrid-roadmap`
 
@@ -28,7 +29,8 @@
 | `simple_mpc/towr_track_B.py` | **B의 WBIC(KinodynamicsID/TSID) 브리지** + phase-leash 재생 | ✅ slow / ❌ fast |
 | `quad/mjcf/quad_terrain_step·platgap.mjcf` | 검증 지형 씬 | ✅ |
 
-**핵심 재구현 결정**: C++ TOWR(ifopt/ROS/catkin) 빌드 대신 **CasADi 번들 IPOPT로 우리 스택에 재구현**(PACE식 방법론 이식). casadi 3.7 + IPOPT + pinocchio + proxsuite 확인.
+**재구현 결정(07-22)**: C++ TOWR(ifopt/ROS/catkin) 빌드 대신 **CasADi 번들 IPOPT로 우리 스택에 재구현**(PACE식 방법론 이식). casadi 3.7 + IPOPT + pinocchio + proxsuite 확인.
+**★07-27 정정**: 위 `towr_cd`는 **고정 접촉스케줄만 쓰는 단순화판**으로, **TOWR 핵심인 phase-based 타이밍 최적화가 빠짐**(그래서 갭서 수동 cadence 핵 필요했음). 진짜 원조 **ethz-adrl/towr(ifopt+IPOPT)를 `towr_ext/`에 빌드 완료**(towr-example solve 0.21s·게이트 자동창발). 우리 SRBD 적용 드라이버=`towr_ext/towr/towr/test/zero2leg_example.cc`(+`zero2leg_model.h`): **flat/block=Optimal**(위상 지속시간 발별 자동최적화 확인=towr_cd가 못하던 것), gap(0.5m)·narrowgap(0.25/0.15m)=**미수렴**(우리 로봇 ROM 스텝≤0.26m 한계). towr_cd는 경량 참조로 잔존.
 
 **SRBD 파라미터**(pinocchio URDF 추출): m=38.016kg, 관성 diag(0.94, 2.52, 2.24), 공칭 발위치 ±0.30/±0.16, base_h 0.50, μ=0.6.
 
@@ -79,6 +81,9 @@
 ### 4.4 결론 — 벽은 주입이 아니라 **안정성**
 - TOWR-최적 발판/timing을 주입해도 **안정성 벽을 못 넘음**(+ setReferencePose는 매 iterate Raibert가 덮어 C++ 수정 필요).
 - **∴ TOWR→MPC 실시간 주입 = 저효용**(B 폐루프가 이미 존재·상한 동일). **개발 권장 안 함.**
+
+### 4.5 ★07-27 후속 — C++ 훅 실제 구현·검증(그래도 결론 불변)
+§4.1이 지목한 "매 iterate Raibert가 덮어 C++ 수정 필요"를 **실제 구현**: `simple_mpc` C++에 `MPC::setExternalFoothold(ee,pos)`/`clearExternalFootholds()` 추가(`updateStepTrackerReferences`서 Raibert next_pose_를 외부 world 발판으로 대체, heightmap보다 우선). 바인딩·재빌드 완료. Python 배선=`quad_centroidal_17dof.py` env `TOWR_INJECT=<traj.json>`(base x 위상잠금→발별 다음 착지 주입). **평지+flat TOWR 발판 주입=falls=0 검증**(훅 작동 확인). **그러나 갭 관철은 여전히 막힘**: ①TOWR가 우리 로봇 갭 계획을 수렴 못함(ROM 한계), ②B heightmap 네이티브도 갭 실패(옵션3: quad_terrain_gap서 VX0.2·0.3 첫 플랫폼 낙상). **∴ 로버스트 모델기반 갭 baseline 자체가 없어 TOWR 주입이 개선할 대상이 없음 → §4.4 결론(저효용·RL 피벗) 재확인.** 훅은 좋은 계획소스 생기면 재사용 가능한 자산으로 잔존.
 
 ---
 

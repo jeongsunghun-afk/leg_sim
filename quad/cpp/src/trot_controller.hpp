@@ -168,7 +168,7 @@ struct TrotCtrl {
   Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
   double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
-  tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0;   // ★온라인 replan 상태(warm-start 지속·horizon-shift 위상)
+  tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
   void tamols_online_replan(mjData* d){
@@ -176,7 +176,7 @@ struct TrotCtrl {
     double bx=d->qpos[0], by=d->qpos[1];
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
-    tamols::OnlineCfg cfg; cfg.vadv=V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;
+    tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;   // ★주입=plan 정지(발판 명목·gap회피만, A gait가 전진)
     cfg.walk = getenv("RSL_GAIT") && !std::strcmp(getenv("RSL_GAIT"),"walk");   // ★walk(정적안정) vs trot
     int _Pg = cfg.walk?4:5;
     cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
@@ -635,6 +635,9 @@ struct TrotCtrl {
     double bt=0.0; if(perceptive){ double tz=q.terrain_z(d->qpos[0],d->qpos[1]); if(tz>-50.0) bt=tz; }
     _bterr_s+=tc_clip(bt-_bterr_s,-0.5*dt,0.5*dt); q._body_terr=0.0; x_ref[5]=com_h0+_bterr_s;
     std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
+    bool taminj=getenv("TAMOLS_INJECT");   // ★A gait 클럭(연속·swing 확실)에 TAMOLS 발판만 주입=타이밍 유지+계획 협조
+    if(taminj){ double RDT=getenv("REPLAN_DT")?atof(getenv("REPLAN_DT")):0.4; tam_inj=true;
+      if(tam_ol_last<0||t-tam_ol_last>=RDT){ tamols_online_replan(d); tam_ol_last=t; tam_ax=d->qpos[0]; tam_ay=d->qpos[1]; } }
     for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg,sch,sp);
       if(sch){ st.push_back(i); have_prev[i]=false; } else { if(sp<0.03) liftoff[i]=q.foot_point(i); } }
     std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
@@ -653,6 +656,9 @@ struct TrotCtrl {
       Vector2d tw=Weff*gp_Tst*Vector2d(-r_xy[1],r_xy[0]);          // ★선회 접선 발배치(yaw) — 없으면 회전시 표류·붕괴
       bool frontleg=(std::string(q.legs[i])=="FL"||std::string(q.legs[i])=="FR");  // ★앞다리=앞몸통방향(허리반영)
       Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw;
+      if(taminj && tam_N>0){ int mp[4]={2,3,0,1};   // ★A(HL,HR,FL,FR)↔TAMOLS(FL,FR,RL,RR) 매핑
+        double dx=tam_fh[mp[i]][0]-tam_ol.prm.hip_offsets(mp[i],0), dy=tam_fh[mp[i]][1]-tam_ol.prm.hip_offsets(mp[i],1);  // TAMOLS 계획 편차(명목 대비=gap회피분)
+        pe_xy+=Vector2d(cy*dx-sy*dy, sy*dx+cy*dy); }   // ★A 발판(검증됨)에 TAMOLS 편차만 더함(gap 협조)=A 타이밍·안정 유지
       if(foot_nudge){   // ★③ 발판 선택(밸런스-인지): 스윙시작 1회 도달반경내 footScore·밸런스 저울질로 발판 선택→오프셋 홀드(밸런스 피드백 보존)
         if(!have_prev[i]){ double bx,by;
           if(tmap.selectFoot(pe_xy[0],pe_xy[1],nudge_r,nudge_wbal,bx,by)){ Vector2d off(bx-pe_xy[0],by-pe_xy[1]);

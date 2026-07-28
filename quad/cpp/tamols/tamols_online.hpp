@@ -65,7 +65,7 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
       st.a[k](0,3) = (2*(x0-x1)/cfg.phase_dur + v0 + v1)/(cfg.phase_dur*cfg.phase_dur);
     }
     // 발판 = 명목 stance + Raibert(실제속도 기반 전진, 과신장 방지). ★gap in reach면 straddle
-    double fwd0 = vx0 * (cfg.walk ? 0.4 : 0.3);   // 실제 vx0 기반 전진(계획속도 아님)=발이 base 안 앞섬
+    double fwd0 = 0.0;   // ★발판=명목 stance(hip_offset). 전진은 A gait의 Raibert 담당(주입 시), gap회피만 편차로
     for (int i = 0; i < 4; ++i) { st.p(i,0) = st.prm.hip_offsets(i,0) + fwd0; st.p(i,1) = st.prm.hip_offsets(i,1); st.p(i,2) = 0; }
     st.epsilon = VectorXd::Zero(P);
   }

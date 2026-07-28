@@ -303,7 +303,16 @@ struct TrotCtrl {
       double tgt_x=tam_ax+s[0], tgt_y=tam_ay+s[1];                      // base 위치 피드백(드리프트 보정) + TAMOLS 속도
       double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
+      x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
+      bool rsl=getenv("RSL_TRACK");   // ★RSL식: SRBD MPC 빼고 WBC가 base궤적 위치레벨 직접 추종(RSL_TRACK=1). 우리 WBIC는 성숙도 부족으로 첫swing서 tilt발산=미완
+      if(rsl){ auto& sn=tam_s[std::min(k+1,tam_N-1)];
+        q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;
+        q.w_ori=getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★RSL: 자세 강홀드(축소지지서 레벨링 모멘트 우선). 낮으면 첫swing tilt발산
+        q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];             // 계획 base 위치(x,y,z)
+        q.com_vel_ref[0]=s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;      // 계획 base 속도
+        q.com_acc_ref[0]=(sn[6]-s[6])/tam_dt; q.com_acc_ref[1]=(sn[7]-s[7])/tam_dt; }  // 계획 base 가속(ff)
+      else { double qp=getenv("TAM_QPOS")?atof(getenv("TAM_QPOS")):50.0; q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
       double SW_DUR=0.4, sh=0.08;
       for(int i=0;i<4;i++){ bool contact=(cc[i]!=0);
@@ -317,13 +326,17 @@ struct TrotCtrl {
           if(tam_have_ptgt[i]) for(int c=0;c<3;c++) v_tgt[c]=tc_clip((p_tgt[c]-tam_ptgt[i][c])/dt,-1.0,1.0);
           tam_ptgt[i]=p_tgt; tam_have_ptgt[i]=true; swing[i]={p_tgt,v_tgt}; } }
       double dmpc=t-mpc_t;
-      if(!st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
+      if(!rsl && !st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
         std::vector<std::array<int,4>> cs(q.mpc.N);
         for(int kk=0;kk<q.mpc.N;kk++){ int kf=std::min((int)((tam_t+kk*q.mpc.DT)/tam_dt),tam_N-1);
           for(int i=0;i<4;i++) cs[kk][i]=tam_c[kf][i]; }
         Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
-      Vector3d lam_use[4]; for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
-      if(!q.wbic_track(st,swing,lam_use)) q.wbic_stance();
+      Vector3d lam_use[4];
+      if(rsl){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // ★RSL: λ=중력보상 baseline(WBC가 base task로 실제 분배)
+        for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
+      else for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
+      double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):0.1):10.0;   // ★RSL: λ 정규화 약화(base task가 수평 GRF 자유생성)
+      if(!q.wbic_track(st,swing,lam_use,wl)) q.wbic_stance();
       armed=false; return;
     }
     bool run_move=(mode=="move")||stop_settle;

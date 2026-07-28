@@ -34,6 +34,8 @@ struct QuadControl {
   double posture_w=1.0;                                  // ★wbic_stance 자세task 가중 스케일(기본1). 개-앉기서 ↑=접힘(q_home) 홀드(CoM균형은 유지). 서기/보행=1
   bool sit_hock_contact=false;                           // ★개-앉기: 뒤 접촉점을 toe sphere→hock(발목)로 전환. CoM을 hock~앞발 지지폴리곤 기준 균형→발링크 평평 유지(toe-stand 방지)
   double w_yaw=0.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). euler 표준수정 후 0이 최적(14·17 공통; MPC가 yaw 담당). >0=헤딩홀드
+  double W_BASE_XY=0.0, KP_BASE=150.0, KD_BASE=25.0;      // ★RSL식: wbic_track이 base 수평(x,y) 위치를 직접 추종(>0=on). SRBD MPC 대신 계획 base궤적을 WBC가 execute
+  Vector3d com_vel_ref=Vector3d::Zero(), com_acc_ref=Vector3d::Zero();  // 수평 base 속도·가속 참조(TAMOLS 계획)
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
@@ -385,6 +387,9 @@ struct QuadControl {
     double zref=com_ref[2]+_body_terr; Vector3d Jcqv=Jc*qv;
     double a_z=200*(zref-d->subtree_com[2])-25*Jcqv[2];
     P.topLeftCorner(nv,nv)+=150.0*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=150.0*a_z*Jc.row(2).transpose();
+    if(W_BASE_XY>0){ for(int ax=0;ax<2;ax++){   // ★RSL식: base 수평(x,y) 위치를 WBC가 직접 추종(SRBD MPC 대체) — 계획 base궤적 위치레벨 execute
+      double a_xy=KP_BASE*(com_ref[ax]-d->subtree_com[ax])+KD_BASE*(com_vel_ref[ax]-Jcqv[ax])+com_acc_ref[ax];
+      P.topLeftCorner(nv,nv)+=W_BASE_XY*(Jc.row(ax).transpose()*Jc.row(ax)); g.head(nv)-=W_BASE_XY*a_xy*Jc.row(ax).transpose(); } }
     for(int j=0;j<nu;j++){
       double a_post, w_post;
       if(j==waist_idx){ a_post=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w_post=WAIST_W; }  // ★허리: 강한 전용홀드(요각목표=waist_ref)

@@ -295,6 +295,41 @@ inline MatrixXd ineq_jacobian_full(const TamolsState& st, const QpOptions& o, co
   return J;
 }
 
+// ── elastic-mode QP 스텝 (ℓ1-SQP / SNOPT elastic mode) ──
+//   하드 QP( CE·dz+ce0=0, CI·dz+ci0≥0 )가 국소 infeasible일 때 폴백.
+//   슬랙 p,n(등식 ±)·t(부등식)로 완화 → QP가 항상 feasible → 위반-감소 방향 보장.
+//   min ½dzᵀH dz + gᵀdz + μ(Σp+Σn+Σt)  s.t.  CE·dz+ce0 = p−n,  CI·dz+ci0 ≥ −t,  p,n,t≥0
+inline bool elastic_step(const MatrixXd& H, const VectorXd& gg,
+                         const MatrixXd& CE, const VectorXd& ce0,
+                         const MatrixXd& CI, const VectorXd& ci0,
+                         double mu, VectorXd& dz_out) {
+  const int nz = (int)gg.size(), neq = (int)ce0.size(), nineq = (int)ci0.size();
+  const int ny = nz + 2 * neq + nineq;                 // [dz | p(neq) | n(neq) | t(nineq)]
+  const double eps = 1e-6;
+  MatrixXd He = MatrixXd::Zero(ny, ny);
+  He.topLeftCorner(nz, nz) = H;
+  for (int i = nz; i < ny; ++i) He(i, i) += eps;       // 슬랙 PD 유지
+  VectorXd ge(ny); ge.setZero(); ge.head(nz) = gg;
+  ge.segment(nz, 2 * neq + nineq).setConstant(mu);     // ℓ1 페널티
+  // 등식: CE·dz − p + n + ce0 = 0
+  MatrixXd CEe = MatrixXd::Zero(neq, ny); VectorXd ce0e = ce0;
+  if (neq) { CEe.leftCols(nz) = CE;
+    CEe.block(0, nz, neq, neq) = -MatrixXd::Identity(neq, neq);
+    CEe.block(0, nz + neq, neq, neq) = MatrixXd::Identity(neq, neq); }
+  // 부등식: (CI·dz + t + ci0 ≥ 0) + (p≥0)(n≥0)(t≥0)
+  const int mi = nineq + 2 * neq + nineq;
+  MatrixXd CIe = MatrixXd::Zero(mi, ny); VectorXd ci0e = VectorXd::Zero(mi);
+  if (nineq) { CIe.block(0, 0, nineq, nz) = CI;
+    CIe.block(0, nz + 2 * neq, nineq, nineq) = MatrixXd::Identity(nineq, nineq);
+    ci0e.head(nineq) = ci0; }
+  for (int i = 0; i < 2 * neq + nineq; ++i) CIe(nineq + i, nz + i) = 1.0;   // 슬랙 ≥ 0
+  eiquadprog::solvers::EiquadprogFast qp; qp.reset(ny, neq, mi);
+  VectorXd y(ny);
+  auto stt = qp.solve_quadprog(He, ge, CEe, ce0e, CIe, ci0e, y);
+  if (stt != eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
+  dz_out = y.head(nz); return true;
+}
+
 // ── 해석 Jacobian 솔버 (solve()의 FD → 해석 배선) — 실시간 측정용 ──
 inline QpResult solve_fast(TamolsState& st, const Grid& h, double cell, int map_size, const QpOptions& o = QpOptions()) {
   Packer pk(st.num_phases());
@@ -319,7 +354,9 @@ inline QpResult solve_fast(TamolsState& st, const Grid& h, double cell, int map_
       MatrixXd H = JRtJR; H.diagonal().array() += reg;
       VectorXd dz(nz); qp.reset(nz, neq, nineq);
       auto stt = qp.solve_quadprog(H, gg, CE, ce0, CI, ci0, dz);
-      if (stt == eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) {
+      bool have_dir = (stt == eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL);
+      if (!have_dir) have_dir = elastic_step(H, gg, CE, ce0, CI, ci0, mu, dz);   // ★폴백: 선형화제약 infeasible→슬랙완화(항상 feasible)
+      if (have_dir) {
         double alpha = 1.0; int ls;
         for (ls = 0; ls < 25; ++ls) { if (merit(z + alpha * dz) < m0 - 1e-10) break; alpha *= 0.5; }
         if (ls < 25) {

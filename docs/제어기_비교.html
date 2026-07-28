@@ -125,7 +125,7 @@
   <div class="scroll"><table>
     <thead><tr><th>제어기</th><th>코어</th><th>연속 지형(경사·rough)</th><th>불연속(갭·stepping)</th><th>근거</th></tr></thead>
     <tbody>
-      <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td><td>selectFoot이 정렬된 갭만 완주</td></tr>
+      <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">✅ <b>좁은갭·stepping 전속도 완주</b>(접촉구 수정)·❌ 넓은갭</td><td>속도-공명=접촉구 아티팩트로 해소. <b>넓은갭=base-발판 협조 필요(계획층 3부재)</b></td></tr>
       <tr><td><span class="chip cB">B</span></td><td>Kinodyn+TSID</td><td class="wa">⚠️ 평지 안정</td><td class="no">❌ 갭서 발 빠짐</td><td>base–발판 협조 없음(greedy)</td></tr>
       <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span></td><td>Perceptive NMPC</td><td class="wa">외부 시연</td><td class="wa">외부 파쿠르</td><td>우리 환경 미구축·공통벤치 없음</td></tr>
@@ -141,7 +141,7 @@
     <tbody>
       <tr><td><span class="chip cA">A</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Di Carlo 2018<br>Kim(WBIC) 2019</span></td>
         <td>online footScore/selectFoot<br><span class="mono">입력</span> heightmap·cmd_vel·상태<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>·base궤적<br><span class="mono">최적화</span> <b>발판위치만</b>(국소 nudge). <b class="no">base궤적·z는 최적화 X</b>(명령 setpoint 추종)</td>
-        <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+관절가속,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
+        <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+관절가속,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">✅ 좁은갭·stepping 전속도 완주(접촉구 수정 후)·❌ 넓은갭(base-발판 협조 계획층 부재)</td></tr>
       <tr><td><span class="chip cB">B</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">kino-dyn:<br>Farshidian 2017</span></td>
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
         <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상<br><span class="mono">(과거노트·simple_mpc 미설치로 재검증 불가)</span></td></tr>

@@ -177,7 +177,9 @@ struct TrotCtrl {
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
     tamols::OnlineCfg cfg; cfg.vadv=V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;
-    cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%5;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
+    cfg.walk = getenv("RSL_GAIT") && !std::strcmp(getenv("RSL_GAIT"),"walk");   // ★walk(정적안정) vs trot
+    int _Pg = cfg.walk?4:5;
+    cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
     double vx0=d->qvel[0], vy0=d->qvel[1];
     if(getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬(base 기준)
     tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);

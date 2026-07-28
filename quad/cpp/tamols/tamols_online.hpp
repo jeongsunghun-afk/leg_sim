@@ -24,17 +24,28 @@ inline void set_trot_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) 
     for (int i = 0; i < 4; ++i) { st.gait[k].contact[i] = cs[s][i]; st.gait[k].at_des[i] = ad[s][i]; } }
 }
 
+// ★walk(crawl) 게이트 4-phase: 한 발씩 swing → 3발 지지(정적 안정, 횡균형 강함).
+//   LS crawl 순서 RR→FR→RL→FL(idx 3,1,2,0). off=horizon-shift 위상.
+inline void set_walk_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) {
+  int P = 4; st.gait.resize(P);
+  int cs[4][4] = {{1,1,1,0},{1,0,1,1},{1,1,0,1},{0,1,1,1}};   // swing: RR,FR,RL,FL
+  for (int k = 0; k < P; ++k) { int s = ((k + off) % P + P) % P; st.gait[k].duration = phase_dur;
+    for (int i = 0; i < 4; ++i) { st.gait[k].contact[i] = cs[s][i]; st.gait[k].at_des[i] = (cs[s][i]==0)?1:0; } }
+}
+
 // ── 온라인 replan: 현재 상태 → TamolsState(로컬, 앞으로 vadv 전진) → solve_fast(warm-start) ──
 //   base0 = [z,yaw] 현재값(x,y=로컬 원점). v0 = 현재 base 속도(local x,y). foot_meas = 현재 발위치(로컬, base 기준 상대 xy + world z).
 //   vadv = 명령 전진속도. 반환 = QpResult(수렴 여부).
 struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool warm = false;
   double gap_x0 = -1, gap_x1 = -1;   // ★로컬 프레임 gap [x0,x1](base 기준). <0 = gap 없음(평지 walk)
-  int phase_off = 0; };              // ★horizon-shift 위상 오프셋(매 replan 증가 → swing 실행)
+  int phase_off = 0;                 // ★horizon-shift 위상 오프셋(매 replan 증가 → swing 실행)
+  bool walk = false; };              // ★walk(crawl 4-phase 한발씩=정적안정) vs trot(5-phase 대각쌍)
 
 inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int map_size,
                               double z0, double yaw0, double vx0, double vy0,
                               const Eigen::Matrix<double,4,3>& foot_meas, const OnlineCfg& cfg) {
-  set_trot_gait(st, cfg.phase_dur, cfg.phase_off);   // ★horizon-shift 위상 회전(swing 실행)
+  if (cfg.walk) set_walk_gait(st, cfg.phase_dur, cfg.phase_off);   // ★walk=한발씩 정적안정
+  else          set_trot_gait(st, cfg.phase_dur, cfg.phase_off);   // ★horizon-shift 위상 회전(swing 실행)
   int P = st.num_phases(); double T = P * cfg.phase_dur, xf = cfg.vadv * T;
   st.base_pose << 0, 0, z0, 0, 0, yaw0;             // 로컬 원점서 시작(컨트롤러가 현재 x,y 앵커)
   st.base_vel  << vx0, vy0, 0, 0, 0, 0;
@@ -53,8 +64,9 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
       st.a[k](0,2) = (3*(x1-x0)/cfg.phase_dur - 2*v0 - v1)/cfg.phase_dur;
       st.a[k](0,3) = (2*(x0-x1)/cfg.phase_dur + v0 + v1)/(cfg.phase_dur*cfg.phase_dur);
     }
-    // 발판 = 명목 stance 반horizon 전진. ★gap in reach면 앞발=갭 너머·뒷발=갭 앞(straddle)
-    for (int i = 0; i < 4; ++i) { st.p(i,0) = st.prm.hip_offsets(i,0) + 0.5*xf; st.p(i,1) = st.prm.hip_offsets(i,1); st.p(i,2) = 0; }
+    // 발판 = 명목 stance + Raibert(실제속도 기반 전진, 과신장 방지). ★gap in reach면 straddle
+    double fwd0 = vx0 * (cfg.walk ? 0.4 : 0.3);   // 실제 vx0 기반 전진(계획속도 아님)=발이 base 안 앞섬
+    for (int i = 0; i < 4; ++i) { st.p(i,0) = st.prm.hip_offsets(i,0) + fwd0; st.p(i,1) = st.prm.hip_offsets(i,1); st.p(i,2) = 0; }
     st.epsilon = VectorXd::Zero(P);
   }
   bool gap_near = cfg.gap_x0 >= 0 && cfg.gap_x0 < xf + 0.45 && cfg.gap_x1 > -0.15;   // gap이 horizon 전방 도달권

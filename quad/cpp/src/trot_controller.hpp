@@ -674,6 +674,7 @@ struct TrotCtrl {
       Vector2d pe_xy=hip_xy+(frontleg?Rwf:Rw)*hip_off[i]+rai+tw;
       if(taminj && tam_N>0){ int mp[4]={2,3,0,1};   // ★A(HL,HR,FL,FR)↔TAMOLS(FL,FR,RL,RR) 매핑
         double dx=tam_fh[mp[i]][0]-tam_ol.prm.hip_offsets(mp[i],0), dy=tam_fh[mp[i]][1]-tam_ol.prm.hip_offsets(mp[i],1);  // TAMOLS 계획 편차(명목 대비, 평지=0)
+        double dyc=getenv("INJ_DYCAP")?atof(getenv("INJ_DYCAP")):0.0; dy=tc_clip(dy,-dyc,dyc);   // ★Y 편차 캡 기본0: TAMOLS는 y-대칭 강제 없어 비대칭 dy→횡/yaw 드리프트(검증: DYCAP0=언덕 falls=0 완주, 0.05=조기전복). 명목대칭 유지, dx(전진)만 주입
         pe_xy+=Vector2d(cy*dx-sy*dy, sy*dx+cy*dy); }   // ★A 발판(검증됨)에 TAMOLS 편차만 더함=A 타이밍·안정 유지
       if(taminj && getenv("GAP_X0")){ double g0=atof(getenv("GAP_X0")), g1=atof(getenv("GAP_X1")), mg=0.05;   // ★per-foot gap 회피(A gait 연속보행 정합)
         if(pe_xy[0]>g0-mg && pe_xy[0]<g1+mg) pe_xy[0]=(pe_xy[0]<0.5*(g0+g1))? g0-mg : g1+mg; }   // 갭에 빠질 발→가까운 안전 edge(앞/뒤)로

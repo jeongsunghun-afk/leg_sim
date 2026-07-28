@@ -344,20 +344,25 @@ struct TrotCtrl {
         q.KP_BASE=getenv("KP_BASE")?atof(getenv("KP_BASE")):150.0;
         q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];   // 계획 base 위치. ★온라인 위치ref vadv전진은 z침하 유발→plan 추종 유지(안정 우선)
         q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;   // 계획 base 속도(★온라인=vadv 직접 명령해 연속 전진)
-        q.com_acc_ref[0]=(sn[6]-s[6])/tam_dt; q.com_acc_ref[1]=(sn[7]-s[7])/tam_dt; }  // 계획 base 가속(ff)
+        double _accap=getenv("ACC_CAP")?atof(getenv("ACC_CAP")):3.0;   // ★계획 가속 ff 클램프(스파이크→pitch-dive 방지)
+        q.com_acc_ref[0]=tc_clip((sn[6]-s[6])/tam_dt,-_accap,_accap); q.com_acc_ref[1]=tc_clip((sn[7]-s[7])/tam_dt,-_accap,_accap); }
       else { double qp=getenv("TAM_QPOS")?atof(getenv("TAM_QPOS")):50.0; q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
-      double SW_DUR=0.4, sh=0.08;
-      for(int i=0;i<4;i++){ bool contact=(cc[i]!=0);
-        if(contact){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }
-        else { if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=tam_t; tam_sw_prev[i]=false; }  // liftoff 캡처
+      double SW_DUR=online?(getenv("SW_DUR")?atof(getenv("SW_DUR")):0.14):0.4;   // ★swing<위상(0.14<0.2): 여유 두고 착지완료→위상전환 시 발이 실제 지면(phantom stance 방지)
+      double sh=online?(getenv("STEP_H")?atof(getenv("STEP_H")):0.05):0.08;      // ★온라인 발높이 낮춤(빠른 착지)
+      for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
+        bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
+        if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만
+        else if(!sched){ if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=tam_t; tam_sw_prev[i]=false; }  // liftoff 캡처
           double sprog=tc_clip((tam_t-tam_sw_start[i])/SW_DUR,0.0,1.0);
           Vector3d p_end(tam_ax+tam_fh[i][0],tam_ay+tam_fh[i][1],tam_fh[i][2]);
           Vector3d bvel(s[6],s[7],0.0);
           Vector3d p_tgt=tc_swing_foot(sprog,tam_lift[i],p_end,bvel,sh,SW_DUR,SW_DUR);
           Vector3d v_tgt=Vector3d::Zero();
           if(tam_have_ptgt[i]) for(int c=0;c<3;c++) v_tgt[c]=tc_clip((p_tgt[c]-tam_ptgt[i][c])/dt,-1.0,1.0);
-          tam_ptgt[i]=p_tgt; tam_have_ptgt[i]=true; swing[i]={p_tgt,v_tgt}; } }
+          tam_ptgt[i]=p_tgt; tam_have_ptgt[i]=true; swing[i]={p_tgt,v_tgt}; }
+        else { Vector3d fp=q.foot_point(i);   // ★sched stance인데 공중=phantom → 지면 착지 유도(stance 취급X)
+          swing[i]={Vector3d(fp[0],fp[1],0.0),Vector3d::Zero()}; tam_sw_prev[i]=true; } }
       double dmpc=t-mpc_t;
       if(!rsl && !st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
         std::vector<std::array<int,4>> cs(q.mpc.N);
@@ -369,6 +374,10 @@ struct TrotCtrl {
         for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
       else for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
       double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):0.1):10.0;   // ★RSL: λ 정규화 약화(base task가 수평 GRF 자유생성)
+      if(getenv("TAM_DBG")){ static long _dc=0; if(_dc++%25==0)
+        std::fprintf(stderr,"[dbg] t=%.2f tt=%.2f zref=%.3f z=%.3f stance=%d c=%d%d%d%d footz=%.2f/%.2f/%.2f/%.2f\n",
+          t,tam_t,q.com_ref[2],d->subtree_com[2],(int)st.size(),cc[0],cc[1],cc[2],cc[3],
+          q.foot_point(0)[2],q.foot_point(1)[2],q.foot_point(2)[2],q.foot_point(3)[2]); }
       if(!q.wbic_track(st,swing,lam_use,wl)) q.wbic_stance();
       armed=false; return;
     }

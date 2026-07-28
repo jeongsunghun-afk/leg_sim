@@ -39,7 +39,7 @@ static inline Vector3d tc_swing_foot(double sw_t,const Vector3d&p0,const Vector3
   double DXx=(pe[0]-p0[0])+bvel[0]*Tl; Vector3d pos;
   pos[0]=p0[0]-bvel[0]*tau*Tl+DXx*s5; pos[1]=(1.0-s5)*p0[1]+s5*pe[1];
   double Th=Tl/2.0, u=tau*Tl-Th, Vz=TC_SDELTA*M_PI/Tst; double c2,c4,c6; tc_swing_z(sh,Th,Vz,c2,c4,c6);
-  pos[2]=p0[2]+sh+c2*u*u+c4*std::pow(u,4)+c6*std::pow(u,6); return pos;
+  pos[2]=(1.0-s5)*p0[2]+s5*pe[2]+sh+c2*u*u+c4*std::pow(u,4)+c6*std::pow(u,6); return pos;   // ★z=liftoff→착지목표 보간+lift arc(공중발 영구화·지형착지 오차 수정). 평지 p0=pe=0=무변화
 }
 static inline double tc_clip(double v,double lo,double hi){ return v<lo?lo:(v>hi?hi:v); }
 

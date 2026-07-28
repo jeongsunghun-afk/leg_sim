@@ -139,28 +139,28 @@
   <div class="scroll"><table>
     <thead><tr><th>구성</th><th>계획기(TO) — 입력 · 고정 · 최적화</th><th>추종기 — 입력 · 고정 · 최적화</th><th>실시간</th><th>험지 크로싱</th></tr></thead>
     <tbody>
-      <tr><td><span class="chip cA">A</span></td>
+      <tr><td><span class="chip cA">A</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Di Carlo 2018<br>Kim(WBIC) 2019</span></td>
         <td>online footScore/selectFoot<br><span class="mono">입력</span> heightmap·cmd_vel·상태<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>·base궤적<br><span class="mono">최적화</span> <b>발판위치만</b>(국소 nudge)</td>
         <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+관절가속,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
-      <tr><td><span class="chip cB">B</span></td>
+      <tr><td><span class="chip cB">B</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">kino-dyn:<br>Farshidian 2017</span></td>
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
         <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상<br><span class="mono">(과거노트·simple_mpc 미설치로 재검증 불가)</span></td></tr>
-      <tr><td><span class="chip cC">C</span></td>
+      <tr><td><span class="chip cC">C</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">FDDP:<br>Mastalli 2020</span></td>
         <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적·GRF (지형 X)</td>
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적·상태<br><span class="mono">고정</span> OCP 해·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
-      <tr><td><span class="chip cD">D1</span></td>
+      <tr><td><span class="chip cD">D1</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Grandia 2023</span></td>
         <td>Perceptive NMPC(내장)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
         <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→관절가속,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
-      <tr><td><span class="chip cCI">CI</span></td>
+      <tr><td><span class="chip cCI">CI</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Kim(HOUND) 2023</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
         <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
-      <tr><td class="acc"><b>TAMOLS</b>★</td>
+      <tr><td class="acc"><b>TAMOLS</b>★<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2022</span></td>
         <td>TAMOLS(C++ 실시간)<br><span class="mono">입력</span> heightmap·<b>보행스케줄</b>·base/cmd 참조<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>(접촉스케줄)<br><span class="mono">최적화</span> base pose spline·<b>발판위치</b>(+GIAC 안정성)</td>
         <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">500 Hz·~10× 실시간 ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
-      <tr><td><b>TOWR</b></td>
+      <tr><td><b>TOWR</b><br><span class="mono" style="font-size:.72em;color:var(--muted)">Winkler 2018</span></td>
         <td>TOWR(오프라인)<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서<br><span class="mono">최적화</span> base궤적·<b>발판·타이밍</b>(phase duration)·GRF</td>
         <td>자작WBIC-lite(SRBD힘) / B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> 관절가속,λ→τ(QP)</td><td class="no">비실시간</td><td class="no">❌ <b>flat서도 낙상 @1s</b>(★이번 세션 실측, WBIC-lite). B-TSID 경로=simple_mpc 미설치로 재검증 불가(과거노트)</td></tr>
-      <tr><td class="acc"><b>DTC</b>★목표</td>
+      <tr><td class="acc"><b>DTC</b>★목표<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2024</span></td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
         <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
     </tbody>

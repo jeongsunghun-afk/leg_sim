@@ -144,7 +144,7 @@
         <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+관절가속,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
       <tr><td><span class="chip cB">B</span></td>
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
-        <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상</td></tr>
+        <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상<br><span class="mono">(과거노트·simple_mpc 미설치로 재검증 불가)</span></td></tr>
       <tr><td><span class="chip cC">C</span></td>
         <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적·GRF (지형 X)</td>
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적·상태<br><span class="mono">고정</span> OCP 해·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
@@ -159,12 +159,13 @@
         <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">500 Hz·~10× 실시간 ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
       <tr><td><b>TOWR</b></td>
         <td>TOWR(오프라인)<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서<br><span class="mono">최적화</span> base궤적·<b>발판·타이밍</b>(phase duration)·GRF</td>
-        <td>자작WBIC→B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> 관절가속,λ→τ(TSID QP)</td><td class="no">비실시간</td><td class="no">❌ 부양base 불안정</td></tr>
+        <td>자작WBIC-lite(SRBD힘) / B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> 관절가속,λ→τ(QP)</td><td class="no">비실시간</td><td class="no">❌ <b>flat서도 낙상 @1s</b>(★이번 세션 실측, WBIC-lite). B-TSID 경로=simple_mpc 미설치로 재검증 불가(과거노트)</td></tr>
       <tr><td class="acc"><b>DTC</b>★목표</td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
         <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
     </tbody>
   </table></div>
+  <div class="box acc"><b>★검증 provenance(2026-07-28 실측 기준)</b> — 표의 성능 중 <b>이번 세션 직접 실측</b>: <b>TAMOLS</b>(솔버 실시간·Drake정합·RSL추종 tilt2~6°·온라인 walk falls=0 stall) · <b>TOWR+WBIC-lite</b>(flat서도 낙상 @1s, 부양base 불안정 확인). <b>과거 노트(현 env 재검증 불가=simple_mpc C++ 미설치)</b>: <b>B</b>(3.3s낙상·~14Hz) · <b>C</b>(~0.27m/s·6–13Hz) · <b>TOWR+B-TSID</b>. <b>외부·미구축</b>: <b>D1</b>(OCS2/ROS). ★즉 B/C/D1 성능수치는 확정 아님(과거·외부). A·TAMOLS·TOWR(WBIC-lite)만 재현 검증.</div>
   <div class="box"><b>요지</b> — ★<b>RSL식 WBC 직접추종이 돌파구</b>: SRBD MPC(속도재계획=overshoot 주범)를 빼고 WBC가 base 위치를 직접 추종+자세 강홀드(w_ori=200)하니 <b>tilt 2~6°로 계획을 충실히 추종·overshoot 해소</b>. ★<b>receding-horizon 온라인 통합 작동</b>(solve_fast 재계획+RSL-WBC를 매 스텝 루프): 평지 저속 walk <b>falls=0·실시간(~10×)·10s</b>. <b>단 walk가 ~0.3m서 stall</b>(매 replan 재앵커가 swing 조정 교란=gait coordination 한계)→지형(gap 0.45)까지 못 감·크로싱 미달. 전진 authority↑시 z침하. <b>참고: 로봇 자체는 A로 1.4~2.0 m/s</b>(온라인 TAMOLS의 저속은 새 루프 미성숙, 로봇 한계 아님). 진짜 크로싱=horizon-shift(재앵커X)/gait 재설계 또는 <b>RL(DTC)</b>. <br><b>★sim2real(PACE 실기 액추에이터 식별)</b> — A·TAMOLS(RSL-WBC)는 <span class="mono">QuadControl GEARBOX</span>(반사관성 armature=Irot·N²·damping·friction) <b>구조 보유</b>(단 데이터시트 placeholder값 Irot1e-4·dmp0.1·frc0.5, PACE 실측 아님). B/C/CI/TOWR은 별도 Pinocchio 모델이라 <b>미보유</b> → <b>전 제어기 코드에 동일 액추에이터 물리 추가 필요</b>(하드웨어 확보 시 PACE 실측값으로 교체).</div>
 
   <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>

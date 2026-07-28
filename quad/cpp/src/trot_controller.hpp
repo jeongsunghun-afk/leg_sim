@@ -614,6 +614,8 @@ struct TrotCtrl {
     if(std::abs(Weff)>0.02){ yaw_ref=tc_clip(yaw_ref+Weff*dt,yaw_m-0.3,yaw_m+0.3); yaw_hold_set=false; }
     else { if(!yaw_hold_set){ yaw_hold=yaw_m; yaw_hold_set=true; } yaw_ref=yaw_hold; }
     double cy=std::cos(yaw_m), sy=std::sin(yaw_m);
+    if(getenv("TAMOLS_INJECT") && getenv("GAP_X0")){ double g0=atof(getenv("GAP_X0")), g1=atof(getenv("GAP_X1")), bx=d->qpos[0];
+      if(bx>g0-0.30 && bx<g1+0.15){ double sf=getenv("GAP_SLOW")?atof(getenv("GAP_SLOW")):0.4; Veff*=sf; } }  // ★base 협조: 갭 위서 감속→CoM이 지지폴리곤(짧아진 straddle) 안에 머묾
     double vx_w=Veff*cy-Vyeff*sy, vy_w=Veff*sy+Vyeff*cy;
     // ★위치홀드: 전진/측방명령 0이면 base 위치 앵커링. SPIN_HOLD=제자리선회(V=0,WZ≠0)서도 유지 → 허리조향 표류 상쇄(베이스 기준 wz 선회)
     bool ph_turn = SPIN_HOLD ? true : (std::abs(Weff)<0.05);

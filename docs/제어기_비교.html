@@ -83,7 +83,7 @@
         <td><b>SDF</b>(depth/LiDAR)</td>
         <td class="no">없음</td></tr>
       <tr><td class="rowh"><b>출력 — 토크</b></td>
-        <td>WBIC QP <span class="mono">z=[q̈;λ]</span> 직접토크</td>
+        <td>WBIC QP <span class="mono">z=[관절가속;λ]</span> 직접토크</td>
         <td><span class="mono">kino_ID.solve</span>(TSID)→τ</td>
         <td><span class="mono">us[0]−K·δx</span>(Riccati)</td>
         <td>HoQp WBC → τ</td>
@@ -96,7 +96,7 @@
         <td>궤적·접촉(연구 덤프)</td></tr>
       <tr><td class="rowh">제어율 / 실시간</td>
         <td class="yes">1 kHz 실시간 ✅</td>
-        <td class="no">~14 step/s 비실시간</td>
+        <td class="no">~14 Hz 비실시간</td>
         <td class="no">~6–13 Hz 비실시간</td>
         <td class="yes">실시간(OCS2 RTI)</td>
         <td class="wa">40 Hz 목표(연구·오프라인)</td></tr>
@@ -141,25 +141,25 @@
     <tbody>
       <tr><td><span class="chip cA">A</span></td>
         <td>online footScore/selectFoot<br><span class="mono">입력</span> heightmap·cmd_vel·상태<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>·base궤적<br><span class="mono">최적화</span> <b>발판위치만</b>(국소 nudge)</td>
-        <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+q̈,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
+        <td>SRBD MPC + WBIC<br><span class="mono">입력</span> 계획 발판·속도명령·상태(proprio)<br><span class="mono">고정</span> 접촉스케줄·발판·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> GRF(MPC)+관절가속,λ→τ(WBIC QP)</td><td class="yes">1 kHz ✅</td><td class="wa">⚠️ 완주하나 속도-공명 취약</td></tr>
       <tr><td><span class="chip cB">B</span></td>
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
-        <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> q̈·접촉력→τ(계층 TSID QP)</td><td class="no">~14 st/s</td><td class="no">❌ B 자체 3.3s 낙상</td></tr>
+        <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상</td></tr>
       <tr><td><span class="chip cC">C</span></td>
         <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적·GRF (지형 X)</td>
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적·상태<br><span class="mono">고정</span> OCP 해·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span></td>
         <td>Perceptive NMPC(내장)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
-        <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→q̈,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
+        <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→관절가속,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
       <tr><td><span class="chip cCI">CI</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
         <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
       <tr><td class="acc"><b>TAMOLS</b>★</td>
         <td>TAMOLS(C++ 실시간)<br><span class="mono">입력</span> heightmap·<b>보행스케줄</b>·base/cmd 참조<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>(접촉스케줄)<br><span class="mono">최적화</span> base pose spline·<b>발판위치</b>(+GIAC 안정성)</td>
-        <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> q̈,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">~5000 st/s ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
+        <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">500 Hz·~10× 실시간 ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°·overshoot 해소). <b>온라인 통합 작동</b>=평지 저속 walk falls=0·실시간. 단 walk가 <b>~0.3m서 stall</b>(재앵커 gait 한계)→지형 미도달(크로싱 미달)</td></tr>
       <tr><td><b>TOWR</b></td>
         <td>TOWR(오프라인)<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서<br><span class="mono">최적화</span> base궤적·<b>발판·타이밍</b>(phase duration)·GRF</td>
-        <td>자작WBIC→B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> q̈,λ→τ(TSID QP)</td><td class="no">비실시간</td><td class="no">❌ 부양base 불안정</td></tr>
+        <td>자작WBIC→B TSID<br><span class="mono">입력</span> TOWR 궤적·상태<br><span class="mono">고정</span> 궤적·접촉<br><span class="mono">최적화</span> 관절가속,λ→τ(TSID QP)</td><td class="no">비실시간</td><td class="no">❌ 부양base 불안정</td></tr>
       <tr><td class="acc"><b>DTC</b>★목표</td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
         <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
@@ -170,7 +170,7 @@
   <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>
   <ul>
     <li><span class="chip cA">A</span> <b>본선 배포</b> — 1kHz 실시간, GUI 전기능 조종. 평지·중속·선회·기립. 연속지형 반응형.</li>
-    <li><span class="chip cB">B</span> <b>연구·TOWR 소비자</b> — 비실시간(~14 step/s). TOWR 궤적을 TSID로 추종(<span class="mono">towr_track_B.py</span>)했으나 <b>B 자체 ~3.3s 낙상</b>(안정화 미완)이라 그 위 TAMOLS는 블록. TAMOLS+B는 B 안정화 선행 필요.</li>
+    <li><span class="chip cB">B</span> <b>연구·TOWR 소비자</b> — 비실시간(~14 Hz). TOWR 궤적을 TSID로 추종(<span class="mono">towr_track_B.py</span>)했으나 <b>B 자체 ~3.3s 낙상</b>(안정화 미완)이라 그 위 TAMOLS는 블록. TAMOLS+B는 B 안정화 선행 필요.</li>
     <li><span class="chip cC">C</span> <b>연구·풀동역학 베이스라인</b> — 평지 전용, 지형 플래너 없음.</li>
     <li><span class="chip cD">D1</span> <b>분석·청사진</b> — OCS2 생태계(외부). 우리 미구축. RL 배포의 실전 참조.</li>
     <li><span class="chip cCI">CI</span> <b>준정적 자세추종은 성공, 동적 보행은 실패</b> — <b>성공</b>: 서기·눕기·앉기·A자세캡처 준정적 추종(해석그래디언트 EXACT·foot-slip·DCM 완성). <b>실패</b>: walk(동적보행)·gap·외란·두발 = 현실접촉서 균형 프론티어 붕괴. → 로버스트 험지 부적합으로 <b>종결</b>(음성결과=RL 방향 근거). 접촉창발 연구niche.</li>

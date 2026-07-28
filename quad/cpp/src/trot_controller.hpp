@@ -168,7 +168,7 @@ struct TrotCtrl {
   Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
   double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
-  tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1;   // ★온라인 replan 상태(warm-start 지속)
+  tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0;   // ★온라인 replan 상태(warm-start 지속·horizon-shift 위상)
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
   void tamols_online_replan(mjData* d){
@@ -177,6 +177,7 @@ struct TrotCtrl {
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
     tamols::OnlineCfg cfg; cfg.vadv=V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;
+    cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%5;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
     double vx0=d->qvel[0], vy0=d->qvel[1];
     if(getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬(base 기준)
     tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);

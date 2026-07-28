@@ -8,6 +8,7 @@
 | 문서 | 역할 | 형식 |
 |---|---|---|
 | **[pipeline_fullstack.html](pipeline_fullstack.html)** | **전체 시스템 프레임워크** — 형태→기능(기구 4요소)·4계보(CI-MPC·DTC·APT·AMP) 통합 배포 아키텍처·지각/SLAM/계획/제어 층구조(F1–F3)·**실제 코드 대조·수정사항(F4–F5, DOF R¹⁶·다중 repo 통합)**·**부록: nav 통합·RL 정책 구조(구 pipeline_nav·pipeline_rl 흡수, F6–F7)** | 아티팩트 |
+| **[rl_module_train.html](rl_module_train.html)** | **RL 모듈 구축·학습 가이드** — 제어층 정책을 **어떻게 만들고 학습하는가**. 두 참조골격(DTC 계획↔제어·APT-RL 3단계)·학습 3단계(표현/RL+RMA/지각증류)·**모듈 카탈로그(ActorCriticRMA: actor·estimator·history/priv_encoder·critic — 배포 vs 학습전용)**·**보상설계 실증(2점 평발 plateau→shuffle→limp 3재균형)**·예정 Depth CNN+GRU·PACE 정합. fullstack이 개요면 이건 **학습법 심화** | 아티팩트 |
 
 ### 제어기별 (pipeline · params)
 | 제어기 | pipeline | params | 비고 |
@@ -57,7 +58,6 @@
 | 문서 | 내용 | 상태 |
 |---|---|---|
 | **[MPC_RL_하이브리드_전략_리포트.md](MPC_RL_하이브리드_전략_리포트.md)** | MPC/RL 하이브리드 5패턴(A=MPC교사·B=계층·C=주입·D=안전필터·E=샘플링prior) + R.pet 로드맵(H0~H3) + **§9 crocoddyl/aligator 실시간화**(RTI·호라이즌다이어트·모델계층화) + 6-DoF머리. ★**다음단계=crocoddyl C++ 실시간 OCP**의 전략 근거. | 전략·설계 |
-| **[roadmap_hybrid.html](roadmap_hybrid.html)** | 위 리포트의 **실행판** — RGA `RobotSW_IsaacLab` 실측 반영. 패턴별 적용성·sim2sim 왕복 파이프라인·Phase 0~4 우선순위(Go2로 브리지 검증→R_Skeleton 하이브리드). R_Skeleton=velocity-command·RMA 확인. | 아티팩트 |
 | **[RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)** | 6-DoF 머리(목) 체인 추가 → 예측형 시선 안정화·반작용 질량 협조·시선/균형 중재. 단계 **G0(23-DoF 모델)→G1(반응층 기준선)→G2(WBIC gaze task)→G3(예측 ff, lite/full)→G4(반작용 질량)→G5(중재)**. 착수순서 G0→G1→G2(기존 스택 3주 데모). | 설계완료·미착수 |
 | RPET_ALIGATOR_MPC.md | (위 문서가 참조하는 Phase 0–3 로드맵 — aligator OCP) | 참조·아직 없음 |
 

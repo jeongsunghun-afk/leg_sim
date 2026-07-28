@@ -2,6 +2,7 @@
 #pragma once
 #include "quad_control.hpp"
 #include "terrain_map.hpp"   // ★P1: footScore nudge용 로컬 elevation map
+#include "../tamols/tamols_online.hpp"   // ★receding-horizon 온라인 TAMOLS 플래너(RSL_ONLINE)
 #include <vector>
 #include <array>
 #include <map>
@@ -167,6 +168,25 @@ struct TrotCtrl {
   Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
   double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
+  tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1;   // ★온라인 replan 상태(warm-start 지속)
+  tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
+  // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
+  void tamols_online_replan(mjData* d){
+    if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_ol_mapinit=true; }
+    double bx=d->qpos[0], by=d->qpos[1];
+    Eigen::Matrix<double,4,3> fmeas;
+    for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
+    tamols::OnlineCfg cfg; cfg.vadv=V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;
+    double vx0=d->qvel[0], vy0=d->qvel[1];
+    tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);
+    tam_ol_warm=true;
+    // 샘플링 → tam_s/tam_c/tam_fh
+    std::vector<std::array<double,12>> smp; std::vector<std::array<int,4>> con; Eigen::Matrix<double,4,3> fh;
+    tamols::sample_plan(tam_ol, tam_dt, smp, con, fh);
+    tam_s=smp; tam_c=con; tam_N=(int)smp.size();
+    for(int i=0;i<4;i++){ tam_fh[i]=Vector3d(fh(i,0),fh(i,1),fh(i,2)); }
+    tam_loaded=true;
+  }
   Vector3d tam_ptgt[4]; bool tam_have_ptgt[4]={false,false,false,false};
   void load_tamols(const char* path){
     std::ifstream f(path); if(!f){ tam_N=0; tam_loaded=true; std::printf("[tamols] 파일 없음: %s\n",path); return; }
@@ -292,9 +312,12 @@ struct TrotCtrl {
     if(mode!="off") off_settled=false;   // ★off 벗어나면 리셋(다음 off서 다시 완만 하강)
     // ★★TAMOLS 재생: 궤적(base pose/vel + 발판 + 접촉)을 로드해 보행스택(MPC→lam→wbic_track) 참조로 주입.
     if(mode=="tamols"){
-      if(!tam_loaded) load_tamols(getenv("TAMOLS_TRAJ")?getenv("TAMOLS_TRAJ"):"/tmp/tamols_traj.txt");
+      bool online=getenv("RSL_ONLINE");
+      if(online){ double RDT=getenv("REPLAN_DT")?atof(getenv("REPLAN_DT")):0.2;
+        if(tam_ol_last<0 || t-tam_ol_last>=RDT){ tamols_online_replan(d); tam_ol_last=t; tam_t=-1; } }  // ★온라인 재계획+재앵커
+      else if(!tam_loaded) load_tamols(getenv("TAMOLS_TRAJ")?getenv("TAMOLS_TRAJ"):"/tmp/tamols_traj.txt");
       if(tam_N<=0){ q.wbic_stance(); armed=false; return; }             // 파일없음=제자리
-      if(tam_t<0){ tam_t0=t; tam_ax=d->qpos[0]; tam_ay=d->qpos[1];      // 진입=현재 위치를 TAMOLS 원점으로 앵커
+      if(tam_t<0){ tam_t0=t; tam_ax=d->qpos[0]; tam_ay=online?0.0:d->qpos[1];   // 진입=현재 위치 앵커. ★온라인=y를 0고정(직선 유지, 드리프트 보정)
         for(int i=0;i<4;i++){ tam_sw_prev[i]=(tam_c[0][i]!=0); tam_have_ptgt[i]=false; }
         x_ref.setZero(); x_ref[12]=-9.81; com_h0=d->subtree_com[2]; }
       tam_t=t-tam_t0;
@@ -305,12 +328,12 @@ struct TrotCtrl {
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
-      bool rsl=getenv("RSL_TRACK");   // ★RSL식: SRBD MPC 빼고 WBC가 base궤적 위치레벨 직접 추종(RSL_TRACK=1). 우리 WBIC는 성숙도 부족으로 첫swing서 tilt발산=미완
+      bool rsl=getenv("RSL_TRACK")||online;   // ★RSL식 직접추종(RSL_TRACK=1 또는 온라인). 온라인=receding-horizon 재계획
       if(rsl){ auto& sn=tam_s[std::min(k+1,tam_N-1)];
         q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;
         q.w_ori=getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★RSL: 자세 강홀드(축소지지서 레벨링 모멘트 우선). 낮으면 첫swing tilt발산
         q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];             // 계획 base 위치(x,y,z)
-        q.com_vel_ref[0]=s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;      // 계획 base 속도
+        q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;   // 계획 base 속도(★온라인=vadv 직접 명령해 연속 전진)
         q.com_acc_ref[0]=(sn[6]-s[6])/tam_dt; q.com_acc_ref[1]=(sn[7]-s[7])/tam_dt; }  // 계획 base 가속(ff)
       else { double qp=getenv("TAM_QPOS")?atof(getenv("TAM_QPOS")):50.0; q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;

@@ -39,8 +39,10 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
   st.ref_vel = Vector3d(cfg.vadv, 0, 0);
   if (!cfg.warm || (int)st.a.size() != P) {         // cold: Hermite 전진 램프 init(정지출발 smootherstep)
     st.a.assign(P, MatrixXd::Zero(6, 4));
-    auto xg = [&](double t){ double s = t / T; return xf * (10*s*s*s - 15*s*s*s*s + 6*s*s*s*s*s); };
-    auto vg = [&](double t){ double s = t / T; return xf * (30*s*s - 60*s*s*s + 30*s*s*s*s) / T; };
+    // ★속도연속 cubic: x(0)=0·v(0)=vx0(초기조건 정합→elastic 방지) → x(T)=xf·v(T)=vadv(cruise 가속)
+    double c1 = vx0, c3 = (cfg.vadv - vx0 - 2*(xf - vx0*T)/T)/(T*T), c2 = (xf - vx0*T - c3*T*T*T)/(T*T);
+    auto xg = [&](double t){ return c1*t + c2*t*t + c3*t*t*t; };
+    auto vg = [&](double t){ return c1 + 2*c2*t + 3*c3*t*t; };
     for (int k = 0; k < P; ++k) {
       st.a[k].col(0) = st.base_pose; st.a[k](2, 0) = z0;
       double t0 = k*cfg.phase_dur, x0 = xg(t0), x1 = xg(t0+cfg.phase_dur), v0 = vg(t0), v1 = vg(t0+cfg.phase_dur);

@@ -332,6 +332,8 @@ struct TrotCtrl {
       if(rsl){ auto& sn=tam_s[std::min(k+1,tam_N-1)];
         q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;
         q.w_ori=getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★RSL: 자세 강홀드(축소지지서 레벨링 모멘트 우선). 낮으면 첫swing tilt발산
+        q.KD_BASE=getenv("KD_BASE")?atof(getenv("KD_BASE")):25.0;   // ★속도 추종 게인(전진 authority)
+        q.KP_BASE=getenv("KP_BASE")?atof(getenv("KP_BASE")):150.0;
         q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];   // 계획 base 위치. ★온라인 위치ref vadv전진은 z침하 유발→plan 추종 유지(안정 우선)
         q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;   // 계획 base 속도(★온라인=vadv 직접 명령해 연속 전진)
         q.com_acc_ref[0]=(sn[6]-s[6])/tam_dt; q.com_acc_ref[1]=(sn[7]-s[7])/tam_dt; }  // 계획 base 가속(ff)

@@ -26,7 +26,8 @@ inline void set_trot_gait(TamolsState& st, double phase_dur = 0.2) {
 // ── 온라인 replan: 현재 상태 → TamolsState(로컬, 앞으로 vadv 전진) → solve_fast(warm-start) ──
 //   base0 = [z,yaw] 현재값(x,y=로컬 원점). v0 = 현재 base 속도(local x,y). foot_meas = 현재 발위치(로컬, base 기준 상대 xy + world z).
 //   vadv = 명령 전진속도. 반환 = QpResult(수렴 여부).
-struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool warm = false; };
+struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool warm = false;
+  double gap_x0 = -1, gap_x1 = -1; };   // ★로컬 프레임 gap [x0,x1](base 기준). <0 = gap 없음(평지 walk)
 
 inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int map_size,
                               double z0, double yaw0, double vx0, double vy0,
@@ -50,12 +51,18 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
       st.a[k](0,2) = (3*(x1-x0)/cfg.phase_dur - 2*v0 - v1)/cfg.phase_dur;
       st.a[k](0,3) = (2*(x0-x1)/cfg.phase_dur + v0 + v1)/(cfg.phase_dur*cfg.phase_dur);
     }
-    // 발판 = 명목 stance를 반horizon 전진(트롯 forward step)
+    // 발판 = 명목 stance 반horizon 전진. ★gap in reach면 앞발=갭 너머·뒷발=갭 앞(straddle)
     for (int i = 0; i < 4; ++i) { st.p(i,0) = st.prm.hip_offsets(i,0) + 0.5*xf; st.p(i,1) = st.prm.hip_offsets(i,1); st.p(i,2) = 0; }
     st.epsilon = VectorXd::Zero(P);
   }
-  QpOptions o; o.max_iter = cfg.rti_iter; o.gap = false;   // 평지: gap 회피 off
+  bool gap_near = cfg.gap_x0 >= 0 && cfg.gap_x0 < xf + 0.45 && cfg.gap_x1 > -0.15;   // gap이 horizon 전방 도달권
+  if (gap_near) { double m = 0.04;
+    st.p(0,0) = st.p(1,0) = cfg.gap_x1 + m;   // 앞발(FL,FR) = 갭 너머
+    st.p(2,0) = st.p(3,0) = cfg.gap_x0 - m;   // 뒷발(RL,RR) = 갭 앞
+  }
+  QpOptions o; o.max_iter = cfg.rti_iter;
   o.rp_max = 0.06; o.zlo = 0.48; o.zhi = 0.55; o.yaw_max = 0.10; o.x_target = xf * 0.9;
+  o.gap = gap_near; o.gap_lo = cfg.gap_x0; o.gap_hi = cfg.gap_x1;   // ★gap 회피 발판 제약(로컬)
   return solve_fast(st, h, cell, map_size, o);
 }
 

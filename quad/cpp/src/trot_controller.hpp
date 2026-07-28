@@ -178,6 +178,7 @@ struct TrotCtrl {
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
     tamols::OnlineCfg cfg; cfg.vadv=V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;
     double vx0=d->qvel[0], vy0=d->qvel[1];
+    if(getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬(base 기준)
     tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, 0.52,0.0,vx0,vy0, fmeas, cfg);
     tam_ol_warm=true;
     // 샘플링 → tam_s/tam_c/tam_fh

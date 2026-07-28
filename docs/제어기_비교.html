@@ -146,8 +146,8 @@
         <td>TOWR(오프라인) 소비<br><span class="mono">입력</span> 지형·목표·보행순서<br><span class="mono">고정</span> 보행순서(접촉시퀀스)<br><span class="mono">최적화</span> base궤적·<b>발판위치·타이밍</b>(phase duration)·GRF</td>
         <td>B TSID/KinodynID<br><span class="mono">입력</span> 궤적(q,v,τ,GRF,cs)·상태<br><span class="mono">고정</span> 접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속·접촉력→τ(계층 TSID QP)</td><td class="no">~14 Hz</td><td class="no">❌ B 자체 3.3s 낙상<br><span class="mono">(과거노트·simple_mpc 미설치로 재검증 불가)</span></td></tr>
       <tr><td><span class="chip cC">C</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">FDDP:<br>Mastalli 2020</span></td>
-        <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적·GRF (지형 X)</td>
-        <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적·상태<br><span class="mono">고정</span> OCP 해·<b>base높이=명령setpoint</b><br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
+        <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적(<b>base_z 포함</b>)·GRF — 단 지형 X=명령높이 홀드(비적응)</td>
+        <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적(base_z 포함 최적화됨)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Grandia 2023</span></td>
         <td>Perceptive NMPC(내장)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
         <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→관절가속,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>

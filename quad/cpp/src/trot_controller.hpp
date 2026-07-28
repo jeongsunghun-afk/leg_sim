@@ -630,6 +630,10 @@ struct TrotCtrl {
     double cy=std::cos(yaw_m), sy=std::sin(yaw_m);
     if(getenv("TAMOLS_INJECT") && getenv("GAP_X0")){ double g0=atof(getenv("GAP_X0")), g1=atof(getenv("GAP_X1")), bx=d->qpos[0];
       if(bx>g0-0.30 && bx<g1+0.15){ double sf=getenv("GAP_SLOW")?atof(getenv("GAP_SLOW")):0.4; Veff*=sf; } }  // ★base 협조: 갭 위서 감속→CoM이 지지폴리곤(짧아진 straddle) 안에 머묾
+    if(getenv("TAMOLS_INJECT") && getenv("TAMOLS_TERRAIN")){   // ★heightmap 구동 갭 감속(명시적 GAP_X0 없이): base 전방 void(tmap.valid=false) 감지→준정적. hsteps=void 없어 무영향
+      double bx=d->qpos[0], by=d->qpos[1]; bool gap_near=false;
+      for(double a=0.05; a<=0.50; a+=0.075){ if(!tmap.valid(bx+cy*a,by+sy*a)){ gap_near=true; break; } }   // 전방 0.05~0.50m 스캔
+      if(gap_near){ double sf=getenv("GAP_SLOW")?atof(getenv("GAP_SLOW")):0.3; Veff*=sf; } }   // 갭 스텝을 준정적으로(yaw/횡 안정)
     double vx_w=Veff*cy-Vyeff*sy, vy_w=Veff*sy+Vyeff*cy;
     // ★위치홀드: 전진/측방명령 0이면 base 위치 앵커링. SPIN_HOLD=제자리선회(V=0,WZ≠0)서도 유지 → 허리조향 표류 상쇄(베이스 기준 wz 선회)
     bool ph_turn = SPIN_HOLD ? true : (std::abs(Weff)<0.05);

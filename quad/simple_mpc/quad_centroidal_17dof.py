@@ -11,6 +11,16 @@ class MujocoRobot:
        pin↔mujoco: go2 관절 순서 동일(재정렬 X), 베이스 quat [w,x,y,z]↔[x,y,z,w], lin world→local(R^T)."""
     def __init__(self, q0, dt_simu, view=False):
         self.m=_mj.MjModel.from_xml_path(_GO2_MJCF); self.m.opt.timestep=dt_simu
+        # ★PACE 액추에이터 물리(A의 QuadControl GEARBOX와 동일): 반사관성 armature=Irot·N²·점성감쇠·마찰.
+        #   현재 데이터시트 placeholder(Irot1e-4·dmp0.1·frc0.5), 하드웨어 확보 시 PACE 실측값으로 교체.
+        _PG={"hip":7.0,"thigh":7.0,"calf":10.5,"foot":8.4,"waist":7.0}; _PIr,_PDm,_PFr=1e-4,0.1,0.5
+        for _pj in range(self.m.njnt):
+            _pnm=_mj.mj_id2name(self.m,_mj.mjtObj.mjOBJ_JOINT,_pj)
+            if _pnm is None: continue
+            _PN=next((_g for _k,_g in _PG.items() if _k in _pnm),None)
+            if _PN is None: continue
+            _pd=self.m.jnt_dofadr[_pj]
+            self.m.dof_armature[_pd]=_PIr*_PN*_PN; self.m.dof_damping[_pd]=_PDm; self.m.dof_frictionloss[_pd]=_PFr
         import os as _o2                                   # 접촉모델 매칭(컨트롤러 강체가정 ↔ MuJoCo soft)
         _lms=float(_o2.environ.get('LEG_MASS_SCALE','1.0'))   # ★다리무게 가설: 물리(MuJoCo) 다리링크 질량/관성 스케일
         if _lms!=1.0:
@@ -106,6 +116,13 @@ import copy
 URDF = "/home/jsh/문서/jsh/simulation/02_Leg_UFDF_260703_2/urdf/02_Leg_UFDF_260703_3.urdf"  # ★17-DOF(허리+전발목)
 base_joint_name = "root_joint"
 _M = _pin.buildModelFromUrdf(URDF, _pin.JointModelFreeFlyer())
+# ★PACE 액추에이터 물리(예측 OCP 모델): 반사관성 armature=Irot·N²·damping·friction (A GEARBOX·CI와 동일 공식). 실기 확보 시 PACE 실측값 교체
+_PGp={"hip":7.0,"thigh":7.0,"calf":10.5,"foot":8.4,"waist":7.0}
+for _pjn in _M.names[1:]:
+    _pjid=_M.getJointId(_pjn); _pjv=_M.joints[_pjid]
+    if _pjv.nv!=1: continue
+    _PNp=next((_g for _k,_g in _PGp.items() if _k in _pjn),7.0)
+    _M.armature[_pjv.idx_v]=1e-4*_PNp*_PNp; _M.damping[_pjv.idx_v]=0.1; _M.friction[_pjv.idx_v]=0.5
 # ★17-DOF sphere발 접촉프레임: sphere=contact_link 원점(pos 0 0 0)에 반경 0.025 → sole_off=[0,0,-r]
 _R = 0.025
 _sole={_L:[0.0,0.0,-_R] for _L in ['FL','FR','HL','HR']}
@@ -314,6 +331,12 @@ device.initializeJoints(
 )
 device.changeCamera(1.0, 60, -15, [0.6, -0.2, 0.5])
 
+if _os.environ.get("DISABLE_FLOOR"):   # ★갭 코스: 무한바닥 접촉off → 플랫폼 box(group2)만 접촉=갭이 진짜 구멍
+    _fid = _mj.mj_name2id(device.m, _mj.mjtObj.mjOBJ_GEOM, "floor")
+    if _fid >= 0:
+        device.m.geom_contype[_fid] = 0; device.m.geom_conaffinity[_fid] = 0
+        print("[DISABLE_FLOOR] floor 접촉off → 갭=진짜 구멍", flush=True)
+
 # ★① 지형인지 발판: 전역 heightmap을 mj_ray로 생성 → MPC 주입. 발판 z=지형높이, Raibert 발판이 갭(무효)이면
 #   반경내 최근접 유효셀로 xy 이동(갭 회피) → OCP가 base 협조 최적화. HEIGHTMAP=1로 켬(미설정=평지 baseline).
 if _os.environ.get("HEIGHTMAP","0") != "0":
@@ -385,6 +408,28 @@ _JN=[_mj.mj_id2name(device.m,_mj.mjtObj.mjOBJ_JOINT,_j).replace('_joint','')
      for _j in range(device.m.njnt) if device.m.jnt_type[_j]!=_mj.mjtJoint.mjJNT_FREE]
 _DECIM=int(_os.environ.get("MPC_DECIM","1")); _pk=0   # ★비동기 재계획: DECIM틱마다만 OCP solve, 사이엔 stale plan advance(실효 throughput ×DECIM)
 _LOG=bool(_os.environ.get("LOG_TRAJ"))                # 진단 궤적 로깅(무거운 C++ getter ×10/스텝) — 기본 off=속도
+
+# ★TOWR 발판 주입(C++ setExternalFoothold 훅): TOWR_INJECT=<traj.json>이면 로드.
+#   매 재계획마다 각 발의 '다음 TOWR 착지점'(base x-진행으로 위상잠금)을 MPC에 주입 → 폐루프 균형 유지 + 발 배치는 TOWR 계획.
+#   B의 접촉 타이밍(고정순환)은 그대로, 발판 위치만 TOWR로 대체(placement-only 1차 통합). 미설정=순수 B(기존).
+_TOWR_INJ = _os.environ.get("TOWR_INJECT")
+if _TOWR_INJ:
+    import json as _tj
+    _td = _tj.load(open(_TOWR_INJ))
+    _tP  = np.array(_td['P'])                              # (3,N+1) base
+    _tFEET = ['FL','FR','HL','HR']
+    _tFt  = {f: np.array(_td['Ft'][f]) for f in _tFEET}    # 발 world pos (3,N+1)
+    _tcon = {f: list(_td['contact'][f]) for f in _tFEET}   # 접촉 0/1
+    _tN   = int(_td['N'])
+    _MJ2TOWR = {'FL_foot':'FL','FR_foot':'FR','HL_foot':'HL','HR_foot':'HR'}
+    print("[TOWR-INJECT] %s N=%d 발판주입 활성"%(_os.path.basename(_TOWR_INJ),_tN),flush=True)
+    def _towr_next_landing(f, k0):
+        """노드 k0 이후 발 f의 다음 착지(swing0→stance1 전이) world 발판. 없으면 마지막 stance."""
+        c=_tcon[f]; k=k0
+        while k < _tN:
+            if c[k]==0 and c[k+1]==1: return _tFt[f][:,k+1]
+            k+=1
+        return _tFt[f][:,_tN]
 for step in range(int(_os.environ.get("STEPS","300"))):
     if _CMDFILE and step % 5 == 0:        # GUI JSON 채널 소비(20Hz) → v/vy/w 직접 반영(OCP가 내부적으로 부드럽게 추종)
         try:
@@ -422,6 +467,11 @@ for step in range(int(_os.environ.get("STEPS","300"))):
             _tz = _terrain_z_base(device.d.qpos[0], device.d.qpos[1])
             _bz_slew += 0.05 * ((_tz + _combase) - _bz_slew)   # 슬루(부드럽게, 급변 방지)
             _xr = np.array(mpc.x_reference); _xr[2] = _bz_slew; mpc.x_reference = _xr
+        if _TOWR_INJ:                                  # ★TOWR 발판 주입: base x로 위상잠금 → 발별 다음 착지점 주입(iterate 전)
+            _bx = float(device.d.qpos[0])
+            _k0 = int(np.argmin(np.abs(_tP[0,:] - _bx)))
+            for _mjf,_tf in _MJ2TOWR.items():
+                mpc.setExternalFoothold(_mjf, np.asarray(_towr_next_landing(_tf,_k0),dtype=float))
         start = time.time(); mpc.iterate(x_measured); solve_time.append(time.time()-start); _pk = 0
     _pkc = min(_pk, T - 2)                   # stale plan advance 인덱스(재사용)
 

@@ -52,6 +52,15 @@ class MujocoRobot:
        pin↔mujoco: go2 관절 순서 동일(재정렬 X), 베이스 quat [w,x,y,z]↔[x,y,z,w], lin world→local(R^T)."""
     def __init__(self, q0, dt_simu, view=False):
         self.m=_mj.MjModel.from_xml_path(_GO2_MJCF); self.m.opt.timestep=dt_simu
+        # ★PACE 액추에이터 물리(A의 QuadControl GEARBOX와 동일): 반사관성 armature=Irot·N²·점성감쇠·마찰. 데이터시트 placeholder, 실기 시 PACE 실측 교체.
+        _PG={"hip":7.0,"thigh":7.0,"calf":10.5,"foot":8.4,"waist":7.0}; _PIr,_PDm,_PFr=1e-4,0.1,0.5
+        for _pj in range(self.m.njnt):
+            _pnm=_mj.mj_id2name(self.m,_mj.mjtObj.mjOBJ_JOINT,_pj)
+            if _pnm is None: continue
+            _PN=next((_g for _k,_g in _PG.items() if _k in _pnm),None)
+            if _PN is None: continue
+            _pd=self.m.jnt_dofadr[_pj]
+            self.m.dof_armature[_pd]=_PIr*_PN*_PN; self.m.dof_damping[_pd]=_PDm; self.m.dof_frictionloss[_pd]=_PFr
         import os as _o2                                   # 접촉모델 매칭(컨트롤러 강체가정 ↔ MuJoCo soft)
         if _o2.environ.get("CONE"): self.m.opt.cone=int(_o2.environ["CONE"])
         if _o2.environ.get("STIFF"): self.m.geom_solref[:,0]=float(_o2.environ["STIFF"]); self.m.geom_solref[:,1]=1.0
@@ -243,6 +252,13 @@ import copy
 URDF = "/home/jsh/문서/jsh/simulation/quad/urdf/02_Leg_UFDF_260610_9.urdf"
 base_joint_name = "root_joint"
 _M = _pin.buildModelFromUrdf(URDF, _pin.JointModelFreeFlyer())
+# ★PACE 액추에이터 물리(예측 OCP 모델): armature=Irot·N²·damping·friction (A GEARBOX·CI 동일). 실기 시 PACE 실측 교체
+_PGp={"hip":7.0,"thigh":7.0,"calf":10.5,"foot":8.4,"waist":7.0}
+for _pjn in _M.names[1:]:
+    _pjid=_M.getJointId(_pjn); _pjv=_M.joints[_pjid]
+    if _pjv.nv!=1: continue
+    _PNp=next((_g for _k,_g in _PGp.items() if _k in _pjn),7.0)
+    _M.armature[_pjv.idx_v]=1e-4*_PNp*_PNp; _M.damping[_pjv.idx_v]=0.1; _M.friction[_pjv.idx_v]=0.5
 _lms_pin = float(_os.environ.get("LEG_MASS_SCALE","1.0"))   # ★다리질량 스케일(OCP 모델, pinocchio 다리=joint2~)
 if _lms_pin != 1.0:
     for _ji in range(2, _M.njoints):

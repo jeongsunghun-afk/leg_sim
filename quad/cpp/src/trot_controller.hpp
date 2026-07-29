@@ -354,6 +354,8 @@ struct TrotCtrl {
       double tgt_x=tam_ax+s[0], tgt_y=tam_ay+s[1];                      // base 위치 피드백(드리프트 보정) + TAMOLS 속도
       double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
+      if(online && getenv("TAM_CLEANV")){   // ★온라인 계획 base xy 품질 나쁨(solve_fast wild vx·후진)→위치·속도를 clean 전진으로 대체. 발판·z·자세(s[2],s[5])는 plan 유지=terrain 적응 보존
+        tgt_x=tam_ax+V*tam_t; tgt_y=tam_ay; vx_w=V; vy_w=0.0; }
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
       bool rsl=(getenv("RSL_TRACK")||online) && !getenv("TAM_MPC");   // ★RSL식 직접추종. ★TAM_MPC=1이면 MPC 기반 추종(z침하 해결: RSL gravity-comp가 MPC 우회→침하)

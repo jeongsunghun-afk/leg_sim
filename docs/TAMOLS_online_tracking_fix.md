@@ -77,5 +77,20 @@ heightmap(TAMOLS_TERRAIN 이미 구현) 켜고 지형 크로싱. injection과 **
 - **P0에서도 tilt<5° 못 달성하면**: 우리 WBC의 CoM-지지 유지 성숙도가 근본 부족 = injection이 실용 최선임을 인정, ETH-adjacent로 배포. (RL은 별개 트랙)
 - **판단 게이트**: P0(단일사이클) 성패가 전체 방향 결정. 되면 P1→P2 진행, 안 되면 실행층 재검토 또는 injection 인정.
 
-## 6. 즉시 다음 액션
-**Phase 0.1** — 첫 계획 offline 추종의 드리프트를 `TAM_DBG` 확장(각운동량·CoM-지지폴리곤 여유 로깅)으로 개시 시점·국면 특정. H2(`W_AM`)·H4(대칭발판)부터 검증.
+## 6. Phase 0 실행 결과 (2026-07-29)
+
+**★H2 확정 = 각운동량 task(W_AM)가 ④의 핵심.** offline 첫계획(정지 덤프) 추종서:
+- W_AM 기본→30: t=0.75 tilt **49.9→19.2°**(절반↓). **t=0.5까지 tilt<6.3°**(예전 50). 
+- 각운동량 감쇠(KD_AM)·W_ORI 추가는 미미(plateau ~19). 마지막 스윙(FL)서 tilt 19로 튐=사이클 경계 효과.
+- **H4(발판 대칭) 거의 무효**(tilt 49.8, yaw만 8→2 약간). foot 비대칭은 부차.
+- **→ Phase 0 대체로 성공**: W_AM=30로 offline 단일사이클 t=0.5까지 tilt<6.3(P0 목표 tilt<5 근접). 마지막 스윙 peak 19는 체인서 해소 기대.
+
+**★online(P2)은 W_AM으로 안 고쳐짐 = ⑤가 별개 문제.** online+W_AM=30: 여전히 낙상(**yaw −143° 스핀**·z침하). W_YAW=30·REPLAN_DT 0.4/0.8 모두 실패(yaw −132°/−47°). 
+- **→ ⑤ re-anchoring death spiral이 online 고유 병목**(offline엔 없음). yaw 급발산=재anchor가 yaw 참조/발판을 오염시켜 누적. WBIC yaw task(W_YAW)로 안 잡힘=참조 자체 문제.
+
+## 7. 갱신된 다음 액션 (P2: online ⑤ 규명)
+1. **online yaw 급발산 원인 특정**: 재anchor 시 계획 yaw(s[5])·발판(tam_fh) 시계열 덤프 → yaw 오염 지점. `TAM_CLEANV`에 yaw도 clean(초기헤딩 홀드) 추가 검토.
+2. **death spiral 완충**: replan 초기조건을 측정상태 대신 **이전 계획상태 blend**(오염 완충). A MPC는 매사이클 측정재계획해도 안정한 것과 대조 분석(A는 왜 되고 우리 online은 왜 안 되나).
+3. **W_AM=30은 online에도 유지**(④ 억제 근거). P0 자산.
+
+**전략 판단 유지**: online ⑤가 안 풀리면(P2 실패) → offline 청정(P0 W_AM 성공)은 확보되나 연속보행 불가 → injection이 실용 최선 재확인 or 실행층 재검토(H5).

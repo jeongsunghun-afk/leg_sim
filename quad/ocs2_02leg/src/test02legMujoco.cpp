@@ -221,7 +221,8 @@ int main(int argc, char** argv) {
     if (replan) {
       obs.time = t; obs.state = xMeas;
       mrt.setCurrentObservation(obs);
-      try { mrt.advanceMpc(); mrt.updatePolicy(); } catch (const std::exception& e) {}
+      try { mrt.advanceMpc(); mrt.updatePolicy(); }
+      catch (const std::exception& e) { std::cerr << "[MPC FAIL] t=" << t << "  " << e.what() << "\n"; }
     }
 
     // --- 정책 평가 ---

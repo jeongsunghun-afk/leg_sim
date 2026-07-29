@@ -50,7 +50,8 @@
      - QP 항상 solve(실패 0). **swing 발 완벽 추종**(desired z ≈ actual z, 오차 mm) → swing task 문제 아님.
      - **★★|w|des(MPC 계획 각속도) = |w|act(실제)**: 첫 swing서 MPC가 base를 **5~9 rad/s 회전**시키고 baseZ를 0.45→0.54 **상승**시키는 계획을 냄. **WBC는 그 계획을 충실히 실행 → 계획대로 tumble**. 즉 **문제는 WBC가 아니라 MPC 계획 품질**.
      - 원인 후보: **SRBD 모델이 다리 관성/반작용 무시**(우리 로봇=leg-heavy)·**gait 파라미터 과격**(swingHeight0.1·period0.35 표준 ANYmal값)·**standstill 시작 transient**·**Q 각운동량 페널티 부족**(L 5/10/10→80 시도시 초반 |w| 5.4→1.6 개선하나 재발산). base PD 약화+힘신뢰(W_BASE1·W_F50)는 초반만 완화.
-   - **다음(MPC-side 튜닝)**: (i)**gait 파라미터를 02_Leg에 맞게**(swing 낮춤·period 조정, ANYmal 기본이 부적합), (ii)**Q 각운동량/base자세 재튜닝**으로 level 계획 유도, (iii)standstill→trot **부드러운 시작**(stance settle→gait ramp), (iv)FullCentroidal(type0, 다리관성 포함) 검토 or leg 질량 반영. WBC(실행층)는 정확 검증됨=계획만 좋으면 실행됨. env노브=W_BASE/W_F/W_SW/W_REG·KP_B/D·KP_O/D·KP_F/D·TROT_DBG(계획vs실제).
+   - **부분 개선(적용됨)**: ①**gait 파라미터 02_Leg 적응**=task.info swingHeight 0.1→**0.05**·liftOff 0.2→0.1·touchDown −0.4→**−0.2**(ANYmal 기본이 과격) → MPC 계획 |w| **5~9→1~2 rad/s**로 개선·baseZ 상승 억제. ②**standing_trot**(대각쌍 사이 STANCE 국면)로 전환 충격 완화. 
+   - **잔여(다세션)**: 계획 개선(|w|~1-2)에도 **base orientation이 누적 드리프트**(|w| 적분→tilt 증가, 복원 안 됨)해 ~2s서 falls. W_BASE 1~30 무관. = **MPC 계획의 base orientation 추종 부족 or SRBD+heavy-leg 근본 미스매치**. 다음=(i)Q base자세/각운동량 추가 재튜닝, (ii)FullCentroidal(type0, 다리관성)로 SRBD 한계 극복, (iii)standstill→gait 부드러운 시작. WBC(실행층)는 정확 검증됨=계획만 좋으면 실행됨. env노브=W_BASE/W_F/W_SW/W_REG·KP_B/D·KP_O/D·KP_F/D·TROT_DBG(계획vs실제).
 
 ### Phase 3 — Perceptive (지형)
 1. 지형 heightmap(mj_ray) → OCS2 footstep **SDF 제약**(Grandia식 edge/gap 회피) + terrain base.

@@ -168,6 +168,7 @@ struct TrotCtrl {
   Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
   double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
+  Vector3d tam_swtgt[4];   // ★online swing foot commitment: liftoff 시 착지target 동결(재anchor에도 불변, 표준 receding-horizon)
   tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
@@ -376,9 +377,10 @@ struct TrotCtrl {
       for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
         if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만
-        else if(!sched){ if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=tam_t; tam_sw_prev[i]=false; }  // liftoff 캡처
-          double sprog=tc_clip((tam_t-tam_sw_start[i])/SW_DUR,0.0,1.0);
-          Vector3d p_end(tam_ax+tam_fh[i][0],tam_ay+tam_fh[i][1],tam_fh[i][2]);
+        else if(!sched){ if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=t;   // ★liftoff: 절대시간 캡처(재anchor에도 진행 연속)
+            tam_swtgt[i]=Vector3d(tam_ax+tam_fh[i][0],tam_ay+tam_fh[i][1],tam_fh[i][2]); tam_sw_prev[i]=false; }  // ★착지target 동결(swing foot commitment=표준 receding-horizon)
+          double sprog=tc_clip((t-tam_sw_start[i])/SW_DUR,0.0,1.0);   // ★절대시간 진행(tam_t 리셋 무관)
+          Vector3d p_end=tam_swtgt[i];   // ★동결된 target(재anchor에도 불변→발이 완주해 착지)
           Vector3d bvel(s[6],s[7],0.0);
           Vector3d p_tgt=tc_swing_foot(sprog,tam_lift[i],p_end,bvel,sh,SW_DUR,SW_DUR);
           Vector3d v_tgt=Vector3d::Zero();

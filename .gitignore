@@ -49,3 +49,4 @@ quad/cpp/tamols/test_*
 quad/cpp/tamols/export_traj
 # 대용량 참조 PDF(메모리서 경로 참조·git 미추적)
 quad/backup/docs/*.pdf
+quad/ocs2_ws/

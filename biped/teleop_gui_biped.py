@@ -5,14 +5,21 @@
 실행(proxddp env): /home/jsh/miniforge3/envs/proxddp/bin/python teleop_gui_biped.py
   ① 컨트롤러: python biped_run.py   ② GUI: 위 명령
 """
-import os, json, math
+import os, json, math, socket
 import dearpygui.dearpygui as dpg
 
 CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
 STATE  = os.environ.get('QUAD_STATE', '/tmp/biped_state.json')
-VMAX   = 0.15         # 전진 상한[m/s] (★안전 하향 0.2→0.15=로버스트 범위. 0.20은 marginal)
-VY_MAX = 0.10         # 좌우 상한[m/s] (★body-frame 게이트 수정 후 vy 0.12까지 안정→0.10 캡. 십자라 순수 측방)
-WZ_MAX = 0.30         # 선회 상한[rad/s] (★제자리 0.4·주행중 0.3 안정(body-frame 수정 후). turn rate head_lead로 ~2.5°/s 포화)
+# ★Isaac Sim 배선: TELEOP_UDP="host:port" 설정 시 명령을 UDP로도 발행(원격 play.py 수신).
+_UDP_TGT  = os.environ.get('TELEOP_UDP')          # 예: 192.168.1.205:9999
+_udp_sock = None; _udp_addr = None
+if _UDP_TGT:
+    _uh, _up = _UDP_TGT.split(':'); _udp_addr = (_uh, int(_up))
+    _udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# ★범위 env 오버라이드(hind_leg는 vx~2.0·yaw~0.5라 기본보다 넓게 쓸 수 있음)
+VMAX   = float(os.environ.get('VMAX',   '0.15'))  # 전진 상한[m/s]
+VY_MAX = float(os.environ.get('VY_MAX', '0.10'))  # 좌우 상한[m/s]
+WZ_MAX = float(os.environ.get('WZ_MAX', '0.30'))  # 선회 상한[rad/s]
 H_MIN, H_MAX, H_DEF = 0.36, 0.54, 0.38  # 슬라이더 전체범위·시작(2점)기본
 H_DEF_1PT, H_DEF_2PT = 0.50, 0.38       # ★접촉모드별 기본 몸통높이(점발/평발, 접촉구2배 자연높이)
 
@@ -24,13 +31,23 @@ class Pub:
         self._pub()
 
     def set(self, **kw):
-        self.cmd.update(kw); self._pub()
+        self.cmd.update(kw)
+        # ★스틱/슬라이더로 非零 속도가 들어오면 자동 walk 전환.
+        #   (안 그러면 sim이 mode=stand를 보고 속도를 0으로 무시 → "명령이 안 먹는" 증상)
+        if self.cmd.get('mode') in ('stand', 'off') and (
+            abs(self.cmd.get('v', 0.0)) > 1e-3 or abs(self.cmd.get('vy', 0.0)) > 1e-3
+            or abs(self.cmd.get('w', 0.0)) > 1e-3):
+            self.cmd['mode'] = 'walk'
+        self._pub()
 
     def _pub(self):
         tmp = self.path + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(self.cmd, f)
         os.replace(tmp, self.path)
+        if _udp_sock is not None:                      # ★Isaac Sim으로 UDP 발행
+            try: _udp_sock.sendto(json.dumps(self.cmd).encode(), _udp_addr)
+            except Exception: pass
 
 
 class JoyPad:
@@ -222,6 +239,12 @@ while dpg.is_dearpygui_running():
         dpg.set_value('state', line)
     except Exception:
         dpg.set_value('state', '(biped_run.py 대기중…)')
+    # ★연속 발행: 스틱을 가만히 눌러 유지해도(=drag 이벤트 없음) 명령이 계속 전송되게.
+    #   dpg drag 핸들러는 마우스가 움직일 때만 발화 → 정지 유지 시 패킷 끊김 → sim이 옛 명령 유지/누락.
+    #   매 프레임 현재 pub.cmd를 UDP로 재전송(≈60Hz)해 이벤트 타이밍 의존 제거.
+    if _udp_sock is not None:
+        try: _udp_sock.sendto(json.dumps(pub.cmd).encode(), _udp_addr)
+        except Exception: pass
     dpg.render_dearpygui_frame()
 
 dpg.destroy_context()

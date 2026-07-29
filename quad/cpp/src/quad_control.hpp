@@ -390,8 +390,9 @@ struct QuadControl {
     double yaw_err=std::atan2(std::sin(yaw_des-yaw_m),std::cos(yaw_des-yaw_m));  // 헤딩오차(wrap안전)
     double a_yaw=150*yaw_err-20*qv[5]; P(5,5)+=w_yaw; g[5]-=w_yaw*a_yaw;         // yaw 헤딩홀드(직진 드리프트 방지, 선회시 yaw_des 추종→안싸움)
     double zref=com_ref[2]+_body_terr; Vector3d Jcqv=Jc*qv;
-    double a_z=200*(zref-d->subtree_com[2])-25*Jcqv[2];
-    P.topLeftCorner(nv,nv)+=150.0*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=150.0*a_z*Jc.row(2).transpose();
+    double _kpz=getenv("KP_Z")?atof(getenv("KP_Z")):200.0, _kdz=getenv("KD_Z")?atof(getenv("KD_Z")):25.0, _wz=getenv("W_Z")?atof(getenv("W_Z")):150.0;
+    double a_z=_kpz*(zref-d->subtree_com[2])-_kdz*Jcqv[2]+com_acc_ref[2];   // ★2층 WBC z유지: 게인 튜닝가능 + 계획 z가속 ff(예측 보강, MPC 예측 대체)
+    P.topLeftCorner(nv,nv)+=_wz*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=_wz*a_z*Jc.row(2).transpose();
     if(W_BASE_XY>0){ for(int ax=0;ax<2;ax++){   // ★RSL식: base 수평(x,y) 위치를 WBC가 직접 추종(SRBD MPC 대체) — 계획 base궤적 위치레벨 execute
       double a_xy=KP_BASE*(com_ref[ax]-d->subtree_com[ax])+KD_BASE*(com_vel_ref[ax]-Jcqv[ax])+com_acc_ref[ax];
       P.topLeftCorner(nv,nv)+=W_BASE_XY*(Jc.row(ax).transpose()*Jc.row(ax)); g.head(nv)-=W_BASE_XY*a_xy*Jc.row(ax).transpose(); } }

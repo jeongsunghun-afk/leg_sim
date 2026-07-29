@@ -234,6 +234,14 @@ int main(int argc, char** argv) {
       }
       auto cf = modeNumber2StanceLeg(md);
       std::array<bool, 4> stance{cf[0], cf[1], cf[2], cf[3]};
+      if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) {
+        std::array<Eigen::Vector3d, 4> apos, avel; wbc.footFK(qPin, vPin, apos, avel);
+        char b[200];
+        snprintf(b, sizeof(b), "  t=%.2f st=%d%d%d%d |w|act=%.2f |w|des(MPC)=%.2f baseZdes=%.3f fDes_z[FL]=%.1f",
+                 t, stance[0], stance[1], stance[2], stance[3], Eigen::Vector3d(ww[0], ww[1], ww[2]).norm(),
+                 baseAngDes.norm(), basePosDes(2), fDes(2));
+        std::cerr << b << "\n";
+      }
       vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes,
                                   jointPosDes, jointVelDes);
       // WBC 토크 위에 직접 관절 impedance PD(ff+PD의 안정화 요소). stance 발만(swing은 WBC가 담당).

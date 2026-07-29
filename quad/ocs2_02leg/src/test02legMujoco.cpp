@@ -81,7 +81,9 @@ int main(int argc, char** argv) {
   if (gait != "stance") {
     auto tmpl = loadModeSequenceTemplate(std::string(argv[3]).substr(0, refFile.find_last_of('/') + 1) + "gait.info",
                                          gait, false);
-    refMgr->getGaitSchedule()->insertModeSequenceTemplate(tmpl, 0.0, simTime + 5.0);
+    // SETTLE(env, 기본 1.0s): 시작 STANCE 후 gait 개시 → MPC가 CoM 사전이동 준비.
+    const double settle = getenv("SETTLE") ? std::atof(getenv("SETTLE")) : 0.0;
+    refMgr->getGaitSchedule()->insertModeSequenceTemplate(tmpl, settle, simTime + 5.0);
   }
   MPC_MRT_Interface mrt(mpc);
   mrt.initRollout(&interface.getRollout());
@@ -103,6 +105,9 @@ int main(int argc, char** argv) {
   if (getenv("KD_O")) wbc.kdO_ = atof(getenv("KD_O"));
   if (getenv("W_POST")) wbc.wPost_ = atof(getenv("W_POST"));
   if (getenv("BASE_HARD")) wbc.baseHard_ = true;
+  if (getenv("SWING_JOINT")) wbc.swingJoint_ = true;
+  if (getenv("KP_JS")) wbc.kpJs_ = atof(getenv("KP_JS"));
+  if (getenv("KD_JS")) wbc.kdJs_ = atof(getenv("KD_JS"));
   if (getenv("KP_F")) wbc.kpF_ = atof(getenv("KP_F"));
   if (getenv("KD_F")) wbc.kdF_ = atof(getenv("KD_F"));
   const int nqPin = interface.getPinocchioInterface().getModel().nq;

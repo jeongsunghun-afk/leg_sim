@@ -94,12 +94,20 @@ class Wbc02Leg {
       MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, nv) = Jbase;
       addTask(A, VectorXd(aBaseDes - JdvBase), wBase_);
     }
-    // swing 발 가속(3/발): J_sw q̈ = a_sw_des − J̇v
+    // swing 발: Cartesian(world) 추종은 base 틸트를 swing 보정으로 증폭(양성피드백).
+    // swingJoint_면 joint-space(MPC 계획 관절궤적) 추종=부드럽고 base와 비커플.
     for (int i = 0; i < 4; ++i) {
       if (stance[i]) continue;
-      MatrixXd A = MatrixXd::Zero(3, nx); A.block(0, 0, 3, nv) = Jf[i];
-      Vector3d aDes = kpF_ * (footPosDes[i] - footPos[i]) + kdF_ * (footVelDes[i] - footVel[i]);
-      addTask(A, VectorXd(aDes - Jdv[i]), wSwing_);
+      if (swingJoint_) {  // 관절공간: q̈[6+3i..] = kpJs(qDes−q)+kdJs(vDes−v)
+        MatrixXd A = MatrixXd::Zero(3, nx); A.block(0, 6 + 3 * i, 3, 3) = Matrix3d::Identity();
+        Vector3d b = kpJs_ * (jointPosDes.segment<3>(3 * i) - q.segment<3>(6 + 3 * i)) +
+                     kdJs_ * (jointVelDes.segment<3>(3 * i) - v.segment<3>(6 + 3 * i));
+        addTask(A, VectorXd(b), wSwing_);
+      } else {            // Cartesian(world)
+        MatrixXd A = MatrixXd::Zero(3, nx); A.block(0, 0, 3, nv) = Jf[i];
+        Vector3d aDes = kpF_ * (footPosDes[i] - footPos[i]) + kdF_ * (footVelDes[i] - footVel[i]);
+        addTask(A, VectorXd(aDes - Jdv[i]), wSwing_);
+      }
     }
     // 접촉력 추종(12): f = f_des
     {
@@ -193,8 +201,10 @@ class Wbc02Leg {
   }
 
   double kpB_ = 100, kdB_ = 20, kpO_ = 100, kdO_ = 20, kpF_ = 400, kdF_ = 40, kpJ_ = 100, kdJ_ = 10;
+  double kpJs_ = 150, kdJs_ = 15;  // swing joint-space 게인
   double wBase_ = 10, wSwing_ = 20, wForce_ = 1, wReg_ = 1e-3, wPost_ = 0.0, fzMin_ = 1.0;  // wPost>0=악화 확인
   bool baseHard_ = false;  // base 6D task를 hard 제약으로(강한 자세 안정화)
+  bool swingJoint_ = false;  // swing을 joint-space 추종(Cartesian 양성피드백 회피)
   int qpFail_ = 0, lastStatus_ = 0;
 
  private:

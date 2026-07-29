@@ -52,7 +52,9 @@
      - **피드백 강화 시도**: SQP iteration 1→8 하면 **첫 swing 극적 개선(|w| 0.3~0.5)**. 그러나 ①**대각 SWAP(trot은 겹침없는 즉시 교체)서 스파이크** ②SQP8+500Hz재계획+standing_trot는 **MPC 수치발산**(|w|des→7521). 즉 강피드백이 방향이나 안정성·비용 관문.
    - **부분개선(적용)**: gait 파라미터 02_Leg 적응(swingHeight0.1→0.05·liftOff→0.1·touchDown→−0.2, ANYmal 과격) → 계획 여유↑.
    - **★★foot-lift 외란 = swing task 규명(추가 정밀진단)**: trot뿐 아니라 **crawl(3발지지)·준정적(VX=0.03)도 첫 발-lift서 즉시 |w|=4-5 폭주** → dynamic 균형이 아니라 **foot-lift 처리 자체** 문제로 좁힘. **swing task 끄니(W_SW=0) 첫 lift |w| 4.52→0.86 급감** = **swing 발 추종(kpF=400 고게인)이 다리를 급가속→base 반작용 외란**이 주범(WBC 전신동역학이 이를 완전 상쇄 못함, MPC fDes는 SRBD라 미반영). 단 gentle swing 게인(kpF 50~150)만으론 후속 mode 전환서 재발(force 재분배·이중 접촉전환). FullCentroidal(다리관성)도 무효=SRBD 문제 아님.
-   - **잔여(다세션·hard)**: foot-lift 안정화 = (i)**swing 궤적을 부드럽게**(min-jerk·낮은 가속, 반작용↓), (ii)**contact-mode 일치**(force=0인데 MuJoCo 접촉인 국면 처리·force ramp), (iii)swing 반작용을 base task에 feedforward, (iv)SQP 2~4+warm-start. **WBC 정적·MPC standalone 계획은 정확 검증됨**. env노브=W_BASE/W_F/**W_SW**/W_REG·KP_*/**KP_F/KD_F**·MPC_HZ·SQP·TROT_DBG.
+   - **★★★가장 깊은 병목 = 접촉스케줄 전환 warm-start(추가 규명)**: SETTLE 실험(1s STANCE 후 gait 개시)로 규명. **깨끗한 stance settle 중엔 |w|→0.02 완전안정·MPC 계획 정상**. 그러나 **gait 개시 순간(STANCE→swing 전환)에 MPC 해가 garbage(fDes −1060~+40484 N·|w|des 9~123·baseZ→1.6)** → 로봇 |w|=22 폭발. = **접촉스케줄 변경 시 warm-start(이전 stance 해)가 새 스케줄과 불일치, 1-iter SQP가 회복 못함**. SQP=8은 trot 첫swing엔 도움되나 **crawl에선 오히려 수치발산 심화**(fDes 40484) → gait별 solver 취약성 상이. **폐루프 MPC-WBC 캐스케이드**: 나쁜 WBC가중→실행악화→측정상태 이탈→MPC 재계획 garbage.
+     - swing task도 부차 원인(W_SW=0시 첫lift |w| 4.52→0.86)이나 **주범은 전환 warm-start/solver conditioning**.
+   - **잔여(다세션·hard, MPC solver 엔지니어링)**: (i)**접촉전환 warm-start 견고화**(shift+재초기화, phaseTransitionStanceTime 활용), (ii)**SQP 수렴 튜닝**(gait별 iter·line-search·정칙화, fDes 발산=conditioning 문제), (iii)swing 부드럽게(min-jerk)·contact force ramp, (iv)closed-loop MPC 안정성 우선(이게 파라미터 튜닝 아닌 solver 엔지니어링). **WBC 정적·MPC standalone은 정확 검증**. env노브=W_BASE/W_F/W_SW·KP_*·**SWING_JOINT/KP_JS**·**SETTLE**·MPC_HZ·SQP·TROT_DBG.
    - **★뷰어**: `quad/ocs2_02leg/run_view.sh [gait] [vx]` (GLFW, 마우스 카메라). 정적 STANCE solid를 눈으로 확인 가능.
 
 ### Phase 3 — Perceptive (지형)

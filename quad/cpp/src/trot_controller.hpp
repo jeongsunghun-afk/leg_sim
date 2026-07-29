@@ -204,6 +204,13 @@ struct TrotCtrl {
     tam_s=smp; tam_c=con; tam_N=(int)smp.size();
     for(int i=0;i<4;i++){ tam_fh[i]=Vector3d(fh(i,0),fh(i,1),fh(i,2)); }
     tam_loaded=true;
+    if(getenv("TAM_DUMP")){   // ★계획을 load_tamols 포맷으로 덤프(offline 추종용, re-anchor 회피 테스트)
+      std::ofstream df(getenv("TAM_DUMP")); df<<tam_N<<" "<<tam_dt<<"\nFOOTHOLDS\n";
+      for(int L=0;L<4;L++) df<<tam_fh[L][0]<<" "<<tam_fh[L][1]<<" "<<tam_fh[L][2]<<"\n";
+      df<<"SAMPLES\n";
+      for(int kk=0;kk<tam_N;kk++){ df<<(kk*tam_dt); for(int j=0;j<12;j++) df<<" "<<tam_s[kk][j]; for(int i=0;i<4;i++) df<<" "<<tam_c[kk][i]; df<<"\n"; }
+      std::printf("[TAM_DUMP] 계획 기록 N=%d dt=%.3f → %s (발판 대칭확인: FL_y=%.3f FR_y=%.3f RL_y=%.3f RR_y=%.3f)\n",
+        tam_N,tam_dt,getenv("TAM_DUMP"),tam_fh[0][1],tam_fh[1][1],tam_fh[2][1],tam_fh[3][1]); }
   }
   Vector3d tam_ptgt[4]; bool tam_have_ptgt[4]={false,false,false,false};
   void load_tamols(const char* path){
@@ -349,7 +356,7 @@ struct TrotCtrl {
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
-      bool rsl=getenv("RSL_TRACK")||online;   // ★RSL식 직접추종(RSL_TRACK=1 또는 온라인). 온라인=receding-horizon 재계획
+      bool rsl=(getenv("RSL_TRACK")||online) && !getenv("TAM_MPC");   // ★RSL식 직접추종. ★TAM_MPC=1이면 MPC 기반 추종(z침하 해결: RSL gravity-comp가 MPC 우회→침하)
       if(rsl){ auto& sn=tam_s[std::min(k+1,tam_N-1)];
         q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;
         q.w_ori=getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★RSL: 자세 강홀드(축소지지서 레벨링 모멘트 우선). 낮으면 첫swing tilt발산

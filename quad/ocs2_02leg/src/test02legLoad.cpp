@@ -94,8 +94,9 @@ int main(int argc, char** argv) {
     char buf[160];
     scalar_t f[4];
     for (size_t c = 0; c < 4; ++c) { f[c] = centroidal_model::getContactForces(uOpt, c, info)(2); Fz += f[c]; }
-    snprintf(buf, sizeof(buf), "  %4.2f  %6.1f  %6.1f  %6.1f  %6.1f  %6.1f  %+.4f",
-             tt2, f[0], f[1], f[2], f[3], Fz, centroidal_model::getBasePose(xOpt, info)(0));
+    auto bp = centroidal_model::getBasePose(xOpt, info);  // [x,y,z, eulZ,eulY,eulX]
+    snprintf(buf, sizeof(buf), "  %4.2f  %6.1f %6.1f %6.1f %6.1f | x=%+.3f z=%.3f | eulZYX=%+.3f %+.3f %+.3f",
+             tt2, f[0], f[1], f[2], f[3], bp(0), bp(2), bp(3), bp(4), bp(5));
     std::cerr << buf << "\n";
   }
   std::cerr << "  (기대 총합 mg=" << info.robotMass * 9.81 << " N";

@@ -46,12 +46,13 @@
    - **★버그 2개 잡음(핵심)**: ①**pinocchio ABI**: conda/include가 OCS2의 시스템 pinocchio를 shadow(FK가 비대칭 garbage) → CMake `-idirafter ${conda}/include`로 conda를 검색 맨뒤로(시스템 pinocchio -isystem이 이김). ②**base 파라미터화**: OCS2 centroidal 모델 base=`JointModelComposite(Translation+SphericalZYX)`=**euler base(nq=nv=18)**, quaternion(19) 아님 → qPin/vPin을 [pos(3),eulerZYX(3),joints] + [linVel_world(3),eulerZYX_rate(3),jointVel]로 재작성(RbdConversions 규약, `getEulerAnglesZyxDerivativesFromGlobalAngularVelocity`).
    - **결과**: 두 수정 후 **발 위치 정확·대칭**(FL[0.349,0.138,0] 등)·**WBC 토크가 ff 토크와 ~1% 일치**(tau_WBC≈tau_ff, 동역학 정확 검증).
    - **★정적 STANCE solid 달성(핵심 3번째 발견)**: 초기 marginal(tilt 느린 드리프트)의 주범은 **MPC 피드백 정책**(`useFeedbackPolicy=true`)이 jumpy한 입력보정을 내고 WBC가 증폭한 것. 진단=재계획 억제(0.3Hz)=안정 / 매스텝 재계획=발산 → **`useFeedbackPolicy=false`(개루프 참조: MPC=계획, WBC=피드백 전담)로 STANCE 5s falls=0·tilt 0.8°·base_z 0.450 완전 고정**. 이게 올바른 MPC-WBC 역할분담. (hard base·posture task·joint PD 첨가·게인↑은 모두 악화 확인.)
-   - **🔶 TROT — 원인이 WBC 아닌 MPC 계획으로 규명(핵심)**: 상세 진단으로 확정:
-     - QP 항상 solve(실패 0). **swing 발 완벽 추종**(desired z ≈ actual z, 오차 mm) → swing task 문제 아님.
-     - **★★|w|des(MPC 계획 각속도) = |w|act(실제)**: 첫 swing서 MPC가 base를 **5~9 rad/s 회전**시키고 baseZ를 0.45→0.54 **상승**시키는 계획을 냄. **WBC는 그 계획을 충실히 실행 → 계획대로 tumble**. 즉 **문제는 WBC가 아니라 MPC 계획 품질**.
-     - 원인 후보: **SRBD 모델이 다리 관성/반작용 무시**(우리 로봇=leg-heavy)·**gait 파라미터 과격**(swingHeight0.1·period0.35 표준 ANYmal값)·**standstill 시작 transient**·**Q 각운동량 페널티 부족**(L 5/10/10→80 시도시 초반 |w| 5.4→1.6 개선하나 재발산). base PD 약화+힘신뢰(W_BASE1·W_F50)는 초반만 완화.
-   - **부분 개선(적용됨)**: ①**gait 파라미터 02_Leg 적응**=task.info swingHeight 0.1→**0.05**·liftOff 0.2→0.1·touchDown −0.4→**−0.2**(ANYmal 기본이 과격) → MPC 계획 |w| **5~9→1~2 rad/s**로 개선·baseZ 상승 억제. ②**standing_trot**(대각쌍 사이 STANCE 국면)로 전환 충격 완화. 
-   - **잔여(다세션)**: 계획 개선(|w|~1-2)에도 **base orientation이 누적 드리프트**(|w| 적분→tilt 증가, 복원 안 됨)해 ~2s서 falls. W_BASE 1~30 무관. = **MPC 계획의 base orientation 추종 부족 or SRBD+heavy-leg 근본 미스매치**. 다음=(i)Q base자세/각운동량 추가 재튜닝, (ii)FullCentroidal(type0, 다리관성)로 SRBD 한계 극복, (iii)standstill→gait 부드러운 시작. WBC(실행층)는 정확 검증됨=계획만 좋으면 실행됨. env노브=W_BASE/W_F/W_SW/W_REG·KP_B/D·KP_O/D·KP_F/D·TROT_DBG(계획vs실제).
+   - **🔶 TROT — trot의 open-loop 불안정을 피드백이 못 잡음(정밀 규명, 앞 "MPC가 회전계획"은 착시 정정)**:
+     - QP 항상 solve(실패0)·**swing 발 완벽 추종**(des z≈act z). swing task 문제 아님.
+     - **★★★핵심: standalone MPC(깨끗한 상태 단발 solve)는 완벽한 level trot 계획**(eulZYX pitch<1°·baseZ 0.45 유지·전진 매끄러움). **재계획 억제(clean 계획 추종)로 실행하면 |w|des(계획)≈0.05 인데 |w|act(실제)=5~16 폭주** → **계획은 level, 실제 로봇이 회전**. 즉 **trot swing(2발 대각지지)의 대각축 회전이 open-loop 불안정**(2점 지지=대각선 축 모멘트 0=underactuated)하고, **MPC 재계획(1-iter)+base task 피드백이 이를 못 잡음**. (앞서 폐루프서 |w|des=|w|act로 보인 건 계획이 매순간 측정상태서 시작하는 착시.)
+     - **피드백 강화 시도**: SQP iteration 1→8 하면 **첫 swing 극적 개선(|w| 0.3~0.5)**. 그러나 ①**대각 SWAP(trot은 겹침없는 즉시 교체)서 스파이크** ②SQP8+500Hz재계획+standing_trot는 **MPC 수치발산**(|w|des→7521). 즉 강피드백이 방향이나 안정성·비용 관문.
+   - **부분개선(적용)**: gait 파라미터 02_Leg 적응(swingHeight0.1→0.05·liftOff→0.1·touchDown→−0.2, ANYmal 과격) → 계획 여유↑.
+   - **잔여(다세션·hard)**: 동적 trot 안정화 = 잘 알려진 난제. 방향=(i)**SQP 2~4 + 적정 재계획률(warm-start)**로 강하지만 안정한 피드백, (ii)**대각 SWAP에 double-support overlap** 추가(즉시교체 완화), (iii)base task를 momentum task로, (iv)강건 warm-start. **WBC(실행층)·MPC(계획층 standalone) 각각은 정확 검증됨** — 남은 건 폐루프 동적 안정화 튜닝. env노브=W_BASE/W_F/W_SW·KP_*·MPC_HZ·SQP(task.info)·TROT_DBG.
+   - **★뷰어**: `quad/ocs2_02leg/run_view.sh [gait] [vx]` (GLFW, 마우스 카메라). 정적 STANCE solid를 눈으로 확인 가능.
 
 ### Phase 3 — Perceptive (지형)
 1. 지형 heightmap(mj_ray) → OCS2 footstep **SDF 제약**(Grandia식 edge/gap 회피) + terrain base.

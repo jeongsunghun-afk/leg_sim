@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include <mujoco/mujoco.h>
+#include <GLFW/glfw3.h>
 
 #include <ocs2_legged_robot/LeggedRobotInterface.h>
 #include <ocs2_legged_robot/gait/MotionPhaseDefinition.h>
@@ -28,6 +29,25 @@ static const char* kJoint[12] = {
     "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint", "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
     "HL_hip_joint", "HL_thigh_joint", "HL_calf_joint", "HR_hip_joint", "HR_thigh_joint", "HR_calf_joint"};
 static const char* kAnkle[4] = {"FL_foot_joint", "FR_foot_joint", "HL_foot_joint", "HR_foot_joint"};
+
+// ── GLFW 뷰어(VIEW=1) ──
+static mjvCamera cam; static mjvOption vopt; static mjvScene scn; static mjrContext con;
+static const mjModel* gM = nullptr; static mjData* gD = nullptr;
+static bool bL = false, bR = false, bM = false; static double lx = 0, ly = 0;
+static void mbtn(GLFWwindow* w, int, int, int) {
+  bL = glfwGetMouseButton(w, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+  bR = glfwGetMouseButton(w, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+  bM = glfwGetMouseButton(w, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
+  glfwGetCursorPos(w, &lx, &ly);
+}
+static void mmove(GLFWwindow* w, double xp, double yp) {
+  if (!bL && !bR && !bM) return;
+  double dx = xp - lx, dy = yp - ly; lx = xp; ly = yp;
+  int W, H; glfwGetWindowSize(w, &W, &H);
+  mjtMouse a = bR ? mjMOUSE_MOVE_H : (bL ? mjMOUSE_ROTATE_H : mjMOUSE_ZOOM);
+  mjv_moveCamera(gM, a, dx / H, dy / H, &scn, &cam);
+}
+static void mscroll(GLFWwindow* w, double, double dy) { mjv_moveCamera(gM, mjMOUSE_ZOOM, 0, -0.05 * dy, &scn, &cam); }
 
 // 나머지-order euler ZYX(yaw,pitch,roll) from quaternion(wxyz)
 static void quat2zyx(const double q[4], double& z, double& y, double& x) {
@@ -143,6 +163,21 @@ int main(int argc, char** argv) {
   mrt.advanceMpc();
   mrt.updatePolicy();
 
+  // 뷰어(VIEW=1)
+  const bool view = getenv("VIEW");
+  GLFWwindow* win = nullptr;
+  if (view) {
+    if (!glfwInit()) { std::cerr << "glfw init 실패\n"; return 5; }
+    win = glfwCreateWindow(1280, 900, "02_Leg OCS2 NMPC + WBC", nullptr, nullptr);
+    if (!win) { std::cerr << "창 생성 실패(DISPLAY?)\n"; glfwTerminate(); return 5; }
+    glfwMakeContextCurrent(win); glfwSwapInterval(1);
+    gM = m; gD = d;
+    mjv_defaultCamera(&cam); mjv_defaultOption(&vopt); mjv_defaultScene(&scn); mjr_defaultContext(&con);
+    mjv_makeScene(m, &scn, 2000); mjr_makeContext(m, &con, mjFONTSCALE_150);
+    glfwSetMouseButtonCallback(win, mbtn); glfwSetCursorPosCallback(win, mmove); glfwSetScrollCallback(win, mscroll);
+    cam.distance = 2.5; cam.elevation = -20; cam.azimuth = 120;
+  }
+
   const double dt = m->opt.timestep;
   const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 50.0;
   const int mpcDecim = std::max(1, int((1.0 / mpcHz) / dt));  // 재계획 주기
@@ -154,7 +189,7 @@ int main(int argc, char** argv) {
   std::cerr << "[SIM] dt=" << dt << " mpcDecim=" << mpcDecim << " gait=" << gait << "\n";
   std::cerr << "  t[s]   base_z   tilt°   base_x   재계획\n";
   int falls = 0; double t = 0;
-  for (int step = 0; t < simTime; ++step, t += dt) {
+  for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
     vector_t rbd_s(6 + nJ + 6 + nJ);
@@ -277,6 +312,18 @@ int main(int argc, char** argv) {
 
     mj_step(m, d);
 
+    // --- 뷰어 렌더(vsync 페이싱) ---
+    if (view && step % 8 == 0) {
+      cam.lookat[0] = d->qpos[0]; cam.lookat[1] = d->qpos[1];  // 로봇 추종
+      mjrRect vp{0, 0, 0, 0}; glfwGetFramebufferSize(win, &vp.width, &vp.height);
+      mjv_updateScene(m, d, &vopt, nullptr, &cam, mjCAT_ALL, &scn);
+      mjr_render(vp, &scn, &con);
+      char hud[128]; snprintf(hud, sizeof(hud), "t=%.1fs  base_z=%.3f  gait=%s  %s", t, d->qpos[2], gait.c_str(),
+                              useWbc ? "WBC" : "ff+PD");
+      mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, vp, "02_Leg OCS2 NMPC+WBC", hud, &con);
+      glfwSwapBuffers(win); glfwPollEvents();
+    }
+
     // --- 진단 ---
     double tilt = std::acos(std::max(-1.0, std::min(1.0, 1 - 2 * (d->qpos[4] * d->qpos[4] + d->qpos[5] * d->qpos[5])))) * 180 / M_PI;
     if (d->qpos[2] < 0.20 || tilt > 60) falls++;
@@ -292,6 +339,7 @@ int main(int argc, char** argv) {
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
   if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";
+  if (view) { mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate(); }
   mj_deleteData(d); mj_deleteModel(m);
   return falls == 0 ? 0 : 3;
 }

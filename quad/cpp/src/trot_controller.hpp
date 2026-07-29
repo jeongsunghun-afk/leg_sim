@@ -356,7 +356,7 @@ struct TrotCtrl {
       double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
       if(online && getenv("TAM_CLEANV")){   // ★X(전진)만 clean(solve_fast wild vx 회피). ★Y(sway)·z·자세는 plan 유지=GIAC body-sway 보존(CoM 지지폴리곤 유지=lateral 드리프트 방지). 구버전이 tgt_y=0으로 sway 지운 게 lateral 드리프트 원인
-        tgt_x=tam_ax+V*tam_t; vx_w=V; }
+        tgt_x=tam_ax+V*tam_t; vx_w=V; }   // ★(YHOLD 강 lateral 속도홀드 실험=무효 확인, 제거. 횡드리프트는 발배치/gait 타이밍 수준)
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
       bool rsl=(getenv("RSL_TRACK")||online) && !getenv("TAM_MPC");   // ★RSL식 직접추종. ★TAM_MPC=1이면 MPC 기반 추종(z침하 해결: RSL gravity-comp가 MPC 우회→침하)

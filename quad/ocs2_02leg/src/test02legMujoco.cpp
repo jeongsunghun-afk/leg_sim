@@ -83,6 +83,8 @@ int main(int argc, char** argv) {
   if (getenv("KD_O")) wbc.kdO_ = atof(getenv("KD_O"));
   if (getenv("W_POST")) wbc.wPost_ = atof(getenv("W_POST"));
   if (getenv("BASE_HARD")) wbc.baseHard_ = true;
+  if (getenv("KP_F")) wbc.kpF_ = atof(getenv("KP_F"));
+  if (getenv("KD_F")) wbc.kdF_ = atof(getenv("KD_F"));
   const int nqPin = interface.getPinocchioInterface().getModel().nq;
   const int nvPin = interface.getPinocchioInterface().getModel().nv;
   if (getenv("DBG")) {
@@ -281,6 +283,7 @@ int main(int argc, char** argv) {
   std::cerr << "  최종 base_x : " << d->qpos[0] << " m  (목표 " << 0.3 * simTime << ")\n";
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
+  if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";
   mj_deleteData(d); mj_deleteModel(m);
   return falls == 0 ? 0 : 3;
 }

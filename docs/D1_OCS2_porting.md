@@ -46,8 +46,8 @@
    - **★버그 2개 잡음(핵심)**: ①**pinocchio ABI**: conda/include가 OCS2의 시스템 pinocchio를 shadow(FK가 비대칭 garbage) → CMake `-idirafter ${conda}/include`로 conda를 검색 맨뒤로(시스템 pinocchio -isystem이 이김). ②**base 파라미터화**: OCS2 centroidal 모델 base=`JointModelComposite(Translation+SphericalZYX)`=**euler base(nq=nv=18)**, quaternion(19) 아님 → qPin/vPin을 [pos(3),eulerZYX(3),joints] + [linVel_world(3),eulerZYX_rate(3),jointVel]로 재작성(RbdConversions 규약, `getEulerAnglesZyxDerivativesFromGlobalAngularVelocity`).
    - **결과**: 두 수정 후 **발 위치 정확·대칭**(FL[0.349,0.138,0] 등)·**WBC 토크가 ff 토크와 ~1% 일치**(tau_WBC≈tau_ff, 동역학 정확 검증).
    - **★정적 STANCE solid 달성(핵심 3번째 발견)**: 초기 marginal(tilt 느린 드리프트)의 주범은 **MPC 피드백 정책**(`useFeedbackPolicy=true`)이 jumpy한 입력보정을 내고 WBC가 증폭한 것. 진단=재계획 억제(0.3Hz)=안정 / 매스텝 재계획=발산 → **`useFeedbackPolicy=false`(개루프 참조: MPC=계획, WBC=피드백 전담)로 STANCE 5s falls=0·tilt 0.8°·base_z 0.450 완전 고정**. 이게 올바른 MPC-WBC 역할분담. (hard base·posture task·joint PD 첨가·게인↑은 모두 악화 확인.)
-   - **🔶 TROT 진행중**: 초반 전진(base_x 0.15)하나 ~1.75s서 발산(swing 국면). swing 발 추종(kpF/kdF)·swing task 튜닝 필요.
-   - **다음**: trot swing 안정화 → walk/속도 스윕 → perceptive. env노브=W_BASE/W_F/W_SW/W_REG·KP_B/KD_B/KP_O/KD_O·KP_F 상당.
+   - **🔶 TROT — 대각 동적균형 미달(진행중)**: QP는 항상 solve(실패 0). **첫 swing서 붕괴**. **가중 방향 확인**: base PD 약화+MPC 힘 신뢰(W_BASE=1·W_F=50)면 초반 tilt 75°→4~6°로 격감(MPC가 동적균형을 힘으로 계획, WBC는 실현). 그러나 **~1s 후 붕괴는 지속**. 제자리 trot(VX=0)도 동일(전진 무관=**대각 2발 동적균형 자체가 미달**). 원인 후보: swing 발 배치 피드백 부재·모멘텀 궤적 정밀추종 부족·contact 전환 임팩트·feedback off라 동적국면 MPC 보정 부재(단 feedback on은 jumpy). 정적(4발)은 solid, 동적(2발)은 미달.
+   - **다음(trot 지속균형)**: (i)swing 발 배치를 Raibert/MPC 발판으로 피드백, (ii)base task를 momentum(centroidal) task로 보강해 대각 balancing sway 추종, (iii)contact 전환 부드럽게(force ramp), (iv)MPC feedback 스무딩(jumpy 해소). env노브=W_BASE/W_F/W_SW/W_REG·KP_B/D·KP_O/D·KP_F/KD_F. **★trot 권장 시작가중=W_BASE 1·W_F 50**.
 
 ### Phase 3 — Perceptive (지형)
 1. 지형 heightmap(mj_ray) → OCS2 footstep **SDF 제약**(Grandia식 edge/gap 회피) + terrain base.

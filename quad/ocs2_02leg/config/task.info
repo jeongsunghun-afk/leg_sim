@@ -66,7 +66,7 @@ sqp
   printSolverStatistics                 true
   printSolverStatus                     false
   printLinesearch                       false
-  useFeedbackPolicy                     true
+  useFeedbackPolicy                     false
   integratorType                        RK2
   threadPriority                        50
 }
@@ -84,7 +84,7 @@ ipm
   printSolverStatistics                 true
   printSolverStatus                     false
   printLinesearch                       false
-  useFeedbackPolicy                     true
+  useFeedbackPolicy                     false
   integratorType                        RK2
   threadPriority                        50
 

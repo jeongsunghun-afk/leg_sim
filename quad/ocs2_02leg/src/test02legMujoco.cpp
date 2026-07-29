@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
   if (getenv("KP_O")) wbc.kpO_ = atof(getenv("KP_O"));
   if (getenv("KD_O")) wbc.kdO_ = atof(getenv("KD_O"));
   if (getenv("W_POST")) wbc.wPost_ = atof(getenv("W_POST"));
+  if (getenv("BASE_HARD")) wbc.baseHard_ = true;
   const int nqPin = interface.getPinocchioInterface().getModel().nq;
   const int nvPin = interface.getPinocchioInterface().getModel().nv;
   if (getenv("DBG")) {
@@ -205,24 +206,39 @@ int main(int argc, char** argv) {
                                     Eigen::AngleAxisd(eulDes(1), Eigen::Vector3d::UnitY()) *
                                     Eigen::AngleAxisd(eulDes(2), Eigen::Vector3d::UnitX())).toRotationMatrix();
       Eigen::Vector3d baseAngDes = rbdDes.segment<3>(6 + nJ), baseLinDes = rbdDes.segment<3>(6 + nJ + 3);
+      vector_t jointPosDes = rbdDes.segment(6, 12), jointVelDes = rbdDes.segment(6 + nJ + 6, 12);
+      // ★진단: HOLD_NOM=고정 nominal 참조(MPC 분리) — WBC 제어 vs MPC 참조 드리프트 격리
+      if (getenv("HOLD_NOM")) {
+        basePosDes = centroidal_model::getBasePose(const_cast<vector_t&>(x0), info).head<3>();
+        eulDes.setZero(); baseRotDes.setIdentity(); baseAngDes.setZero(); baseLinDes.setZero();
+        jointPosDes = jNom; jointVelDes.setZero();
+      }
       // 목표 발 pos/vel = 목표 배치서 FK (euler base)
       vector_t qDesPin(nqPin), vDesPin(nvPin);
       qDesPin.head<3>() = basePosDes;
       qDesPin.segment<3>(3) = eulDes;
-      qDesPin.segment(6, 12) = rbdDes.segment(6, 12);
+      qDesPin.segment(6, 12) = jointPosDes;
       vDesPin.head<3>() = baseLinDes;  // world linear
       vDesPin.segment<3>(3) = getEulerAnglesZyxDerivativesFromGlobalAngularVelocity<scalar_t>(eulDes, baseAngDes);
-      vDesPin.segment(6, 12) = rbdDes.segment(6 + nJ + 6, 12);
+      vDesPin.segment(6, 12) = jointVelDes;
       std::array<Eigen::Vector3d, 4> fpDes, fvDes;
       wbc.footFK(qDesPin, vDesPin, fpDes, fvDes);
       // f_des, 접촉플래그
       vector_t fDes(12);
       for (int i = 0; i < 4; ++i) fDes.segment<3>(3 * i) = centroidal_model::getContactForces(uDes, i, info);
+      if (getenv("HOLD_NOM")) {  // 균등 중력분배
+        double fz = info.robotMass * 9.81 / 4.0;
+        for (int i = 0; i < 4; ++i) fDes.segment<3>(3 * i) << 0, 0, fz;
+      }
       auto cf = modeNumber2StanceLeg(md);
       std::array<bool, 4> stance{cf[0], cf[1], cf[2], cf[3]};
-      vector_t jointPosDes = rbdDes.segment(6, 12), jointVelDes = rbdDes.segment(6 + nJ + 6, 12);
       vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes,
                                   jointPosDes, jointVelDes);
+      // WBC 토크 위에 직접 관절 impedance PD(ff+PD의 안정화 요소). stance 발만(swing은 WBC가 담당).
+      const double jpdKp = getenv("JPD_KP") ? atof(getenv("JPD_KP")) : 0.0;
+      const double jpdKd = getenv("JPD_KD") ? atof(getenv("JPD_KD")) : 0.0;
+      for (int i = 0; i < 12; ++i)
+        tauJ(i) += jpdKp * (jointPosDes(i) - qPin(6 + i)) + jpdKd * (jointVelDes(i) - vPin(6 + i));
       if (step == 0 && getenv("DBG")) {
         vector_t tauFF = rbd.computeRbdTorqueFromCentroidalModel(xDes, uDes, jAcc);
         std::cerr << "  [DBG] footId=" << footId[0] << "," << footId[1] << "," << footId[2] << "," << footId[3]

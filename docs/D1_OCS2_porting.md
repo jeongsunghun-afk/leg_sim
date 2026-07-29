@@ -44,9 +44,10 @@
    - **진단**: 순수 PD(nominal 홀드)는 falls=0 → 관절매핑·역학 정상. **ff+관절PD가 동적 게이트엔 구조적 불충분**(swing 발 Cartesian 추종·접촉제약·base task를 QP로 안 풀어서). = legged_control이 **WBC 저수준**을 두는 정확한 이유.
 3. **Phase 2b — QP WBC 신규 구현** 🔶 **진행중(2026-07-29, 사용자 선택=QP WBC)**: `test/wbc_02leg.hpp` = weighted QP WBC(legged_control식). 결정변수 [q̈(18), f(12)]. hard=floating-base 동역학(6)·stance no-slip(3/발)·swing force0·friction cone. soft=base 6D 가속·swing 발 가속·f_des 추종. τ=[Mq̈+h−Jcᵀf]_actuated. eiquadprog(conda, dynamic-double ABI안전).
    - **★버그 2개 잡음(핵심)**: ①**pinocchio ABI**: conda/include가 OCS2의 시스템 pinocchio를 shadow(FK가 비대칭 garbage) → CMake `-idirafter ${conda}/include`로 conda를 검색 맨뒤로(시스템 pinocchio -isystem이 이김). ②**base 파라미터화**: OCS2 centroidal 모델 base=`JointModelComposite(Translation+SphericalZYX)`=**euler base(nq=nv=18)**, quaternion(19) 아님 → qPin/vPin을 [pos(3),eulerZYX(3),joints] + [linVel_world(3),eulerZYX_rate(3),jointVel]로 재작성(RbdConversions 규약, `getEulerAnglesZyxDerivativesFromGlobalAngularVelocity`).
-   - **결과**: 두 수정 후 **발 위치 정확·대칭**(FL[0.349,0.138,0] 등)·**WBC 토크가 ff 토크와 ~1% 일치**(tau_WBC≈tau_ff, 동역학 정확 검증)·**정적 STANCE 1.5s falls=0**(base_z 0.44 유지).
-   - **미해결(잔여)**: STANCE가 **marginal**(tilt 0→19° 느린 드리프트, ~1.5s+서 이탈). base task 게인↑·posture task·wForce 변경 모두 악화(base task 권한이 접촉능력 초과시 QP 진동). = **task-hierarchy 정밀화 필요**(strict priority HoQp or 감쇠구조·base 권한 조율). trot은 정적 확립 후.
-   - **다음**: (i)strict-hierarchy WBC(HoQp) or (ii)base task 감쇠·권한 재조율로 정적 solid화 → trot → perceptive. env노브=W_BASE/W_F/W_SW/W_REG/W_POST·KP_B/KD_B/KP_O/KD_O.
+   - **결과**: 두 수정 후 **발 위치 정확·대칭**(FL[0.349,0.138,0] 등)·**WBC 토크가 ff 토크와 ~1% 일치**(tau_WBC≈tau_ff, 동역학 정확 검증).
+   - **★정적 STANCE solid 달성(핵심 3번째 발견)**: 초기 marginal(tilt 느린 드리프트)의 주범은 **MPC 피드백 정책**(`useFeedbackPolicy=true`)이 jumpy한 입력보정을 내고 WBC가 증폭한 것. 진단=재계획 억제(0.3Hz)=안정 / 매스텝 재계획=발산 → **`useFeedbackPolicy=false`(개루프 참조: MPC=계획, WBC=피드백 전담)로 STANCE 5s falls=0·tilt 0.8°·base_z 0.450 완전 고정**. 이게 올바른 MPC-WBC 역할분담. (hard base·posture task·joint PD 첨가·게인↑은 모두 악화 확인.)
+   - **🔶 TROT 진행중**: 초반 전진(base_x 0.15)하나 ~1.75s서 발산(swing 국면). swing 발 추종(kpF/kdF)·swing task 튜닝 필요.
+   - **다음**: trot swing 안정화 → walk/속도 스윕 → perceptive. env노브=W_BASE/W_F/W_SW/W_REG·KP_B/KD_B/KP_O/KD_O·KP_F 상당.
 
 ### Phase 3 — Perceptive (지형)
 1. 지형 heightmap(mj_ray) → OCS2 footstep **SDF 제약**(Grandia식 edge/gap 회피) + terrain base.

@@ -85,14 +85,14 @@ class Wbc02Leg {
       G.noalias() += w * A.transpose() * A;
       g0.noalias() -= w * A.transpose() * b;
     };
-    // base 6D 가속(world, 발 task와 동일 프레임): Jbase q̈ + JdvBase = a_base_des_world
-    {
+    // base 6D 목표 가속(world). baseHard_면 hard 제약, 아니면 soft task.
+    Vector3d oriErr = 0.5 * unskew(baseRotDes * baseRot.transpose() - baseRot * baseRotDes.transpose());
+    Matrix<double, 6, 1> aBaseDes;
+    aBaseDes.head<3>() = kpB_ * (basePosDes - basePos) + kdB_ * (baseLinDes - baseVel.head<3>());
+    aBaseDes.tail<3>() = kpO_ * oriErr + kdO_ * (baseAngDes - baseVel.tail<3>());
+    if (!baseHard_) {
       MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, nv) = Jbase;
-      Vector3d oriErr = 0.5 * unskew(baseRotDes * baseRot.transpose() - baseRot * baseRotDes.transpose());
-      Vector3d aLin = kpB_ * (basePosDes - basePos) + kdB_ * (baseLinDes - baseVel.head<3>());
-      Vector3d aAng = kpO_ * oriErr + kdO_ * (baseAngDes - baseVel.tail<3>());
-      Matrix<double, 6, 1> aDes; aDes << aLin, aAng;
-      addTask(A, VectorXd(aDes - JdvBase), wBase_);
+      addTask(A, VectorXd(aBaseDes - JdvBase), wBase_);
     }
     // swing 발 가속(3/발): J_sw q̈ = a_sw_des − J̇v
     for (int i = 0; i < 4; ++i) {
@@ -121,12 +121,14 @@ class Wbc02Leg {
     // (1) floating-base 동역학(6): M[0:6] q̈ − Jcᵀ[0:6] f + h[0:6] = 0
     MatrixXd JcT = Jc.transpose();  // nv×12
     MatrixXd CE_base(6, nx); CE_base << M.topRows<6>(), -JcT.topRows<6>();
-    // (2) stance no-slip, (3) swing zero-force
-    int nEq = 6;
-    for (int i = 0; i < 4; ++i) nEq += 3;  // 각 발: stance면 no-slip(3), swing이면 force=0(3)
+    // (2) base 6D(옵션 hard), (3) stance no-slip, (4) swing zero-force
+    int nEq = 6 + (baseHard_ ? 6 : 0) + 4 * 3;
     MatrixXd CE = MatrixXd::Zero(nEq, nx); VectorXd ce0 = VectorXd::Zero(nEq);
     CE.topRows<6>() = CE_base; ce0.head<6>() = h.head<6>();
     int r = 6;
+    if (baseHard_) {  // Jbase q̈ + (JdvBase − aBaseDes) = 0
+      CE.block(r, 0, 6, nv) = Jbase; ce0.segment<6>(r) = JdvBase - aBaseDes; r += 6;
+    }
     for (int i = 0; i < 4; ++i) {
       if (stance[i]) {  // J_st q̈ + J̇v = 0
         CE.block(r, 0, 3, nv) = Jf[i]; ce0.segment<3>(r) = Jdv[i];
@@ -192,6 +194,7 @@ class Wbc02Leg {
 
   double kpB_ = 100, kdB_ = 20, kpO_ = 100, kdO_ = 20, kpF_ = 400, kdF_ = 40, kpJ_ = 100, kdJ_ = 10;
   double wBase_ = 10, wSwing_ = 20, wForce_ = 1, wReg_ = 1e-3, wPost_ = 0.0, fzMin_ = 1.0;  // wPost>0=악화 확인
+  bool baseHard_ = false;  // base 6D task를 hard 제약으로(강한 자세 안정화)
   int qpFail_ = 0, lastStatus_ = 0;
 
  private:

@@ -63,11 +63,27 @@ CFG="ocs2_02leg/config/task.info ocs2_02leg/urdf/02leg_ocs2.urdf ocs2_02leg/conf
 # Phase 1: MPC 계획 생성(STANCE 힘균형 + TROT 대각쌍)
 $EXE/test02legLoad $CFG ocs2_02leg/config/gait.info
 
-# Phase 2: MuJoCo 폐루프 (MJCF 추가). ff+PD=정적STANCE falls=0 / WBC=1은 base-task 미완
+# Phase 2: MuJoCo 폐루프 (MJCF 추가). WBC=1 정적 STANCE=solid(falls=0) / 동적=미달
 MJCF=mjcf/quad_real_17dof_waist_sphere.mjcf
-VX=0 $EXE/test02legMujoco $CFG $MJCF stance 3.0            # ff+PD 정적 (falls=0)
-WBC=1 VX=0 $EXE/test02legMujoco $CFG $MJCF stance 3.0      # WBC (진행중)
+WBC=1 VX=0 $EXE/test02legMujoco $CFG $MJCF stance 3.0      # WBC 정적 (falls=0, solid)
+WBC=1 VX=0.2 $EXE/test02legMujoco $CFG $MJCF trot 3.0      # WBC 동적 (미달=접촉전환 warm-start)
 ```
-env: `VX`(전진목표 m/s)·`WBC=1`(WBC 사용)·`PD_ONLY=1`(nominal 홀드)·`MPC_HZ`·`KP/KD`·`W_BASE/W_F/W_REG/W_SW`(WBC 가중)·`DBG/WBC_DBG`(진단).
+
+## 뷰어 (GLFW)
+```bash
+quad/ocs2_02leg/run_view.sh stance 0        # 정적 STANCE solid 확인(마우스=카메라)
+quad/ocs2_02leg/run_view.sh trot 0.2        # 동적(진행중)
+```
+
+## env 노브
+- 실행: `WBC=1`(WBC 저수준)·`VIEW=1`(뷰어)·`VX`(전진 m/s)·`PD_ONLY=1`(ff+PD nominal 홀드)·`SETTLE`(gait 전 STANCE settle s)·`MPC_HZ`(재계획률).
+- WBC 가중: `W_BASE`·`W_F`·`W_SW`·`W_REG`·`W_POST`.
+- WBC 게인: `KP_B/KD_B`(base pos)·`KP_O/KD_O`(base ori)·`KP_F/KD_F`(Cartesian swing)·`KP_JS/KD_JS`(joint swing).
+- WBC 모드: `SWING_JOINT=1`(joint-space swing)·`BASE_HARD=1`(base 6D hard 제약).
+- 진단: `DBG`·`WBC_DBG`·`TROT_DBG`(접촉플래그·|w|·계획vs실제). task.info `sqpIteration`=SQP 반복수.
+
+## 현 상태 (2026-07-29)
+- ✅ **정적 STANCE solid**(falls=0, tilt 0.8°). WBC 동역학 tau≈ff, swing 추종 정확, MPC standalone 계획 정확.
+- 🔶 **동적 locomotion 미달** — 최심층 병목=**접촉스케줄 전환 warm-start**(STANCE→swing 순간 MPC 해 garbage). = MPC solver 엔지니어링 필요(파라미터 튜닝 아님).
 
 상세 진행/결론 = `docs/D1_OCS2_porting.md`.

@@ -59,6 +59,7 @@ struct TrotCtrl {
   double nudge_wbal=getenv("W_BAL")?atof(getenv("W_BAL")):0.6;      // ★밸런스 가중(footScore vs Raibert타깃 거리 저울질)
   Vector2d nudge_off[4]={Vector2d::Zero(),Vector2d::Zero(),Vector2d::Zero(),Vector2d::Zero()};   // ★오프셋(절대타깃 동결 아님)=Raibert 연속 밸런스 피드백 보존
   double _bterr_s=0.0;              // ★슬루된 지형높이(4hip평균을 부드럽게) → MPC x_ref[5]·WBIC z-task 양쪽 일관 공급
+  double _tambz_s=0.5;             // ★TAM_BASE: 슬루된 TAMOLS 계획 base z(주입, 급변 방지)
   // ── 모드관리(배포용): move/stand_up(서기)/stand_down(눕기)/off ──
   std::string mode="move";
   double body_h=0.5234, ht_cur=0.5234, qhome_h=0.5234;   // 서기높이 슬라이더·보간높이·q_home 계산높이
@@ -675,6 +676,9 @@ struct TrotCtrl {
     bool taminj=getenv("TAMOLS_INJECT");   // ★A gait 클럭(연속·swing 확실)에 TAMOLS 발판만 주입=타이밍 유지+계획 협조
     if(taminj){ double RDT=getenv("REPLAN_DT")?atof(getenv("REPLAN_DT")):0.4; tam_inj=true;
       if(tam_ol_last<0||t-tam_ol_last>=RDT){ tamols_online_replan(d); tam_ol_last=t; tam_ax=d->qpos[0]; tam_ay=d->qpos[1]; } }
+    if(taminj && getenv("TAM_BASE") && tam_N>0){   // ★TAMOLS 계획 base z 주입=발판+base 완전협조(연속지형 tilt25→1.4)
+      double _bz=tam_s[0][2]; _tambz_s+=tc_clip(_bz-_tambz_s,-0.5*dt,0.5*dt);   // 항상 슬루(점프 방지)
+      if(!gap_near_terr) x_ref[5]=_tambz_s; }   // ★갭 위선 override 안 함(void로 base z 끌어내림→A perceptive z 유지)
     for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg,sch,sp);
       if(sch){ st.push_back(i); have_prev[i]=false; } else { if(sp<0.03) liftoff[i]=q.foot_point(i); } }
     // ★★CoM shift(정적 crawl 원리): 갭 크로싱 시 CoM 지면투영을 지지발 centroid로 이동=지지삼각형 안 유지(횡드리프트 방지)

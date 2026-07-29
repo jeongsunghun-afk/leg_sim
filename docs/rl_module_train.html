@@ -1,0 +1,561 @@
+<style>
+  :root{
+    --bg:#eef1f5; --card:#ffffff; --ink:#0f1a24; --muted:#5c6c7a; --faint:#8b9aa8;
+    --line:#dce3ea; --accent:#0e7490; --accent2:#0891b2;
+    --plan:#b45309; --planbg:#fff5e9; --planline:#f0c68a;
+    --ok:#0e9f6e; --okbg:#eaf7f0; --warn:#b45309; --bad:#db2777;
+    --rep:#7c3aed; --rl:#0891b2; --dist:#0e9f6e; --chip:#eef4f8;
+    --paper:#334155; --paperbg:#f1f5f9;
+  }
+  @media (prefers-color-scheme:dark){ :root{
+    --bg:#070b10; --card:#101821; --ink:#e7eef4; --muted:#8698a8; --faint:#5f7183;
+    --line:#1d2833; --accent:#22d3ee; --accent2:#38bdf8;
+    --plan:#fbbf24; --planbg:#1c1710; --planline:#4a3a18;
+    --ok:#34d399; --okbg:#0e1e18; --warn:#fbbf24; --bad:#f472b6;
+    --rep:#a78bfa; --rl:#38bdf8; --dist:#34d399; --chip:#0e1720;
+    --paper:#94a3b8; --paperbg:#0e1720;
+  } }
+  :root[data-theme="light"]{ --bg:#eef1f5; --card:#fff; --ink:#0f1a24; --muted:#5c6c7a; --faint:#8b9aa8; --line:#dce3ea; --accent:#0e7490; --accent2:#0891b2; --plan:#b45309; --planbg:#fff5e9; --planline:#f0c68a; --ok:#0e9f6e; --okbg:#eaf7f0; --warn:#b45309; --bad:#db2777; --rep:#7c3aed; --rl:#0891b2; --dist:#0e9f6e; --chip:#eef4f8; --paper:#334155; --paperbg:#f1f5f9;}
+  :root[data-theme="dark"]{ --bg:#070b10; --card:#101821; --ink:#e7eef4; --muted:#8698a8; --faint:#5f7183; --line:#1d2833; --accent:#22d3ee; --accent2:#38bdf8; --plan:#fbbf24; --planbg:#1c1710; --planline:#4a3a18; --ok:#34d399; --okbg:#0e1e18; --warn:#fbbf24; --bad:#f472b6; --rep:#a78bfa; --rl:#38bdf8; --dist:#34d399; --chip:#0e1720; --paper:#94a3b8; --paperbg:#0e1720;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;line-height:1.55;}
+  .wrap{max-width:1160px;margin:0 auto;padding:34px 24px 72px;}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;}
+  header{margin-bottom:26px;}
+  .eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent2);margin:0 0 8px;font-weight:600;}
+  h1{margin:0;font-size:29px;letter-spacing:-.02em;text-wrap:balance;}
+  .sub{color:var(--muted);font-size:14.5px;margin:11px 0 0;max-width:74ch;}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;}
+  .lg{font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);}
+  .lg b{color:var(--ink);}
+  .lg.built{border-color:var(--ok);color:var(--ok);}
+  .lg.plan{border-color:var(--planline);color:var(--plan);}
+
+  h2{font-size:20px;margin:40px 0 3px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px;}
+  h2 .num{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--accent2);font-weight:700;}
+  .h2sub{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:80ch;}
+
+  /* compact pipeline strip */
+  .strip-scroll{overflow-x:auto;padding-bottom:6px;}
+  .strip{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:12px;min-width:860px;}
+  .scol{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--sc,var(--line));border-radius:11px;padding:12px 13px;}
+  .scol .st{font-size:12.5px;font-weight:700;}
+  .scol .shz{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--faint);margin:1px 0 8px;}
+  .scol ul{margin:0;padding-left:15px;font-size:11.5px;color:var(--muted);}
+  .scol li{margin:3px 0;}
+  .scol li b{color:var(--ink);font-weight:600;}
+  .s1{--sc:#0891b2}.s2{--sc:#7c3aed}.s3{--sc:#0e9f6e}.s4{--sc:#db2777}
+  .ptag{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:9px;font-weight:700;color:var(--plan);background:var(--planbg);border:1px solid var(--planline);border-radius:4px;padding:0 4px;margin-left:4px;}
+
+  /* paper cards */
+  .papers{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:780px){.papers{grid-template-columns:1fr}}
+  .paper{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;position:relative;}
+  .paper .tag{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--paper);background:var(--paperbg);border-radius:5px;padding:2px 7px;display:inline-block;}
+  .paper h3{margin:9px 0 2px;font-size:16.5px;}
+  .paper .cite{font-size:11px;color:var(--faint);margin:0 0 10px;}
+  .paper p{font-size:12.8px;color:var(--muted);margin:0 0 9px;}
+  .paper p b,.paper li b{color:var(--ink);}
+  .paper .use{font-size:12px;border-top:1px dashed var(--line);padding-top:9px;margin-top:2px;}
+  .paper .use b{color:var(--accent);}
+
+  /* 8-paper lineage */
+  .lineage-scroll{overflow-x:auto;padding:4px 0 10px;margin-bottom:16px;}
+  .lineage{display:flex;align-items:stretch;min-width:960px;gap:14px;}
+  .lp{flex:1;min-width:104px;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--lpc,var(--faint));border-radius:10px;padding:9px 11px;position:relative;}
+  .lp + .lp::before{content:"→";position:absolute;left:-13px;top:50%;transform:translateY(-50%);color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:13px;}
+  .lp .yr{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--faint);letter-spacing:.02em;}
+  .lp .pnm{font-size:12.5px;font-weight:700;margin:1px 0 4px;line-height:1.15;}
+  .lp .contrib{font-size:10.5px;color:var(--muted);line-height:1.4;}
+  .lp .badge2{position:absolute;top:-8px;right:8px;font-size:8px;font-weight:700;font-family:ui-monospace,Menlo,monospace;padding:1px 5px;border-radius:4px;letter-spacing:.03em;}
+  .lp.now{--lpc:var(--rl);} .lp.now .badge2{background:var(--rl);color:#06121a;}
+  .lp.final{--lpc:var(--dist);box-shadow:0 0 0 1.5px var(--dist);} .lp.final .badge2{background:var(--dist);color:#06121a;}
+
+  /* stage rail */
+  .stages{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  @media(max-width:820px){.stages{grid-template-columns:1fr}}
+  .stage{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--sgc,var(--line));border-radius:13px;padding:16px 17px;}
+  .stage.sg-rep{--sgc:var(--rep)} .stage.sg-rl{--sgc:var(--rl)} .stage.sg-dist{--sgc:var(--dist)}
+  .stage .badge{font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:.04em;}
+  .sg-rep .badge{color:var(--rep)} .sg-rl .badge{color:var(--rl)} .sg-dist .badge{color:var(--dist)}
+  .stage h3{margin:6px 0 3px;font-size:15px;}
+  .stage .role{font-size:11px;color:var(--faint);margin-bottom:9px;}
+  .stage dl{margin:0;font-size:12px;}
+  .stage dt{color:var(--accent2);font-weight:600;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;margin-top:8px;}
+  .stage dd{margin:2px 0 0;color:var(--muted);}
+  .stage dd b{color:var(--ink);}
+  .stage .status{margin-top:11px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;display:inline-block;}
+  .stat-ok{background:var(--okbg);color:var(--ok);}
+  .stat-plan{background:var(--planbg);color:var(--plan);}
+
+  /* module table */
+  .tbl-scroll{overflow-x:auto;}
+  table{border-collapse:collapse;width:100%;min-width:760px;font-size:12.5px;}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;font-family:ui-monospace,Menlo,monospace;}
+  td b{color:var(--ink);} td{color:var(--muted);}
+  .mod{color:var(--ink);font-weight:650;font-size:13px;}
+  .mod small{display:block;color:var(--faint);font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:10px;margin-top:1px;}
+  .pill{font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap;}
+  .p-dep{background:var(--okbg);color:var(--ok);}
+  .p-train{background:var(--paperbg);color:var(--paper);}
+  .p-plan{background:var(--planbg);color:var(--plan);}
+  .p-part{background:var(--paperbg);color:var(--accent2);}
+  tr.planrow td{background:linear-gradient(90deg,var(--planbg),transparent 70%);}
+  tr.partrow td{background:linear-gradient(90deg,var(--paperbg),transparent 78%);}
+
+  /* reward story */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:14px;}
+  .panel h3{margin:0 0 3px;font-size:15px;}
+  .panel .cap{color:var(--muted);font-size:12.5px;margin:0 0 12px;}
+  .steps{display:flex;flex-direction:column;gap:10px;}
+  .step{display:grid;grid-template-columns:26px 1fr;gap:11px;align-items:start;}
+  .step .k{width:26px;height:26px;border-radius:8px;background:var(--chip);color:var(--accent);font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+  .step .body{font-size:12.8px;}
+  .step .body b{color:var(--ink);}
+  .step .prob{color:var(--bad);font-weight:600;}
+  .step .fix{color:var(--ok);font-weight:600;}
+  .step .body .mono{color:var(--accent);font-size:11.5px;}
+
+  .rewards{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px;margin-top:6px;}
+  .rw{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--card);}
+  .rw .nm{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;color:var(--ink);}
+  .rw .sc{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--accent);float:right;}
+  .rw .ds{font-size:11px;color:var(--muted);margin-top:4px;clear:both;}
+  .rw.newrw{border-color:var(--ok);}
+  .rw.newrw .nm::after{content:" ● NEW";color:var(--ok);font-size:9px;font-weight:700;}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
+  @media(max-width:780px){.grid2{grid-template-columns:1fr}}
+
+  /* results */
+  .res{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px;}
+  .metric{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 14px;}
+  .metric .v{font-size:21px;font-weight:700;letter-spacing:-.02em;}
+  .metric .v.good{color:var(--ok);} .metric .v.weak{color:var(--bad);}
+  .metric .l{font-size:11px;color:var(--muted);margin-top:2px;}
+  .metric .l .mono{color:var(--faint);font-size:10px;}
+
+  .callout{border-left:3px solid var(--warn);background:var(--planbg);border-radius:0 10px 10px 0;padding:12px 15px;margin-top:14px;font-size:12.5px;color:var(--ink);}
+
+  /* A/B path diagram */
+  .pathcard{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--pcc,var(--line));border-radius:13px;padding:15px 17px;margin-top:12px;}
+  .pathcard.pa{--pcc:var(--accent2)} .pathcard.pb{--pcc:var(--plan)}
+  .pathcard .ph{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:11px;}
+  .pathcard .ph .pk{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:var(--pcc);}
+  .pathcard .ph .pt{font-size:13.5px;font-weight:650;}
+  .pathcard .ph .pd{font-size:11.5px;color:var(--muted);}
+  .chain{display:flex;align-items:center;gap:2px;flex-wrap:wrap;font-size:11.5px;}
+  .pn{border-radius:8px;padding:6px 10px;font-weight:600;white-space:nowrap;}
+  .pn.raw{background:var(--chip);color:var(--muted);}
+  .pn.data{background:var(--paperbg);color:var(--ink);border:1px dashed var(--line);}
+  .pn.mod{background:var(--card);color:var(--ink);border:1px solid var(--pcc);}
+  .pn.z{background:var(--pcc);color:#fff;font-family:ui-monospace,Menlo,monospace;}
+  @media(prefers-color-scheme:dark){.pn.z{color:#08131a;}}
+  :root[data-theme="dark"] .pn.z{color:#08131a;}
+  :root[data-theme="light"] .pn.z{color:#fff;}
+  .arw{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:0 3px;}
+  .pathcard .note{font-size:11px;color:var(--muted);margin-top:9px;}
+  .pathcard .note b{color:var(--pcc);}
+
+  /* roadmap ladder */
+  .roadmap{margin-top:16px;display:flex;flex-direction:column;gap:0;}
+  .rung{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:start;position:relative;padding:11px 0;}
+  .rung:not(:last-child)::before{content:"";position:absolute;left:23px;top:32px;bottom:-11px;width:2px;background:var(--line);}
+  .rung .stage-dot{display:flex;align-items:center;gap:8px;}
+  .rung .dot{width:14px;height:14px;border-radius:50%;flex:none;border:2px solid var(--rc,var(--faint));background:var(--bg);}
+  .rung.now .dot{background:var(--bad);border-color:var(--bad);}
+  .rung.s1 .dot{border-color:var(--accent2);} .rung.s2 .dot{border-color:var(--plan);}
+  .rung .stg{font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;}
+  .rung.now .stg{color:var(--bad);} .rung.s1 .stg{color:var(--accent2);} .rung.s2 .stg{color:var(--plan);}
+  .rung .rbody{font-size:12.5px;}
+  .rung .rbody b{color:var(--ink);}
+  .rung .rbody .m{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--accent);}
+  .rung .gate{font-size:11px;color:var(--faint);font-style:italic;margin-top:2px;}
+  .callout b{color:var(--warn);}
+
+  ul.plain{font-size:12.8px;color:var(--muted);margin:8px 0 0;padding-left:18px;}
+  ul.plain li{margin:5px 0;}
+  ul.plain b{color:var(--ink);}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--chip);padding:1px 5px;border-radius:4px;color:var(--accent);}
+
+  .foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--faint);font-size:12px;line-height:1.7;}
+  .foot b{color:var(--muted);}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Legged RL · 모듈을 어떻게 만들고 학습하는가</p>
+    <h1>RL 정책 — 모듈 구축·학습 가이드</h1>
+    <p class="sub">확정 파이프라인(지각→SLAM→계획→제어) 위에서, <b>각 모듈을 어떤 골격으로 만들고 어떤 데이터·손실로 학습하는지</b>를 정리한다. 방법 골격은 두 참조논문(<b>DTC</b>·<b>APT-RL</b>)에서, 실증 근거는 이번 세션에 실제로 구축한 <b>biped RL 제어기</b>(<span class="mono">HindLeg-Flat-Direct-v0</span>)에서 가져왔다. <b>확정·작동</b>과 <b>예정·미검증</b>을 색으로 구분한다.</p>
+    <div class="legend">
+      <span class="lg built"><b>확정·작동</b> — 코드로 구현·검증됨</span>
+      <span class="lg plan"><b>예정</b> — Depth CNN · GRU (미구현)</span>
+      <span class="lg"><b>참조</b> DTC(2309.15462) · APT-RL(skillquad)</span>
+    </div>
+  </header>
+
+  <!-- ============ 1. 파이프라인 한눈 ============ -->
+  <h2><span class="num">01</span> 파이프라인 한눈에 — 이 문서가 다루는 범위</h2>
+  <p class="h2sub">전체 스택은 <code>pipeline_fullstack.html</code>에 있다. 여기서 확대하는 건 <b>제어층(④)의 정책 모듈</b>과 그것을 만드는 <b>학습 파이프라인</b>이다. 계획층(③)의 TerrainMap·TO는 <span style="color:var(--plan)">예정 추가(Depth CNN·GRU)</span>가 정책 내부로 흡수하려는 대상.</p>
+  <div class="strip-scroll">
+    <div class="strip">
+      <div class="scol s1"><div class="st" style="color:#0891b2">① 지각층</div><div class="shz">10 Hz – 1 kHz</div>
+        <ul><li><b>목·몸통 depth</b> · 2D/3D LiDAR</li><li><b>IMU · 관절 · 접촉</b> (proprio 원천)</li></ul></div>
+      <div class="scol s2"><div class="st" style="color:#7c3aed">② SLAM 추정</div><div class="shz">30–50 Hz</div>
+        <ul><li><b>VoxelSLAM / LIVO</b></li><li>odom→base · /map_scan</li></ul></div>
+      <div class="scol s3"><div class="st" style="color:#0e9f6e">③ 지도·계획층</div><div class="shz">10–30 Hz</div>
+        <ul><li><b>TerrainMap</b> (heightmap)<span class="ptag">→CNN 흡수</span></li><li><b>TO</b> 발판·타이밍(TOWR/TAMOLS)<span class="ptag">→정책 흡수</span></li><li><b>STGN A*</b> → cmd_vel</li></ul></div>
+      <div class="scol s4"><div class="st" style="color:#db2777">④ 제어층 ★본 문서</div><div class="shz">정책 50 Hz · PD ~1 kHz</div>
+        <ul><li><b>통합 정책 π</b> (actor)</li><li><b>Estimator</b> (v̂ · RMA)</li><li>out: τ ∈ R¹⁷ (다리16+허리1)</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============ 2. 8편 계보 ============ -->
+  <h2><span class="num">02</span> RL 골격 계보 — 8편, 최종 APT</h2>
+  <p class="h2sub">이 RL 제어기는 8편 논문을 뼈대로 쌓아 올린다 — 각 논문이 한 조각(접촉최적화·sim2real·teacher-student·지각·적응·스타일·계획추종·스킬통합)을 공급하고, <b>최종 목표는 APT(2026)</b>이다. <span style="color:var(--rl);font-weight:600">RMA</span>가 우리 현재 아키텍처, <span style="color:var(--dist);font-weight:600">APT</span>가 도착점.</p>
+  <div class="lineage-scroll">
+    <div class="lineage">
+      <div class="lp"><div class="yr">2014</div><div class="pnm">Posa</div><div class="contrib">접촉 최적화 (contact-implicit TO) · 스킬/참조 데이터의 뿌리</div></div>
+      <div class="lp"><div class="yr">2019</div><div class="pnm">Hwangbo</div><div class="contrib">sim2real 핵심 = <b>actuator net</b>(실측 액추에이터)</div></div>
+      <div class="lp"><div class="yr">2020</div><div class="pnm">Lee</div><div class="contrib">teacher-student (특권 교사 → proprio 학생)</div></div>
+      <div class="lp"><div class="yr">2022</div><div class="pnm">Miki</div><div class="contrib">perceptive + belief encoder (지형맵 오류에 강건)</div></div>
+      <div class="lp now"><span class="badge2">현재 arch</span><div class="yr">2021</div><div class="pnm">RMA</div><div class="contrib">history→latent 적응. <b>우리 ActorCriticRMA</b></div></div>
+      <div class="lp"><div class="yr">2021</div><div class="pnm">AMP</div><div class="contrib">adversarial motion prior (자연스러운 스타일)</div></div>
+      <div class="lp"><div class="yr">2024</div><div class="pnm">DTC</div><div class="contrib">모델기반 플래너(TO) + RL 추종 하이브리드</div></div>
+      <div class="lp final"><span class="badge2">★최종</span><div class="yr">2026</div><div class="pnm">APT</div><div class="contrib">스킬 TVAE → RL 재사용 → Depth CNN+GRU 지각증류</div></div>
+    </div>
+  </div>
+  <p class="h2sub" style="margin-top:-6px">아래 두 편(<b>DTC</b>·<b>APT</b>)이 지금 파이프라인 골격을 직접 규정한다 — DTC=계획↔제어 연결, APT=다단계 학습 + 예정 Depth CNN·GRU의 원형. 나머지 6편은 조각(§04 모듈·§09 보강에 반영).</p>
+  <div class="papers">
+    <div class="paper">
+      <span class="tag">DTC · 계획↔제어</span>
+      <h3>Deep Tracking Control</h3>
+      <p class="cite">Jenelten, He, Farshidian, Hutter — ETH Zürich, Science Robotics 9(86) 2024 · arXiv:2309.15462</p>
+      <p><b>핵심</b> — TO 플래너(TAMOLS)가 학습 중 <b>발판 참조(footholds)를 롤아웃</b>하고, NN 정책이 그 발판을 <b>추종</b>하도록 시뮬레이션에서 학습. 보상은 임의 시점의 base 자세가 아니라 <b>touchdown 시점의 목표 발판 위치</b>(위치 기반 추종).</p>
+      <p><b>비대칭 actor-critic</b> — critic엔 특권 참값(GT), 정책엔 노이즈 관측만. 정책은 계획 해의 <b>일부</b>(발판·목표관절·접촉스케줄)만 관측 → 모델 오차에 강인. 배포 시 다른 TO·다른 주기로도 zero-shot 추종.</p>
+      <div class="use"><b>우리에 적용</b> — 계획층 TO의 <span class="mono">p_tgt·cs</span>(발판·접촉타이밍)를 정책 입력 채널로. 비대칭 A-C = 우리 <b>critic 특권입력</b> 구조와 동일 원리.</div>
+    </div>
+    <div class="paper">
+      <span class="tag">APT-RL · 다단계 학습</span>
+      <h3>Agile Perceptive Multi-skill Locomotion</h3>
+      <p class="cite">Kang, Park, Song, Kim, Hong, Park — KAIST/ADD, Science Robotics 11(116) 2026 · "APT-RL"(skillquad)</p>
+      <p><b>3단계</b> — (i) <b>표현학습</b>: 2D TO 모션 데이터로 <b>TVAE</b> 학습 → 공유 잠재 + 게이트별 토크 디코더(trot/bound). (ii) <b>RL</b>: 얼린 디코더를 <b>잠재 액션</b>으로 재사용 + 보조 액션, 게이트 선택 로짓, MLP actor + Estimator + Elevation Encoder. (iii) <b>지각 증류</b>.</p>
+      <p><b>지각 증류(stage iii)</b> — 특권 elevation map을 쓰는 교사를, <b>Depth CNN + GRU encoder</b> 학생이 <b>raw depth + 2D LiDAR</b>에서 재현하도록 지도학습. ← <b>우리 예정 추가의 원형</b>. 실기 4.25 m/s, 낙하 6 m/s.</p>
+      <div class="use"><b>우리에 적용</b> — §03 학습 3단계의 골격. §05 예정 <b>Depth CNN·GRU</b>가 정확히 stage iii 구조.</div>
+    </div>
+  </div>
+
+  <!-- ============ 3. 학습 3단계 ============ -->
+  <h2><span class="num">03</span> 학습 3단계 — 무엇을 얼리고, 무엇을 무엇으로 학습하나</h2>
+  <p class="h2sub">APT-RL 골격에 맞춰 3단계로 나눈다. 각 단계의 <b>데이터·손실·동결(freeze)·배포여부</b>가 다르다. 이번 세션에 실제로 돌린 건 <b>Stage B(RL+RMA)</b>이며 — point-foot·flat-foot 정책이 여기서 나왔다. Stage A/C는 골격 정의 및 다음 단계.</p>
+  <div class="stages">
+    <div class="stage sg-rep">
+      <div class="badge">STAGE A · 표현/사전학습</div>
+      <h3>스킬 사전학습 (선택)</h3>
+      <div class="role">TO 모션 → 잠재·디코더</div>
+      <dl>
+        <dt>데이터</dt><dd>단순화 동역학 <b>TO 궤적</b>(2D SRBD). 애니멀데이터·토크 불요.</dd>
+        <dt>손실</dt><dd>재구성(TVAE) + 잠재→토크 디코더 지도학습.</dd>
+        <dt>동결</dt><dd>이후 단계에서 <b>디코더 freeze & reuse</b>.</dd>
+      </dl>
+      <div class="status stat-plan">골격 정의 · 우리 현행은 스킵</div>
+    </div>
+    <div class="stage sg-rl">
+      <div class="badge">STAGE B · 강화학습 + RMA</div>
+      <h3>PPO + 교사-학생 (★이번 세션)</h3>
+      <div class="role">보상으로 정책·추정기 학습</div>
+      <dl>
+        <dt>데이터</dt><dd>IsaacLab <b>4096 병렬 env</b>, 도메인 랜덤화 + 게이트 위상시계.</dd>
+        <dt>손실</dt><dd><b>PPO</b>(clip 0.2, KL 0.01) + <b>Estimator</b> 회귀 + <b>history→priv 잠재</b> 재현(RMA).</dd>
+        <dt>비대칭</dt><dd>critic엔 특권 참값(DTC식), actor엔 관측만.</dd>
+      </dl>
+      <div class="status stat-ok">구현·검증 — flat-foot 2점보행 산출</div>
+    </div>
+    <div class="stage sg-dist">
+      <div class="badge">STAGE C · 지각 증류</div>
+      <h3>Depth CNN + GRU 학생</h3>
+      <div class="role">특권 지형 → raw 지각</div>
+      <dl>
+        <dt>데이터</dt><dd>교사 <b>Elevation Encoder</b>(특권 heightmap→z) rollout → 학생이 <b>raw depth + LiDAR</b> 입력.</dd>
+        <dt>손실</dt><dd>학생 z → 교사 z <b>지도학습</b>(정책·교사 freeze).</dd>
+        <dt>산출</dt><dd>매핑 지연 없는 <b>end-to-end 지각</b> 배포.</dd>
+      </dl>
+      <div class="status stat-plan">예정 — APT-RL stage iii 이식</div>
+    </div>
+  </div>
+
+  <!-- ============ 4. 모듈 카탈로그 ============ -->
+  <h2><span class="num">04</span> 모듈 카탈로그 — 실제 구축된 정책 내부 (ActorCriticRMA)</h2>
+  <p class="h2sub">이번 세션의 정책은 rsl_rl 포크 <code>ActorCriticRMA</code>다. 아래는 각 모듈이 <b>무엇을·어떤 신경망으로·무엇으로 학습·배포되는지</b>. 핵심은 <b>배포 모듈</b>(actor·history_encoder·estimator)과 <b>학습전용 모듈</b>(critic·priv_encoder·참 특권정보)의 분리 — RMA 교사-학생의 뼈대다.</p>
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>모듈</th><th>신경망 / 구축</th><th>입력 → 출력</th><th>학습 방법</th><th>배포</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mod">Actor<small>정책 π</small></td>
+        <td><b>MLP</b> 128·128·128 (elu)</td>
+        <td>proprio + priv_explicit + <b>priv 잠재</b> → 관절 목표(→PD)</td>
+        <td><b>PPO</b> 정책 손실(clip)</td>
+        <td><span class="pill p-dep">배포</span></td>
+      </tr>
+      <tr>
+        <td class="mod">Estimator<small>concurrent SE</small></td>
+        <td>MLP hidden [128, 64]</td>
+        <td>proprio 이력 → <b>v̂</b> (base 속도)·상태</td>
+        <td>참 상태 대비 <b>회귀</b>; <code>train_with_estimated_states</code></td>
+        <td><span class="pill p-dep">배포</span></td>
+      </tr>
+      <tr>
+        <td class="mod">history_encoder<small>학생(RMA)</small></td>
+        <td><b>StateHistoryEncoder</b><br>Linear + Conv1d×3 + Flatten<br>(10 프레임 위 1D-conv)</td>
+        <td>관측 이력(10) → <b>priv 잠재 추정</b></td>
+        <td>교사 잠재 재현 <b>지도학습</b>(MSE)</td>
+        <td><span class="pill p-dep">배포</span></td>
+      </tr>
+      <tr>
+        <td class="mod">priv_encoder<small>교사</small></td>
+        <td>MLP (특권 latent 위)</td>
+        <td><b>참 특권정보</b>(마찰·질량·외력…) → 잠재</td>
+        <td>PPO와 함께(교사 잠재 생성)</td>
+        <td><span class="pill p-train">학습전용</span></td>
+      </tr>
+      <tr>
+        <td class="mod">critic<small>가치함수</small></td>
+        <td>MLP → 1 (value)</td>
+        <td>정책관측 + priv_explicit + <b>참 특권 latent</b> → V</td>
+        <td>PPO 가치 손실 · <b>비대칭</b>(DTC식)</td>
+        <td><span class="pill p-train">학습전용</span></td>
+      </tr>
+      <tr class="partrow">
+        <td class="mod">Elevation Encoder<small>scandot_encoder</small></td>
+        <td>MLP [128, 64, 32] → <b>z∈R³²</b><br>(voxel/LiDAR <b>2D-CNN 변형</b>도 포크에 스캐폴드)</td>
+        <td>특권 heightmap(scandots) → <b>지형 잠재 z</b> → actor</td>
+        <td>PPO와 함께(교사 <b>지형 채널</b>)</td>
+        <td><span class="pill p-part">아키텍처有·비활성</span></td>
+      </tr>
+      <tr class="planrow">
+        <td class="mod">Depth CNN<small>🔜 stage C</small></td>
+        <td>CNN (raw depth 위)</td>
+        <td>목·몸통 <b>raw depth</b> → 지형 잠재</td>
+        <td><b>Elevation Encoder의 z를 재현</b>(지도학습)</td>
+        <td><span class="pill p-plan">예정</span></td>
+      </tr>
+      <tr class="planrow">
+        <td class="mod">GRU encoder<small>🔜 stage C</small></td>
+        <td>GRU (순환)</td>
+        <td>관측 <b>이력</b> → 순환 잠재 메모리</td>
+        <td>history_encoder 대체/보강(지도학습)</td>
+        <td><span class="pill p-plan">예정</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout"><b>왜 분리하나</b> — 실기엔 마찰·질량·외력 같은 <b>특권정보가 없다</b>. 그래서 학습 땐 교사(priv_encoder)가 참값으로 잠재를 만들고, 학생(history_encoder)이 <b>관측 이력만으로 그 잠재를 재현</b>하도록 지도학습한다(RMA). 배포는 학생만. critic의 특권입력(비대칭 A-C)은 <b>학습 신호를 정확</b>하게 하되 배포엔 안 나간다 — DTC와 같은 논리.</div>
+  <div class="callout" style="border-color:var(--accent2);background:var(--paperbg)"><b style="color:var(--accent2)">지형 채널 2겹</b> — <b>Elevation Encoder</b>(scandot_encoder, 특권 heightmap → z∈R³²)가 <b>교사 지형 채널</b>이고, 예정 <b>Depth CNN+GRU</b>가 raw depth에서 그 <b>z를 증류</b>하는 학생이다(APT-RL stage iii와 동형). 단 <b>현재 우리 biped flat-foot는 blind</b>(<code>num_scan_obs=0</code> → <code>scan_latent=0</code>)로 이 채널이 <b>비활성</b> — 위 2점 보행은 순수 자기수용(proprio) 결과다. 지형 지각을 켜는 시점에 Elevation Encoder(교사)를 활성화하고 Depth CNN+GRU(학생)를 증류한다.</div>
+
+  <!-- ============ 5. 예정 추가 ============ -->
+  <h2><span class="num">05</span> 예정 추가 — 정책이 명시 모듈을 흡수 (APT-RL stage iii)</h2>
+  <p class="h2sub">현재는 모듈형(명시 TerrainMap·history 1D-CNN·TO). 방향은 <b>raw 신호를 정책 내부로 흡수</b>해 더 end-to-end로. 두 추가 모두 APT-RL의 지각 증류 구조 그대로다.</p>
+  <div class="grid2">
+    <div class="panel" style="border-color:var(--planline)">
+      <h3 style="color:var(--plan)">🔜 Depth CNN</h3>
+      <p class="cap">명시 heightmap 파이프라인 흡수</p>
+      <ul class="plain">
+        <li>목·몸통 <b>raw depth</b>를 정책 내부 CNN이 직접 인코딩 → 명시 <b>TerrainMap(heightmap)</b> 대체.</li>
+        <li>매핑 지연 없이 지형 인지가 <b>end-to-end</b>로. 목 depth의 사각 봉합도 직접 반영.</li>
+        <li>학습 = 교사 <b>Elevation Encoder의 지형 잠재 z</b>를 <b>지도학습으로 증류</b>(정책·교사 freeze).</li>
+      </ul>
+      <div class="callout" style="margin-top:12px"><span class="mono">raw depth → CNN → 정책</span> &nbsp;(≈ TerrainMap 대체)</div>
+    </div>
+    <div class="panel" style="border-color:var(--planline)">
+      <h3 style="color:var(--plan)">🔜 GRU encoder</h3>
+      <p class="cap">고정창 1D-CNN → 순환 메모리</p>
+      <ul class="plain">
+        <li>현 history_encoder(1D-conv, 10프레임 <b>고정창</b>) 대신 <b>가변 시계열 메모리</b>.</li>
+        <li>접촉/외란 적응·상태추정을 순환 상태로 강화 → RMA 잠재 추정을 GRU로.</li>
+        <li>APT-RL에서 Depth CNN과 <b>한 인코더(CNN-GRU)</b>로 묶여 지각 증류에 동시 학습.</li>
+      </ul>
+      <div class="callout" style="margin-top:12px"><span class="mono">history → GRU → 잠재</span> &nbsp;(≈ history-CNN 대체)</div>
+    </div>
+  </div>
+
+  <!-- ============ 6. 지형 경로 A vs B ============ -->
+  <h2><span class="num">06</span> 지형 경로 A vs B — 무엇을 만들고 무엇을 배포하나</h2>
+  <p class="h2sub">지형 잠재 z를 정책에 넣는 경로가 둘이다. <b>대등한 선택지가 아니라 "교사 → 학생" 의존 관계</b> — B는 A의 z를 증류해서 배우므로 A 없이는 못 만든다. 둘의 시작점(raw depth)은 같지만 출력·소비자가 다르다.</p>
+
+  <div class="pathcard pa">
+    <div class="ph"><span class="pk">경로 A</span><span class="pt">모듈형 (교사이자 최소 배포)</span><span class="pd">— 명시 높이맵 경유</span></div>
+    <div class="chain">
+      <span class="pn raw">raw depth</span><span class="arw">──▶</span>
+      <span class="pn mod">TerrainMap</span><span class="arw">──▶</span>
+      <span class="pn data">높이맵</span><span class="arw">──▶</span>
+      <span class="pn mod">Elevation Encoder</span><span class="arw">──▶</span>
+      <span class="pn z">z∈R³²</span><span class="arw">──▶</span>
+      <span class="pn raw">actor</span>
+    </div>
+    <div class="note"><b>학습 vs 배포</b> — 학습(교사) 땐 앞단 <span class="mono">raw depth→높이맵</span>이 <b>특권 직접조회(mj_ray)</b>로 대체된다. 즉 sim의 scandots = 특권 높이. 배포 A는 앞단에 <b>실제 TerrainMap 매핑</b>이 붙어야 성립. 뒷단 <b>Elevation Encoder = 우리 코드 <span class="mono">scandot_encoder</span></b>(MLP [128,64,32]→z).</div>
+    <div class="note" style="color:var(--bad)">현재 우리 biped는 <b>이 경로 비활성</b> — <span class="mono">num_scan_obs=0 → scan_latent=0</span>. 지금 2점 보행은 z 없이 순수 proprio. <b>1단계 = 이 A를 켜는 것</b>(scandots obs 추가).</div>
+  </div>
+
+  <div class="pathcard pb">
+    <div class="ph"><span class="pk">경로 B</span><span class="pt">end-to-end (선택적 상위단계)</span><span class="pd">— raw depth 직행</span></div>
+    <div class="chain">
+      <span class="pn raw">raw depth</span><span class="arw">─────▶</span>
+      <span class="pn mod">Depth CNN + GRU</span><span class="arw">─────▶</span>
+      <span class="pn z">z∈R³²</span><span class="arw">──▶</span>
+      <span class="pn raw">actor</span>
+    </div>
+    <div class="note"><b>A를 흡수</b> — 명시 높이맵 단계를 생략하고 raw depth에서 z로 직행. 입력측은 TerrainMap과, 출력측은 Elevation Encoder와 닮음. 학습 = <b>A(교사)의 z를 지도학습으로 증류</b>(정책·교사 freeze) → <b>A 없이는 못 만듦</b>.</div>
+    <div class="note"><b>왜 얹나</b> — 매핑 지연·드리프트 제거, 매핑 실패(얇은 장애물·반사면) 대응. 단 출력이 잠재라 <b>계획층(TO·STGN)은 못 씀</b> → 배포 후에도 명시 TerrainMap은 <b>항법용으로 별도 유지</b>(역할분담).</div>
+  </div>
+
+  <h3 style="font-size:14.5px;margin:24px 0 2px">단계별 로드맵 — A부터, B는 필요 시</h3>
+  <p class="h2sub" style="margin-bottom:2px">A는 어느 경로든 필수(교사로도 최소 배포로도). B만 단독은 불가.</p>
+  <div class="roadmap">
+    <div class="rung now">
+      <div class="stage-dot"><span class="dot"></span><span class="stg">현재 · blind</span></div>
+      <div class="rbody"><b>A·B 둘 다 없음, proprio만.</b> 2점 평발 보행이 여기 — 지형 채널 <span class="m">scan_latent=0</span>.</div>
+    </div>
+    <div class="rung s1">
+      <div class="stage-dot"><span class="dot"></span><span class="stg">1단계 · A</span></div>
+      <div class="rbody"><b>A 구축·배포 → 지형지각 확보.</b> Elevation Encoder 켜기(<span class="m">num_scan_obs&gt;0</span>). <b>여기까지면 지형 보행 됨.</b><div class="gate">↓ 실기서 매핑 지연/드리프트가 문제되면</div></div>
+    </div>
+    <div class="rung s2">
+      <div class="stage-dot"><span class="dot"></span><span class="stg">2단계 · B</span></div>
+      <div class="rbody"><b>B 증류 추가 → 배포는 B로 교체.</b> A(교사)→Depth CNN+GRU(학생). <span style="color:var(--plan)">선택적 상위단계.</span></div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:16px"><b>한 줄</b> — <b>A는 필수</b>(교사이자 최소 배포), <b>B는 A 위에 얹는 선택</b>(교사 A 없인 못 만듦). "둘 중 하나"라면 답은 언제나 <b>A부터</b>. 우리는 아직 0단계(blind)라, 지형지각을 켠다면 첫 목표는 <b>A 활성화</b>.</div>
+
+  <!-- ============ 7. 보상 설계 실증 ============ -->
+  <h2><span class="num">07</span> 보상 설계 — 이번 세션 실증 (2점 평발 보행)</h2>
+  <p class="h2sub">모듈 골격만으론 안 걷는다. <b>보상 설계</b>가 실제 게이트를 만든다. 아래는 <code>HindLegFlatFootEnvCfg</code>에서 <b>실제로 겪은 문제 → 진단 → 수정</b> 3단계다. 값은 코드 확정치. <span style="color:var(--bad)">빨강=문제</span>, <span style="color:var(--ok)">초록=수정</span>.</p>
+
+  <div class="panel">
+    <h3>왜 안 걷다가 걷게 됐나 — 3번의 재균형</h3>
+    <p class="cap">2점(평발) 접촉은 point-foot보다 자세여유가 좁아, 보상이 "서 있기"로 새기 쉽다.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="k">1</div>
+        <div class="body"><b>Plateau(정체) 진단</b> — 보상이 33에서 멈추고 로봇이 <span class="prob">2발로 서기만</span> 함. 원인 = <span class="mono">gait_stance</span>(~1.02)가 리턴을 지배 → 서 있으면 보너스. <span class="fix">수정: <span class="mono">lin_vel×3</span>·σ 0.1→0.25·standing env 0.1→0.05</span> → 걷기가 서기보다 이득.</div>
+      </div>
+      <div class="step">
+        <div class="k">2</div>
+        <div class="body"><b>Shuffle(끌기) 진단</b> — 걷긴 하나 <span class="prob">발을 끌고 불규칙</span>. 원인 = swing clearance/air-time 항이 약함. <span class="fix">수정: <span class="mono">gait_swing 1.0→1.5</span>·<span class="mono">feet_air_time 0.5→1.0</span>·action_rate −0.005</span> → 리듬 있는 교대 스윙.</div>
+      </div>
+      <div class="step">
+        <div class="k">3</div>
+        <div class="body"><b>Limp(절뚝) 진단</b> — 한 발(HR)은 <span class="prob">평발로 stance 독식(~79%)</span>, 다른 발(HL)은 <span class="prob">뒤꿈치 든 발끝걸음</span>(heel 0.10–0.15 m, stance ~52%). 원인 = 자기 swing 중 접촉을 벌하는 항·발 pitch 구속이 <b>없음</b>. <span class="fix">수정: 새 보상 2개 추가</span>.</div>
+      </div>
+    </div>
+    <div class="rewards" style="margin-top:16px">
+      <div class="rw"><span class="sc">3.0</span><div class="nm">track_lin_vel_xy</div><div class="ds">exp 커널 σ=0.25 · 전진속도 추종(지배항)</div></div>
+      <div class="rw"><span class="sc">0.8</span><div class="nm">gait_stance</div><div class="ds">스케줄된 stance 발 접지 앵커</div></div>
+      <div class="rw"><span class="sc">1.5</span><div class="nm">gait_swing</div><div class="ds">swing 발 clearance(끌기 제거)</div></div>
+      <div class="rw"><span class="sc">1.0</span><div class="nm">feet_air_time</div><div class="ds">공중시간&gt;0.2s(명령 게이트)</div></div>
+      <div class="rw newrw"><span class="sc">−1.0</span><div class="nm">gait_swing_contact</div><div class="ds">자기 swing 중 접촉 벌 → <b>양발 50/50 교대 강제</b></div></div>
+      <div class="rw newrw"><span class="sc">−6</span><div class="nm">flat_foot</div><div class="ds">heel−toe 간격 벌 → 평발. <b>−15→−6 완화</b>(주저앉기 압력↓)</div></div>
+    </div>
+    <p class="cap" style="margin-top:12px;font-size:11.5px">위 두 신규 항은 순간값(리셋버퍼 없음)이고 <code>getattr</code> cfg 게이트 뒤에 있어 point-foot task(<code>HindLegHistoryEnvCfg</code>)엔 무영향 — env.py 수정 없이 하위클래스 오버라이드만.</p>
+
+    <div class="step" style="margin-top:16px">
+      <div class="k" style="background:var(--okbg);color:var(--ok)">4</div>
+      <div class="body"><b>Posture(자세) 진단 — 재균형#4 (2026-07-28)</b> — 대칭 평발본이 <span class="prob">base를 ~4cm 웅크리고(0.42→0.38) 기울어짐(tilt 14°)</span>. 사용자 통찰: <span class="prob">웅크리면 스윙 여유가 없어 다리를 못 들어 shuffle</span>. 원인 = <span class="mono">flat_foot(−15)</span>가 주저앉는 게 이득인데 <span class="mono">flat_orientation</span> OFF·<span class="mono">base_height</span> 약함. <span class="fix">수정: flat_orientation <span class="mono">0→−3</span>·base_height <span class="mono">−10→−25</span>·flat_foot <span class="mono">−15→−6</span>·swing_height <span class="mono">0.07→0.11</span>·gait_swing <span class="mono">1.5→2.0</span></span> → 수평·높은 자세 + 다리 들기.</div>
+    </div>
+    <div class="res" style="margin-top:14px">
+      <div class="metric"><div class="v good">0.38→0.42</div><div class="l">서기 base_h <b>웅크림 해소</b> <span class="mono">(측정)</span></div></div>
+      <div class="metric"><div class="v good">14°→~5°</div><div class="l">tilt <b>수평 잡힘</b> <span class="mono">(서기·보행 공통)</span></div></div>
+      <div class="metric"><div class="v good">swing 0.03→1.66</div><div class="l">다리 들기 <b>대폭 개선</b>(shuffle 해소)</div></div>
+      <div class="metric"><div class="v good">falls 0</div><div class="l">iter 12000 수렴 · vx 0.25 추종</div></div>
+    </div>
+    <p class="cap" style="margin-top:10px;font-size:11.5px">학습 iter 12103서 <code>std≥0</code> PPO 수치 크래시 있었으나 <b>model_12000는 크래시 전 정상 저장</b>(reward는 iter 4000에 이미 평탄화, 12000=성숙). 장기 재학습 시 log_std 클램프 안전장치 권장.</p>
+  </div>
+
+  <!-- results -->
+  <h2 style="font-size:16px;margin-top:26px"><span class="num" style="font-size:11px">결과</span> 실측 — 정직하게</h2>
+  <div class="res">
+    <div class="metric"><div class="v good">reward 70</div><div class="l">정체 33에서 상승 <span class="mono">track_lin_vel 2.86</span></div></div>
+    <div class="metric"><div class="v good">97–98%</div><div class="l">전진 속도 추종 <span class="mono">vx 0.5→0.48 · 1.0→0.98(헤드리스)</span></div></div>
+    <div class="metric"><div class="v good">falls 0</div><div class="l">2점 평발 <b>전진 보행 달성</b> — 모델기반이 못한 것</div></div>
+    <div class="metric"><div class="v good">heel 0.10→0.04</div><div class="l">발끝걸음 해소 <span class="mono">duty 79/52 → 45/48 대칭</span></div></div>
+    <div class="metric"><div class="v weak">측방 19%</div><div class="l">lateral 추종 약함(point/flat-foot yaw 약점)</div></div>
+    <div class="metric"><div class="v weak">제자리선회 4%</div><div class="l">in-place turn 거의 안 됨</div></div>
+  </div>
+  <div class="callout"><b>한계(숨기지 않음)</b> — ① <s>웅크림 ~4cm</s> → <b>재균형#4로 해소</b>(0.42·tilt 5°, 위 참조). ② 측방·제자리선회는 여전히 약함 — 전진 보행 전용(point/flat-foot yaw 약점). ③ vx 0.5/1.0 추종치는 넓은 명령범위 학습본 기준이고, 대칭·재균형#4본은 <code>[0.1, 0.3]</code> 저속 범위. 배포는 <b>전진 2점 보행 실증</b>까지가 검증됨.</div>
+
+  <!-- ============ 7. 액추에이터 정합 ============ -->
+  <h2><span class="num">08</span> 액추에이터 정합 — PACE (배포 직전 sim2real)</h2>
+  <p class="h2sub">정책이 sim에서 잘 걸어도, 실모터의 <b>반사관성·마찰·지연</b>이 안 맞으면 실기서 무너진다. PACE(ETH RSL)로 실측 데이터에서 액추에이터 파라미터를 <b>식별(system-ID)</b>해 sim 모터모델을 실기에 맞춘다.</p>
+  <div class="grid2">
+    <div class="panel">
+      <h3>무엇을 식별하나</h3>
+      <ul class="plain">
+        <li><b>PaceDCMotor</b> = DCMotor + encoder_bias + DelayBuffer.</li>
+        <li><b>CMA-ES</b>로 관절당 4N+1개 식별: armature(반사관성)·점성/쿨롱 마찰·엔코더 바이어스 + 지연.</li>
+        <li>입력 = <code>chirp_data.pt</code>(가진 실측). 우리 #1 sim2real 갭(로터관성·기어마찰·감쇠) 정조준.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>검증 현황</h3>
+      <div class="res" style="margin-top:0">
+        <div class="metric"><div class="v good">±2.1%</div><div class="l">armature sim2sim 복원 오차</div></div>
+        <div class="metric"><div class="v good">+6.5%</div><div class="l">지연 주입분 복원</div></div>
+      </div>
+      <div class="callout" style="margin-top:12px"><b>미검증</b> — sim2sim 파이프라인만 통과. <b>실물 데이터</b>(chirp 가진)로의 식별은 하드웨어 확보 시. 그전까진 armature 기본ON 등 물리적 수단만 사용(비물리 상태절단 금지).</div>
+    </div>
+  </div>
+
+  <!-- ============ 9. 보강 로드맵 ============ -->
+  <h2><span class="num">09</span> 보강 로드맵 — Hwangbo 2019 대조서 도출</h2>
+  <p class="h2sub">계보의 <b>Hwangbo 2019</b>와 대조하면 <b>정책 아키텍처는 이미 넘어섰고</b>(RMA·estimator·GPU 4096) 진짜 구조적 갭은 <b>①actuator net 한 곳</b>. 나머지 ②–⑤는 <b>조건부 후보</b>(지금 필수 아님) — 정직하게 "새 제안 vs 기존 계획", "언제 값어치"를 구분한다.</p>
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th>#</th><th>보강</th><th>기존 계획?</th><th>언제 값어치 / 근거 논문</th><th>우선순위</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mod" style="color:var(--bad)">①</td>
+        <td><b>actuator net / 실측 액추에이터 ID</b><small>reality gap의 지배 요인</small></td>
+        <td><b>기존 계획</b> (우리 #1 갭)</td>
+        <td>배포 전 <b>필수</b>. 02_Leg 실측(chirp) 필요. 깨끗한 감속기=PACE 파라메트릭 충분 / backlash·지연 크면 <b>actuator net</b>. <b>Hwangbo 2019</b></td>
+        <td><span class="pill p-dep">필수·대기</span></td>
+      </tr>
+      <tr>
+        <td class="mod">②</td>
+        <td><b>낙상복구 RL 스킬</b><small>동적 self-righting</small></td>
+        <td>새 제안 (현 복구=모델기반)</td>
+        <td><b>조건부</b> — 워커가 자주 넘어질 때만. <b>Hwangbo 2019 · Miki 2022</b></td>
+        <td><span class="pill p-plan">선택</span></td>
+      </tr>
+      <tr>
+        <td class="mod">③</td>
+        <td><b>효율 보상 + 곧은무릎 자세</b><small>토크/전력 최소화</small></td>
+        <td>자세=<b>진행중(재균형#4)</b> · 효율=새 제안</td>
+        <td>자세는 지금. 효율 보상항은 <b>조건부</b>(배터리/발열시). <b>Hwangbo 2019</b>(곧은무릎=효율↑, RL만 활용가능)</td>
+        <td><span class="pill p-part">일부 진행중</span></td>
+      </tr>
+      <tr>
+        <td class="mod">④</td>
+        <td><b>온보드 추론 예산</b><small>ActorCriticRMA가 무거움</small></td>
+        <td>기존 계획 (배포 체크리스트)</td>
+        <td><b>배포 루틴</b> — 그때 검증. Hwangbo=25μs/추론 강조</td>
+        <td><span class="pill p-plan">배포시</span></td>
+      </tr>
+      <tr class="partrow">
+        <td class="mod">⑤</td>
+        <td><b>RMA 복잡도 정당화 → 지각 켜기</b><small>blind엔 과설계</small></td>
+        <td>기존 계획 (경로 A/B)</td>
+        <td>관찰(행동 아님). 해법=Elevation Encoder/Depth CNN 켜기 = §06 로드맵. <b>Lee 2020 · Miki 2022 · APT 2026</b></td>
+        <td><span class="pill p-part">계획됨</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout"><b>정직 요약</b> — 당장 로드맵에 새로 넣을 <b>필수 항목은 없다</b>. ①(actuator 실측)은 이미 #1 갭이고 하드웨어 대기, ⑤(지각 켜기)는 이미 §06 계획. <b>②·③효율은 순수 신규 후보</b>로, 그 문제(잦은 낙상 / 배터리·발열)가 실제 나타나면 그때 얹는다. 지금 순서 = <b>재균형#4 자세개선(③자세) → 액추에이터 실측(①) → 지각(⑤)</b>, 최종 = APT.</div>
+
+  <div class="foot">
+    <b>요약</b> — 이 RL 제어기는 <b>8편 계보</b>(Posa14·Hwangbo19·Lee20/Miki22·RMA21·AMP21·DTC24·APT26)를 뼈대로 쌓으며 <b>최종은 APT</b>. 현재 = <b>RMA</b> 아키텍처(ActorCriticRMA)로 <b>2점 평발 전진보행</b> 실증(보상 3-재균형; 자세개선 재균형#4 학습중). Stage A(TVAE)·Stage C(Depth CNN+GRU 지각증류)는 다음 단계. 구조적 갭은 <b>actuator net(Hwangbo19)</b> 한 곳, ②–⑤는 조건부 보강.<br>
+    <b>참조 8편</b> — Posa 2014(contact-implicit TO) · Hwangbo 2019(ANYmal, actuator net, Sci.Robotics) · Lee 2020(teacher-student) · Miki 2022(perceptive) · RMA 2021(Kumar) · AMP 2021(Peng) · DTC 2024(Jenelten, arXiv:2309.15462) · APT 2026(Kang, skillquad). 코드: <code>HindLeg-Flat-Direct-v0</code>, rsl_rl <code>ActorCriticRMA</code> · 전체 스택: <code>pipeline_fullstack.html</code>.
+  </div>
+</div>

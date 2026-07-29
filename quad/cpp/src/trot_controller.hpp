@@ -399,10 +399,12 @@ struct TrotCtrl {
         for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
       else for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
       double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):0.1):10.0;   // ★RSL: λ 정규화 약화(base task가 수평 GRF 자유생성)
-      if(getenv("TAM_DBG")){ static long _dc=0; if(_dc++%25==0)
-        std::fprintf(stderr,"[dbg] t=%.2f tt=%.2f zref=%.3f z=%.3f stance=%d c=%d%d%d%d footz=%.2f/%.2f/%.2f/%.2f\n",
-          t,tam_t,q.com_ref[2],d->subtree_com[2],(int)st.size(),cc[0],cc[1],cc[2],cc[3],
-          q.foot_point(0)[2],q.foot_point(1)[2],q.foot_point(2)[2],q.foot_point(3)[2]); }
+      if(getenv("TAM_DBG")){ static long _dc=0; if(_dc++%25==0){
+        double* qc2=&d->qpos[3]; double yaw_a=std::atan2(2*(qc2[0]*qc2[3]+qc2[1]*qc2[2]),1-2*(qc2[2]*qc2[2]+qc2[3]*qc2[3]))*180/M_PI;
+        std::fprintf(stderr,"[dbg] t=%.2f tt=%.2f z=%.3f stance=%d c=%d%d%d%d footz=%.2f/%.2f/%.2f/%.2f yawR=%.1f yaw=%.1f comy=%.3f\n",
+          t,tam_t,d->subtree_com[2],(int)st.size(),cc[0],cc[1],cc[2],cc[3],
+          q.foot_point(0)[2],q.foot_point(1)[2],q.foot_point(2)[2],q.foot_point(3)[2],
+          x_ref[2]*180/M_PI,yaw_a,d->subtree_com[1]); } }
       if(!q.wbic_track(st,swing,lam_use,wl)) q.wbic_stance();
       armed=false; return;
     }

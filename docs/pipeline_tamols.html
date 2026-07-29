@@ -1,0 +1,133 @@
+<meta charset="UTF-8">
+<title>02_Leg TAMOLS 파이프라인 — 계획·추종·협조·한계</title>
+<style>
+  :root{ --ink:#1B2431; --muted:#5A6577; --hair:#E2E6EC; --paper:#fff; --acc:#E8551E; --acc-soft:#FDEAE0;
+         --t:#0E7C86; --t-soft:#E0F1F2; --a:#1E7B4D; --b:#2563C9;
+         --ok:#1E7B4D; --no:#C23B3B; --wa:#B8860B; --soft:#F7F8FA; }
+  body{font-family:'Pretendard','Noto Sans KR','Noto Sans CJK KR',system-ui,sans-serif;color:var(--ink);
+       background:#E9EBEF;line-height:1.5;}
+  .page{max-width:270mm;margin:16px auto;background:var(--paper);padding:13mm 15mm;box-shadow:0 1px 6px rgba(0,0,0,.08);}
+  .mono{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',ui-monospace,monospace;font-size:.85em;}
+  h1{font-size:19pt;font-weight:800;letter-spacing:-.01em;margin-bottom:2mm;}
+  .sub{color:var(--muted);font-size:9.5pt;margin-bottom:1mm;}
+  .oneliner{background:var(--t-soft);border-left:3px solid var(--t);padding:2.5mm 3.5mm;border-radius:1.4mm;
+            font-size:9.6pt;margin:4mm 0;}
+  h2{font-size:12.5pt;font-weight:800;margin:7mm 0 2.5mm;padding-bottom:1.5mm;border-bottom:1.6px solid var(--ink);}
+  h2 .n{font-family:'JetBrains Mono','Noto Sans Mono',monospace;color:var(--t);font-size:9.5pt;margin-right:2mm;}
+  h3{font-size:10pt;font-weight:800;margin:4mm 0 1.5mm;color:var(--ink);}
+  table{border-collapse:collapse;width:100%;margin:2.5mm 0;font-size:8.5pt;}
+  th,td{border:1px solid var(--hair);padding:1.5mm 2mm;text-align:left;vertical-align:top;}
+  thead th{background:var(--soft);font-family:'JetBrains Mono','Noto Sans Mono',monospace;font-size:8pt;letter-spacing:.02em;}
+  td.rowh{background:var(--soft);font-weight:700;white-space:nowrap;font-size:8.3pt;}
+  .yes{color:var(--ok);font-weight:700;} .no{color:var(--no);font-weight:700;} .wa{color:var(--wa);font-weight:700;}
+  .box{border:1px solid var(--hair);border-radius:1.6mm;background:var(--soft);padding:2.5mm 3mm;margin:2.5mm 0;font-size:9pt;}
+  .box.acc{background:var(--t-soft);border-color:var(--t);}
+  .box.win{background:#E8F4EC;border-color:var(--a);}
+  .flow{font-family:'JetBrains Mono','Noto Sans Mono',monospace;font-size:8.4pt;background:var(--ink);color:#E8ECF2;
+        padding:3mm 3.5mm;border-radius:1.6mm;margin:3mm 0;white-space:pre;overflow-x:auto;line-height:1.55;}
+  .chip{display:inline-block;padding:.3mm 1.6mm;border-radius:1mm;color:#fff;font-weight:700;font-size:7.6pt;font-family:'JetBrains Mono',monospace;}
+  .cT{background:var(--t);} .cA{background:var(--a);}
+  ul{margin:1.5mm 0 1.5mm 5mm;font-size:9pt;} li{margin:.8mm 0;}
+  b.k{color:var(--t);}
+  .foot{margin-top:8mm;padding-top:2.5mm;border-top:1px solid var(--hair);color:var(--muted);font-size:8pt;}
+  a{color:var(--acc);}
+  @media(max-width:800px){ .page{padding:8mm 6mm;} table{font-size:7.6pt;} }
+</style>
+<div class="page">
+  <h1>TAMOLS 파이프라인 — 계획·추종·협조·한계</h1>
+  <div class="sub">Terrain-Aware Motion Optimization for Legged Systems (Jenelten 2022, ETH). 02_Leg 17-DOF 적용 · 2026-07-29</div>
+
+  <div class="oneliner"><b>TAMOLS = TO(계획)층</b> — base pose(위치·자세) + 발판을 <b>GIAC 안정제약으로 co-optimize</b>. <b>솔버 완성</b>(solve_fast SQP-RTI·해석Jacobian &lt;20ms·Drake 정합). <b class="k">★이번 세션 = 추종 통합 + base-발판 협조 실증</b>: injection에 TAMOLS base z 주입 → 지형 tilt 25°→1.2°. <b>단 injection은 짜깁기(stitched)라 마진 얇음</b>(뷰어 "불안불안"). <b>강건 = 통합 폐루프 NMPC(D1/OCS2 포팅) 또는 RL(DTC)</b>.</div>
+
+  <h2><span class="n">1</span>TAMOLS = 무엇을 계획하나</h2>
+  <table>
+    <thead><tr><th style="width:22%">결정변수</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">base pose 스플라인</td><td>6-DOF [x,y,z,roll,pitch,yaw] × 4-poly 계수 / phase. <b>위치·높이·자세 전부</b> 최적화</td></tr>
+      <tr><td class="rowh">발판 p (4×3)</td><td>각 발 착지 위치. 지형 높이매칭 cost(h(p.xy)−p.z) + edge 회피</td></tr>
+      <tr><td class="rowh">GIAC 안정</td><td>Gravito-Inertial Acceleration Cone — 접촉력 없이 안정성 보장(SRBD·ZMP 일반화, 비평면 지원)</td></tr>
+    </tbody>
+  </table>
+  <div class="box"><b>핵심</b>: base와 발판을 <b>함께</b> 최적화(협조)하고 GIAC로 안정 보장. A(Raibert 발배치·SRBD)가 <b>못하는 base-발판 협조·자세계획</b>이 TAMOLS의 값어치. <b>계획층</b>이지 컨트롤러 아님 — <b>추종기와 짝지어야</b> 로봇이 움직임.</div>
+
+  <h2><span class="n">2</span>솔버 (완성)</h2>
+  <table>
+    <thead><tr><th style="width:22%">요소</th><th>상태</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">solve_fast</td><td><span class="yes">완성</span> SQP-RTI + 해석 Jacobian, <b>&lt;20ms</b>. self-contained cold-start(elastic globalization). Drake 정합(1e-10).</td></tr>
+      <tr><td class="rowh">online_replan</td><td><span class="yes">완성</span> receding-horizon(warm-start). walk/trot gait, 지형 heightmap 주입(mj_ray).</td></tr>
+      <tr><td class="rowh">C++ 포팅</td><td><span class="yes">완성</span> tamols/ (tamols_jac·tamols_qp·tamols_online, eiquadprog).</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">3</span>추종 구조 — 3가지 시도</h2>
+  <div class="flow">계획(TAMOLS) ──→ [추종기] ──→ 로봇
+
+  ① injection   : A 연속 gait클럭 + TAMOLS 발판·base 주입   ← 연속보행 robust (짜깁기)
+  ② 3층          : TAMOLS → SRBD MPC(GRF) → WBIC(토크)      ← offline 협조추종 OK
+  ③ 2층          : TAMOLS → WBC(GRF+토크 통합)              ← z침하(QP 힘품질)</div>
+  <table>
+    <thead><tr><th style="width:16%">방식</th><th>구조</th><th>결과</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh"><span class="chip cA">injection</span></td><td>A gait클럭 + TAMOLS 발판/base 주입. 재anchor 없음</td><td><span class="yes">연속보행 falls=0</span> — 실용 작동. 단 마진 얇음</td></tr>
+      <tr><td class="rowh">3층 (MPC+WBIC)</td><td>MPC 예측 GRF → WBIC. MIT Cheetah식</td><td><span class="wa">offline OK</span>(z 유지·tilt19) / online=re-anchor frame 벽</td></tr>
+      <tr><td class="rowh">2층 (WBC)</td><td>WBC가 GRF+토크 통합(ETH식). standalone</td><td><span class="no">z침하</span> — 순간반응 f &lt; MPC 예측 f(control-perf)</td></tr>
+    </tbody>
+  </table>
+  <div class="box"><b>online 순수 receding-horizon 벽</b>: 재anchor(0.2s) 시 계획이 world 앵커인데 로봇 드리프트 → 발판 frame 불일치 → 횡드리프트. <b>injection이 A의 검증된 연속 클럭으로 이를 우회</b>.</div>
+
+  <h2><span class="n">4</span>★이번 세션 성과 — base-발판 협조 실증 (TAM_BASE)</h2>
+  <div class="box win"><b>injection에 TAMOLS 계획 base z(발판·GIAC와 co-optimize) 주입</b> → A의 단일점 perceptive z 대체. <b>지형적응이 극적으로 매끄러워짐 = base-발판 협조가 로봇 수준에서 실현.</b></div>
+  <table>
+    <thead><tr><th style="width:34%">지형</th><th>기존 (A 단일점 z)</th><th>TAM_BASE (TAMOLS 협조 z)</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">연속 높이언덕 (hsteps)</td><td class="wa">tilt 25°</td><td class="yes">등반 중 tilt &lt;1.2° (base z 0.5→0.67 지형추종)</td></tr>
+      <tr><td class="rowh">이산 갭+높이 (dsteps2)</td><td class="wa">tilt 19.4°</td><td class="yes">tilt 3.4° (falls=0)</td></tr>
+      <tr><td class="rowh">평지</td><td>falls=0</td><td>falls=0 (불변, TAM_BASE off default)</td></tr>
+    </tbody>
+  </table>
+  <h3>사용자 질문 ①②③④ 실현 (injection+TAM_BASE)</h3>
+  <table>
+    <thead><tr><th style="width:22%">요소</th><th>실현</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">① 실시간</td><td><span class="yes">✓</span> A 1kHz(WBIC+MPC 검증) + TAMOLS replan(&lt;20ms)</td></tr>
+      <tr><td class="rowh">② base-발판 협조</td><td><span class="yes">✓</span> base·발판 둘 다 TAMOLS서 (완전)</td></tr>
+      <tr><td class="rowh">③ base 자세/높이 계획</td><td><span class="wa">✓ z</span> base z 주입 / roll·pitch는 WBIC 레벨링 경합(후속)</td></tr>
+      <tr><td class="rowh">④ 연속 추종</td><td><span class="yes">✓</span> A 연속 gait클럭 (offline 단일사이클 아님·재anchor 無)</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">5</span>한계 — injection의 얇은 마진 (RL 필요성)</h2>
+  <table>
+    <thead><tr><th style="width:30%">한계</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">연속지형 상한</td><td>최대높이 <b>~0.24m</b>(marginal), 0.32m 낙상</td></tr>
+      <tr><td class="rowh">이산 갭+높이</td><td><b>형상 민감</b> — 특정 형상 falls=0(tilt3.4)이나 다른 조합 낙상. 마진 얇음</td></tr>
+      <tr><td class="rowh">근본 원인</td><td>injection=<b>짜깁기</b>(Raibert 균형 + TAMOLS 발판 + selectFoot + 갭회피 다층 타협) → A의 균형 마진 갉아먹음. 뷰어서 "불안불안"</td></tr>
+    </tbody>
+  </table>
+  <div class="box"><b>selectFoot</b>: Raibert(+TAMOLS) 발 타깃 <b>근처</b>에서 최고 footScore 발판 탐색(J=footScore−w_bal·거리²). 균형↔지형 타협. → 이 타협이 마진 축소.</div>
+
+  <h2><span class="n">6</span>논문 해법 (TAMOLS VI) — 정독</h2>
+  <table>
+    <thead><tr><th style="width:26%">해법</th><th>우리 대비 · 적용성</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">계층적 WBC (Table II)</td><td>strict priority(운동방정식0&gt;마찰/no-contact1&gt;swing2&gt;torso3). 우리=weighted(경합)→z침하. <b>sim z침하 근본해법이나 큰 재작성</b></td></tr>
+      <tr><td class="rowh">GM-Observer (식40-42)</td><td>generalized momentum 외란추정→h 보상. <span class="wa">sim marginal</span>(sim=모델오차 無) / <b>실기 외란·모델오차용</b></td></tr>
+      <tr><td class="rowh">impedance(저부하)·swing 관절오프셋</td><td>부분 적용(W_AM=각운동량 task로 lateral tilt 50→19 확인)</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">7</span>방향 — 강건 모델기반 vs RL</h2>
+  <table>
+    <thead><tr><th style="width:20%">경로</th><th>구조</th><th>강건성</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh"><b>injection</b> (현재)</td><td>고정gait + 짜깁기</td><td class="wa">취약(원리 실증·baseline)</td></tr>
+      <tr><td class="rowh"><b>D1 포팅</b> (OCS2)</td><td>고정gait + <b>통합 폐루프 perceptive NMPC</b>(Grandia식). 실시간(HPIPM)</td><td class="yes">강건(모델기반 정점)</td></tr>
+      <tr><td class="rowh"><b>DTC</b> (RL)</td><td>TAMOLS TO → RL 추종. NMPC 불요</td><td class="yes">강건(외란까지)</td></tr>
+    </tbody>
+  </table>
+  <div class="box acc"><b>★결정(2026-07-29)</b>: 강건 <b>모델기반 제어기 배포 원함 → D1 포팅(legged_control OCS2)</b> 채택(B승격 아님·B는 20Hz 실시간 열세). <b>DTC와 별개</b>(DTC=TAMOLS TO+RL, 폐루프 NMPC 불요). ROS2 Humble 설치됨 · legged_control 미클론. <b>다음</b>: legged_control 클론·빌드 → 02_Leg URDF 포팅 → MuJoCo 브리지.</div>
+
+  <div class="foot">TAMOLS 파이프라인 · injection(TAM_BASE·selectFoot·CoM shift)=모델기반 baseline · 상세=계획서 TAMOLS_online_tracking_fix·WBC_layer2_standalone_fix · 코드=quad/cpp/tamols·src/trot_controller · 논문 Jenelten 2022(2206.14049)</div>
+</div>

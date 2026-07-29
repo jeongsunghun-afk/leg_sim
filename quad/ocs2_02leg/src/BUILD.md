@@ -35,9 +35,11 @@ find_path(EIQP_INC eiquadprog/eiquadprog-fast.hpp PATHS ${CONDA_ENV}/include)
 find_library(EIQP_LIB eiquadprog PATHS ${CONDA_ENV}/lib)
 if(MJ_INC AND MJ_LIB)
   add_executable(test02legMujoco test/test02legMujoco.cpp)
-  target_include_directories(test02legMujoco PRIVATE include ${PROJECT_BINARY_DIR}/include ${MJ_INC} ${EIQP_INC})
+  target_include_directories(test02legMujoco PRIVATE include ${PROJECT_BINARY_DIR}/include)
+  # ★conda/include(mujoco·eiquadprog)를 -idirafter로 검색 맨 뒤에 → OCS2가 -isystem으로 넣는
+  #   시스템 pinocchio(/opt/ros/humble)가 이겨 conda pinocchio shadow(ABI불일치·FK깨짐) 방지. 필수.
+  target_compile_options(test02legMujoco PRIVATE -idirafter ${CONDA_ENV}/include ${OCS2_PINOCCHIO_FLAGS})
   target_link_libraries(test02legMujoco ${PROJECT_NAME} ${CONDA_ENV}/lib/libstdc++.so ${MJ_LIB} ${EIQP_LIB})
-  target_compile_options(test02legMujoco PRIVATE ${OCS2_PINOCCHIO_FLAGS})
   set_target_properties(test02legMujoco PROPERTIES BUILD_RPATH "${CONDA_ENV}/lib" INSTALL_RPATH "${CONDA_ENV}/lib")
   install(TARGETS test02legMujoco RUNTIME DESTINATION lib/${PROJECT_NAME})
 endif()

@@ -42,10 +42,11 @@
    - ✅ **정지 STANCE falls=0**: base_z 0.445·tilt 0.5°·완전 안정(3s). **폐루프 전체 정확 확인**(상태변환·MPC 측정상태 재계획·ff토크·base 피드백).
    - 🔶 **동적 TROT 미달**: 전진(base_x 0→2m)하나 자세 발산·낙상. **게인(Kp60~400)·재계획률(50~250Hz) 스윕 전부 실패**. 
    - **진단**: 순수 PD(nominal 홀드)는 falls=0 → 관절매핑·역학 정상. **ff+관절PD가 동적 게이트엔 구조적 불충분**(swing 발 Cartesian 추종·접촉제약·base task를 QP로 안 풀어서). = legged_control이 **WBC 저수준**을 두는 정확한 이유.
-3. **Phase 2b — QP WBC 신규 구현** 🔶 **진행중(2026-07-29, 사용자 선택=QP WBC)**: `test/wbc_02leg.hpp` = weighted QP WBC(legged_control식). 결정변수 [q̈(18), f(12)]. hard=floating-base 동역학(6)·stance no-slip(3/발)·swing force0·friction cone. soft=base/swing 발 가속·f_des 추종. τ=[Mq̈+h−Jcᵀf]_actuated. eiquadprog(conda, dynamic-double ABI안전).
-   - **검증된 것**: 빌드·QP solve OPTIMAL·**no-slip 제약 만족**(|Jf·q̈+J̇v|=2e-14, 발 고정)·M/h/Jc 조립.
-   - **미해결(핵심 난부)**: **base 6-DOF가 발 Jacobian의 null-space라 base-task 가중만이 잡는데, 그 정식화가 아직 정적 STANCE도 안정화 못 함**(W_BASE 1000~2000 스윕에도 base 서서히 이탈·낙상). = pinocchio floating-base q̈가 **local spatial 가속**이라 world PD 목표와의 프레임/Coriolis(ω×v) 정합이 필요(legged_control WBC의 핵심 미묘부). ff+PD 정적(2a)은 됐으나 WBC 정적은 base-task 정식화 완성 필요.
-   - **다음**: base-task를 (i)centroidal momentum task or (ii)정확한 base-frame 6D task(spatial→classical 변환·Coriolis항)로 교체 → 정적 검증 후 trot. 대안=우리 WBIC 재사용(보류).
+3. **Phase 2b — QP WBC 신규 구현** 🔶 **진행중(2026-07-29, 사용자 선택=QP WBC)**: `test/wbc_02leg.hpp` = weighted QP WBC(legged_control식). 결정변수 [q̈(18), f(12)]. hard=floating-base 동역학(6)·stance no-slip(3/발)·swing force0·friction cone. soft=base 6D 가속·swing 발 가속·f_des 추종. τ=[Mq̈+h−Jcᵀf]_actuated. eiquadprog(conda, dynamic-double ABI안전).
+   - **★버그 2개 잡음(핵심)**: ①**pinocchio ABI**: conda/include가 OCS2의 시스템 pinocchio를 shadow(FK가 비대칭 garbage) → CMake `-idirafter ${conda}/include`로 conda를 검색 맨뒤로(시스템 pinocchio -isystem이 이김). ②**base 파라미터화**: OCS2 centroidal 모델 base=`JointModelComposite(Translation+SphericalZYX)`=**euler base(nq=nv=18)**, quaternion(19) 아님 → qPin/vPin을 [pos(3),eulerZYX(3),joints] + [linVel_world(3),eulerZYX_rate(3),jointVel]로 재작성(RbdConversions 규약, `getEulerAnglesZyxDerivativesFromGlobalAngularVelocity`).
+   - **결과**: 두 수정 후 **발 위치 정확·대칭**(FL[0.349,0.138,0] 등)·**WBC 토크가 ff 토크와 ~1% 일치**(tau_WBC≈tau_ff, 동역학 정확 검증)·**정적 STANCE 1.5s falls=0**(base_z 0.44 유지).
+   - **미해결(잔여)**: STANCE가 **marginal**(tilt 0→19° 느린 드리프트, ~1.5s+서 이탈). base task 게인↑·posture task·wForce 변경 모두 악화(base task 권한이 접촉능력 초과시 QP 진동). = **task-hierarchy 정밀화 필요**(strict priority HoQp or 감쇠구조·base 권한 조율). trot은 정적 확립 후.
+   - **다음**: (i)strict-hierarchy WBC(HoQp) or (ii)base task 감쇠·권한 재조율로 정적 solid화 → trot → perceptive. env노브=W_BASE/W_F/W_SW/W_REG/W_POST·KP_B/KD_B/KP_O/KD_O.
 
 ### Phase 3 — Perceptive (지형)
 1. 지형 heightmap(mj_ray) → OCS2 footstep **SDF 제약**(Grandia식 edge/gap 회피) + terrain base.

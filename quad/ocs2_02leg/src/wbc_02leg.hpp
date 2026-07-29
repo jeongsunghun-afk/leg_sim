@@ -18,8 +18,8 @@
 
 class Wbc02Leg {
  public:
-  Wbc02Leg(ocs2::PinocchioInterface pin, const std::array<int, 4>& footFrameId, double mu = 0.5)
-      : pin_(std::move(pin)), footId_(footFrameId), mu_(mu) {
+  Wbc02Leg(ocs2::PinocchioInterface pin, const std::array<int, 4>& footFrameId, int baseFrameId, double mu = 0.5)
+      : pin_(std::move(pin)), footId_(footFrameId), baseId_(baseFrameId), mu_(mu) {
     nv_ = pin_.getModel().nv;              // 18
     nJ_ = nv_ - 6;                         // 12
     nx_ = nv_ + 12;                        // q̈ + 4*3 force
@@ -32,12 +32,20 @@ class Wbc02Leg {
                           const std::array<Eigen::Vector3d, 4>& footPosDes, const std::array<Eigen::Vector3d, 4>& footVelDes,
                           const Eigen::Vector3d& basePosDes, const Eigen::Vector3d& baseLinDes,
                           const Eigen::Matrix3d& baseRotDes, const Eigen::Vector3d& baseAngDes,
-                          const Eigen::VectorXd& fDes) {
+                          const Eigen::VectorXd& fDes, const Eigen::VectorXd& jointPosDes, const Eigen::VectorXd& jointVelDes) {
     using namespace Eigen;
     auto& model = pin_.getModel();
     auto& data = pin_.getData();
     const int nv = nv_, nJ = nJ_, nx = nx_;
 
+    if (getenv("WBC_DBG")) {
+      // 깨끗한 FK로 발 위치 확인
+      pinocchio::forwardKinematics(model, data, q);
+      pinocchio::updateFramePlacements(model, data);
+      for (int i = 0; i < 4; ++i)
+        std::cerr << "  [WBC] frame[" << footId_[i] << "]=" << model.frames[footId_[i]].name
+                  << " pos=" << data.oMf[footId_[i]].translation().transpose() << "\n";
+    }
     // --- 동역학 ---
     pinocchio::crba(model, data, q);
     data.M.triangularView<StrictlyLower>() = data.M.transpose().triangularView<StrictlyLower>();
@@ -60,6 +68,15 @@ class Wbc02Leg {
     // 접촉 Jacobian 스택 Jc(12×nv), Jcᵀ
     MatrixXd Jc(12, nv);
     for (int i = 0; i < 4; ++i) Jc.middleRows<3>(3 * i) = Jf[i];
+    // base 링크 6D Jacobian + drift (발 task와 동일한 LOCAL_WORLD_ALIGNED 프레임 방식)
+    MatrixXd Jbase = MatrixXd::Zero(6, nv);
+    pinocchio::getFrameJacobian(model, data, baseId_, pinocchio::LOCAL_WORLD_ALIGNED, Jbase);
+    Matrix<double, 6, 1> JdvBase;
+    JdvBase.head<3>() = pinocchio::getFrameClassicalAcceleration(model, data, baseId_, pinocchio::LOCAL_WORLD_ALIGNED).linear();
+    JdvBase.tail<3>() = pinocchio::getFrameClassicalAcceleration(model, data, baseId_, pinocchio::LOCAL_WORLD_ALIGNED).angular();
+    Vector3d basePos = data.oMf[baseId_].translation();
+    Matrix3d baseRot = data.oMf[baseId_].rotation();
+    Matrix<double, 6, 1> baseVel = Jbase * v;  // world (linear, angular)
 
     // --- soft 비용: G, g0 ---
     MatrixXd G = MatrixXd::Zero(nx, nx);
@@ -68,16 +85,14 @@ class Wbc02Leg {
       G.noalias() += w * A.transpose() * A;
       g0.noalias() -= w * A.transpose() * b;
     };
-    // base 가속(6): q̈[0:6] = a_base_des(local frame)
+    // base 6D 가속(world, 발 task와 동일 프레임): Jbase q̈ + JdvBase = a_base_des_world
     {
-      MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, 6) = MatrixXd::Identity(6, 6);
-      // world 목표 → base local (pinocchio base 가속=local)
-      Matrix3d Rb = q2R(q);
-      Vector3d aLin = kpB_ * (basePosDes - q.head<3>()) + kdB_ * (baseLinDes - Rb * v.head<3>());
-      Vector3d oriErr = 0.5 * unskew(baseRotDes * Rb.transpose() - Rb * baseRotDes.transpose());
-      Vector3d aAng = kpO_ * oriErr + kdO_ * (baseAngDes - Rb * v.segment<3>(3));
-      VectorXd b(6); b << Rb.transpose() * aLin, Rb.transpose() * aAng;
-      addTask(A, b, wBase_);
+      MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, nv) = Jbase;
+      Vector3d oriErr = 0.5 * unskew(baseRotDes * baseRot.transpose() - baseRot * baseRotDes.transpose());
+      Vector3d aLin = kpB_ * (basePosDes - basePos) + kdB_ * (baseLinDes - baseVel.head<3>());
+      Vector3d aAng = kpO_ * oriErr + kdO_ * (baseAngDes - baseVel.tail<3>());
+      Matrix<double, 6, 1> aDes; aDes << aLin, aAng;
+      addTask(A, VectorXd(aDes - JdvBase), wBase_);
     }
     // swing 발 가속(3/발): J_sw q̈ = a_sw_des − J̇v
     for (int i = 0; i < 4; ++i) {
@@ -90,6 +105,12 @@ class Wbc02Leg {
     {
       MatrixXd A = MatrixXd::Zero(12, nx); A.block(0, nv, 12, 12) = MatrixXd::Identity(12, 12);
       addTask(A, fDes, wForce_);
+    }
+    // 관절 posture task(12): q̈_joint = kpJ(qDes−q) + kdJ(vDes−v) — ff+PD의 관절 PD 대응
+    {
+      MatrixXd A = MatrixXd::Zero(nJ, nx); A.block(0, 6, nJ, nJ) = MatrixXd::Identity(nJ, nJ);
+      VectorXd b = kpJ_ * (jointPosDes - q.tail(nJ)) + kdJ_ * (jointVelDes - v.tail(nJ));
+      addTask(A, b, wPost_);
     }
     // q̈ 정규화
     { MatrixXd A = MatrixXd::Zero(nv, nx); A.block(0, 0, nv, nv) = MatrixXd::Identity(nv, nv); addTask(A, VectorXd::Zero(nv), wReg_); }
@@ -142,11 +163,14 @@ class Wbc02Leg {
     VectorXd qacc = x.head(nv), f = x.tail(12);
     VectorXd full = M * qacc + h - JcT * f;
     if (getenv("WBC_DBG")) {
-      VectorXd tauGrav = (h - JcT * fDes).tail(nJ);  // q̈=0, f=fDes 가정 토크
-      std::cerr << "  [WBC] tauGrav(h-JcTfDes) = " << tauGrav.transpose() << "\n";
-      std::cerr << "  [WBC] |qacc|=" << qacc.norm() << " |f-fDes|=" << (f - fDes).norm() << "\n";
-      std::cerr << "  [WBC] |Jf0|=" << Jf[0].norm() << " |Jf0*qacc+Jdv0|=" << (Jf[0] * qacc + Jdv[0]).norm()
-                << " |M|=" << M.norm() << " |h|=" << h.norm() << "\n";
+      VectorXd g = pinocchio::computeGeneralizedGravity(model, data, q);
+      std::cerr << "  [WBC] g.tail   = " << g.tail(nJ).transpose() << "\n";
+      std::cerr << "  [WBC] h.tail   = " << h.tail(nJ).transpose() << "  |v|=" << v.norm() << "\n";
+      std::cerr << "  [WBC] (JcTf).tl= " << (JcT * fDes).tail(nJ).transpose() << "\n";
+      std::cerr << "  [WBC] tauGrav  = " << (h - JcT * fDes).tail(nJ).transpose() << "\n";
+      std::cerr << "  [WBC] |qacc|=" << qacc.norm() << " |f-fDes|=" << (f - fDes).norm()
+                << " |Jf0 q̈+Jdv0|=" << (Jf[0] * qacc + Jdv[0]).norm() << "\n";
+      std::cerr << "  [WBC] footPos0=" << footPos[0].transpose() << "\n";
     }
     return full.tail(nJ);
   }
@@ -166,8 +190,8 @@ class Wbc02Leg {
     }
   }
 
-  double kpB_ = 100, kdB_ = 20, kpO_ = 100, kdO_ = 20, kpF_ = 400, kdF_ = 40;
-  double wBase_ = 10, wSwing_ = 20, wForce_ = 1, wReg_ = 1e-3, fzMin_ = 1.0;
+  double kpB_ = 100, kdB_ = 20, kpO_ = 100, kdO_ = 20, kpF_ = 400, kdF_ = 40, kpJ_ = 100, kdJ_ = 10;
+  double wBase_ = 10, wSwing_ = 20, wForce_ = 1, wReg_ = 1e-3, wPost_ = 0.0, fzMin_ = 1.0;  // wPost>0=악화 확인
   int qpFail_ = 0, lastStatus_ = 0;
 
  private:
@@ -180,6 +204,7 @@ class Wbc02Leg {
 
   ocs2::PinocchioInterface pin_;
   std::array<int, 4> footId_;
+  int baseId_;
   double mu_;
   int nv_, nJ_, nx_;
   Eigen::VectorXd lastX_;

@@ -15,6 +15,7 @@
 #include <ocs2_legged_robot/reference_manager/SwitchedModelReferenceManager.h>
 #include <ocs2_centroidal_model/CentroidalModelRbdConversions.h>
 #include <ocs2_centroidal_model/AccessHelperFunctions.h>
+#include <ocs2_robotic_tools/common/RotationDerivativesTransforms.h>
 #include <ocs2_sqp/SqpMpc.h>
 #include <ocs2_mpc/MPC_MRT_Interface.h>
 #include "wbc_02leg.hpp"
@@ -70,13 +71,25 @@ int main(int argc, char** argv) {
   const char* footFrame[4] = {"FL_foot_contact_link", "FR_foot_contact_link", "HL_foot_contact_link", "HR_foot_contact_link"};
   std::array<int, 4> footId;
   for (int i = 0; i < 4; ++i) footId[i] = interface.getPinocchioInterface().getModel().getFrameId(footFrame[i]);
-  Wbc02Leg wbc(interface.getPinocchioInterface(), footId, 0.5);
+  int baseId = interface.getPinocchioInterface().getModel().getFrameId("Base");
+  Wbc02Leg wbc(interface.getPinocchioInterface(), footId, baseId, 0.5);
   if (getenv("W_BASE")) wbc.wBase_ = atof(getenv("W_BASE"));
   if (getenv("W_SW")) wbc.wSwing_ = atof(getenv("W_SW"));
   if (getenv("W_F")) wbc.wForce_ = atof(getenv("W_F"));
   if (getenv("W_REG")) wbc.wReg_ = atof(getenv("W_REG"));
+  if (getenv("KP_B")) wbc.kpB_ = atof(getenv("KP_B"));
+  if (getenv("KD_B")) wbc.kdB_ = atof(getenv("KD_B"));
+  if (getenv("KP_O")) wbc.kpO_ = atof(getenv("KP_O"));
+  if (getenv("KD_O")) wbc.kdO_ = atof(getenv("KD_O"));
+  if (getenv("W_POST")) wbc.wPost_ = atof(getenv("W_POST"));
   const int nqPin = interface.getPinocchioInterface().getModel().nq;
   const int nvPin = interface.getPinocchioInterface().getModel().nv;
+  if (getenv("DBG")) {
+    const auto& mdl = interface.getPinocchioInterface().getModel();
+    std::cerr << "[DBG] OCS2 model 관절순: ";
+    for (int j = 2; j < mdl.njoints; ++j) std::cerr << mdl.names[j] << " ";
+    std::cerr << "\n";
+  }
 
   // ---- MuJoCo ----
   char err[1000] = "";
@@ -173,14 +186,17 @@ int main(int argc, char** argv) {
     mrt.evaluatePolicy(t, xMeas, xDes, uDes, md);
 
     if (useWbc) {
-      // pinocchio 측정 q/v (base quat xyzw, base vel local)
-      Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> Rm(R);
+      // ★OCS2 pinocchio 모델 base = Composite(Translation + SphericalZYX) = euler base(nq=nv=18):
+      //   q = [pos(3), eulerZYX(3), joints(12)], v = [linVel_world(3), eulerZYX_rate(3), jointVel(12)].
+      // 측정 q/v (MuJoCo → euler base). euler(z,py,rx)·world 각속도 ww는 위 rbdState 구간서 계산됨.
+      Eigen::Vector3d eul(z, py, rx);
+      Eigen::Vector3d wWorld(ww[0], ww[1], ww[2]);
       vector_t qPin(nqPin), vPin(nvPin);
       qPin.head<3>() << d->qpos[0], d->qpos[1], d->qpos[2];
-      qPin.segment<4>(3) << d->qpos[4], d->qpos[5], d->qpos[6], d->qpos[3];  // wxyz→xyzw
-      for (int i = 0; i < 12; ++i) qPin(7 + i) = d->qpos[qadr[i]];
-      vPin.head<3>() = Rm.transpose() * Eigen::Vector3d(d->qvel[0], d->qvel[1], d->qvel[2]);  // world→local
-      vPin.segment<3>(3) << d->qvel[3], d->qvel[4], d->qvel[5];                               // 각속도 local
+      qPin.segment<3>(3) = eul;
+      for (int i = 0; i < 12; ++i) qPin(6 + i) = d->qpos[qadr[i]];
+      vPin.head<3>() << d->qvel[0], d->qvel[1], d->qvel[2];  // world linear
+      vPin.segment<3>(3) = getEulerAnglesZyxDerivativesFromGlobalAngularVelocity<scalar_t>(eul, wWorld);
       for (int i = 0; i < 12; ++i) vPin(6 + i) = d->qvel[vadr[i]];
       // MPC 참조 (RBD 변환: world twist)
       vector_t rbdDes = rbd.computeRbdStateFromCentroidalModel(xDes, uDes);
@@ -189,14 +205,14 @@ int main(int argc, char** argv) {
                                     Eigen::AngleAxisd(eulDes(1), Eigen::Vector3d::UnitY()) *
                                     Eigen::AngleAxisd(eulDes(2), Eigen::Vector3d::UnitX())).toRotationMatrix();
       Eigen::Vector3d baseAngDes = rbdDes.segment<3>(6 + nJ), baseLinDes = rbdDes.segment<3>(6 + nJ + 3);
-      // 목표 발 pos/vel = 목표 배치서 FK
+      // 목표 발 pos/vel = 목표 배치서 FK (euler base)
       vector_t qDesPin(nqPin), vDesPin(nvPin);
       qDesPin.head<3>() = basePosDes;
-      Eigen::Quaterniond qd(baseRotDes); qDesPin.segment<4>(3) << qd.x(), qd.y(), qd.z(), qd.w();
-      qDesPin.tail(12) = rbdDes.segment(6, 12);
-      vDesPin.head<3>() = baseRotDes.transpose() * baseLinDes;
-      vDesPin.segment<3>(3) = baseRotDes.transpose() * baseAngDes;
-      vDesPin.tail(12) = rbdDes.segment(6 + nJ + 6, 12);
+      qDesPin.segment<3>(3) = eulDes;
+      qDesPin.segment(6, 12) = rbdDes.segment(6, 12);
+      vDesPin.head<3>() = baseLinDes;  // world linear
+      vDesPin.segment<3>(3) = getEulerAnglesZyxDerivativesFromGlobalAngularVelocity<scalar_t>(eulDes, baseAngDes);
+      vDesPin.segment(6, 12) = rbdDes.segment(6 + nJ + 6, 12);
       std::array<Eigen::Vector3d, 4> fpDes, fvDes;
       wbc.footFK(qDesPin, vDesPin, fpDes, fvDes);
       // f_des, 접촉플래그
@@ -204,9 +220,14 @@ int main(int argc, char** argv) {
       for (int i = 0; i < 4; ++i) fDes.segment<3>(3 * i) = centroidal_model::getContactForces(uDes, i, info);
       auto cf = modeNumber2StanceLeg(md);
       std::array<bool, 4> stance{cf[0], cf[1], cf[2], cf[3]};
-      vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes);
+      vector_t jointPosDes = rbdDes.segment(6, 12), jointVelDes = rbdDes.segment(6 + nJ + 6, 12);
+      vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes,
+                                  jointPosDes, jointVelDes);
       if (step == 0 && getenv("DBG")) {
         vector_t tauFF = rbd.computeRbdTorqueFromCentroidalModel(xDes, uDes, jAcc);
+        std::cerr << "  [DBG] footId=" << footId[0] << "," << footId[1] << "," << footId[2] << "," << footId[3]
+                  << " baseId=" << baseId << " nframes=" << interface.getPinocchioInterface().getModel().nframes << "\n";
+        std::cerr << "  [DBG] qPin  = " << qPin.transpose() << "\n";
         std::cerr << "  [DBG] QP status=" << wbc.lastStatus_ << " fail=" << wbc.qpFail_ << "\n";
         std::cerr << "  [DBG] tau_WBC = " << tauJ.transpose() << "\n";
         std::cerr << "  [DBG] tau_ff  = " << tauFF.tail(nJ).transpose() << "\n";

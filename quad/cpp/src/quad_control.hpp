@@ -36,6 +36,8 @@ struct QuadControl {
   double w_yaw=0.0;                                        // ★yaw 헤딩홀드 가중(roll/pitch와 분리). euler 표준수정 후 0이 최적(14·17 공통; MPC가 yaw 담당). >0=헤딩홀드
   double W_BASE_XY=0.0, KP_BASE=150.0, KD_BASE=25.0;      // ★RSL식: wbic_track이 base 수평(x,y) 위치를 직접 추종(>0=on). SRBD MPC 대신 계획 base궤적을 WBC가 execute
   Vector3d com_vel_ref=Vector3d::Zero(), com_acc_ref=Vector3d::Zero();  // 수평 base 속도·가속 참조(TAMOLS 계획)
+  // ★GM-observer(TAMOLS VI-B): base task 정상상태 잔차를 적분추정→보상(모델오차·접촉전이 잔여힘=z침하 상쇄). GM_KI로 on.
+  double gm_zi=0, gm_ri=0, gm_pi=0; void gm_reset(){ gm_zi=gm_ri=gm_pi=0; }
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   double SW_TRACK_W=90.0;                                 // ★swing 발 task 가중(발이 목표 정확추종·↑=착지정확). horizon-shift 안정화
   std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
@@ -386,12 +388,17 @@ struct QuadControl {
     double yaw_m=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
     double qlev[4]={std::cos(yaw_m/2),0,0,std::sin(yaw_m/2)};     // 현재 yaw에서 수평(정확 프레임)
     double oerr[3]; mju_subQuat(oerr,&d->qpos[3],qlev);           // roll/pitch 오차(yaw≈0)
-    for(int j=0;j<2;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
+    for(int j=0;j<2;j++){ double a=150*(-oerr[j])-20*qv[3+j];
+      if(getenv("GM_KI")){ double ki=atof(getenv("GM_KI"))*0.5, dt2=m->opt.timestep; double& gi=(j==0?gm_ri:gm_pi);   // ★GM 적분보상(자세 정상상태 잔차)
+        gi+=(-oerr[j])*dt2; gi=std::max(-0.4,std::min(0.4,gi)); a+=ki*gi; }
+      P(3+j,3+j)+=w_ori; g[3+j]-=w_ori*a; }
     double yaw_err=std::atan2(std::sin(yaw_des-yaw_m),std::cos(yaw_des-yaw_m));  // 헤딩오차(wrap안전)
     double a_yaw=150*yaw_err-20*qv[5]; P(5,5)+=w_yaw; g[5]-=w_yaw*a_yaw;         // yaw 헤딩홀드(직진 드리프트 방지, 선회시 yaw_des 추종→안싸움)
     double zref=com_ref[2]+_body_terr; Vector3d Jcqv=Jc*qv;
     double _kpz=getenv("KP_Z")?atof(getenv("KP_Z")):200.0, _kdz=getenv("KD_Z")?atof(getenv("KD_Z")):25.0, _wz=getenv("W_Z")?atof(getenv("W_Z")):150.0;
-    double a_z=_kpz*(zref-d->subtree_com[2])-_kdz*Jcqv[2]+com_acc_ref[2];   // ★2층 WBC z유지: 게인 튜닝가능 + 계획 z가속 ff(예측 보강, MPC 예측 대체)
+    double a_z=_kpz*(zref-d->subtree_com[2])+_kdz*(com_vel_ref[2]-Jcqv[2])+com_acc_ref[2];   // ★2층 WBC z유지: 계획 z속도·가속 추종(ff=예측 보강, 접촉전이 대비). MPC 예측 대체
+    double _gmki=getenv("GM_KI")?atof(getenv("GM_KI")):0.0, _gmdt=m->opt.timestep;   // ★GM-observer 적분보상(정상상태 z침하=지속잔차 상쇄)
+    if(_gmki>0){ gm_zi+=(zref-d->subtree_com[2])*_gmdt; gm_zi=std::max(-0.6,std::min(0.6,gm_zi)); a_z+=_gmki*gm_zi; }
     P.topLeftCorner(nv,nv)+=_wz*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=_wz*a_z*Jc.row(2).transpose();
     if(W_BASE_XY>0){ for(int ax=0;ax<2;ax++){   // ★RSL식: base 수평(x,y) 위치를 WBC가 직접 추종(SRBD MPC 대체) — 계획 base궤적 위치레벨 execute
       double a_xy=KP_BASE*(com_ref[ax]-d->subtree_com[ax])+KD_BASE*(com_vel_ref[ax]-Jcqv[ax])+com_acc_ref[ax];

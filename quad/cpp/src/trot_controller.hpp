@@ -193,7 +193,9 @@ struct TrotCtrl {
     tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;   // ★주입=plan 정지(발판 명목·gap회피만, A gait가 전진)
     cfg.walk = getenv("RSL_GAIT") && !std::strcmp(getenv("RSL_GAIT"),"walk");   // ★walk(정적안정) vs trot
     int _Pg = cfg.walk?4:5;
-    cfg.phase_off=tam_ol_phase; tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★horizon-shift: 매 replan 위상 회전(swing 실행)
+    cfg.phase_off=tam_ol_phase;   // ★horizon-shift: 위상 회전(swing 실행)
+    int _gnd=0; for(int i=0;i<4;i++) if(q.foot_point(i)[2]<0.04) _gnd++;   // 접지 발 수
+    if(!getenv("GAIT_SYNC") || _gnd>=3) tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★GAIT_SYNC: swing 착지(≥3지지) 시만 phase 진행=실제 발상태 동기(재anchor desync 방지). 미착지면 phase 유지(발 착지 대기)
     double vx0=d->qvel[0], vy0=d->qvel[1];
     if(!tam_inj && getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬. 주입모드는 per-foot 회피(전역straddle 끔)
     cfg.z0_terrain = getenv("TAMOLS_TERRAIN")!=nullptr;   // ★지형모드=z밴드를 z0 기준 상대로(계단 base 상승 허용)
@@ -367,9 +369,10 @@ struct TrotCtrl {
         q.SW_TRACK_W=getenv("SW_TRACK_W")?atof(getenv("SW_TRACK_W")):90.0;   // ★swing 발 추종 가중(착지 정확)
         q.KP_BASE=getenv("KP_BASE")?atof(getenv("KP_BASE")):150.0;
         q.com_ref[0]=tgt_x; q.com_ref[1]=tgt_y; q.com_ref[2]=s[2];   // 계획 base 위치. ★온라인 위치ref vadv전진은 z침하 유발→plan 추종 유지(안정 우선)
-        q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=0;   // 계획 base 속도(★온라인=vadv 직접 명령해 연속 전진)
+        q.com_vel_ref[0]=online?V:s[6]; q.com_vel_ref[1]=s[7]; q.com_vel_ref[2]=s[8];   // 계획 base 속도(★z속도도 전달=WBC가 base bob 예측→z침하 완화)
         double _accap=getenv("ACC_CAP")?atof(getenv("ACC_CAP")):3.0;   // ★계획 가속 ff 클램프(스파이크→pitch-dive 방지)
-        q.com_acc_ref[0]=tc_clip((sn[6]-s[6])/tam_dt,-_accap,_accap); q.com_acc_ref[1]=tc_clip((sn[7]-s[7])/tam_dt,-_accap,_accap); }
+        q.com_acc_ref[0]=tc_clip((sn[6]-s[6])/tam_dt,-_accap,_accap); q.com_acc_ref[1]=tc_clip((sn[7]-s[7])/tam_dt,-_accap,_accap);
+        q.com_acc_ref[2]=tc_clip((sn[8]-s[8])/tam_dt,-_accap,_accap); }   // ★z가속 ff(접촉전이 예측=z침하 핵심)
       else { double qp=getenv("TAM_QPOS")?atof(getenv("TAM_QPOS")):50.0; q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
       double SW_DUR=getenv("SW_DUR")?atof(getenv("SW_DUR")):(online?0.14:0.4);   // ★swing<위상: 여유 두고 착지완료→위상전환 시 발이 실제 지면(phantom stance 방지). ★env를 offline도 읽음(계획 swing위상에 맞춰야=phantom 방지)

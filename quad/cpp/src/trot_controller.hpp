@@ -670,6 +670,16 @@ struct TrotCtrl {
       double kc=getenv("COM_SHIFT")?atof(getenv("COM_SHIFT")):1.2;
       x_ref[10]+=tc_clip(kc*berr[1],-0.25,0.25);        // vy: 횡 centering(주효과=CoM을 지지 안으로)
       x_ref[9] +=tc_clip(0.5*kc*berr[0],-0.10,0.10); }  // vx: 약한 전후 centering(전진 방해 최소)
+    // ★★옵션2: MPC 지지폴리곤 hard constraint(CoM px,py∈stance 폴리곤). gap 근처만
+    q.mpc_support_con = taminj && getenv("TAMOLS_TERRAIN") && getenv("SUPPORT_CON") && gap_near_terr;
+    q.mpc_support_margin = getenv("SUPPORT_MARGIN")?atof(getenv("SUPPORT_MARGIN")):0.0;
+    // ★★옵션1: 위상동기 CoM 위치참조 — x_ref[3,4]=지지 centroid(매틱 재계산=위상정합), Qdiag[3,4] 위치가중 on(위치참조=감쇠·비공진, 속도bias와 다름)
+    q.mpc.Qdiag[3]=0; q.mpc.Qdiag[4]=0;   // 기본 off(속도제어 유지)
+    if(taminj && getenv("TAMOLS_TERRAIN") && getenv("COM_REF") && gap_near_terr && st.size()>=2){
+      Vector2d cen(0,0); for(int i: st) cen+=Vector2d(q.foot_point(i)[0],q.foot_point(i)[1]); cen/=(double)st.size();
+      double qp=atof(getenv("COM_REF")), lead=getenv("COM_LEAD")?atof(getenv("COM_LEAD")):0.15;
+      x_ref[3]=d->qpos[0]+lead*cy; x_ref[4]=d->qpos[1]+lead*sy+ (cen[1]-d->qpos[1]);   // ★X=전방 lead(전진+fore-aft 감쇠), Y=지지 centroid(횡 centering). 위치추종=감쇠·비공진
+      q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
     std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
     Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];
     Map<VectorXd> qv(d->qvel,nv); Vector3d vcom=Jc*qv;

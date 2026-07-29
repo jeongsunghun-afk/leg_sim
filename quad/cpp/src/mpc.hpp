@@ -6,6 +6,7 @@
 #include <vector>
 #include <array>
 #include <cmath>
+#include <algorithm>
 using namespace Eigen;
 
 struct MpcCfg {
@@ -13,6 +14,8 @@ struct MpcCfg {
   Matrix3d I_BODY;      // CoM기준 복합관성(body, world 아님 — R로 회전)
   VectorXd Qdiag;       // 13
   Vector3d Rdiag;       // per-foot GRF 가중
+  std::vector<Vector2d> support_poly;   // ★옵션2: 지지폴리곤 정점(절대 xy). ≥3이면 CoM px,py를 이 안으로 hard constraint. 비면 무제약
+  double support_margin=0.0;            // 내향 마진[m]
 };
 
 inline Matrix3d _euler_to_R(double r,double p,double y){
@@ -92,6 +95,21 @@ inline Matrix<double,4,3> mpc_qp_plan(const MpcCfg&c, const VectorXd&x0,
       if(has_fmax){ VectorXd g=VectorXd::Zero(N*nu); g[col+2]=1.0; Gr.push_back(g); hv.push_back(c.LAMZ_MAX);} // λz≤MAX
     } else {
       for(int d=0;d<3;d++){ VectorXd a=VectorXd::Zero(N*nu); a[col+d]=1.0; Ar.push_back(a); br.push_back(0.0); }
+    }
+  }
+  // ★★옵션2 지지폴리곤 제약: CoM px_k,py_k ∈ 지지폴리곤(절대). p_k=AqX0_k+Bq_k·u affine 이므로 각 edge에 선형 부등식.
+  if((int)c.support_poly.size()>=3){
+    VectorXd AqX0=Aq*x0;   // 무제어 CoM 궤적(N*13)
+    const auto& V=c.support_poly; int nvp=(int)V.size();
+    Vector2d cen(0,0); for(auto&v:V) cen+=v; cen/=(double)nvp;
+    std::vector<int> ord(nvp); for(int i=0;i<nvp;i++) ord[i]=i;   // 각도순(볼록 정점 정렬)
+    std::sort(ord.begin(),ord.end(),[&](int a,int b){ return std::atan2(V[a][1]-cen[1],V[a][0]-cen[0])<std::atan2(V[b][1]-cen[1],V[b][0]-cen[0]); });
+    for(int e=0;e<nvp;e++){ Vector2d a=V[ord[e]], b=V[ord[(e+1)%nvp]];
+      Vector2d ed=b-a; Vector2d n(-ed[1],ed[0]); if(n.dot(cen-a)<0) n=-n; double nn=n.norm(); if(nn<1e-9) continue; n/=nn;  // 내향 단위법선
+      double rhs=n.dot(a)+c.support_margin;   // 제약: n·p_k ≥ rhs
+      for(int k=0;k<N;k++){   // -(n·Bq_k)·u ≤ (n·AqX0_k) − rhs
+        VectorXd g=-(n[0]*Bq.row(k*nx+3)+n[1]*Bq.row(k*nx+4)).transpose();
+        Gr.push_back(g); hv.push_back(n[0]*AqX0[k*nx+3]+n[1]*AqX0[k*nx+4]-rhs); }
     }
   }
   int nci=(int)Gr.size(), neq=(int)Ar.size(), nvv=N*nu;

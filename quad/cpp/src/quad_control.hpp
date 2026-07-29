@@ -305,10 +305,14 @@ struct QuadControl {
       omega_w[0],omega_w[1],omega_w[2], vcom[0],vcom[1],vcom[2], -9.81;
     return x;
   }
+  bool mpc_support_con=false; double mpc_support_margin=0.0;   // ★옵션2: 지지폴리곤 제약 on/off·마진(외부 세팅)
   Matrix<double,4,3> mpc_grf(const VectorXd& x_ref, const std::vector<std::array<int,4>>& cs){
     Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
     std::array<Vector3d,4> frel; for(int i=0;i<4;i++) frel[i]=foot_point(i)-com;
     std::vector<std::array<Vector3d,4>> fp(mpc.N,frel);
+    mpc.support_poly.clear();   // ★옵션2: 현 stance 발 절대 xy로 지지폴리곤 구성(CoM을 이 안으로 hard constraint)
+    if(mpc_support_con){ for(int i=0;i<4;i++) if(cs[0][i]){ Vector3d fpi=foot_point(i); mpc.support_poly.push_back(Vector2d(fpi[0],fpi[1])); }
+      mpc.support_margin=mpc_support_margin; }
     return mpc_qp_plan(mpc,x0_or(x_ref),cs,fp,x_ref);
   }
   VectorXd x0_or(const VectorXd&){ return body_x0(); }  // (가독성용 wrapper)

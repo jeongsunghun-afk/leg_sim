@@ -372,7 +372,7 @@ struct TrotCtrl {
         q.com_acc_ref[0]=tc_clip((sn[6]-s[6])/tam_dt,-_accap,_accap); q.com_acc_ref[1]=tc_clip((sn[7]-s[7])/tam_dt,-_accap,_accap); }
       else { double qp=getenv("TAM_QPOS")?atof(getenv("TAM_QPOS")):50.0; q.mpc.Qdiag[3]=qp; q.mpc.Qdiag[4]=qp; }
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
-      double SW_DUR=online?(getenv("SW_DUR")?atof(getenv("SW_DUR")):0.14):0.4;   // ★swing<위상(0.14<0.2): 여유 두고 착지완료→위상전환 시 발이 실제 지면(phantom stance 방지)
+      double SW_DUR=getenv("SW_DUR")?atof(getenv("SW_DUR")):(online?0.14:0.4);   // ★swing<위상: 여유 두고 착지완료→위상전환 시 발이 실제 지면(phantom stance 방지). ★env를 offline도 읽음(계획 swing위상에 맞춰야=phantom 방지)
       double sh=online?(getenv("STEP_H")?atof(getenv("STEP_H")):0.05):0.08;      // ★온라인 발높이 낮춤(빠른 착지)
       for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)

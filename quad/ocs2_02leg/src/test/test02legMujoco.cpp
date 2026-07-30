@@ -39,6 +39,8 @@
 #include <ocs2_core/penalties/penalties/RelaxedBarrierPenalty.h>
 #include "mj_terrain_sdf.hpp"
 #include "foot_terrain_clearance.hpp"
+#include "foot_terrain_placement.hpp"   // ★D1 Phase 3b: 발판배치 제약(A·p+b≥0)
+#include "local_convex_region.hpp"      // ★D1 Phase 3b: CGAL 없는 convex 발판영역(박스성장)
 
 using namespace ocs2;
 using namespace legged_robot;
@@ -95,6 +97,7 @@ int main(int argc, char** argv) {
 
   // ★D1 Phase 3a: perceptive 발-지형 클리어런스 SDF 제약 주입(PERCEPTIVE=1). MPC 구성 전에 문제에 추가.
   std::shared_ptr<MjTerrainSdf> terrainSdf;
+  std::shared_ptr<LocalConvexRegion> region;   // ★Phase 3b: 발판배치 영역(PLACEMENT=1일 때 생성)
   if (getenv("PERCEPTIVE")) {
     terrainSdf = std::make_shared<MjTerrainSdf>();
     auto& prob = interface.getMutableOptimalControlProblem();
@@ -118,6 +121,29 @@ int main(int argc, char** argv) {
           std::unique_ptr<StateCost>(new StateSoftConstraint(std::move(con), std::move(pen))));
     }
     std::cerr << "[PERCEPTIVE] 발-지형 클리어런스 SDF 제약 " << info.numThreeDofContacts << "발 주입(clr=" << clr << ")\n";
+
+    // ★D1 Phase 3b: 발판배치(convex 박스영역) 제약. legged_perceptive FootPlacementConstraint 포팅.
+    //   soft·RelaxedBarrier(1e-2,1e-4)(clearance의 1e-3와 구별). A·p+b≥0(박스 4행)=발 XY를 walkable 박스 내로.
+    if (getenv("PLACEMENT")) {
+      region = std::make_shared<LocalConvexRegion>(terrainSdf);
+      for (size_t i = 0; i < info.numThreeDofContacts; ++i) {
+        const std::string& footName = ms.contactNames3DoF[i];
+        const auto infoCppAd = info.toCppAd();
+        const CentroidalModelPinocchioMappingCppAd mapCppAd(infoCppAd);
+        auto velCb = [infoCppAd](const ad_vector_t& state, PinocchioInterfaceCppAd& pAd) {
+          const ad_vector_t q = centroidal_model::getGeneralizedCoordinates(state, infoCppAd);
+          updateCentroidalDynamics(pAd, infoCppAd, q);
+        };
+        std::unique_ptr<EndEffectorKinematics<scalar_t>> eeKin(new PinocchioEndEffectorKinematicsCppAd(
+            interface.getPinocchioInterface(), mapCppAd, {footName}, info.stateDim, info.inputDim,
+            velCb, footName + "_place", ms.modelFolderCppAd, ms.recompileLibrariesCppAd, ms.verboseCppAd));
+        std::unique_ptr<PenaltyBase> pen(new RelaxedBarrierPenalty(RelaxedBarrierPenalty::Config(1e-2, 1e-4)));
+        std::unique_ptr<StateConstraint> con(new FootTerrainPlacementConstraint(*pRefMgr, *eeKin, region, i));
+        prob.stateSoftConstraintPtr->add(footName + "_footPlacement",
+            std::unique_ptr<StateCost>(new StateSoftConstraint(std::move(con), std::move(pen))));
+      }
+      std::cerr << "[PERCEPTIVE] 발판배치 제약 " << info.numThreeDofContacts << "발 주입(soft·RelaxedBarrier 1e-2/1e-4)\n";
+    }
   }
 
   // MPC 백엔드: 기본 SQP / DDP=1 → GaussNewtonDDP(SLQ, Riccati 정규화 내장=trust-region류)
@@ -247,6 +273,16 @@ int main(int argc, char** argv) {
   d->qpos[wq] = 0.0;
   mj_forward(m, d);
 
+  // ★Phase 3b: nominal 발-base xy 오프셋(yaw프레임). 초기 nominal stance(yaw=0)서 발 sphere − base.
+  //   매틱 발판영역 씨앗 = base_xy + vel·Δt + Rz(yaw)·offset (≈ getNominalFoothold FK, 평지 pitch≈0).
+  double footOff[4][2];
+  for (int i = 0; i < 4; ++i) {
+    footOff[i][0] = d->geom_xpos[3 * footGeom[i] + 0] - d->qpos[0];
+    footOff[i][1] = d->geom_xpos[3 * footGeom[i] + 1] - d->qpos[1];
+  }
+  const double comHeight = 0.50;                                  // reference.info comHeight(지형적응 base높이 기준)
+  const double mpcHorizon = interface.mpcSettings().timeHorizon_; // 발판 stanceEnd 탐색·참조 재구성 창
+
   // 전진 목표 (VX env, 기본 0.3; stance 격리시 VX=0)
   const double vx = getenv("VX") ? std::atof(getenv("VX")) : 0.3;
   vector_t xGoal = x0;
@@ -341,6 +377,59 @@ int main(int argc, char** argv) {
 
     // ★perceptive: MPC 솔브 전 지형 SDF를 로봇중심 heightmap으로 갱신(in-place=제약이 즉시 봄)
     if (terrainSdf) terrainSdf->update(m, d, d->qpos[0], d->qpos[1]);
+    // ★D1 Phase 3b: 발판영역 갱신(PLACEMENT) + 지형적응 base높이 참조(TERRAIN_Z). 재계획 주기(동기모드=레이스 없음).
+    if (terrainSdf && step % mpcDecim == 0 && (region || getenv("TERRAIN_Z"))) {
+      const double H = mpcHorizon, baseVx = d->qvel[0], baseVy = d->qvel[1], yaw = z;  // z=euler yaw(위 quat2zyx)
+      const double cy = std::cos(yaw), sy = std::sin(yaw);
+      // (A) 발판영역: 발별 stanceEnd(=initStandFinalTime, ConvexRegionSelector 복제) + nominal 씨앗 → updateFoot
+      if (region) {
+        auto msched = refMgr->getGaitSchedule()->getModeSchedule(t - H, t + H);
+        const auto& ev = msched.eventTimes; const auto& seq = msched.modeSequence;
+        const int nP = (int)seq.size();
+        for (int i = 0; i < (int)info.numThreeDofContacts; ++i) {
+          double stanceEnd_i = 0.0;  // t를 감싸는 stance의 liftoff시각, 스윙이면 0(현재 딛은 발은 안 되당김)
+          for (int p = 0; p < nP; ++p) {
+            if (!modeNumber2StanceLeg(seq[p])[i]) continue;
+            int s = 0;      for (int ip = p - 1; ip >= 0; --ip) if (!modeNumber2StanceLeg(seq[ip])[i]) { s = ip; break; }
+            int f = nP - 2; for (int ip = p + 1; ip < nP; ++ip) if (!modeNumber2StanceLeg(seq[ip])[i]) { f = ip - 1; break; }
+            if (s < (int)ev.size() && f >= 0 && f < (int)ev.size() && ev[s] < t && t < ev[f]) stanceEnd_i = ev[f];
+          }
+          double dtm = ((stanceEnd_i > t) ? 0.5 * (t + stanceEnd_i) : t + 0.5 * H) - t;  // stance 중간≈착지 부근
+          double rx = cy * footOff[i][0] - sy * footOff[i][1], ry = sy * footOff[i][0] + cy * footOff[i][1];
+          region->updateFoot(i, d->qpos[0] + baseVx * dtm + rx, d->qpos[1] + baseVy * dtm + ry, stanceEnd_i);
+        }
+      }
+      // (B) 지형적응 base높이: [t,t+H] 11노드 참조(base z=h+comH/cos pitch·pitch=지형법선). modifyReferences 포팅.
+      //   ★base x,y는 원본 절대 forward 램프(x0_x+vx·tn) 유지(modifyReferences가 desired x,y 보존하듯) — z/pitch만 덮어씀.
+      if (getenv("TERRAIN_Z")) {
+        vector_t x0m = x0; const double x0x = centroidal_model::getBasePose(x0m, info)(0),
+                                        x0y = centroidal_model::getBasePose(x0m, info)(1);
+        // ★smooth heightmap(box-avg ±SW): legged_perceptive "smooth_planar" 대응. 원 mj_ray 계단 날카로움 완화
+        //   → base z가 계단 앞서 점진 상승(급점프 전복 방지). pitch도 step=0.3 넓은 차분(legged_perceptive 동일).
+        const double SW = getenv("SMOOTH_W") ? std::atof(getenv("SMOOTH_W")) : 0.14;
+        auto hS = [&](double x, double y) { double s = 0; int c = 0;
+          for (double dx = -SW; dx <= SW + 1e-9; dx += 0.04) for (double dy = -SW; dy <= SW + 1e-9; dy += 0.04) { s += terrainSdf->height(x + dx, y + dy); ++c; }
+          return s / c; };
+        const double STEP = 0.3;
+        const int N = 11; std::vector<scalar_t> tt(N); std::vector<vector_t> xs(N), us(N);
+        for (int n = 0; n < N; ++n) {
+          double tn = t + (double)n * H / (N - 1);
+          vector_t xn = x0;                                                     // nominal 자세·momentum, base만 지형적응
+          double bx = x0x + vx * tn, by = x0y;                                  // 절대 forward 램프(원본 xGoal와 동일)
+          double refYaw = centroidal_model::getBasePose(xn, info)(3);            // 직진=0
+          double nX = (hS(bx - STEP, by) - hS(bx + STEP, by)) / (2 * STEP);      // n=[-∂h/∂x,-∂h/∂y,1]=법선(smooth·넓은차분)
+          double nY = (hS(bx, by - STEP) - hS(bx, by + STEP)) / (2 * STEP);
+          double vx_ = std::cos(refYaw) * nX + std::sin(refYaw) * nY;           // (Rz(yaw)ᵀ·n).x
+          double pitch = std::atan2(vx_, 1.0);
+          centroidal_model::getBasePose(xn, info)(0) = bx;
+          centroidal_model::getBasePose(xn, info)(1) = by;
+          centroidal_model::getBasePose(xn, info)(4) = pitch;                    // pitch 먼저(z가 읽음)
+          centroidal_model::getBasePose(xn, info)(2) = hS(bx, by) + comHeight / std::cos(pitch);
+          tt[n] = tn; xs[n] = xn; us[n] = vector_t::Zero(info.inputDim);
+        }
+        interface.getReferenceManagerPtr()->setTargetTrajectories(TargetTrajectories(std::move(tt), std::move(xs), std::move(us)));
+      }
+    }
     // --- MPC 관측 공급 + 정책 스왑 ---
     obs.time = t; obs.state = xMeas;
     mrt.setCurrentObservation(obs);       // 최신 상태를 MPC에(스레드 안전)

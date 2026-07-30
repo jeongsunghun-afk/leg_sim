@@ -32,6 +32,13 @@
 #include <ocs2_mpc/MPC_MRT_Interface.h>
 #include "wbc_02leg.hpp"
 #include "wbc_legged.hpp"
+// ★D1 Phase 3a: perceptive(발-지형 클리어런스 SDF 제약)
+#include <ocs2_pinocchio_interface/PinocchioEndEffectorKinematicsCppAd.h>
+#include <ocs2_centroidal_model/CentroidalModelPinocchioMapping.h>
+#include <ocs2_core/soft_constraint/StateSoftConstraint.h>
+#include <ocs2_core/penalties/penalties/RelaxedBarrierPenalty.h>
+#include "mj_terrain_sdf.hpp"
+#include "foot_terrain_clearance.hpp"
 
 using namespace ocs2;
 using namespace legged_robot;
@@ -85,6 +92,33 @@ int main(int argc, char** argv) {
   const auto& info = interface.getCentroidalModelInfo();
   const int nJ = info.actuatedDofNum;  // 12
   CentroidalModelRbdConversions rbd(interface.getPinocchioInterface(), info);
+
+  // ★D1 Phase 3a: perceptive 발-지형 클리어런스 SDF 제약 주입(PERCEPTIVE=1). MPC 구성 전에 문제에 추가.
+  std::shared_ptr<MjTerrainSdf> terrainSdf;
+  if (getenv("PERCEPTIVE")) {
+    terrainSdf = std::make_shared<MjTerrainSdf>();
+    auto& prob = interface.getMutableOptimalControlProblem();
+    auto pRefMgr = std::dynamic_pointer_cast<SwitchedModelReferenceManager>(interface.getReferenceManagerPtr());
+    const auto& ms = interface.modelSettings();
+    double clr = getenv("CLEARANCE") ? atof(getenv("CLEARANCE")) : 0.04;
+    for (size_t i = 0; i < info.numThreeDofContacts; ++i) {
+      const std::string& footName = ms.contactNames3DoF[i];
+      const auto infoCppAd = info.toCppAd();
+      const CentroidalModelPinocchioMappingCppAd mapCppAd(infoCppAd);
+      auto velCb = [infoCppAd](const ad_vector_t& state, PinocchioInterfaceCppAd& pAd) {
+        const ad_vector_t q = centroidal_model::getGeneralizedCoordinates(state, infoCppAd);
+        updateCentroidalDynamics(pAd, infoCppAd, q);
+      };
+      std::unique_ptr<EndEffectorKinematics<scalar_t>> eeKin(new PinocchioEndEffectorKinematicsCppAd(
+          interface.getPinocchioInterface(), mapCppAd, {footName}, info.stateDim, info.inputDim,
+          velCb, footName + "_perc", ms.modelFolderCppAd, ms.recompileLibrariesCppAd, ms.verboseCppAd));
+      std::unique_ptr<PenaltyBase> pen(new RelaxedBarrierPenalty(RelaxedBarrierPenalty::Config(1e-2, 1e-3)));
+      std::unique_ptr<StateConstraint> con(new FootTerrainClearanceConstraint(*pRefMgr, *eeKin, terrainSdf, i, clr));
+      prob.stateSoftConstraintPtr->add(footName + "_terrainClearance",
+          std::unique_ptr<StateCost>(new StateSoftConstraint(std::move(con), std::move(pen))));
+    }
+    std::cerr << "[PERCEPTIVE] 발-지형 클리어런스 SDF 제약 " << info.numThreeDofContacts << "발 주입(clr=" << clr << ")\n";
+  }
 
   // MPC 백엔드: 기본 SQP / DDP=1 → GaussNewtonDDP(SLQ, Riccati 정규화 내장=trust-region류)
   std::unique_ptr<MPC_BASE> mpcPtr;
@@ -305,6 +339,8 @@ int main(int argc, char** argv) {
       std::cerr << "  [DBG] diff  = " << (xMeas - x0).transpose() << "\n";
     }
 
+    // ★perceptive: MPC 솔브 전 지형 SDF를 로봇중심 heightmap으로 갱신(in-place=제약이 즉시 봄)
+    if (terrainSdf) terrainSdf->update(m, d, d->qpos[0], d->qpos[1]);
     // --- MPC 관측 공급 + 정책 스왑 ---
     obs.time = t; obs.state = xMeas;
     mrt.setCurrentObservation(obs);       // 최신 상태를 MPC에(스레드 안전)

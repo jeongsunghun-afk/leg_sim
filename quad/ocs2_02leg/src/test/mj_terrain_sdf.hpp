@@ -27,7 +27,8 @@ class MjTerrainSdf : public ocs2::DistanceTransformInterface {
         int geomid = -1;
         // group2(지형) geom만: geomgroup 마스크. (A와 동일 규약)
         mjtByte geomgroup[6] = {0, 0, 1, 0, 0, 0};
-        mjtNum dist = mj_ray(m, d, pnt, dir, geomgroup, 1, -1, &geomid);
+        mjtNum nrm[3];
+        mjtNum dist = mj_ray(m, d, pnt, dir, geomgroup, 1, -1, &geomid, nrm);
         h_[iy * nx_ + ix] = (geomid >= 0) ? (2.0 - dist) : 0.0;  // 지면높이(없으면 0=평지)
       }
   }

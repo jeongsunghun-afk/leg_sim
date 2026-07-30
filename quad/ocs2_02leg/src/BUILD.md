@@ -20,6 +20,9 @@ loadData::loadStdVector(filename, fieldName + ".contactNames3DoF", modelSettings
 loadData::loadStdVector(filename, fieldName + ".contactNames6DoF", modelSettings.contactNames6DoF, verbose);
 ```
 
+### 1b) `ocs2_legged_robot/src/LeggedRobotInterface.cpp` — SOFT_ZF 실험옵션(#2 relaxed barrier)
+`#include <ocs2_core/soft_constraint/StateInputSoftConstraint.h>` 아래 `#include <ocs2_core/penalties/penalties/QuadraticPenalty.h>` 추가. constructor의 `zeroForce`·`normalVelocity` add를 SOFT_ZF env시 QuadraticPenalty soft로 분기(hard equality→soft cost, 전환 g-spike 회피 실험). 상세=`test02legMujoco.cpp` 주석·docs/D1_OCS2_porting.md(#2 결과=crawl 미해결). **실험용, 기본 off면 원본 동작.**
+
 ### 2) `ocs2_legged_robot/CMakeLists.txt` — 실행파일 2개 추가 (`ament_package()` 앞)
 ```cmake
 add_executable(test02legLoad test/test02legLoad.cpp)

@@ -342,13 +342,17 @@ int main(int argc, char** argv) {
         Eigen::MatrixXd Aj = Amat.rightCols(nJ);
         Eigen::MatrixXd ADot = pinocchio::dccrba(mFF, dFF, qDesPin, vDesPin);  // 6×nv
         vector_t jAccel = centroidal_model::getJointVelocities(vector_t(uDes - uLast), info) / dt;
-        Eigen::Matrix<double, 6, 1> momRate = info.robotMass * getNormalizedCentroidalMomentumRate(pinFF, info, uDes);
-        momRate.noalias() -= ADot * vDesPin;
-        momRate.noalias() -= Aj * jAccel;
+        Eigen::Matrix<double, 6, 1> t1 = info.robotMass * getNormalizedCentroidalMomentumRate(pinFF, info, uDes);
+        Eigen::Matrix<double, 6, 1> t2 = ADot * vDesPin;
+        Eigen::Matrix<double, 6, 1> t3 = Aj * jAccel;
+        Eigen::Matrix<double, 6, 1> momRate = t1 - t2 - t3;
         aBaseFF = AbInv * momRate;
         uLast = uDes;
-        if (getenv("FF_DBG") && step % int(0.1 / dt) == 0)
-          std::cerr << "  [FF] t=" << t << " aBaseFF=" << aBaseFF.transpose() << "  |momRate|=" << momRate.norm() << "\n";
+        if (getenv("FF_DBG") && step % int(0.1 / dt) == 0) {
+          std::cerr << "  [FF] t=" << t << " aBaseFF=" << aBaseFF.transpose() << "\n";
+          std::cerr << "       t1(mom)=" << t1.transpose() << "\n";
+          std::cerr << "       t2(Adot*v)=" << t2.transpose() << "  t3(Aj*qddot)=" << t3.transpose() << "\n";
+        }
       }
       vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes,
                                   jointPosDes, jointVelDes, aBaseFF);

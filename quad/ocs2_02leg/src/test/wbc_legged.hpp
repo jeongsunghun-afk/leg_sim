@@ -49,8 +49,18 @@ class WbcLegged {
   vector_t update(const vector_t& stateDesired, const vector_t& inputDesired, const vector_t& rbdMeasured, size_t mode,
                   double period) {
     auto cf = ocs2::legged_robot::modeNumber2StanceLeg(mode);
-    numContacts_ = 0;
-    for (int i = 0; i < 4; ++i) { contact_[i] = cf[i]; if (cf[i]) numContacts_++; }
+    // ★접촉-일관 집합(전환 과지지 방지): motionC=planted(스케줄stance∧실접촉), forceC=힘가능(실접촉),
+    //   swingC=스윙task(스케줄swing). useActual_ 아니면 실접촉=스케줄이라 기존과 동일(하위호환).
+    nMotion_ = nForce_ = 0;
+    for (int i = 0; i < 4; ++i) {
+      bool sched = cf[i];
+      bool touch = useActual_ ? actualContact_[i] : sched;
+      motionC_[i] = sched && touch;  if (motionC_[i]) nMotion_++;
+      forceC_[i] = touch;            if (forceC_[i]) nForce_++;
+      swingC_[i] = !sched;
+      contact_[i] = sched;  // 참조 유지
+    }
+    numContacts_ = nForce_;
     updateMeasured(rbdMeasured);
     updateDesired(stateDesired, inputDesired, period);
 
@@ -138,6 +148,7 @@ class WbcLegged {
   double swingKp_ = 350, swingKd_ = 30;
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
+  void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
   vector_t torqueLimits_;
   int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0, nWsr_ = 20;
@@ -203,15 +214,15 @@ class WbcLegged {
     matrix_t a(nv_, nx_); a << M_, -j_.transpose(), -S.transpose();
     return {a, -nle_};
   }
-  std::pair<matrix_t, vector_t> noContactMotionTask() {  // stance: J q̈ = -dJ v
-    matrix_t a = matrix_t::Zero(3 * numContacts_, nx_); vector_t b(3 * numContacts_);
-    int jc = 0; for (int i = 0; i < nc_; ++i) if (contact_[i]) { a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3); b.segment(3 * jc, 3) = -dj_.middleRows(3 * i, 3) * vM_; jc++; }
+  std::pair<matrix_t, vector_t> noContactMotionTask() {  // planted(스케줄stance∧실접촉): J q̈ = -dJ v
+    matrix_t a = matrix_t::Zero(3 * nMotion_, nx_); vector_t b(3 * nMotion_);
+    int jc = 0; for (int i = 0; i < nc_; ++i) if (motionC_[i]) { a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3); b.segment(3 * jc, 3) = -dj_.middleRows(3 * i, 3) * vM_; jc++; }
     return {a, b};
   }
-  std::pair<matrix_t, vector_t> frictionEqTask() {  // swing: f=0
-    int ns = nc_ - numContacts_;
+  std::pair<matrix_t, vector_t> frictionEqTask() {  // 비접촉발: f=0
+    int ns = nc_ - nForce_;
     matrix_t a = matrix_t::Zero(3 * ns, nx_); int jc = 0;
-    for (int i = 0; i < nc_; ++i) if (!contact_[i]) { a.block(3 * jc++, nv_ + 3 * i, 3, 3).setIdentity(); }
+    for (int i = 0; i < nc_; ++i) if (!forceC_[i]) { a.block(3 * jc++, nv_ + 3 * i, 3, 3).setIdentity(); }
     return {a, vector_t::Zero(3 * ns)};
   }
   std::pair<matrix_t, vector_t> torqueLimitTask() {  // -τlim ≤ τ ≤ τlim  → [I;-I]τ ≤ [lim;lim]
@@ -220,16 +231,16 @@ class WbcLegged {
     vector_t f(2 * nJ_); for (int l = 0; l < 2 * nJ_ / 3; ++l) f.segment<3>(3 * l) = torqueLimits_;
     return {d, f};
   }
-  std::pair<matrix_t, vector_t> frictionIneqTask() {  // stance: pyramid·f ≤ 0
+  std::pair<matrix_t, vector_t> frictionIneqTask() {  // 접촉발: pyramid·f ≤ 0
     Eigen::Matrix<double, 5, 3> P; P << 0, 0, -1, 1, 0, -mu_, -1, 0, -mu_, 0, 1, -mu_, 0, -1, -mu_;
-    matrix_t d = matrix_t::Zero(5 * numContacts_, nx_); int jc = 0;
-    for (int i = 0; i < nc_; ++i) if (contact_[i]) { d.block(5 * jc++, nv_ + 3 * i, 5, 3) = P; }
-    return {d, vector_t::Zero(5 * numContacts_)};
+    matrix_t d = matrix_t::Zero(5 * nForce_, nx_); int jc = 0;
+    for (int i = 0; i < nc_; ++i) if (forceC_[i]) { d.block(5 * jc++, nv_ + 3 * i, 5, 3) = P; }
+    return {d, vector_t::Zero(5 * nForce_)};
   }
-  std::pair<matrix_t, vector_t> swingTask() {
-    int ns = nc_ - numContacts_;
+  std::pair<matrix_t, vector_t> swingTask() {  // 스케줄 스윙발: Cartesian PD (닿아 있어도 들어올림)
+    int ns = 0; for (int i = 0; i < nc_; ++i) if (swingC_[i]) ns++;
     matrix_t a = matrix_t::Zero(3 * ns, nx_); vector_t b(3 * ns); int jc = 0;
-    for (int i = 0; i < nc_; ++i) if (!contact_[i]) {
+    for (int i = 0; i < nc_; ++i) if (swingC_[i]) {
       vector3_t accel = swingKp_ * (posD_[i] - posM_[i]) + swingKd_ * (velD_[i] - velM_[i]);
       a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3);
       b.segment(3 * jc, 3) = accel - dj_.middleRows(3 * i, 3) * vM_; jc++;
@@ -254,8 +265,10 @@ class WbcLegged {
   ocs2::CentroidalModelInfo info_;
   ocs2::CentroidalModelPinocchioMapping mapping_;
   std::array<int, 4> eeId_;
-  int nv_, nJ_, nc_, nx_, numContacts_ = 4;
+  int nv_, nJ_, nc_, nx_, numContacts_ = 4, nMotion_ = 4, nForce_ = 4;
   std::array<bool, 4> contact_{true, true, true, true};
+  std::array<bool, 4> motionC_{true, true, true, true}, forceC_{true, true, true, true}, swingC_{false, false, false, false};
+  std::array<bool, 4> actualContact_{true, true, true, true}; bool useActual_ = false;
   double mu_ = 0.5;
   vector_t qM_, vM_, qD_, vD_, nle_, inputLast_, last_;
   matrix_t M_, j_, dj_;

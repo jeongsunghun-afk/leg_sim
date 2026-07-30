@@ -9,7 +9,8 @@ source "$HERE/ocs2_ws/install/setup.bash" 2>/dev/null || true
 EXE="$HERE/ocs2_ws/install/ocs2_legged_robot/lib/ocs2_legged_robot/test02legMujoco"
 CFG="$HERE/ocs2_02leg/config/task.info $HERE/ocs2_02leg/urdf/02leg_ocs2.urdf $HERE/ocs2_02leg/config/reference.info"
 MJCF="$HERE/mjcf/quad_real_17dof_waist_sphere.mjcf"
-# WBC 저수준·정적은 기본가중, 동적은 힘신뢰(W_BASE 1·W_F 50) 자동
-WFLAGS=""; [ "$GAIT" != "stance" ] && WFLAGS="W_BASE=1 W_F=50"
+# ★legged식 WBC(WBC_LEGGED) 사용. 동적 gait은 base 가중↑(W_BASE 50)로 안정 trot.
+#   1ms/1kHz·바닥강성 0.005·허리 단단 홀드는 바이너리 기본값(A 제어기와 동일 세팅).
+WFLAGS="WBC_LEGGED=1"; [ "$GAIT" != "stance" ] && WFLAGS="WBC_LEGGED=1 W_BASE=50"
 echo "▶ gait=$GAIT vx=$VXX  (마우스=카메라, 창 닫기=종료)"
 env WBC=1 VIEW=1 VX="$VXX" $WFLAGS "$EXE" $CFG "$MJCF" "$GAIT" 100000

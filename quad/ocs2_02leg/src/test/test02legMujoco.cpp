@@ -183,6 +183,10 @@ int main(int argc, char** argv) {
     aqadr[i] = m->jnt_qposadr[j]; avadr[i] = m->jnt_dofadr[j];
     aact[i] = mj_name2id(m, mjOBJ_ACTUATOR, actName(kAnkle[i]).c_str());
   }
+  // ★발 sphere geom id (실제 접촉 감지용, 순서 [FL,FR,HL,HR]=contactNames3DoF)
+  int footGeom[4];
+  { const char* sph[4] = {"FL_sphere", "FR_sphere", "HL_sphere", "HR_sphere"};
+    for (int i = 0; i < 4; ++i) footGeom[i] = mj_name2id(m, mjOBJ_GEOM, sph[i]); }
   int wj = mj_name2id(m, mjOBJ_JOINT, "FB_waist_joint");
   int wq = m->jnt_qposadr[wj], wv = m->jnt_dofadr[wj];
   int wact = mj_name2id(m, mjOBJ_ACTUATOR, "FB_waist");
@@ -236,12 +240,18 @@ int main(int argc, char** argv) {
     cam.distance = 2.5; cam.elevation = -20; cam.azimuth = 120;
   }
 
+  // ★A 제어기와 동일 1kHz(1ms) — MJCF 0.002 오버라이드(동적 접촉 안정 + WBC 균형 대역폭 2배)
+  m->opt.timestep = getenv("TIMESTEP") ? std::atof(getenv("TIMESTEP")) : 0.001;
+  // ★A와 동일 접촉 강성(solref 시정수 0.02→0.005): 발 침투 35mm→3mm, 동적 접촉 안정(quad_control.hpp:64)
+  { double stiff = getenv("STIFF") ? std::atof(getenv("STIFF")) : 0.005;
+    for (int g = 0; g < m->ngeom; ++g) { m->geom_solref[g * 2] = stiff; m->geom_solref[g * 2 + 1] = 1.0; } }
   const double dt = m->opt.timestep;
   const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 50.0;
   const int mpcDecim = std::max(1, int((1.0 / mpcHz) / dt));  // 재계획 주기
   const double Kp = getenv("KP") ? std::atof(getenv("KP")) : 60.0;
   const double Kd = getenv("KD") ? std::atof(getenv("KD")) : 2.0;
-  const double KpA = 40.0, KdA = 1.5;   // 발목/허리 홀드 PD
+  const double KpA = getenv("ANKLE_KP") ? std::atof(getenv("ANKLE_KP")) : 40.0, KdA = getenv("ANKLE_KD") ? std::atof(getenv("ANKLE_KD")) : 1.5;  // 발목 홀드 PD
+  const double KpW = getenv("WAIST_KP") ? std::atof(getenv("WAIST_KP")) : 300.0, KdW = getenv("WAIST_KD") ? std::atof(getenv("WAIST_KD")) : 12.0;  // ★허리 단단히 홀드(무거운 몸통분리 DOF)
   vector_t jAcc = vector_t::Zero(nJ);
 
   std::cerr << "[SIM] dt=" << dt << " mpcDecim=" << mpcDecim << " gait=" << gait << "\n";
@@ -287,13 +297,21 @@ int main(int argc, char** argv) {
     vector_t xDes, uDes; size_t md;
     mrt.evaluatePolicy(t, xMeas, xDes, uDes, md);
 
+    // ★실제 MuJoCo 접촉 감지(발별) — 스케줄 모드와 비교/오버라이드용
+    bool actC[4] = {false, false, false, false};
+    for (int c = 0; c < d->ncon; ++c) {
+      int g1 = d->contact[c].geom1, g2 = d->contact[c].geom2;
+      for (int i = 0; i < 4; ++i) if (g1 == footGeom[i] || g2 == footGeom[i]) actC[i] = true;
+    }
     if (useWbc && wbcLegged) {
       // ★legged_control 충실 이식 WBC: (xDes,uDes,rbd_s,mode,dt)→관절토크(내부서 전부 처리).
+      // CONTACT_ACTUAL=1: 접촉력 분배를 스케줄 대신 실제접촉 기준(접촉전환 과지지 방지).
+      if (getenv("CONTACT_ACTUAL")) wbcL.setActualContact(actC);
       vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
       // ★표준 저수준(Bellicoso2016·legged_control): τ = τ_ff + τ_pd
       //   τ_ff = τ_wbc(WBC 전신 역동역학 피드포워드), τ_pd = kp(q_des−q)+kd(q̇_des−q̇) 관절추종.
       //   legged: LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. velDes=MPC 관절속도(uDes 후반 nJ).
-      double jkd = getenv("JKD") ? atof(getenv("JKD")) : 3.0;   // 표준 기본 kd=3
+      double jkd = getenv("JKD") ? atof(getenv("JKD")) : 0.0;   // 이상토크 MuJoCo=0(kd=3는 WBC 정확토크와 충돌)
       double jkp = getenv("JKP") ? atof(getenv("JKP")) : 0.0;   // kp(옵션, legged 기본 0)
       for (int i = 0; i < 12; ++i) {
         double qMeas = rbd_s(6 + i), qdMeas = rbd_s(24 + i);      // rbd: jointPos@6.., jointVel@24..
@@ -303,8 +321,10 @@ int main(int argc, char** argv) {
       }
       if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) {
         double tilt2 = std::acos(std::max(-1.0, std::min(1.0, 1 - 2 * (d->qpos[4] * d->qpos[4] + d->qpos[5] * d->qpos[5])))) * 180 / M_PI;
-        std::cerr << "  [LEGGED] t=" << t << " base_z=" << d->qpos[2] << " tilt=" << tilt2 << " qpFail=" << wbcL.qpFail_
-                  << " status=" << wbcL.lastStatus_ << " neq=" << wbcL.neq_ << " nineq=" << wbcL.nineq_ << "\n";
+        auto sc = modeNumber2StanceLeg(md);  // 스케줄 stance(0/1) [FL,FR,HL,HR]
+        std::cerr << "  [LEGGED] t=" << t << " base_x=" << d->qpos[0] << " base_z=" << d->qpos[2] << " tilt=" << tilt2 << " qpFail=" << wbcL.qpFail_
+                  << " status=" << wbcL.lastStatus_ << " nineq=" << wbcL.nineq_
+                  << "  sched[" << sc[0] << sc[1] << sc[2] << sc[3] << "] act[" << actC[0] << actC[1] << actC[2] << actC[3] << "]\n";
       }
     } else if (useWbc) {
       // ★OCS2 pinocchio 모델 base = Composite(Translation + SphericalZYX) = euler base(nq=nv=18):
@@ -419,7 +439,7 @@ int main(int argc, char** argv) {
     }
     for (int i = 0; i < 4; ++i)  // 발목 0 홀드
       d->ctrl[aact[i]] = KpA * (0.0 - d->qpos[aqadr[i]]) + KdA * (0.0 - d->qvel[avadr[i]]);
-    d->ctrl[wact] = KpA * (0.0 - d->qpos[wq]) + KdA * (0.0 - d->qvel[wv]);  // 허리 0
+    d->ctrl[wact] = KpW * (0.0 - d->qpos[wq]) + KdW * (0.0 - d->qvel[wv]);  // 허리 0 (단단히)
 
     mj_step(m, d);
     if (pace) std::this_thread::sleep_until(tWall0 + std::chrono::duration<double>((step + 1) * dt));

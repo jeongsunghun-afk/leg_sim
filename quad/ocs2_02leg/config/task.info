@@ -54,7 +54,7 @@ swing_trajectory_config
 ; Multiple_Shooting SQP settings
 sqp
 {
-  nThreads                              3
+  nThreads                              1
   dt                                    0.015
   sqpIteration                          1
   deltaTol                              1e-4
@@ -74,7 +74,7 @@ sqp
 ; Multiple_Shooting IPM settings
 ipm
 {
-  nThreads                              3
+  nThreads                              1
   dt                                    0.015
   ipmIteration                          1
   deltaTol                              1e-4
@@ -109,7 +109,7 @@ ddp
 {
   algorithm                       SLQ
 
-  nThreads                        3
+  nThreads                        1
   threadPriority                  50
 
   maxNumIterations                1

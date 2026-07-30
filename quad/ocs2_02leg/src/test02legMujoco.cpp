@@ -18,6 +18,7 @@
 #include <ocs2_centroidal_model/AccessHelperFunctions.h>
 #include <ocs2_robotic_tools/common/RotationDerivativesTransforms.h>
 #include <ocs2_sqp/SqpMpc.h>
+#include <ocs2_ddp/GaussNewtonDDP_MPC.h>
 #include <ocs2_mpc/MPC_MRT_Interface.h>
 #include "wbc_02leg.hpp"
 
@@ -74,8 +75,17 @@ int main(int argc, char** argv) {
   const int nJ = info.actuatedDofNum;  // 12
   CentroidalModelRbdConversions rbd(interface.getPinocchioInterface(), info);
 
-  SqpMpc mpc(interface.mpcSettings(), interface.sqpSettings(), interface.getOptimalControlProblem(),
-             interface.getInitializer());
+  // MPC 백엔드: 기본 SQP / DDP=1 → GaussNewtonDDP(SLQ, Riccati 정규화 내장=trust-region류)
+  std::unique_ptr<MPC_BASE> mpcPtr;
+  if (getenv("DDP")) {
+    std::cerr << "[MPC] GaussNewtonDDP(SLQ) 백엔드\n";
+    mpcPtr = std::make_unique<GaussNewtonDDP_MPC>(interface.mpcSettings(), interface.ddpSettings(), interface.getRollout(),
+                                                  interface.getOptimalControlProblem(), interface.getInitializer());
+  } else {
+    mpcPtr = std::make_unique<SqpMpc>(interface.mpcSettings(), interface.sqpSettings(), interface.getOptimalControlProblem(),
+                                      interface.getInitializer());
+  }
+  MPC_BASE& mpc = *mpcPtr;
   mpc.getSolverPtr()->setReferenceManager(interface.getReferenceManagerPtr());
   auto refMgr = std::dynamic_pointer_cast<SwitchedModelReferenceManager>(interface.getReferenceManagerPtr());
   if (gait != "stance") {

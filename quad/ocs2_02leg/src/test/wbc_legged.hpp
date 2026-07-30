@@ -90,7 +90,7 @@ class WbcLegged {
       for (size_t k = 0; k < ineqD.size(); ++k) { Ac.middleRows(r, ineqD[k].rows()) = ineqD[k]; lbA.segment(r, ineqf[k].size()).setConstant(-qpOASES::INFTY); ubA.segment(r, ineqf[k].size()) = ineqf[k]; r += ineqD[k].rows(); } }
     qpOASES::QProblem qp(nx_, nCon);
     qpOASES::Options opt; opt.setToMPC(); opt.printLevel = qpOASES::PL_NONE; opt.enableEqualities = qpOASES::BT_TRUE; qp.setOptions(opt);
-    int nWsr = 20;
+    int nWsr = nWsr_;  // 기본 20(legged), NWSR env로 상향(스윙국면 active-set 반복 부족 대응)
     qpOASES::returnValue rv = qp.init(H.data(), g.data(), Ac.data(), nullptr, nullptr, lbA.data(), ubA.data(), nWsr);
     lastStatus_ = (int)rv;
     if (rv == qpOASES::SUCCESSFUL_RETURN && qp.getPrimalSolution(x.data()) == qpOASES::SUCCESSFUL_RETURN && x.allFinite()) last_ = x;
@@ -126,6 +126,11 @@ class WbcLegged {
               tau(0), tau(1), tau(2), tau(3), tau(4), tau(5), tau(6), tau(7), tau(8), tau(9), tau(10), tau(11));
       fprintf(stderr, "  EOM residual |r|=%.3e  (base6 |r|=%.3e)  nle base=[%.1f %.1f %.1f|%.1f %.1f %.1f]\n",
               eomRes.norm(), eomRes.head(6).norm(), nle_(0), nle_(1), nle_(2), nle_(3), nle_(4), nle_(5));
+      double fdx = inputDesired(0) + inputDesired(3) + inputDesired(6) + inputDesired(9);
+      fprintf(stderr, "  fDes(MPC) Fx per foot=[%.1f %.1f %.1f %.1f] sumFx=%.1f (→aBaseFF_x=sumFx/m=%.2f)\n",
+              inputDesired(0), inputDesired(3), inputDesired(6), inputDesired(9), fdx, fdx / info_.robotMass);
+      fprintf(stderr, "  base pos err(des-meas)=[%.4f %.4f %.4f]  euler err=[%.4f %.4f %.4f]\n",
+              qD_(0) - qM_(0), qD_(1) - qM_(1), qD_(2) - qM_(2), qD_(3) - qM_(3), qD_(4) - qM_(4), qD_(5) - qM_(5));
     }
     return x.tail(nJ_);  // τ (관절 토크)
   }
@@ -135,7 +140,7 @@ class WbcLegged {
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
   vector_t torqueLimits_;
-  int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0;
+  int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0, nWsr_ = 20;
 
  private:
   // ── measured 준비 (legged updateMeasured) ──

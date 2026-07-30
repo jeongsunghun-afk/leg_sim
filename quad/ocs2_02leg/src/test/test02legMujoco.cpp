@@ -123,8 +123,9 @@ int main(int argc, char** argv) {
   if (getenv("KP_F")) wbcL.swingKp_ = atof(getenv("KP_F"));
   if (getenv("KD_F")) wbcL.swingKd_ = atof(getenv("KD_F"));
   if (getenv("REG")) wbcL.reg_ = atof(getenv("REG"));
-  if (getenv("BASE_PD")) wbcL.basePd_ = true;
-  if (getenv("BASE_NOFF")) wbcL.baseNoFF_ = true;
+  if (getenv("NWSR")) wbcL.nWsr_ = atoi(getenv("NWSR"));
+  wbcL.basePd_ = !getenv("NO_BASE_PD");   // ★표준=FF+PD (Bellicoso2016 식17/18): aBaseFF + Kp·posErr + Kd·velErr
+  if (getenv("BASE_NOFF")) wbcL.baseNoFF_ = true;   // 순수PD(진단용)
   if (getenv("KP_B")) wbcL.kpBase_ = atof(getenv("KP_B"));
   if (getenv("KD_B")) wbcL.kdBase_ = atof(getenv("KD_B"));
   if (getenv("W_BASE")) wbc.wBase_ = atof(getenv("W_BASE"));
@@ -289,14 +290,16 @@ int main(int argc, char** argv) {
     if (useWbc && wbcLegged) {
       // ★legged_control 충실 이식 WBC: (xDes,uDes,rbd_s,mode,dt)→관절토크(내부서 전부 처리).
       vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
-      // ★legged 저수준 복제: 하드웨어단 관절 속도댐핑 τ += kd·(velDes − q̇). legged 기본 kd=3.
-      //   legged LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. 브리지엔 원래 누락.
-      double jkd = getenv("JKD") ? atof(getenv("JKD")) : 0.0;
-      double jkp = getenv("JKP") ? atof(getenv("JKP")) : 0.0;
+      // ★표준 저수준(Bellicoso2016·legged_control): τ = τ_ff + τ_pd
+      //   τ_ff = τ_wbc(WBC 전신 역동역학 피드포워드), τ_pd = kp(q_des−q)+kd(q̇_des−q̇) 관절추종.
+      //   legged: LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. velDes=MPC 관절속도(uDes 후반 nJ).
+      double jkd = getenv("JKD") ? atof(getenv("JKD")) : 3.0;   // 표준 기본 kd=3
+      double jkp = getenv("JKP") ? atof(getenv("JKP")) : 0.0;   // kp(옵션, legged 기본 0)
       for (int i = 0; i < 12; ++i) {
-        double qMeas = rbd_s(6 + i), qdMeas = rbd_s(24 + i);       // rbd: jointPos@6.., jointVel@24..
-        double qDes = xDes(12 + i);                                 // centroidal state: momentum(6)+basePose(6)+jointPos(12)
-        d->ctrl[act[i]] = tauJ(i) + jkd * (0.0 - qdMeas) + jkp * (qDes - qMeas);  // velDes≈0(정지)
+        double qMeas = rbd_s(6 + i), qdMeas = rbd_s(24 + i);      // rbd: jointPos@6.., jointVel@24..
+        double qDes = xDes(12 + i);                               // centroidal state: momentum(6)+basePose(6)+jointPos(12)
+        double qdDes = uDes(3 * 4 + i);                           // centroidal input: contactForce(3*4)+jointVel(12)
+        d->ctrl[act[i]] = tauJ(i) + jkp * (qDes - qMeas) + jkd * (qdDes - qdMeas);  // τ_ff + τ_pd
       }
       if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) {
         double tilt2 = std::acos(std::max(-1.0, std::min(1.0, 1 - 2 * (d->qpos[4] * d->qpos[4] + d->qpos[5] * d->qpos[5])))) * 180 / M_PI;

@@ -29,6 +29,7 @@
 #include <ocs2_ddp/GaussNewtonDDP_MPC.h>
 #include <ocs2_mpc/MPC_MRT_Interface.h>
 #include "wbc_02leg.hpp"
+#include "wbc_legged.hpp"
 
 using namespace ocs2;
 using namespace legged_robot;
@@ -113,6 +114,15 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 4; ++i) footId[i] = interface.getPinocchioInterface().getModel().getFrameId(footFrame[i]);
   int baseId = interface.getPinocchioInterface().getModel().getFrameId("Base");
   Wbc02Leg wbc(interface.getPinocchioInterface(), footId, baseId, 0.5);
+  // ★legged_control 충실 이식 WBC (WBC_LEGGED=1). [q̈,f,τ]·full EOM·torque limit·FF base.
+  const bool wbcLegged = getenv("WBC_LEGGED");
+  WbcLegged wbcL(interface.getPinocchioInterface(), info, footId);
+  if (getenv("W_SW")) wbcL.wSwing_ = atof(getenv("W_SW"));
+  if (getenv("W_BASE")) wbcL.wBase_ = atof(getenv("W_BASE"));
+  if (getenv("W_F")) wbcL.wForce_ = atof(getenv("W_F"));
+  if (getenv("KP_F")) wbcL.swingKp_ = atof(getenv("KP_F"));
+  if (getenv("KD_F")) wbcL.swingKd_ = atof(getenv("KD_F"));
+  if (getenv("REG")) wbcL.reg_ = atof(getenv("REG"));
   if (getenv("W_BASE")) wbc.wBase_ = atof(getenv("W_BASE"));
   if (getenv("W_SW")) wbc.wSwing_ = atof(getenv("W_SW"));
   if (getenv("W_F")) wbc.wForce_ = atof(getenv("W_F"));
@@ -272,7 +282,16 @@ int main(int argc, char** argv) {
     vector_t xDes, uDes; size_t md;
     mrt.evaluatePolicy(t, xMeas, xDes, uDes, md);
 
-    if (useWbc) {
+    if (useWbc && wbcLegged) {
+      // ★legged_control 충실 이식 WBC: (xDes,uDes,rbd_s,mode,dt)→관절토크(내부서 전부 처리).
+      vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
+      for (int i = 0; i < 12; ++i) d->ctrl[act[i]] = tauJ(i);
+      if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) {
+        double tilt2 = std::acos(std::max(-1.0, std::min(1.0, 1 - 2 * (d->qpos[4] * d->qpos[4] + d->qpos[5] * d->qpos[5])))) * 180 / M_PI;
+        std::cerr << "  [LEGGED] t=" << t << " base_z=" << d->qpos[2] << " tilt=" << tilt2 << " qpFail=" << wbcL.qpFail_
+                  << " status=" << wbcL.lastStatus_ << " neq=" << wbcL.neq_ << " nineq=" << wbcL.nineq_ << "\n";
+      }
+    } else if (useWbc) {
       // ★OCS2 pinocchio 모델 base = Composite(Translation + SphericalZYX) = euler base(nq=nv=18):
       //   q = [pos(3), eulerZYX(3), joints(12)], v = [linVel_world(3), eulerZYX_rate(3), jointVel(12)].
       // 측정 q/v (MuJoCo → euler base). euler(z,py,rx)·world 각속도 ww는 위 rbdState 구간서 계산됨.

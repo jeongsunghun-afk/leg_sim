@@ -131,7 +131,7 @@
       </geometry>
     </collision>
   </link>
-  <joint name="HL_foot_joint" type="revolute">
+  <joint name="HL_foot_joint" type="fixed">
     <origin xyz="-0.18768 0 -0.15748" rpy="0 0 0" />
     <parent link="HL_calf_link" />
     <child link="HL_foot_link" />
@@ -275,7 +275,7 @@
       </geometry>
     </collision>
   </link>
-  <joint name="HR_foot_joint" type="revolute">
+  <joint name="HR_foot_joint" type="fixed">
     <origin xyz="-0.187680888564152 0 -0.157482964373201" rpy="0 0 0" />
     <parent link="HR_calf_link" />
     <child link="HR_foot_link" />
@@ -448,7 +448,7 @@
       </geometry>
     </collision>
   </link>
-  <joint name="FL_foot_joint" type="revolute">
+  <joint name="FL_foot_joint" type="fixed">
     <origin xyz="0.10354 0.275 -0.22205" rpy="0 0 0" />
     <parent link="FL_calf_link" />
     <child link="FL_foot_link" />
@@ -592,7 +592,7 @@
       </geometry>
     </collision>
   </link>
-  <joint name="FR_foot_joint" type="revolute">
+  <joint name="FR_foot_joint" type="fixed">
     <origin xyz="0.10354 0 -0.22205" rpy="0 0 0" />
     <parent link="FR_calf_link" />
     <child link="FR_foot_link" />

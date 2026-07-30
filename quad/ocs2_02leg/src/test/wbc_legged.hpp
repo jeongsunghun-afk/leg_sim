@@ -42,7 +42,10 @@ class WbcLegged {
     nx_ = nv_ + 3 * nc_ + nJ_;               // q̈ + f + τ = 42
     for (int i = 0; i < 4; ++i) eeId_[i] = eeFrames[i];
     inputLast_ = vector_t::Zero(info_.inputDim);
-    torqueLimits_ = vector_t(3); torqueLimits_ << 84.0, 84.0, 126.0;  // 02_Leg (hip,thigh,calf) peak Nm
+    perLeg_ = nJ_ / nc_;  // 다리당 관절수: 3(point-foot) or 4(발목포함)
+    torqueLimits_ = vector_t(perLeg_);
+    if (perLeg_ == 4) torqueLimits_ << 84.0, 84.0, 126.0, 168.0;  // hip,thigh,calf,ankle peak Nm
+    else torqueLimits_ << 84.0, 84.0, 126.0;                       // hip,thigh,calf
   }
 
   // stateDesired/inputDesired=OCS2 centroidal, rbdMeasured=[eulZYX,pos,jointPos,angVel_w,linVel_w,jointVel], mode, period=dt.
@@ -236,7 +239,7 @@ class WbcLegged {
   std::pair<matrix_t, vector_t> torqueLimitTask() {  // -τlim ≤ τ ≤ τlim  → [I;-I]τ ≤ [lim;lim]
     matrix_t d = matrix_t::Zero(2 * nJ_, nx_); int off = nv_ + 3 * nc_;
     d.block(0, off, nJ_, nJ_).setIdentity(); d.block(nJ_, off, nJ_, nJ_) = -matrix_t::Identity(nJ_, nJ_);
-    vector_t f(2 * nJ_); for (int l = 0; l < 2 * nJ_ / 3; ++l) f.segment<3>(3 * l) = torqueLimits_;
+    vector_t f(2 * nJ_); for (int l = 0; l < 2 * nJ_ / perLeg_; ++l) f.segment(perLeg_ * l, perLeg_) = torqueLimits_;
     return {d, f};
   }
   std::pair<matrix_t, vector_t> frictionIneqTask() {  // 접촉발: pyramid·f ≤ 0
@@ -274,7 +277,7 @@ class WbcLegged {
   ocs2::CentroidalModelInfo info_;
   ocs2::CentroidalModelPinocchioMapping mapping_;
   std::array<int, 4> eeId_;
-  int nv_, nJ_, nc_, nx_, numContacts_ = 4, nMotion_ = 4, nForce_ = 4;
+  int nv_, nJ_, nc_, nx_, numContacts_ = 4, nMotion_ = 4, nForce_ = 4, perLeg_ = 3;
   std::array<bool, 4> contact_{true, true, true, true};
   std::array<bool, 4> motionC_{true, true, true, true}, forceC_{true, true, true, true}, swingC_{false, false, false, false};
   std::array<bool, 4> actualContact_{true, true, true, true}; bool useActual_ = false;

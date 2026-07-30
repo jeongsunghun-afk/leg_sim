@@ -22,15 +22,19 @@ model_settings
     [0]   FL_hip_joint
     [1]   FL_thigh_joint
     [2]   FL_calf_joint
-    [3]   FR_hip_joint
-    [4]   FR_thigh_joint
-    [5]   FR_calf_joint
-    [6]   HL_hip_joint
-    [7]   HL_thigh_joint
-    [8]   HL_calf_joint
-    [9]   HR_hip_joint
-    [10]  HR_thigh_joint
-    [11]  HR_calf_joint
+    [3]   FL_foot_joint
+    [4]   FR_hip_joint
+    [5]   FR_thigh_joint
+    [6]   FR_calf_joint
+    [7]   FR_foot_joint
+    [8]   HL_hip_joint
+    [9]   HL_thigh_joint
+    [10]  HL_calf_joint
+    [11]  HL_foot_joint
+    [12]  HR_hip_joint
+    [13]  HR_thigh_joint
+    [14]  HR_calf_joint
+    [15]  HR_foot_joint
   }
 
   contactNames3DoF
@@ -185,19 +189,23 @@ initialState
    (10,0) 0.0     ; theta_base_y
    (11,0) 0.0     ; theta_base_x
 
-   ;; Leg Joint Positions: [FL, FR, HL, HR] x (hip, thigh, calf) — pinocchio IK @ base 0.45 ;;
+   ;; Leg Joint Positions: [FL, FR, HL, HR] x (hip, thigh, calf, foot/ankle) — 16-DOF ;;
    (12,0)  0.000  ; FL_hip
    (13,0)  0.180  ; FL_thigh
    (14,0) -0.285  ; FL_calf
-   (15,0)  0.000  ; FR_hip
-   (16,0)  0.180  ; FR_thigh
-   (17,0) -0.285  ; FR_calf
-   (18,0)  0.000  ; HL_hip
-   (19,0) -0.212  ; HL_thigh
-   (20,0)  0.332  ; HL_calf
-   (21,0)  0.000  ; HR_hip
-   (22,0) -0.212  ; HR_thigh
-   (23,0)  0.332  ; HR_calf
+   (15,0)  0.000  ; FL_foot
+   (16,0)  0.000  ; FR_hip
+   (17,0)  0.180  ; FR_thigh
+   (18,0) -0.285  ; FR_calf
+   (19,0)  0.000  ; FR_foot
+   (20,0)  0.000  ; HL_hip
+   (21,0) -0.212  ; HL_thigh
+   (22,0)  0.332  ; HL_calf
+   (23,0)  0.000  ; HL_foot
+   (24,0)  0.000  ; HR_hip
+   (25,0) -0.212  ; HR_thigh
+   (26,0)  0.332  ; HR_calf
+   (27,0)  0.000  ; HR_foot
 }
 
 ; standard state weight matrix
@@ -221,19 +229,23 @@ Q
   (10,10) 200.0    ; theta_base_y
   (11,11) 200.0    ; theta_base_x
 
-  ;; Leg Joint Positions: [FL, FR, HL, HR] ;;
-  (12,12) 20.0     ; LF_HAA
-  (13,13) 20.0     ; LF_HFE
-  (14,14) 20.0     ; LF_KFE
-  (15,15) 20.0     ; LH_HAA
-  (16,16) 20.0     ; LH_HFE
-  (17,17) 20.0     ; LH_KFE
-  (18,18) 20.0     ; RF_HAA
-  (19,19) 20.0     ; RF_HFE
-  (20,20) 20.0     ; RF_KFE
-  (21,21) 20.0     ; RH_HAA
-  (22,22) 20.0     ; RH_HFE
-  (23,23) 20.0     ; RH_KFE
+  ;; Leg Joint Positions: [FL, FR, HL, HR] x (hip, thigh, calf, foot) — 16-DOF ;;
+  (12,12) 20.0     ; FL_hip
+  (13,13) 20.0     ; FL_thigh
+  (14,14) 20.0     ; FL_calf
+  (15,15) 10.0     ; FL_foot (ankle: 낮은 가중=발 자세 자유도 허용)
+  (16,16) 20.0     ; FR_hip
+  (17,17) 20.0     ; FR_thigh
+  (18,18) 20.0     ; FR_calf
+  (19,19) 10.0     ; FR_foot
+  (20,20) 20.0     ; HL_hip
+  (21,21) 20.0     ; HL_thigh
+  (22,22) 20.0     ; HL_calf
+  (23,23) 10.0     ; HL_foot
+  (24,24) 20.0     ; HR_hip
+  (25,25) 20.0     ; HR_thigh
+  (26,26) 20.0     ; HR_calf
+  (27,27) 10.0     ; HR_foot
 }
 
 ; control weight matrix
@@ -255,19 +267,23 @@ R
   (10,10) 1.0       ; right_hind_force
   (11,11) 1.0       ; right_hind_force
 
-  ;; foot velocity relative to base: [FL, FR, HL, HR] (Jacobian @ nominal) ;;
-  (12,12) 5000.0    ; x
-  (13,13) 5000.0    ; y
-  (14,14) 5000.0    ; z
-  (15,15) 5000.0    ; x
-  (16,16) 5000.0    ; y
-  (17,17) 5000.0    ; z
-  (18,18) 5000.0    ; x
-  (19,19) 5000.0    ; y
-  (20,20) 5000.0    ; z
-  (21,21) 5000.0    ; x
-  (22,22) 5000.0    ; y
-  (23,23) 5000.0    ; z
+  ;; Joint velocities: [FL, FR, HL, HR] x (hip, thigh, calf, foot) — 16-DOF ;;
+  (12,12) 5000.0    ; FL_hip
+  (13,13) 5000.0    ; FL_thigh
+  (14,14) 5000.0    ; FL_calf
+  (15,15) 5000.0    ; FL_foot
+  (16,16) 5000.0    ; FR_hip
+  (17,17) 5000.0    ; FR_thigh
+  (18,18) 5000.0    ; FR_calf
+  (19,19) 5000.0    ; FR_foot
+  (20,20) 5000.0    ; HL_hip
+  (21,21) 5000.0    ; HL_thigh
+  (22,22) 5000.0    ; HL_calf
+  (23,23) 5000.0    ; HL_foot
+  (24,24) 5000.0    ; HR_hip
+  (25,25) 5000.0    ; HR_thigh
+  (26,26) 5000.0    ; HR_calf
+  (27,27) 5000.0    ; HR_foot
 }
 
 frictionConeSoftConstraint

@@ -8,15 +8,19 @@ defaultJointState
    (0,0)   0.000  ; FL_hip
    (1,0)   0.180  ; FL_thigh
    (2,0)  -0.285  ; FL_calf
-   (3,0)   0.000  ; FR_hip
-   (4,0)   0.180  ; FR_thigh
-   (5,0)  -0.285  ; FR_calf
-   (6,0)   0.000  ; HL_hip
-   (7,0)  -0.212  ; HL_thigh
-   (8,0)   0.332  ; HL_calf
-   (9,0)   0.000  ; HR_hip
-   (10,0) -0.212  ; HR_thigh
-   (11,0)  0.332  ; HR_calf
+   (3,0)   0.000  ; FL_foot
+   (4,0)   0.000  ; FR_hip
+   (5,0)   0.180  ; FR_thigh
+   (6,0)  -0.285  ; FR_calf
+   (7,0)   0.000  ; FR_foot
+   (8,0)   0.000  ; HL_hip
+   (9,0)  -0.212  ; HL_thigh
+   (10,0)  0.332  ; HL_calf
+   (11,0)  0.000  ; HL_foot
+   (12,0)  0.000  ; HR_hip
+   (13,0) -0.212  ; HR_thigh
+   (14,0)  0.332  ; HR_calf
+   (15,0)  0.000  ; HR_foot
 }
 
 initialModeSchedule

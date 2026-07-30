@@ -10,6 +10,8 @@
 #include <atomic>
 #include <mutex>
 #include <chrono>
+#include <cstring>
+#include <vector>
 
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
@@ -169,21 +171,24 @@ int main(int argc, char** argv) {
   if (!m) { std::cerr << "MJCF 로드 실패: " << err << "\n"; return 2; }
   mjData* d = mj_makeData(m);
 
-  // 관절/액추에이터 주소 해석
-  auto actName = [](const char* jn) { std::string s(jn); return s.substr(0, s.size() - 6); };  // "..._joint" 제거
-  int qadr[12], vadr[12], act[12];
-  for (int i = 0; i < 12; ++i) {
-    int j = mj_name2id(m, mjOBJ_JOINT, kJoint[i]);
+  // ★관절/액추에이터 주소 = OCS2 jointNames 순서로 동적 구성 (12 or 16 DOF 자동 대응)
+  auto actName = [](const std::string& jn) { return jn.substr(0, jn.size() - 6); };  // "..._joint" 제거
+  const auto& jNames = interface.modelSettings().jointNames;  // nJ개 (12 or 16)
+  std::vector<int> qadr(nJ), vadr(nJ), act(nJ);
+  for (int i = 0; i < nJ; ++i) {
+    int j = mj_name2id(m, mjOBJ_JOINT, jNames[i].c_str());
+    if (j < 0) { std::cerr << "관절 미발견: " << jNames[i] << "\n"; return 4; }
     qadr[i] = m->jnt_qposadr[j]; vadr[i] = m->jnt_dofadr[j];
-    act[i] = mj_name2id(m, mjOBJ_ACTUATOR, actName(kJoint[i]).c_str());  // FL_hip/FL_thigh/FL_calf
-    if (act[i] < 0) { std::cerr << "액추에이터 미발견: " << actName(kJoint[i]) << "\n"; return 4; }
+    act[i] = mj_name2id(m, mjOBJ_ACTUATOR, actName(jNames[i]).c_str());
+    if (act[i] < 0) { std::cerr << "액추에이터 미발견: " << actName(jNames[i]) << "\n"; return 4; }
   }
-  int aqadr[4], avadr[4], aact[4];
+  // 제어 안 되는 발목만 0-홀드 대상(12-DOF). 16-DOF는 발목이 jNames에 있어 WBC 제어 → 홀드 없음.
+  std::vector<int> holdQ, holdV, holdA;
   for (int i = 0; i < 4; ++i) {
-    int j = mj_name2id(m, mjOBJ_JOINT, kAnkle[i]);
-    aqadr[i] = m->jnt_qposadr[j]; avadr[i] = m->jnt_dofadr[j];
-    aact[i] = mj_name2id(m, mjOBJ_ACTUATOR, actName(kAnkle[i]).c_str());
-  }
+    bool controlled = false; for (int n = 0; n < nJ; ++n) if (jNames[n] == kAnkle[i]) controlled = true;
+    if (!controlled) { int j = mj_name2id(m, mjOBJ_JOINT, kAnkle[i]);
+      holdQ.push_back(m->jnt_qposadr[j]); holdV.push_back(m->jnt_dofadr[j]); holdA.push_back(mj_name2id(m, mjOBJ_ACTUATOR, actName(kAnkle[i]).c_str())); } }
+  std::cerr << "[SIM] nJ=" << nJ << " (제어관절), 홀드발목=" << holdA.size() << "\n";
   // ★발 sphere geom id (실제 접촉 감지용, 순서 [FL,FR,HL,HR]=contactNames3DoF)
   int footGeom[4];
   { const char* sph[4] = {"FL_sphere", "FR_sphere", "HL_sphere", "HR_sphere"};
@@ -200,8 +205,8 @@ int main(int argc, char** argv) {
   vector_t jNom = x0.tail(nJ);
   d->qpos[2] = centroidal_model::getBasePose(const_cast<vector_t&>(x0), info)(2);  // base z
   d->qpos[3] = 1; d->qpos[4] = d->qpos[5] = d->qpos[6] = 0;                        // quat identity
-  for (int i = 0; i < 12; ++i) d->qpos[qadr[i]] = jNom(i);
-  for (int i = 0; i < 4; ++i) d->qpos[aqadr[i]] = 0.0;
+  for (int i = 0; i < nJ; ++i) d->qpos[qadr[i]] = jNom(i);
+  for (size_t i = 0; i < holdQ.size(); ++i) d->qpos[holdQ[i]] = 0.0;
   d->qpos[wq] = 0.0;
   mj_forward(m, d);
 
@@ -249,6 +254,16 @@ int main(int argc, char** argv) {
   // ★A와 동일 접촉 강성(solref 시정수 0.02→0.005): 발 침투 35mm→3mm, 동적 접촉 안정(quad_control.hpp:64)
   { double stiff = getenv("STIFF") ? std::atof(getenv("STIFF")) : 0.005;
     for (int g = 0; g < m->ngeom; ++g) { m->geom_solref[g * 2] = stiff; m->geom_solref[g * 2 + 1] = 1.0; } }
+  // ★A와 동일 GEARBOX(반사관성+댐핑+마찰): dof_armature=I_rot·N²(MJCF 0→발목 flail 과장 보정). 감속비 hip7·thigh7·calf10.5·foot8.4
+  { const char* GN[4] = {"hip", "thigh", "calf", "foot"}; double gear[4] = {7.0, 7.0, 10.5, 8.4};
+    bool gbx = !(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"), "0"));  // 기본 ON, GEARBOX=0으로만 끔
+    double Irot = getenv("ROTOR_I") ? std::atof(getenv("ROTOR_I")) : 1e-4;
+    double jdmp = getenv("JDAMP") ? std::atof(getenv("JDAMP")) : 0.1, jfrc = getenv("JFRIC") ? std::atof(getenv("JFRIC")) : 0.5;
+    if (gbx) for (int k = 0; k < m->nu; ++k) { int jid = m->actuator_trnid[k * 2]; if (jid < 0) continue;
+      const char* jn = mj_id2name(m, mjOBJ_JOINT, jid); if (!jn) continue;
+      int gi = 0; for (int g = 0; g < 4; ++g) if (std::strstr(jn, GN[g])) gi = g;  // FB_waist→hip fallback(감속7:1, A와 동일)
+      double N = gear[gi]; int dof = m->jnt_dofadr[jid];
+      m->dof_armature[dof] = Irot * N * N; m->dof_damping[dof] = jdmp; m->dof_frictionloss[dof] = jfrc; } }
   const double dt = m->opt.timestep;
   const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 50.0;
   const int mpcDecim = std::max(1, int((1.0 / mpcHz) / dt));  // 재계획 주기
@@ -264,7 +279,7 @@ int main(int argc, char** argv) {
   const bool pace = mpcThread && !getenv("NO_PACE");
   const auto tWall0 = std::chrono::steady_clock::now();
   int falls = 0; double t = 0;
-  double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(12);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
+  double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
@@ -272,13 +287,13 @@ int main(int argc, char** argv) {
     double z, py, rx; quat2zyx(&d->qpos[3], z, py, rx);
     rbd_s.segment<3>(0) << z, py, rx;                             // euler ZYX
     rbd_s.segment<3>(3) << d->qpos[0], d->qpos[1], d->qpos[2];    // position
-    for (int i = 0; i < 12; ++i) rbd_s(6 + i) = d->qpos[qadr[i]];
+    for (int i = 0; i < nJ; ++i) rbd_s(6 + i) = d->qpos[qadr[i]];
     double R[9]; mju_quat2Mat(R, &d->qpos[3]);
     double wl[3] = {d->qvel[3], d->qvel[4], d->qvel[5]}, ww[3];
     mju_mulMatVec(ww, R, wl, 3, 3);                              // 각속도 local→world
     rbd_s.segment<3>(6 + nJ) << ww[0], ww[1], ww[2];             // angular vel (world) FIRST
     rbd_s.segment<3>(6 + nJ + 3) << d->qvel[0], d->qvel[1], d->qvel[2];  // linear vel (world)
-    for (int i = 0; i < 12; ++i) rbd_s(6 + nJ + 6 + i) = d->qvel[vadr[i]];
+    for (int i = 0; i < nJ; ++i) rbd_s(6 + nJ + 6 + i) = d->qvel[vadr[i]];
 
     vector_t xMeas = rbd.computeCentroidalStateFromRbdModel(rbd_s);
     if (step == 0 && getenv("DBG")) {
@@ -318,16 +333,17 @@ int main(int argc, char** argv) {
       //   legged: LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. velDes=MPC 관절속도(uDes 후반 nJ).
       double jkd = getenv("JKD") ? atof(getenv("JKD")) : 0.0;   // 이상토크 MuJoCo=0(kd=3는 WBC 정확토크와 충돌)
       double jkp = getenv("JKP") ? atof(getenv("JKP")) : 0.0;   // kp(옵션, legged 기본 0)
-      for (int i = 0; i < 12; ++i) {
-        double qMeas = rbd_s(6 + i), qdMeas = rbd_s(24 + i);      // rbd: jointPos@6.., jointVel@24..
-        double qDes = xDes(12 + i);                               // centroidal state: momentum(6)+basePose(6)+jointPos(12)
-        double qdDes = uDes(3 * 4 + i);                           // centroidal input: contactForce(3*4)+jointVel(12)
+      for (int i = 0; i < nJ; ++i) {
+        double qMeas = rbd_s(6 + i), qdMeas = rbd_s(12 + nJ + i);  // rbd: jointPos@6.., jointVel@(12+nJ)..
+        double qDes = xDes(12 + i);                               // centroidal state: momentum(6)+basePose(6)+jointPos(nJ)
+        double qdDes = uDes(3 * 4 + i);                           // centroidal input: contactForce(3*4)+jointVel(nJ)
         d->ctrl[act[i]] = tauJ(i) + jkp * (qDes - qMeas) + jkd * (qdDes - qdMeas);  // τ_ff + τ_pd
       }
-      // 앞다리(FL=0,FR=1 → 관절 0~5) 떨림 계측: 관절속도 피크 + 토크 변화(채터) 피크
-      for (int i = 0; i < 6; ++i) { double v = std::abs(d->qvel[vadr[i]]); if (v > frontJvPk) frontJvPk = v;
+      // 앞다리(FL,FR = 첫 2다리 = 관절 0~2*perLeg) 떨림 계측: 관절속도 피크 + 토크 변화(채터) 피크
+      int nFront = 2 * (nJ / 4);
+      for (int i = 0; i < nFront; ++i) { double v = std::abs(d->qvel[vadr[i]]); if (v > frontJvPk) frontJvPk = v;
         double dtau = std::abs(tauJ(i) - tauPrev(i)); if (dtau > frontTauPk) frontTauPk = dtau; }
-      for (int i = 0; i < 12; ++i) tauPrev(i) = tauJ(i);
+      for (int i = 0; i < nJ; ++i) tauPrev(i) = tauJ(i);
       if (getenv("FINE") && t > 2.0 && t < 2.4)  // 앞다리(FL_thigh=1) 매스텝: vel·tau·접촉 → 진동/충격 분류
         std::cerr << "  [FINE] t=" << t << " FLthigh_v=" << d->qvel[vadr[1]] << " FLthigh_tau=" << tauJ(1)
                   << " FLcalf_v=" << d->qvel[vadr[2]] << " FLcontact=" << actC[0] << "\n";
@@ -450,8 +466,8 @@ int main(int argc, char** argv) {
       for (int i = 0; i < 12; ++i)
         d->ctrl[act[i]] = ffScale * tau(6 + i) + kp * (qDes(i) - d->qpos[qadr[i]]) + kd * (vDes(i) - d->qvel[vadr[i]]);
     }
-    for (int i = 0; i < 4; ++i)  // 발목 0 홀드
-      d->ctrl[aact[i]] = KpA * (0.0 - d->qpos[aqadr[i]]) + KdA * (0.0 - d->qvel[avadr[i]]);
+    for (size_t i = 0; i < holdA.size(); ++i)  // 제어 안 되는 발목만 0 홀드(12-DOF; 16-DOF는 WBC 제어)
+      d->ctrl[holdA[i]] = KpA * (0.0 - d->qpos[holdQ[i]]) + KdA * (0.0 - d->qvel[holdV[i]]);
     d->ctrl[wact] = KpW * (0.0 - d->qpos[wq]) + KdW * (0.0 - d->qvel[wv]);  // 허리 0 (단단히)
     // ★외란 push: PUSH(N) 크기·PUSH_T(s) 시각·PUSH_DUR(s) 지속·PUSH_AX(0=x,1=y,2=z) 방향
     if (getenv("PUSH") && baseBody >= 0) {

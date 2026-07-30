@@ -6,6 +6,8 @@
 #include <Eigen/Dense>
 #include <array>
 #include <vector>
+#include <cstdio>
+#include <cstdlib>
 
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/rnea.hpp>
@@ -106,14 +108,34 @@ class WbcLegged {
     if (st != eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) { qpFail_++; if (last_.size() == nx_) x = last_; else x.setZero(); }
     else last_ = x;
 #endif
+    // ── 진단 덤프(LEGDBG): 첫 몇 콜서 내부값 객관 계측 ──
+    if (std::getenv("LEGDBG") && dbgN_ < 4) {
+      dbgN_++;
+      vector_t qdd = x.head(nv_), f = x.segment(nv_, 3 * nc_), tau = x.tail(nJ_);
+      matrix_t S = matrix_t::Zero(nJ_, nv_); S.rightCols(nJ_).setIdentity();
+      vector_t eomRes = M_ * qdd - j_.transpose() * f - S.transpose() * tau + nle_;
+      fprintf(stderr, "\n[LEGDBG#%d] status=%d qpFail=%d numContacts=%d\n", dbgN_, lastStatus_, qpFail_, numContacts_);
+      fprintf(stderr, "  aBaseFF(des base q̈) = [%.2f %.2f %.2f | %.2f %.2f %.2f]\n", aBaseFF_(0), aBaseFF_(1), aBaseFF_(2), aBaseFF_(3), aBaseFF_(4), aBaseFF_(5));
+      fprintf(stderr, "  qddBase(solved)     = [%.2f %.2f %.2f | %.2f %.2f %.2f]\n", qdd(0), qdd(1), qdd(2), qdd(3), qdd(4), qdd(5));
+      fprintf(stderr, "  Fz per foot: solved=[%.1f %.1f %.1f %.1f]  fDes=[%.1f %.1f %.1f %.1f] (sum solved=%.1f, mg=%.1f)\n",
+              f(2), f(5), f(8), f(11), inputDesired(2), inputDesired(5), inputDesired(8), inputDesired(11),
+              f(2) + f(5) + f(8) + f(11), info_.robotMass * 9.81);
+      fprintf(stderr, "  Fx per foot: solved=[%.1f %.1f %.1f %.1f]  Fy=[%.1f %.1f %.1f %.1f]\n",
+              f(0), f(3), f(6), f(9), f(1), f(4), f(7), f(10));
+      fprintf(stderr, "  tau(12) = [%.1f %.1f %.1f | %.1f %.1f %.1f | %.1f %.1f %.1f | %.1f %.1f %.1f]\n",
+              tau(0), tau(1), tau(2), tau(3), tau(4), tau(5), tau(6), tau(7), tau(8), tau(9), tau(10), tau(11));
+      fprintf(stderr, "  EOM residual |r|=%.3e  (base6 |r|=%.3e)  nle base=[%.1f %.1f %.1f|%.1f %.1f %.1f]\n",
+              eomRes.norm(), eomRes.head(6).norm(), nle_(0), nle_(1), nle_(2), nle_(3), nle_(4), nle_(5));
+    }
     return x.tail(nJ_);  // τ (관절 토크)
   }
 
   double swingKp_ = 350, swingKd_ = 30;
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
+  bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
   vector_t torqueLimits_;
-  int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0;
+  int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0;
 
  private:
   // ── measured 준비 (legged updateMeasured) ──
@@ -209,9 +231,14 @@ class WbcLegged {
     }
     return {a, b};
   }
-  std::pair<matrix_t, vector_t> baseAccelTask() {  // q̈[0:6] = aBaseFF (feedforward)
+  std::pair<matrix_t, vector_t> baseAccelTask() {  // q̈[0:6] = aBaseFF (+옵션 PD 되먹임)
     matrix_t a = matrix_t::Zero(6, nx_); a.block(0, 0, 6, 6).setIdentity();
-    return {a, aBaseFF_};
+    Eigen::Matrix<double, 6, 1> b = baseNoFF_ ? Eigen::Matrix<double, 6, 1>::Zero() : aBaseFF_;  // BASE_NOFF=순수PD(내 기본WBC식)
+    if (basePd_) {  // ★진단/수정: 순수FF에 base 위치·속도 PD 추가(A WBIC·내 기본WBC와 동일 원리)
+      b.head<3>() += kpBase_ * (qD_.head<3>() - qM_.head<3>()) + kdBase_ * (vD_.head<3>() - vM_.head<3>());       // pos
+      b.tail<3>() += kpBase_ * (qD_.segment<3>(3) - qM_.segment<3>(3)) + kdBase_ * (vD_.segment<3>(3) - vM_.segment<3>(3));  // eulerZYX
+    }
+    return {a, b};
   }
   std::pair<matrix_t, vector_t> contactForceTask(const vector_t& iD) {  // f = fDes
     matrix_t a = matrix_t::Zero(3 * nc_, nx_); a.block(0, nv_, 3 * nc_, 3 * nc_).setIdentity();

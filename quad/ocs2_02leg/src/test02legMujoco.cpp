@@ -6,6 +6,10 @@
 #include <iomanip>
 #include <array>
 #include <cmath>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <chrono>
 
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
@@ -185,12 +189,22 @@ int main(int argc, char** argv) {
   interface.getReferenceManagerPtr()->setTargetTrajectories(
       TargetTrajectories({0.0, simTime}, {x0, xGoal}, {vector_t::Zero(info.inputDim), vector_t::Zero(info.inputDim)}));
 
-  // 초기 MPC
+  // ★스레드 연속 MPC (legged_control LeggedController 패턴). MPC_THREAD=1로 활성(기본=동기, 빠른 헤드리스).
+  const bool mpcThread = getenv("MPC_THREAD");
   SystemObservation obs;
   obs.time = 0.0; obs.state = x0; obs.input = vector_t::Zero(info.inputDim); obs.mode = ModeNumber::STANCE;
   mrt.setCurrentObservation(obs);
-  mrt.advanceMpc();
+  while (!mrt.initialPolicyReceived()) mrt.advanceMpc();  // 첫 정책 대기
   mrt.updatePolicy();
+  std::atomic<bool> mpcAlive{true};
+  std::thread mpcWorker;
+  if (mpcThread) {
+    mpcWorker = std::thread([&]() {
+      while (mpcAlive) {
+        try { mrt.advanceMpc(); } catch (const std::exception&) {}
+      }
+    });
+  }
 
   // 뷰어(VIEW=1)
   const bool view = getenv("VIEW");
@@ -217,6 +231,9 @@ int main(int argc, char** argv) {
 
   std::cerr << "[SIM] dt=" << dt << " mpcDecim=" << mpcDecim << " gait=" << gait << "\n";
   std::cerr << "  t[s]   base_z   tilt°   base_x   재계획\n";
+  // 실시간 페이싱: 스레드 MPC가 물리적 재계획 몫을 갖도록 sim을 wall-clock에 맞춤(스레드모드 기본 on).
+  const bool pace = mpcThread && !getenv("NO_PACE");
+  const auto tWall0 = std::chrono::steady_clock::now();
   int falls = 0; double t = 0;
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     // --- MuJoCo → rbdState(36) ---
@@ -240,12 +257,14 @@ int main(int argc, char** argv) {
       std::cerr << "  [DBG] diff  = " << (xMeas - x0).transpose() << "\n";
     }
 
-    // --- MPC 재계획(50Hz) ---
-    bool replan = (step % mpcDecim == 0);
-    if (replan) {
-      obs.time = t; obs.state = xMeas;
-      mrt.setCurrentObservation(obs);
-      try { mrt.advanceMpc(); mrt.updatePolicy(); }
+    // --- MPC 관측 공급 + 정책 스왑 ---
+    obs.time = t; obs.state = xMeas;
+    mrt.setCurrentObservation(obs);       // 최신 상태를 MPC에(스레드 안전)
+    bool replan = false;
+    if (mpcThread) {
+      replan = mrt.updatePolicy();        // 스레드가 푼 최신 정책 스왑(있으면 true)
+    } else if (step % mpcDecim == 0) {     // 동기모드(MPC_SYNC)
+      try { mrt.advanceMpc(); mrt.updatePolicy(); replan = true; }
       catch (const std::exception& e) { std::cerr << "[MPC FAIL] t=" << t << "  " << e.what() << "\n"; }
     }
 
@@ -365,6 +384,7 @@ int main(int argc, char** argv) {
     d->ctrl[wact] = KpA * (0.0 - d->qpos[wq]) + KdA * (0.0 - d->qvel[wv]);  // 허리 0
 
     mj_step(m, d);
+    if (pace) std::this_thread::sleep_until(tWall0 + std::chrono::duration<double>((step + 1) * dt));
 
     // --- 뷰어 렌더(vsync 페이싱) ---
     if (view && step % 8 == 0) {
@@ -388,6 +408,8 @@ int main(int argc, char** argv) {
     }
   }
 
+  mpcAlive = false;
+  if (mpcWorker.joinable()) mpcWorker.join();
   std::cerr << "\n===== 결과 =====\n";
   std::cerr << "  최종 base_x : " << d->qpos[0] << " m  (목표 " << 0.3 * simTime << ")\n";
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";

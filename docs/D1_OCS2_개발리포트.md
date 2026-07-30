@@ -3,8 +3,9 @@
 > **상태: 활성 (2026-07-30).** 모델기반 배포 트랙. OCS2(ros2) 통합 perceptive NMPC를 02_Leg에 포팅.
 > **Phase 1~2b 완료(동적 TROT 0.3m/s·13s+·falls=0, 2bb8dd4). ★Phase 2c에서 16-DOF 능동 발목 확장**
 > (A정합 자세·GEARBOX·널스페이스 posture, 3751a7a→afa54bc). **★Phase 3a perceptive 발-지형 클리어런스 작동**
-> (SDF 제약, gap 전진 x1.16→1.50, 5634041). **★Phase 3b core=CGAL 회피 발판배치 알고리즘 작성**(79bdab7).
-> 다음=Phase 3b 브리지 통합(foothold 생성·지형base) → gap 크로싱 검증.
+> (SDF 제약, gap 전진 x1.16→1.50, 5634041). **★Phase 3b 브리지 통합·검증**(발판배치+지형적응 base높이, a1c1841):
+> 평지 falls=0 불변·**15° 램프 지형추종 등반 실증**(base 0.50→0.82·blind 불가)·급단차(0.16m>스윙0.08)는 미해결.
+> 다음=스윙높이 증가·급단차 안정화·진짜 홀 지형 검증 → Phase 4 벤치(vs A/injection).
 
 ## 0. 왜 OCS2 포팅인가
 
@@ -105,11 +106,13 @@
 - 브리지(PERCEPTIVE=1): EE키네매틱스(CppAd)→StateSoftConstraint 주입(MPC 구성 전)·매틱 `sdf.update`. 인터페이스 `getMutableOptimalControlProblem()` 1줄.
 - **검증**: 평지 회귀 OK. gap 지형 blind x1.16→**perceptive x1.50**(첫 플랫폼 진입, 발이 엣지 클리어). ★단 **클리어런스뿐=foothold를 플랫폼에 '놓지' 않음**(발판 여전히 blind Raibert)+지형base 없어 턱 오르다 전복.
 
-**Phase 3b — 발판 배치(지형인지 foothold) 🔶 core 작성 (커밋 79bdab7)**:
+**Phase 3b — 발판 배치 + 지형적응 base높이 ✅ 브리지 통합·검증 (커밋 a1c1841, core=79bdab7)**:
 - `local_convex_region.hpp`: **CGAL 없는 발판영역 자체생성**(ConvexRegionSelector 대체). `walkable`(경사<tan25°∧|h−hSeed|<0.06=같은 단)·nominal→유효셀 나선스냅·walkable 박스성장→반평면 `A·p+b≥0`(4행)·valid/stanceEnd.
 - `foot_terrain_placement.hpp`: 제약(순수 OCS2). **isActive=접촉∧valid∧time≥stanceEnd**(미래 착지 stance만 성형, 상류 `getFootPlacementFlags` 동일).
-- **남은 통합(다음)**: 브리지에 LocalConvexRegion 생성+FootPlacement 4발 주입·매틱 nominal foothold(`getNominalFoothold` 이식=desired FK+pitch보정)+stance 타이밍→`region.updateFoot()`·지형적응 base높이(`Z=h+comH/cos(pitch)`·pitch=지형법선)·gap 검증.
-- **자산 재사용**: `getNominalFoothold`(순수 Raibert)·`getPolygonConstraint`(순수 Eigen 반평면유도)·mj_terrain_sdf. (워크플로 5/5 정밀분석 기반.)
+- **브리지 통합(PLACEMENT·TERRAIN_Z env)**: legged_perceptive verbatim 대조 이식(워크플로 3/3 정밀분석). ①발판배치 4발 soft 주입(`RelaxedBarrier 1e-2/1e-4`, clearance의 1e-3와 구별). ②매틱 nominal 씨앗(`base_xy+vel·Δt+Rz(yaw)·nominalOffset`≈`getNominalFoothold` FK, 평지 pitch≈0)+stanceEnd(`initStandFinalTime`, ConvexRegionSelector 로직 복제)→`region.updateFoot`. ③지형적응 base높이 = `[t,t+H]` 11노드 참조 `z=hS+comH/cos(pitch)`·`pitch=지형법선`. base x,y는 **원본 forward 램프 보존**(modifyReferences가 desired x,y 보존하듯 z/pitch만 덮어씀).
+- **★smooth heightmap**(±0.14 box-avg + step=0.3 넓은차분) = legged_perceptive `smooth_planar` 대응. 원 mj_ray 계단이 날카로워 base z 급점프→전복이라, 스무딩으로 계단 앞서 점진 상승.
+- **검증(정직)**: ①평지 회귀 PLACEMENT+TERRAIN_Z ON에서도 falls=0(0.30m/s·tilt<1.6°)=베이스라인 불변. ②**★15° 램프: BLIND는 base z 0.50 고정→지형 못따라 x≈1.4 전복. Phase 3b는 base 지형추종 0.50→0.82(tilt<18°·qpFail=0)로 x≈2.1 등반(+0.32m)**=지형적응 base높이가 blind 불가 등반을 가능케 함(핵심 능력 실증). 크레스트(급단차)서 전복. ③**한계: 계단코스(0.16m 급단차)=swing height 0.08 초과라 발이 못 올라감→전복**(스윙높이 증가 별도 필요). **즉 연속지형(램프)=작동, 급단차=미해결.**
+- **자산 재사용**: `getNominalFoothold`(Raibert항은 legged_perceptive서도 주석처리·미사용, 능동경로=desired FK−pitch offset)·`getPolygonConstraint`(순수 Eigen)·mj_terrain_sdf.
 
 ### Phase 4 — 벤치·판단 — 예정
 - **D1(OCS2) NMPC vs injection vs A**: 동일 지형·지표(falls/tilt/외란복구/속도). 핵심 가설=통합 NMPC가 injection 마진 이김. 실기갭·실시간(OCS2 rate).
@@ -126,10 +129,11 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 
 ## 4. 현재 상태 / 다음
 - ✅ Phase 0(빌드)·1(모델포팅)·2(브리지)·**2b(STANCE+TROT falls=0)**·**2c(16-DOF 능동발목·A정합 자세)** 완료.
-- 🔶 **Phase 3(perceptive)**: 3a(발-지형 클리어런스 SDF)=작동·검증. 3b core(CGAL 회피 발판배치)=작성.
-- **다음=Phase 3b 브리지 통합**: LocalConvexRegion 생성+FootPlacement 4발 주입·매틱 nominal foothold+stance타이밍→updateFoot·지형적응 base높이 → **gap 크로싱 검증(Phase 3b 완결)**. 그 후 Phase 4 벤치(vs A/injection).
+- 🔶 **Phase 3(perceptive)**: 3a(발-지형 클리어런스 SDF)=작동. **3b(발판배치+지형적응 base높이)=브리지 통합·검증(a1c1841)** — 평지 회귀 falls=0·**15° 램프 지형추종 등반 실증(blind 불가)**·급단차(0.16m>스윙0.08)는 미해결.
+- **다음(Phase 3b 마무리)**: ①**스윙높이 증가**(급단차 클리어=현 0.08→계단높이 초과 필요, config swingHeight 또는 gait별)·②크레스트/하강 급단차 안정화·③실제 갭(무한바닥 없는 지형=진짜 홀) 검증용 지형 필요(현 지형들은 base 모델 무한 floor plane 포함→계단코스, 홀 아님). 그 후 Phase 4 벤치(vs A/injection).
 - **후속(대기)**: TAMOLS WBC 전환(D1 WeightedWbc를 TAMOLS 트래커로=TSID 개념정합, OCS2 의존성 분리 필요)·r_r2 torque-min 태스크(Bellicoso 식20).
-- **재현/뷰어**: `quad/ocs2_02leg/run_view.sh [gait] [vx]`(GLFW). env 노브: WBC_LEGGED·W_BASE·POST·PERCEPTIVE·CLEARANCE·STIFF·WAIST_KP·GEARBOX·JKD·NWSR·VX. 헤드리스=BUILD.md.
+- **재현/뷰어**: `quad/ocs2_02leg/run_view.sh [gait] [vx]`(GLFW). env 노브: WBC_LEGGED·W_BASE·POST·PERCEPTIVE·CLEARANCE·**PLACEMENT·TERRAIN_Z·SMOOTH_W**·STIFF·WAIST_KP·GEARBOX·JKD·NWSR·VX. 헤드리스=BUILD.md.
+  예: `env WBC=1 WBC_LEGGED=1 W_BASE=50 VX=0.15 PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1 <exe> <cfg> mjcf/quad_terrain_slope.mjcf trot 16`
 - **12-DOF↔16-DOF**: 16-DOF가 기본(config·URDF). 12-DOF=`02leg_ocs2_12dof.urdf`+git이력 보존. Phase 3 헤더=`src/test/`(mj_terrain_sdf·foot_terrain_clearance·foot_terrain_placement·local_convex_region), 인터페이스/CMake 변경=`src/patch/`.
 - **상태추정·좌표 브리지**: 배포 시 `state_estimator.hpp` KF 재사용, base quat wxyz↔xyzw·pin↔mjcf 리맵은 `quad_centroidal.py` 패턴.
 

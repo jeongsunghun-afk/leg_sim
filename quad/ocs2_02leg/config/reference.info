@@ -14,12 +14,12 @@ defaultJointState
    (6,0)  0.340  ; FR_calf
    (7,0)  -0.500  ; FR_foot (앞발목)
    (8,0)   0.000  ; HL_hip
-   (9,0)  0.057  ; HL_thigh
-   (10,0)  -0.099  ; HL_calf
+   (9,0)  -0.061  ; HL_thigh
+   (10,0)  -0.228  ; HL_calf
    (11,0) -0.300  ; HL_foot (뒷발목=A REAR_ANKLE -0.3)
    (12,0)  0.000  ; HR_hip
-   (13,0)  0.057  ; HR_thigh
-   (14,0)  -0.099  ; HR_calf
+   (13,0)  -0.061  ; HR_thigh
+   (14,0)  -0.228  ; HR_calf
    (15,0) -0.300  ; HR_foot (뒷발목)
 }
 

@@ -245,10 +245,10 @@
 
 <section>
   <h2>지형 <span class="dim">Online foothold opt. (footScore/selectFoot)</span></h2>
-  <div class="note-nb">A의 지형 크로싱 = <b>elevation-map footScore로 발판 선택</b> + base MPC 별도(그림 "Online foothold opt.", Jenelten 2020 계보, 폐루프). <b>연속 지형은 반응형</b>이나 A 단독은 <b>불연속 험지(갭/징검다리) 취약</b>(~0.10~0.15m 갭 한계). <b>★TAMOLS 계획층 주입(<a href="pipeline_tamols.html">pipeline_tamols</a>)</b>: A gait클럭에 <b>TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조) → 지형 크로싱(hsteps tilt&lt;1.2°·dsteps2 갭+높이 3.4°·falls=0). 단 injection=짜깁기라 <b>마진 얇음</b> → <b>강건=D1 포팅(OCS2 NMPC) 또는 RL(DTC)</b>. 계보·상한=<a href="제어기_비교.html">A·B·C·D1 비교</a>·<a href="TOWR_모델기반지형_리포트.md">TOWR 리포트</a>·메모리 <code>perceptive-nav-tamols</code>.</div>
+  <div class="note-nb">A의 지형 크로싱 = <b>elevation-map footScore로 발판 선택</b> + base MPC 별도(그림 "Online foothold opt.", Jenelten 2020 계보, 폐루프). <b>연속 지형은 반응형</b>이나 A 단독은 <b>불연속 험지(갭/징검다리) 취약</b>(~0.10~0.15m 갭 한계). <b>★TAMOLS 계획층 주입(<a href="pipeline_tamols.html">pipeline_tamols</a>)</b>: A gait클럭에 <b>TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조) → 지형 크로싱(hsteps tilt&lt;1.2°·dsteps2 갭+높이 3.4°·falls=0). 단 injection=짜깁기라 <b>마진 얇음</b> → <b>강건=D1 포팅(OCS2 NMPC) 또는 RL(DTC)</b>. 계보·상한=<a href="제어기_비교.html">A·B·C·D1 비교</a>·<a href="TOWR_개발리포트.md">TOWR 리포트</a>·메모리 <code>perceptive-nav-tamols</code>.</div>
 </section>
 
 <footer>
-  소스: <code>cpp/src/mpc.hpp</code> (mpc_qp_plan) · <code>quad_control.hpp</code> (setup_mpc·body_x0·mpc_grf·wbic_track·wbic_stance·<b>wbic_jump</b>) · <code>trot_controller.hpp</code> (control 루프·<b>gen_getup</b>) · <code>ocp/jump_solver.hpp</code> (aligator 점프 OCP). 솔버: eiquadprog-fast(WBIC) · aligator SolverProxDDP(점프 OCP). 비교: <a href="pipeline_bcd1.html">B·C</a> · <a href="제어기_비교.html">A·B·C·D1</a>.
+  소스: <code>cpp/src/mpc.hpp</code> (mpc_qp_plan) · <code>quad_control.hpp</code> (setup_mpc·body_x0·mpc_grf·wbic_track·wbic_stance·<b>wbic_jump</b>) · <code>trot_controller.hpp</code> (control 루프·<b>gen_getup</b>) · <code>ocp/jump_solver.hpp</code> (aligator 점프 OCP). 솔버: eiquadprog-fast(WBIC) · aligator SolverProxDDP(점프 OCP). 비교: <a href="pipeline_bc.html">B·C</a> · <a href="pipeline_d1.html">D1</a> · <a href="제어기_비교.html">A·B·C·D1</a>.
 </footer>
 </div>

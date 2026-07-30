@@ -34,7 +34,7 @@
 <div class="page">
   <h1>02_Leg 제어기 비교 — A · B · C · D1 · CI</h1>
   <div class="sub">17-DOF 사족 · 모델기반 제어기 5종 구조·솔버·입출력·실시간·지형·성능 대조</div>
-  <div class="sub">각 파이프라인: <a href="pipeline_a.html">pipeline_a(A)</a> · <a href="pipeline_bcd1.html">pipeline_bcd1(B·C·D1)</a> · <a href="pipeline_ci.html">pipeline_ci(CI)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · 메모리 <span class="mono">quad-abc-io-structure</span></div>
+  <div class="sub">각 파이프라인: <a href="pipeline_a.html">pipeline_a(A)</a> · <a href="pipeline_bc.html">pipeline_bc(B·C)</a> · <a href="pipeline_d1.html">pipeline_d1(D1)</a> · <a href="pipeline_ci.html">pipeline_ci(CI)</a> · <a href="pipeline_fullstack.html">fullstack(RL)</a> · 메모리 <span class="mono">quad-abc-io-structure</span></div>
 
   <div class="oneliner"><b>개발방향 = 하이브리드(온라인 TO·DTC + RL 추종)</b>. <b>★TAMOLS/TOWR은 컨트롤러가 아니라 TO(계획)층</b> — 반드시 추종기와 짝지어야 함. <b>C++ 실시간 TAMOLS 솔버는 완성</b>(SQP-RTI·Drake 검증·해석Jacobian &lt;20ms·<b>self-contained cold-start</b>). <b>순수 궤적추종(direct)은 오버슛 낙상이나, ★injection(A 연속 gait클럭에 TAMOLS base·발판 주입)이 지형 크로싱 성공</b>(hsteps tilt&lt;1.2°·dsteps2 갭+높이 3.4°·falls=0, <b>base-발판 협조 실증</b>). 단 짜깁기라 <b>마진 얇음</b>. 기존 5종은 모델기반(<b>A만 실시간 배포·본선</b>). 참조논문 = <b>DTC</b>(2309.15462, 온라인 TO+RL 추종) · <b>APT-RL</b>(skillquad, 오프라인 TO 스킬증류→단일정책).<br><br><b style="font-size:1.08em;color:var(--acc)">★핵심 결론(2026-07-29 갱신) — 계획기 완성 · <span style="color:var(--a)">base-발판 협조 실증</span>(injection+TAM_BASE: 지형 tilt 25°→1.2°) · 단 injection=짜깁기라 마진 얇음("불안불안") · <span style="color:var(--b)">강건 = D1 포팅(OCS2 통합 폐루프 NMPC) 또는 RL(DTC)</span></b> <span style="font-size:.92em">→ 상세 <b>pipeline_tamols.html</b></span></div>
 
@@ -45,25 +45,25 @@
       <th class="a">A <span class="chip cA">배포·본선</span></th>
       <th class="b">B <span class="chip cB">연구</span></th>
       <th class="c">C <span class="chip cC">연구</span></th>
-      <th class="d1">D1 <span class="chip cD">분석·미구축</span></th>
+      <th class="d1">D1 <span class="chip cD">포팅·진행</span></th>
       <th class="ci">CI <span class="chip cCI">종결</span></th>
     </tr></thead>
     <tbody>
       <tr><td class="rowh">파일/출처</td>
         <td class="mono">quad_mpc_wbic_17dof</td><td class="mono">quad_centroidal_17dof</td><td class="mono">quad_fulldynamics</td>
-        <td class="mono">legged_control (OCS2)</td><td class="mono">quad/ci_mpc (C++)</td></tr>
+        <td class="mono">ocs2_02leg (OCS2 포팅)</td><td class="mono">quad/ci_mpc (C++)</td></tr>
       <tr><td class="rowh">방식 / 코어</td>
         <td>Convex SRBD-MPC(GRF) + <b>WBIC QP</b></td>
         <td>Kinodynamic OCP + <b>TSID</b></td>
         <td>FullDynamics OCP + <b>Riccati</b></td>
-        <td>Centroidal NMPC + <b>계층 WBC(HoQp)</b></td>
+        <td>Centroidal NMPC + <b>WeightedWbc(FF+PD)</b></td>
         <td>Contact-Implicit MPC + <b>PD+FF</b></td></tr>
       <tr><td class="rowh">상위 MPC 모델</td>
         <td>볼록 SRBD(단일강체)</td><td>kino-dynamic 센트로이달</td><td>full rigid-body</td>
         <td>FullCentroidal(OCS2)</td><td>full-dyn + <b>접촉 상보성</b></td></tr>
       <tr><td class="rowh">MPC 솔버</td>
         <td class="mono">custom convex QP</td><td class="mono">aligator ProxDDP RTI</td><td class="mono">aligator ProxDDP RTI</td>
-        <td class="mono">OCS2 SLQ/SQP + HPIPM</td><td class="mono">Crocoddyl Box-FDDP</td></tr>
+        <td class="mono">OCS2 SqpMpc + HPIPM</td><td class="mono">Crocoddyl Box-FDDP</td></tr>
       <tr><td class="rowh"><b>입력 — 명령</b></td>
         <td>CMDFILE 전체: v/vy/w · gait · body_h · step_h · mode · 버튼</td>
         <td>CMDFILE: <b>v/vy/w만</b></td>
@@ -74,49 +74,49 @@
         <td>qpos/qvel 직독(sim)<br>+선택 KF</td>
         <td>measureState 직독<br>+선택 KF(EST)</td>
         <td>measureState<br>+선택 추정기(EST)</td>
-        <td><b>상태추정</b>(InEKF, 실기)</td>
+        <td>MuJoCo qpos/qvel(sim)<br>→centroidal state·배포KF</td>
         <td>q·v(측정)</td></tr>
       <tr><td class="rowh"><b>입력 — 지형</b><br><span class="mono">perceptive · 옵션</span></td>
         <td>heightmap→footScore<br><span class="mono">옵션(PERCEPTIVE)</span></td>
         <td>heightmap(mj_ray)<br><span class="mono">옵션(HEIGHTMAP)</span></td>
         <td class="no">없음(평지)</td>
-        <td><b>SDF</b>(depth/LiDAR)</td>
+        <td>heightmap→SDF(mj_ray)<br><span class="mono">Phase3a 작동·3b core</span></td>
         <td class="no">없음</td></tr>
       <tr><td class="rowh"><b>출력 — 토크</b></td>
         <td>WBIC QP <span class="mono">z=[관절가속;λ]</span> 직접토크</td>
         <td><span class="mono">kino_ID.solve</span>(TSID)→τ</td>
         <td><span class="mono">us[0]−K·δx</span>(Riccati)</td>
-        <td>HoQp WBC → τ</td>
+        <td>WeightedWbc QP<span class="mono">[q̈·f·τ]</span>→τ</td>
         <td>저수준 PD+FF <span class="mono">u*/Kp+p_des</span></td></tr>
       <tr><td class="rowh"><b>출력 — 발행</b></td>
         <td>STATE_PUB v_cmd/v_act · 마커</td>
         <td>STATE_PUB cmd · 오버레이</td>
         <td>STATE_PUB cmd · 마커</td>
-        <td>ROS 토픽(odom·τ)</td>
+        <td>뷰어(GLFW)·헤드리스 덤프</td>
         <td>궤적·접촉(연구 덤프)</td></tr>
       <tr><td class="rowh">제어율 / 실시간</td>
         <td class="yes">1 kHz 실시간 ✅</td>
         <td class="no">~14 Hz 비실시간</td>
         <td class="no">~6–13 Hz 비실시간</td>
-        <td class="yes">실시간(OCS2 RTI)</td>
+        <td class="yes">1 kHz WBC 실시간<br><span class="mono">(SQP ~4.5ms/it)</span></td>
         <td class="wa">40 Hz 목표(연구·오프라인)</td></tr>
       <tr><td class="rowh">지형 플래너</td>
         <td>Online foothold opt.<br><span class="mono">footScore/selectFoot(폐루프)</span><br>+ <b>TAMOLS base-z 협조 주입</b>(TAM_BASE)<br><span class="mono">★크로싱: injection+TAM_BASE로 지형보행(tilt25→1.2°)·마진 얇음</span></td>
         <td><b>TOWR</b> 소비(오프라인 궤적)<br><span class="mono">TSID 추종 towr_track_B</span><br><span class="mono">★B 자체 ~3.3s 낙상(안정화 미완)</span></td>
         <td class="no">없음(평지)</td>
-        <td>Perceptive NMPC<br><span class="mono">SDF edge 제약</span></td>
+        <td>통합 NMPC 내장 perceptive<br><span class="mono">SDF 클리어런스(3a작동)</span><br><span class="mono">발판배치(3b core·통합중)</span></td>
         <td>접촉모드 <b>창발</b>(계획 불요)</td></tr>
       <tr><td class="rowh">성능(02_Leg)</td>
         <td class="yes"><b>본선 1.75 m/s</b> trot</td>
         <td>~0.2 m/s 연구</td>
         <td>~0.27 m/s marginal</td>
-        <td>미구축(외부=파쿠르)</td>
+        <td class="wa">동적 TROT <b>0.3~0.7 m/s falls=0</b><br><span class="mono">16-DOF·perceptive 3a작동</span><br><span class="mono">3b 발판배치 통합 남음</span></td>
         <td class="wa"><b>준정적 자세추종 성공</b><br><span class="mono">서기·눕기·앉기·A자세캡처</span><br><b class="no">walk·gap·외란·두발 실패</b><br><span class="mono">(현실접촉서 균형 프론티어 붕괴)</span></td></tr>
       <tr><td class="rowh">접촉모델 / MJCF</td>
         <td>soft-native / <span class="mono">sphere</span></td>
         <td>rigid(STIFF) / <span class="mono">pt</span></td>
         <td>rigid / <span class="mono">pt</span></td>
-        <td>ROS/Gazebo(외부)</td>
+        <td>MuJoCo 1ms·solref0.005 / <span class="mono">sphere·pt</span></td>
         <td>hard 접촉 임펄스 / <span class="mono">pt·gap</span></td></tr>
     </tbody>
   </table></div>
@@ -128,12 +128,12 @@
       <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">✅ <b>좁은갭·stepping 전속도 완주</b>(접촉구 수정)·❌ 넓은갭</td><td>속도-공명=접촉구 아티팩트로 해소. <b>넓은갭=base-발판 협조 필요(계획층 3부재)</b></td></tr>
       <tr><td><span class="chip cB">B</span></td><td>Kinodyn+TSID</td><td class="wa">⚠️ 평지 안정</td><td class="no">❌ 갭서 발 빠짐</td><td>base–발판 협조 없음(greedy)</td></tr>
       <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
-      <tr><td><span class="chip cD">D1</span></td><td>Perceptive NMPC</td><td class="wa">외부 시연</td><td class="wa">외부 파쿠르</td><td>우리 환경 미구축·공통벤치 없음</td></tr>
+      <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="wa">Phase3a 클리어런스 작동</td><td class="wa">3b 발판배치 통합 남음(현재 blind→턱 전복)</td><td>우리 포팅(test02legMujoco) 동적 TROT falls=0·perceptive 3a작동. 통합 폐루프가 injection 마진 이길지=Phase4 벤치(가설)</td></tr>
       <tr><td><span class="chip cCI">CI</span></td><td>Contact-Implicit</td><td class="wa">△ 평지 falls=0(저속)·준정적 자세</td><td class="wa">△ gap 부분크로싱→낙상</td><td>완성분(해석그래디언트·서기/눕기/앉기) 있으나 <b>균형 프론티어(gap·walk·외란·두발) 붕괴</b>→종결·offline</td></tr>
       <tr><td><span class="chip" style="background:var(--acc)">T</span></td><td><b>TAMOLS + A추종기</b><br>injection(A gait클럭+TAMOLS 주입)</td><td class="wa">walk 저속(정적안정)</td><td class="wa">⚠️ <b>injection 크로싱</b>(hsteps 1.2°·dsteps2 3.4°·falls=0)·마진 얇음</td><td>★<b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 <b>지형 크로싱</b>. 순수 궤적추종(direct)은 1.7× 오버슛 낙상이었으나 <b>injection이 재앵커/오버슛 우회</b>. 남은=짜깁기 <b>마진 얇음</b>→D1포팅/RL</td></tr>
     </tbody>
   </table></div>
-  <div class="box"><b>공통 결론(갱신)</b> — <b>TAMOLS 솔버 자체는 완성</b>: "오프라인 583× 느림"을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms 실시간)하고 <b>Drake seed 없이 self-contained cold-start 수렴</b>(elastic-mode globalization). <b>그러나 폐루프 크로싱은 실패</b> — A의 추종기(SRBD MPC)가 크로싱서 오버슛 낙상. <b>병목은 계획(TAMOLS)이 아니라 추종기</b>: A의 SRBD MPC는 속도만 추종하는 <b>정상상태 조절기</b>라, TAMOLS의 공격적 일회성 크로싱을 <b>충실히 execute하지 못함</b>. 모든 모델기반 추종기 조합이 같은 벽(아래 조합 맵). <b>남은 미개척 = TO + RL 추종기(DTC 정석)</b>. 상세 <a href="모델기반_갭크로싱_탐색리포트.html">갭크로싱 리포트</a>.</div>
+  <div class="box"><b>공통 결론(갱신)</b> — <b>TAMOLS 솔버 자체는 완성</b>: "오프라인 583× 느림"을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms 실시간)하고 <b>Drake seed 없이 self-contained cold-start 수렴</b>(elastic-mode globalization). <b>그러나 폐루프 크로싱은 실패</b> — A의 추종기(SRBD MPC)가 크로싱서 오버슛 낙상. <b>병목은 계획(TAMOLS)이 아니라 추종기</b>: A의 SRBD MPC는 속도만 추종하는 <b>정상상태 조절기</b>라, TAMOLS의 공격적 일회성 크로싱을 <b>충실히 execute하지 못함</b>. 모든 모델기반 추종기 조합이 같은 벽(아래 조합 맵). <b>남은 미개척 = TO + RL 추종기(DTC 정석)</b>. 상세 <a href="TAMOLS_개발리포트.md">갭크로싱 리포트</a>.</div>
 
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>
@@ -149,8 +149,8 @@
         <td class="no">지형 계획기 없음<br><span class="mono">입력</span> cmd_vel·접촉스케줄<br><span class="mono">고정</span> 보행순서·타이밍·발판(heuristic)<br><span class="mono">최적화</span> 전신궤적(<b>base_z 포함</b>)·GRF — 단 지형 X=명령높이 홀드(비적응)</td>
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적(base_z 포함 최적화됨)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Grandia 2023</span></td>
-        <td>Perceptive NMPC(내장)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
-        <td>계층 WBC(HoQp)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(InEKF)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> 우선순위 계층 QP→관절가속,λ,τ</td><td class="yes">실시간(OCS2)</td><td class="wa">외부 시연·미구축</td></tr>
+        <td>통합 Perceptive NMPC(OCS2)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
+        <td>WeightedWbc(단일 QP)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(qpos/qvel)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> soft-가중 QP[q̈·f·τ]→τ(FF+PD)</td><td class="yes">1 kHz WBC 실시간</td><td class="wa">동적TROT falls=0·perceptive 3a작동·3b 통합중</td></tr>
       <tr><td><span class="chip cCI">CI</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Kim(HOUND) 2023</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
         <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
@@ -174,10 +174,10 @@
     <li><span class="chip cA">A</span> <b>본선 배포</b> — 1kHz 실시간, GUI 전기능 조종. 평지·중속·선회·기립. 연속지형 반응형.</li>
     <li><span class="chip cB">B</span> <b>연구·TOWR 소비자</b> — 비실시간(~14 Hz). TOWR 궤적을 TSID로 추종(<span class="mono">towr_track_B.py</span>)했으나 <b>B 자체 ~3.3s 낙상</b>(안정화 미완)이라 그 위 TAMOLS는 블록. TAMOLS+B는 B 안정화 선행 필요.</li>
     <li><span class="chip cC">C</span> <b>연구·풀동역학 베이스라인</b> — 평지 전용, 지형 플래너 없음.</li>
-    <li><span class="chip cD">D1</span> <b>분석·청사진</b> — OCS2 생태계(외부). 우리 미구축. RL 배포의 실전 참조.</li>
+    <li><span class="chip cD">D1</span> <b>실시간 모델기반 포팅(진행)</b> — OCS2 legged_robot을 02_Leg MuJoCo로 포팅. <b>동적 TROT 0.3~0.7 m/s falls=0·16-DOF 능동발목·perceptive SDF Phase3a 작동</b>. 통합 폐루프 NMPC로 injection 마진 근본해결 목표. 단 <b>perceptive 핵심(발판배치·지형base)은 Phase3b 브리지 통합이 남아</b> 현재는 클리어런스만(턱을 '건너지'는 못함). 외부 legged_control(NavBotHub)은 레퍼런스. 상세 <a href="pipeline_d1.html">pipeline_d1</a>·<a href="D1_OCS2_개발리포트.md">D1 리포트</a>.</li>
     <li><span class="chip cCI">CI</span> <b>준정적 자세추종은 성공, 동적 보행은 실패</b> — <b>성공</b>: 서기·눕기·앉기·A자세캡처 준정적 추종(해석그래디언트 EXACT·foot-slip·DCM 완성). <b>실패</b>: walk(동적보행)·gap·외란·두발 = 현실접촉서 균형 프론티어 붕괴. → 로버스트 험지 부적합으로 <b>종결</b>(음성결과=RL 방향 근거). 접촉창발 연구niche.</li>
   </ul>
   <div class="box acc"><b>결론(2026-07-29) — 계획기 완성 · injection 크로싱 실증 · 강건=D1포팅/RL</b><br>① <b>계획기(TAMOLS/TOWR) 완성</b>: 실시간 솔버(&lt;20ms)·self-contained cold-start. ② <b>★injection 크로싱 실증</b>: 순수 궤적추종은 오버슛 낙상이나, <b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 지형 크로싱(hsteps 1.2°·dsteps2 3.4°·falls=0). 단 짜깁기라 <b>마진 얇음</b>(연속~0.24m·이산 형상민감). ③ <b>강건 = D1 포팅(OCS2 통합 폐루프 perceptive NMPC) 또는 RL(DTC)</b>: injection의 얇은 마진을 근본 해결. D1=배포용 모델기반 정점 / DTC=TAMOLS TO+RL(외란까지). 상세=<b>pipeline_tamols.html</b>. 각 제어기 I/O는 개별 pipeline 문서.</div>
 
-  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · pipeline_d1에서 분리·확장 · 개발방향 APT-RL · 상세 I/O는 각 pipeline 문서</div>
+  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · 상세 I/O는 각 pipeline 문서(<a href="pipeline_a.html">A</a>·<a href="pipeline_bc.html">B·C</a>·<a href="pipeline_d1.html">D1</a>·<a href="pipeline_ci.html">CI</a>) · 개발방향 APT-RL</div>
 </div>

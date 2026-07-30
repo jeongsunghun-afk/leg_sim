@@ -348,7 +348,60 @@
 </section>
 
 <section>
-  <h2><span class="n">09</span> 로드맵</h2>
+  <h2><span class="n">09</span> RL 접근 — 2점 평발 보상 설계 (hind_leg)</h2>
+  <p class="sub">MPC+WBIC와 <strong>별개 트랙</strong> · <code>HindLegFlatFootEnvCfg</code> (IsaacLab RL). 모델기반이 못 넘은 2점 동적보행을 RL이 달성 — 관건은 <strong>보상 설계</strong>. 상세 모듈·학습법=<code>rl_module_train.html</code>.</p>
+
+  <p>모듈 골격만으론 안 걷는다. 실제로 겪은 <strong>문제→진단→수정</strong> 4단계 재균형으로 걷기·자세를 얻었다.</p>
+  <ul class="timeline">
+    <li class="done"><div class="h">① Plateau(정체) — 2발로 서기만</div>
+      <div class="d">reward 33 정체. 원인=<code>gait_stance</code>(~1.02)가 리턴 지배→서면 보너스. 수정=<code>lin_vel×3</code>·σ0.1→0.25·standing 0.1→0.05 → 걷기가 이득.</div></li>
+    <li class="done"><div class="h">② Shuffle(끌기) — 발 끌고 불규칙</div>
+      <div class="d">원인=swing clearance·air-time 약함. 수정=<code>gait_swing 1→1.5</code>·<code>feet_air_time 0.5→1</code>·action_rate −0.005 → 리듬 교대 스윙.</div></li>
+    <li class="done"><div class="h">③ Limp(절뚝) — 한 발 독식·다른 발 발끝걸음</div>
+      <div class="d">HR 평발 stance 79% / HL 발끝(heel 0.10–0.15m) 52%. 원인=자기 swing 중 접촉 무페널티·발 pitch 무제약. 수정=신규 <code>gait_swing_contact −1</code>(양발 교대)+<code>flat_foot −15</code>(평발 착지).</div></li>
+    <li class="done"><div class="h">④ Posture(자세, 재균형#4) — 웅크림·기울기·다리 못 듦</div>
+      <div class="d">대칭 대가로 base 0.42→0.38 웅크림·tilt 14°. 통찰=웅크리면 스윙 여유 없어 다리 못 듦. 수정=<code>flat_orientation 0→−3</code>·<code>base_height −10→−25</code>·<code>flat_foot −15→−6</code>·<code>swing_height 0.07→0.11</code>·<code>gait_swing 1.5→2</code>.</div></li>
+  </ul>
+
+  <h3>최종 보상 스케일</h3>
+  <div class="tblwrap"><table>
+    <thead><tr><th>항</th><th class="num">스케일</th><th>역할</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">track_lin_vel_xy</td><td class="num">3.0</td><td>exp σ=0.25 · 전진속도 추종(지배)</td></tr>
+      <tr><td class="mono">gait_stance</td><td class="num">0.8</td><td>스케줄 stance 발 접지</td></tr>
+      <tr><td class="mono">gait_swing</td><td class="num">2.0</td><td>swing 발 clearance(끌기 제거)</td></tr>
+      <tr><td class="mono">feet_air_time</td><td class="num">1.0</td><td>공중시간&gt;0.2s</td></tr>
+      <tr><td class="mono">gait_swing_contact</td><td class="num">−1.0</td><td><strong>신규</strong> 자기 swing 중 접촉 벌 → 양발 교대</td></tr>
+      <tr><td class="mono">flat_foot</td><td class="num">−6</td><td><strong>신규</strong> heel−toe 벌 → 평발(−15→−6 완화)</td></tr>
+      <tr><td class="mono">flat_orientation · base_height</td><td class="num">−3 · −25</td><td>재균형#4: 수평·높이 유지</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>결과 <span class="tag t-ok">측정</span></h3>
+  <div class="grid2">
+    <div class="card flat">
+      <h3>달성</h3>
+      <ul class="plain">
+        <li>2점 평발 <strong>전진 보행 달성</strong> — 모델기반이 못한 것. falls 0.</li>
+        <li>속도추종 97–98% (vx 0.5→0.48·1.0→0.98, 헤드리스).</li>
+        <li>자세개선#4: base 0.38→<strong>0.42</strong>·tilt 14°→<strong>5°</strong>·swing 0.03→1.66(다리듦).</li>
+        <li>절뚝 해소: heel 0.10→0.04·duty 79/52→45/48 대칭.</li>
+      </ul>
+    </div>
+    <div class="card point">
+      <h3>한계 (정직)</h3>
+      <ul class="plain">
+        <li><strong>측방 19%·제자리선회 4%</strong> 약함 — point/flat-foot yaw 약점, 전진 전용.</li>
+        <li>vx 0.5/1.0은 넓은범위 학습본, 대칭·#4본은 저속 <code>[0.1,0.3]</code>.</li>
+        <li>iter 12103 <code>std≥0</code> PPO 크래시(model_12000은 정상 저장). 장기학습 시 log_std 클램프 권장.</li>
+      </ul>
+    </div>
+  </div>
+  <p style="color:var(--soft);font-size:14px;margin-top:12px">핵심 교훈: "안 걷는다/못한다"의 대부분은 <strong>보상 문제</strong>였다 — plateau·shuffle·limp·웅크림 모두 보상 재균형으로 해결.</p>
+</section>
+
+<section>
+  <h2><span class="n">10</span> 로드맵</h2>
   <p class="sub">다음 단계</p>
   <ul class="plain">
     <li><strong>평발 ZMP 보행 완성</strong> — 과속·높이 안정화, 필요 시 CoM 궤적 생성(프리뷰 제어) 도입.</li>

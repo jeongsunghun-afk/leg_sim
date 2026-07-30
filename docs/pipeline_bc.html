@@ -1,5 +1,5 @@
 <meta charset="UTF-8">
-<title>pipeline B·C·D1 — 구조 & 입출력</title>
+<title>pipeline B·C — 구조 & 입출력</title>
 <style>
   :root{ --ink:#1B2431; --muted:#5A6577; --hair:#E2E6EC; --paper:#fff; --acc:#E8551E; --acc-soft:#FDEAE0;
          --b:#2563C9; --c:#8A56C9; --d1:#B8860B; --ok:#1E7B4D; --no:#C23B3B; --wa:#B8860B; --soft:#F7F8FA; }
@@ -11,9 +11,9 @@
   .sub{color:var(--muted);font-size:9.5pt;margin-bottom:1mm;}
   .oneliner{background:var(--acc-soft);border-left:3px solid var(--acc);padding:2.5mm 3.5mm;border-radius:1.4mm;font-size:9.4pt;margin:4mm 0;}
   h2{font-size:13pt;font-weight:800;margin:8mm 0 2.5mm;padding-bottom:1.5mm;border-bottom:2px solid;}
-  h2.hb{border-color:var(--b);} h2.hc{border-color:var(--c);} h2.hd{border-color:var(--d1);}
+  h2.hb{border-color:var(--b);} h2.hc{border-color:var(--c);}
   .chip{display:inline-block;padding:.4mm 2mm;border-radius:1mm;color:#fff;font-weight:700;font-size:8.6pt;font-family:'JetBrains Mono',monospace;margin-right:2mm;}
-  .cB{background:var(--b);} .cC{background:var(--c);} .cD{background:var(--d1);}
+  .cB{background:var(--b);} .cC{background:var(--c);}
   h3{font-size:10pt;font-weight:700;margin:4mm 0 1.5mm;}
   p{font-size:9.4pt;margin:1.5mm 0;} b{color:var(--ink);}
   .flow{font-family:'JetBrains Mono','Noto Sans Mono','DejaVu Sans Mono',monospace;font-size:8.2pt;background:#0f1520;color:#d6dde8;
@@ -27,14 +27,14 @@
   a{color:var(--acc);}
 </style>
 <div class="page">
-  <h1>pipeline B · C · D1 — 구조 &amp; 입출력</h1>
-  <div class="sub">02_Leg 17-DOF · OCP/NMPC 계열 제어기 3종(연구·분석) 구조와 입출력 변수</div>
-  <div class="sub">5종 대조표는 <a href="제어기_비교.html">제어기 비교(A·B·C·D1·CI)</a> · 관련 <a href="pipeline_a.html">A</a> · <a href="pipeline_ci.html">CI</a> · <a href="pipeline_fullstack.html">RL</a></div>
-  <div class="oneliner"><b>개발방향 = APT-RL.</b> 아래 B·C는 <b>모델기반 연구/분석 제어기</b>(비실시간·지형 협조 한계, 역할=오프라인 교사·베이스라인). 험지 본류는 RL. 상세 지형 실패근거는 <a href="TAMOLS_개발리포트.md">모델기반 갭크로싱 리포트</a>.<br><b>★단 D1(OCS2 legged_robot→02_Leg MuJoCo 포트)는 격상(2026-07-30)</b>: 실시간(1kHz WBC) <b>동적 TROT falls=0</b>·<b>16-DOF 능동발목</b>·<b>perceptive SDF Phase3a 작동</b>(3b 발판배치 진행) = 실시간 모델기반 배포후보. 아래 표는 외부 NavBotHub 레퍼런스(참조)이고, 우리 포트 상세는 <a href="D1_OCS2_개발리포트.md">D1 개발리포트</a>.</div>
+  <h1>pipeline B · C — 구조 &amp; 입출력</h1>
+  <div class="sub">02_Leg 17-DOF · OCP 계열 <b>모델기반 연구·분석</b> 제어기 2종 구조와 입출력 변수</div>
+  <div class="sub">D1(OCS2 통합 NMPC 포팅)은 별도 <a href="pipeline_d1.html">pipeline_d1</a> · 5종 대조표 <a href="제어기_비교.html">제어기 비교(A·B·C·D1·CI)</a> · 관련 <a href="pipeline_a.html">A</a> · <a href="pipeline_ci.html">CI</a> · <a href="pipeline_fullstack.html">RL</a></div>
+  <div class="oneliner"><b>개발방향 = APT-RL.</b> 아래 B·C는 <b>모델기반 연구/분석 제어기</b>(비실시간·지형 협조 한계, 역할=오프라인 교사·베이스라인). 험지 본류는 RL. 상세 지형 실패근거는 <a href="TAMOLS_개발리포트.md">모델기반 갭크로싱 리포트</a>.<br><b>★실시간 모델기반 배포후보 = D1</b>(OCS2 legged_robot→02_Leg MuJoCo 포트): 1kHz WBC·동적 TROT falls=0·16-DOF 능동발목·perceptive SDF Phase3a 작동 → <a href="pipeline_d1.html">pipeline_d1</a>·<a href="D1_OCS2_개발리포트.md">D1 개발리포트</a>. <b>B는 이 D1 트랙의 전신</b>(같은 "통합 폐루프 perceptive NMPC" 목표를 centroidal로 시도→OCS2로 이관).</div>
 
   <!-- ============ B ============ -->
   <h2 class="hb"><span class="chip cB">B</span>Kinodynamic OCP + TSID <span class="sub" style="font-weight:400"><span class="mono">quad_centroidal_17dof</span></span></h2>
-  <p><b>방식</b> — 센트로이달 kino-dynamic OCP(aligator ProxDDP RTI)로 base·CoM·접촉력·발판 궤적 생성 → <b>TSID</b>(KinodynamicsID)가 전신 토크. <b>지형</b>=heightmap 발판 nudge + TAMOLS 소비자. 비실시간(~14 step/s).</p>
+  <p><b>방식</b> — 센트로이달 kino-dynamic OCP(aligator ProxDDP RTI)로 base·CoM·접촉력·발판 궤적 생성 → <b>TSID</b>(KinodynamicsID)가 전신 토크. <b>지형</b>=heightmap 발판 nudge + TAMOLS 소비자. 비실시간(~14 step/s). <b>★D1 트랙의 전신</b>(centroidal 통합 NMPC 시도 → 실시간 열세로 OCS2 이관, 원리="접촉정합하면 반응형 발배치로 걷는다"는 유효).</p>
   <div class="flow">[명령 v/vy/w] ─▶ ┌─ Kinodynamic OCP (ProxDDP RTI, N=50) ─┐ ─▶ [xs·us 궤적]
 [heightmap] ─────▶ │  + setExternalFoothold(발판 주입 훅)     │
 [상태 measureState]▶└──────────────────────────────────────────┘
@@ -48,7 +48,7 @@
     <tr><td class="k">출력 — 토크</td><td><span class="mono">kino_ID.solve</span>(TSID) → τ (관절)</td></tr>
     <tr><td class="k">출력 — 발행</td><td>STATE_PUB cmd · 뷰어 오버레이(cmd/actual vx)</td></tr>
     <tr><td class="k">제어율/실시간</td><td class="no">~14 step/s = 비실시간(연구·헤드리스 검증용)</td></tr>
-    <tr><td class="k">지형</td><td>heightmap 발판 nudge(greedy) · <b>setExternalFoothold 훅</b>(TAMOLS/외부 발판 주입) · 평지 falls=0, <span class="no">갭 실패</span>(base–발판 협조 없음)</td></tr>
+    <tr><td class="k">지형</td><td>heightmap 발판 nudge(greedy) · <b>setExternalFoothold 훅</b>(TAMOLS/외부 발판 주입) · 평지 falls=0·<b>연속경사 등반</b>(15° ramp base z 0.50→0.54, tilt&lt;5°), <span class="no">갭 실패</span>(base–발판 협조 없음)</td></tr>
   </table>
 
   <!-- ============ C ============ -->
@@ -67,21 +67,5 @@
     <tr><td class="k">지형</td><td class="no">없음(평지 전용) — 지형 플래너 미적용</td></tr>
   </table>
 
-  <!-- ============ D1 ============ -->
-  <h2 class="hd"><span class="chip cD">D1</span>OCS2 NMPC + 계층 WBC <span class="sub" style="font-weight:400"><span class="mono">legged_control</span> · 외부·미구축</span></h2>
-  <p><b>방식</b> — NavBotHub 계열 <span class="mono">legged_control</span>: OCS2 <b>센트로이달 NMPC</b>(~100Hz, SLQ/SQP+HPIPM, 지형=SDF 제약) + <b>계층 WBC(HoQp)</b> 1kHz → AMP 데이터 → HIMLoco RL 배포. <b>A와 같은 2단 캐스케이드</b>, 차이는 NMPC(kino-dyn) vs 볼록 SRBD. <b>우리 환경 미구축</b>(ROS/Gazebo, 공통벤치 없음).</p>
-  <div class="flow">[cmd_vel + 지형 SDF] ─▶ OCS2 NMPC (~100Hz, FullCentroidal, HPIPM) ─▶ [base·발판·힘 궤적]
-[상태추정 + perceptive] ─▶                                               │
-                                     계층 WBC (HoQp, 1kHz) ─▶ [τ] ─▶ 로봇 ─▶ AMP→RL 배포</div>
-  <table>
-    <tr><td class="k">입력 — 명령</td><td>cmd_vel + 지형(SDF/elevation)</td></tr>
-    <tr><td class="k">입력 — 상태</td><td>상태추정 + perceptive 지형</td></tr>
-    <tr><td class="k">MPC 솔버</td><td class="mono">OCS2 SLQ/SQP + HPIPM (실시간 RTI)</td></tr>
-    <tr><td class="k">출력 — 토크</td><td>계층 WBC(HoQp) → τ</td></tr>
-    <tr><td class="k">제어율/실시간</td><td class="yes">실시간(OCS2 RTI, NMPC 100Hz + WBC 1kHz)</td></tr>
-    <tr><td class="k">지형</td><td>Perceptive NMPC(SDF edge 제약) — 외부선 지형 파쿠르 시연(AMP→RL 배포 단계)</td></tr>
-    <tr><td class="k">위상</td><td class="wa">우리 미구축 · A와 구조 중복 · RL 배포의 실전 청사진(참조)</td></tr>
-  </table>
-
-  <div class="foot">02_Leg pipeline B·C·D1 (구 pipeline_bc + pipeline_d1 통합) · 비교표는 제어기_비교.html로 분리 · 개발방향 APT-RL · 메모리 <span class="mono">quad-abc-io-structure · d1-navbothub-mpc-amp-analysis</span></div>
+  <div class="foot">02_Leg pipeline B·C (구 pipeline_bcd1에서 D1 분리) · D1=<a href="pipeline_d1.html">pipeline_d1</a> · 5종 비교표=<a href="제어기_비교.html">제어기_비교.html</a> · 개발방향 APT-RL · 메모리 <span class="mono">quad-abc-io-structure · b-elevation-tamols-towr-track</span></div>
 </div>

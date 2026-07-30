@@ -180,6 +180,44 @@
   ul.plain b{color:var(--ink);}
   code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--chip);padding:1px 5px;border-radius:4px;color:var(--accent);}
 
+
+  /* 모듈×학습법 도식 */
+  .axcmp .tbl-scroll table{min-width:640px;}
+  .spectrum{margin:16px 0 6px;padding:14px 16px 10px;background:var(--card);border:1px solid var(--line);border-radius:12px;}
+  .spectrum .ends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;margin-bottom:6px;}
+  .spectrum .specrow{display:flex;justify-content:space-between;gap:4px;position:relative;padding-top:12px;}
+  .spectrum .specrow::before{content:"";position:absolute;left:6%;right:6%;top:6px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--rl),var(--plan));}
+  .spectrum .sp{flex:1;text-align:center;position:relative;}
+  .spectrum .sp .dot{width:11px;height:11px;border-radius:50%;background:var(--card);border:2.5px solid var(--dc,var(--accent));margin:0 auto;position:relative;z-index:1;}
+  .spectrum .sp .lb{font-size:11.5px;font-weight:700;margin-top:5px;color:var(--dc,var(--ink));}
+  .spectrum .sp .sub{font-size:9px;color:var(--faint);font-family:ui-monospace,Menlo,monospace;line-height:1.3;}
+  .tree{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:pre;color:var(--muted);margin:12px 0;}
+  .tree b{color:var(--accent);} .tree .ours{color:var(--plan);font-weight:700;}
+  .gloss{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-top:6px;}
+  @media(max-width:720px){.gloss{grid-template-columns:1fr}}
+  .gloss>div{font-size:12px;line-height:1.5;}
+  .gloss b{color:var(--ink);display:block;font-size:12.5px;margin-bottom:1px;}
+  .gloss span{color:var(--muted);} .gloss i{color:var(--accent);font-style:normal;}
+  .mlm{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;}
+  @media(max-width:860px){.mlm{grid-template-columns:1fr}}
+  .mlgroup{border:1px solid var(--line);border-radius:14px;padding:13px 13px 15px;border-top:4px solid var(--gc,var(--line));background:var(--card);}
+  .mlgroup.g-rl{--gc:var(--rl)} .mlgroup.g-sl{--gc:var(--dist)} .mlgroup.g-gen{--gc:var(--rep)}
+  .mlgroup>.gh{font-size:13.5px;font-weight:700;color:var(--gc);}
+  .mlgroup>.gh .gt{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--faint);display:block;font-weight:400;margin-top:2px;}
+  .mcard{border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-top:9px;background:var(--bg);}
+  .mcard .mh{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;}
+  .mcard .mn{font-size:12.5px;font-weight:650;color:var(--ink);}
+  .mcard .mtype{font-family:ui-monospace,Menlo,monospace;font-size:9px;color:var(--gc);border:1px solid var(--gc);border-radius:4px;padding:0 4px;}
+  .mcard .mio{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  .mcard .mio b{color:var(--ink);} .mcard .mio i{color:var(--faint);font-style:normal;}
+  .mcard .mbadges{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;}
+  .mbadge{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:999px;}
+  .mb-dep{background:var(--okbg);color:var(--ok);}
+  .mb-train{background:var(--paperbg);color:var(--paper);}
+  .mb-have{background:var(--okbg);color:var(--ok);}
+  .mb-build{background:var(--planbg);color:var(--plan);}
+  .mlrel{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 15px;font-size:12px;color:var(--muted);line-height:1.7;}
+  .mlrel b{color:var(--ink);} .mlrel .rarrow{font-family:ui-monospace,Menlo,monospace;color:var(--accent);}
   .foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--faint);font-size:12px;line-height:1.7;}
   .foot b{color:var(--muted);}
 </style>
@@ -212,9 +250,9 @@
     </div>
   </div>
 
-  <!-- ============ 2. 8편 계보 ============ -->
-  <h2><span class="num">02</span> RL 골격 계보 — 8편, 최종 APT</h2>
-  <p class="h2sub">이 RL 제어기는 8편 논문을 뼈대로 쌓아 올린다 — 각 논문이 한 조각(접촉최적화·sim2real·teacher-student·지각·적응·스타일·계획추종·스킬통합)을 공급하고, <b>최종 목표는 APT(2026)</b>이다. <span style="color:var(--rl);font-weight:600">RMA</span>가 우리 현재 아키텍처, <span style="color:var(--dist);font-weight:600">APT</span>가 도착점.</p>
+  <!-- ============ 2. 계보 ============ -->
+  <h2><span class="num">02</span> RL 골격 계보 — 9편, 최종 APT</h2>
+  <p class="h2sub">이 RL 제어기는 9편 논문을 뼈대로 쌓아 올린다 — 각 논문이 한 조각(접촉최적화·sim2real·teacher-student·지각·적응·스타일·계획추종·<b>사족DTC</b>·스킬통합)을 공급하고, <b>최종 목표는 APT(2026)</b>이다. <span style="color:var(--rl);font-weight:600">RMA</span>=현재 아키텍처, <span style="color:var(--plan);font-weight:600">Kim 2025</span>=우리 <b>quad DTC 트랙의 목표 아키텍처</b>(별도 트랙=<code>dtc-17dof</code>), <span style="color:var(--dist);font-weight:600">APT</span>=도착점.</p>
   <div class="lineage-scroll">
     <div class="lineage">
       <div class="lp"><div class="yr">2014</div><div class="pnm">Posa</div><div class="contrib">접촉 최적화 (contact-implicit TO) · 스킬/참조 데이터의 뿌리</div></div>
@@ -224,10 +262,11 @@
       <div class="lp now"><span class="badge2">현재 arch</span><div class="yr">2021</div><div class="pnm">RMA</div><div class="contrib">history→latent 적응. <b>우리 ActorCriticRMA</b></div></div>
       <div class="lp"><div class="yr">2021</div><div class="pnm">AMP</div><div class="contrib">adversarial motion prior (자연스러운 스타일)</div></div>
       <div class="lp"><div class="yr">2024</div><div class="pnm">DTC</div><div class="contrib">모델기반 플래너(TO) + RL 추종 하이브리드</div></div>
+      <div class="lp" style="border-color:var(--plan)"><span class="badge2" style="background:var(--plan);color:#1c1710">quad DTC 목표</span><div class="yr">2025</div><div class="pnm">Kim (Hwangbo)</div><div class="contrib">DTC를 사족·불연속지형(갭·stepping·벽)으로 발전. competitive CVAE 커리큘럼·샘플링 planner+경계추정</div></div>
       <div class="lp final"><span class="badge2">★최종</span><div class="yr">2026</div><div class="pnm">APT</div><div class="contrib">스킬 TVAE → RL 재사용 → Depth CNN+GRU 지각증류</div></div>
     </div>
   </div>
-  <p class="h2sub" style="margin-top:-6px">아래 두 편(<b>DTC</b>·<b>APT</b>)이 지금 파이프라인 골격을 직접 규정한다 — DTC=계획↔제어 연결, APT=다단계 학습 + 예정 Depth CNN·GRU의 원형. 나머지 6편은 조각(§04 모듈·§09 보강에 반영).</p>
+  <p class="h2sub" style="margin-top:-6px">아래 두 편(<b>DTC</b>·<b>APT</b>)이 지금 파이프라인 골격을 직접 규정한다 — DTC=계획↔제어 연결, APT=다단계 학습 + 예정 Depth CNN·GRU의 원형. 나머지 6편은 조각(§05 모듈·§10 보강에 반영).</p>
   <div class="papers">
     <div class="paper">
       <span class="tag">DTC · 계획↔제어</span>
@@ -243,12 +282,58 @@
       <p class="cite">Kang, Park, Song, Kim, Hong, Park — KAIST/ADD, Science Robotics 11(116) 2026 · "APT-RL"(skillquad)</p>
       <p><b>3단계</b> — (i) <b>표현학습</b>: 2D TO 모션 데이터로 <b>TVAE</b> 학습 → 공유 잠재 + 게이트별 토크 디코더(trot/bound). (ii) <b>RL</b>: 얼린 디코더를 <b>잠재 액션</b>으로 재사용 + 보조 액션, 게이트 선택 로짓, MLP actor + Estimator + Elevation Encoder. (iii) <b>지각 증류</b>.</p>
       <p><b>지각 증류(stage iii)</b> — 특권 elevation map을 쓰는 교사를, <b>Depth CNN + GRU encoder</b> 학생이 <b>raw depth + 2D LiDAR</b>에서 재현하도록 지도학습. ← <b>우리 예정 추가의 원형</b>. 실기 4.25 m/s, 낙하 6 m/s.</p>
-      <div class="use"><b>우리에 적용</b> — §03 학습 3단계의 골격. §05 예정 <b>Depth CNN·GRU</b>가 정확히 stage iii 구조.</div>
+      <div class="use"><b>우리에 적용</b> — §04 학습 3단계의 골격. §06 예정 <b>Depth CNN·GRU</b>가 정확히 stage iii 구조.</div>
     </div>
   </div>
 
+  <!-- ============ 3. 발판 결정권 3축 프레임워크 ============ -->
+  <h2><span class="num">03</span> 발판 결정권 — 3축 프레임워크 (APT · PUMA · Raibo)</h2>
+  <p class="h2sub">핵심 질문: <b>"발판(어디를 딛을지)을 누가 결정하고, 그 지식은 어디에 사는가."</b> 세 논문이 세 철학을 대표하고, <b>DTC</b>는 그 사이(APT–Raibo 변)에 있다. 우리는 한 꼭짓점이 아니라 <b>국면별 게이팅으로 삼각형 안을 이동</b>하는 설계.</p>
+
+  <div class="axcmp"><div class="tbl-scroll"><table>
+    <thead><tr><th></th><th style="color:var(--dist)">APT 축 — 완전 흡수</th><th style="color:var(--accent)">PUMA 축 — 유도된 자율</th><th style="color:var(--plan)">Raibo 축 — 명시 계획·검증</th></tr></thead>
+    <tbody>
+      <tr><td class="mod">철학</td><td>모든 판단을 정책 가중치에 녹인다</td><td>지식은 힌트로 주되 결정은 정책에</td><td>계획기가 결정·검증, 정책은 실행</td></tr>
+      <tr><td class="mod">발판 처리</td><td>표현 자체가 없음 — 지형잠재서 정책이 <b>암묵</b> 판단</td><td><b>명시 prior</b>(거리·방향)를 관측 특징으로 주입, 결정은 정책 자유</td><td>샘플링→3중 필터→<b>시뮬 롤아웃 검증</b>으로 확정, 정책은 도달만</td></tr>
+      <tr><td class="mod">지능 위치</td><td>정책 안</td><td>정책 안 (+힌트 계산기)</td><td>플래너 (정책=운동능력)</td></tr>
+      <tr><td class="mod">지각</td><td>온보드 (depth+LiDAR 증류)</td><td>온보드 (시각 통합 단일학습)</td><td><b>없음</b> — 사전 지도+모캡(명시 한계)</td></tr>
+      <tr><td class="mod">강점</td><td>미지 적응·저compute·스킬폭</td><td>적응 유지한 발판 인지·단순</td><td>성능 보장·검증가능·capability 정합</td></tr>
+      <tr><td class="mod">약점</td><td>정밀 발판 보장 없음·블랙박스</td><td>극한 성능 미증명</td><td>지각 전제(지도 드리프트 취약)·복잡</td></tr>
+    </tbody>
+  </table></div></div>
+
+  <p class="h2sub" style="margin-top:16px">발판 <b>명시성 스펙트럼</b> — 한 축으로 펼치면 (DTC는 참조+추종으로 중간):</p>
+  <div class="spectrum">
+    <div class="ends"><span>◄ 암묵 (정책 전결)</span><span>명시 (플래너 확정) ►</span></div>
+    <div class="specrow">
+      <div class="sp" style="--dc:var(--dist)"><div class="dot"></div><div class="lb">APT</div><div class="sub">표현 없음</div></div>
+      <div class="sp" style="--dc:var(--accent)"><div class="dot"></div><div class="lb">PUMA</div><div class="sub">힌트만</div></div>
+      <div class="sp"><div class="dot"></div><div class="lb">PLANC</div><div class="sub">보상으로</div></div>
+      <div class="sp" style="--dc:var(--rl)"><div class="dot"></div><div class="lb">DTC</div><div class="sub">참조+추종</div></div>
+      <div class="sp" style="--dc:var(--plan)"><div class="dot"></div><div class="lb">Raibo</div><div class="sub">플래너 확정</div></div>
+    </div>
+  </div>
+
+  <div class="callout" style="border-color:var(--accent2);background:var(--paperbg)"><b style="color:var(--accent2)">직교축 — 온보드 지각 여부</b> — APT·PUMA=온보드, Raibo=없음. <b>암묵일수록 온보드 지각과 궁합</b>(노이즈까지 정책이 흡수)이고, <b>명시일수록 완벽한 지각을 요구</b>. → <b>미개척 코너 = "명시 계획 + 온보드 지각"</b>이 다음 승부처.</div>
+
+  <div class="callout"><b>시간 스케일 경계</b> — <span class="mono">전역 경로(어느 방)</span>=명시 유지(내비) · <span class="mono">발판 선택(어느 돌)</span>=<b>경합 지대(현재 싸움터)</b> · <span class="mono">스킬·반사(어떻게 딛나)</span>=흡수 완료(정책 몫). 수렴점 = "강한 amortized 정책 + 정밀·안전 국면에서 가벼운 명시 참조/탐색의 게이팅"(AlphaGo 정책망+MCTS·LLM test-time search와 같은 교훈).</div>
+
+  <div class="panel" style="margin-top:14px;border-color:var(--plan)">
+    <h3 style="color:var(--plan)">★우리 스택의 좌표 — 국면별 게이팅</h3>
+    <p class="cap">꼭짓점 하나가 아니라 삼각형 안을 국면별로 이동. 승자 미정 상황에서 가장 방어적인 포지션.</p>
+    <ul class="plain">
+      <li><b>평상시</b> = APT 꼭짓점 (단일 정책·잠재 스킬·온보드 지각·암묵 발판)</li>
+      <li><b>정밀 국면</b> = APT–Raibo 변의 <b>DTC 지점으로 게이팅 이동</b> (p_tgt·cs 참조 조건화)</li>
+      <li><b>자율 보강(옵션)</b> = PUMA 변의 발판 prior 특징 차용 (게이팅 OFF 시 정밀도↑, 구조 충돌 없음)</li>
+      <li><b>Raibo 차용</b> = <b>capability-aware 필터</b>(계획이 정책 능력 밖을 요구 안 하게) + <b>경쟁적 CVAE 커리큘럼</b>(soft·클러터 난이도 자동조절)</li>
+      <li><b>soft 표면(쇼파·침대)</b> = DTC 게이팅 <b>반드시 OFF</b> — 강체 TO 참조는 오도. 물성 랜덤화 RL 영역</li>
+    </ul>
+  </div>
+
+  <p class="cap" style="margin-top:8px">참조: APT(Kang 2026)·Raibo(Kim/Hwangbo 2025, 2506.02835)·PUMA(2601.15995)·DTC(Jenelten 2024, 2309.15462)·PLANC(2601.06286). 상세 서지는 <code>foothold_3axis_framework.md</code>.</p>
+
   <!-- ============ 3. 학습 3단계 ============ -->
-  <h2><span class="num">03</span> 학습 3단계 — 무엇을 얼리고, 무엇을 무엇으로 학습하나</h2>
+  <h2><span class="num">04</span> 학습 3단계 — 무엇을 얼리고, 무엇을 무엇으로 학습하나</h2>
   <p class="h2sub">APT-RL 골격에 맞춰 3단계로 나눈다. 각 단계의 <b>데이터·손실·동결(freeze)·배포여부</b>가 다르다. 이번 세션에 실제로 돌린 건 <b>Stage B(RL+RMA)</b>이며 — point-foot·flat-foot 정책이 여기서 나왔다. Stage A/C는 골격 정의 및 다음 단계.</p>
   <div class="stages">
     <div class="stage sg-rep">
@@ -287,7 +372,7 @@
   </div>
 
   <!-- ============ 4. 모듈 카탈로그 ============ -->
-  <h2><span class="num">04</span> 모듈 카탈로그 — 실제 구축된 정책 내부 (ActorCriticRMA)</h2>
+  <h2><span class="num">05</span> 모듈 카탈로그 — 실제 구축된 정책 내부 (ActorCriticRMA)</h2>
   <p class="h2sub">이번 세션의 정책은 rsl_rl 포크 <code>ActorCriticRMA</code>다. 아래는 각 모듈이 <b>무엇을·어떤 신경망으로·무엇으로 학습·배포되는지</b>. 핵심은 <b>배포 모듈</b>(actor·history_encoder·estimator)과 <b>학습전용 모듈</b>(critic·priv_encoder·참 특권정보)의 분리 — RMA 교사-학생의 뼈대다.</p>
   <div class="tbl-scroll">
   <table>
@@ -356,7 +441,7 @@
   <div class="callout" style="border-color:var(--accent2);background:var(--paperbg)"><b style="color:var(--accent2)">지형 채널 2겹</b> — <b>Elevation Encoder</b>(scandot_encoder, 특권 heightmap → z∈R³²)가 <b>교사 지형 채널</b>이고, 예정 <b>Depth CNN+GRU</b>가 raw depth에서 그 <b>z를 증류</b>하는 학생이다(APT-RL stage iii와 동형). 단 <b>현재 우리 biped flat-foot는 blind</b>(<code>num_scan_obs=0</code> → <code>scan_latent=0</code>)로 이 채널이 <b>비활성</b> — 위 2점 보행은 순수 자기수용(proprio) 결과다. 지형 지각을 켜는 시점에 Elevation Encoder(교사)를 활성화하고 Depth CNN+GRU(학생)를 증류한다.</div>
 
   <!-- ============ 5. 예정 추가 ============ -->
-  <h2><span class="num">05</span> 예정 추가 — 정책이 명시 모듈을 흡수 (APT-RL stage iii)</h2>
+  <h2><span class="num">06</span> 예정 추가 — 정책이 명시 모듈을 흡수 (APT-RL stage iii)</h2>
   <p class="h2sub">현재는 모듈형(명시 TerrainMap·history 1D-CNN·TO). 방향은 <b>raw 신호를 정책 내부로 흡수</b>해 더 end-to-end로. 두 추가 모두 APT-RL의 지각 증류 구조 그대로다.</p>
   <div class="grid2">
     <div class="panel" style="border-color:var(--planline)">
@@ -382,7 +467,7 @@
   </div>
 
   <!-- ============ 6. 지형 경로 A vs B ============ -->
-  <h2><span class="num">06</span> 지형 경로 A vs B — 무엇을 만들고 무엇을 배포하나</h2>
+  <h2><span class="num">07</span> 지형 경로 A vs B — 무엇을 만들고 무엇을 배포하나</h2>
   <p class="h2sub">지형 잠재 z를 정책에 넣는 경로가 둘이다. <b>대등한 선택지가 아니라 "교사 → 학생" 의존 관계</b> — B는 A의 z를 증류해서 배우므로 A 없이는 못 만든다. 둘의 시작점(raw depth)은 같지만 출력·소비자가 다르다.</p>
 
   <div class="pathcard pa">
@@ -429,64 +514,75 @@
   </div>
   <div class="callout" style="margin-top:16px"><b>한 줄</b> — <b>A는 필수</b>(교사이자 최소 배포), <b>B는 A 위에 얹는 선택</b>(교사 A 없인 못 만듦). "둘 중 하나"라면 답은 언제나 <b>A부터</b>. 우리는 아직 0단계(blind)라, 지형지각을 켠다면 첫 목표는 <b>A 활성화</b>.</div>
 
-  <!-- ============ 7. 보상 설계 실증 ============ -->
-  <h2><span class="num">07</span> 보상 설계 — 이번 세션 실증 (2점 평발 보행)</h2>
-  <p class="h2sub">모듈 골격만으론 안 걷는다. <b>보상 설계</b>가 실제 게이트를 만든다. 아래는 <code>HindLegFlatFootEnvCfg</code>에서 <b>실제로 겪은 문제 → 진단 → 수정</b> 3단계다. 값은 코드 확정치. <span style="color:var(--bad)">빨강=문제</span>, <span style="color:var(--ok)">초록=수정</span>.</p>
-
-  <div class="panel">
-    <h3>왜 안 걷다가 걷게 됐나 — 3번의 재균형</h3>
-    <p class="cap">2점(평발) 접촉은 point-foot보다 자세여유가 좁아, 보상이 "서 있기"로 새기 쉽다.</p>
-    <div class="steps">
-      <div class="step">
-        <div class="k">1</div>
-        <div class="body"><b>Plateau(정체) 진단</b> — 보상이 33에서 멈추고 로봇이 <span class="prob">2발로 서기만</span> 함. 원인 = <span class="mono">gait_stance</span>(~1.02)가 리턴을 지배 → 서 있으면 보너스. <span class="fix">수정: <span class="mono">lin_vel×3</span>·σ 0.1→0.25·standing env 0.1→0.05</span> → 걷기가 서기보다 이득.</div>
-      </div>
-      <div class="step">
-        <div class="k">2</div>
-        <div class="body"><b>Shuffle(끌기) 진단</b> — 걷긴 하나 <span class="prob">발을 끌고 불규칙</span>. 원인 = swing clearance/air-time 항이 약함. <span class="fix">수정: <span class="mono">gait_swing 1.0→1.5</span>·<span class="mono">feet_air_time 0.5→1.0</span>·action_rate −0.005</span> → 리듬 있는 교대 스윙.</div>
-      </div>
-      <div class="step">
-        <div class="k">3</div>
-        <div class="body"><b>Limp(절뚝) 진단</b> — 한 발(HR)은 <span class="prob">평발로 stance 독식(~79%)</span>, 다른 발(HL)은 <span class="prob">뒤꿈치 든 발끝걸음</span>(heel 0.10–0.15 m, stance ~52%). 원인 = 자기 swing 중 접촉을 벌하는 항·발 pitch 구속이 <b>없음</b>. <span class="fix">수정: 새 보상 2개 추가</span>.</div>
-      </div>
+  <!-- ============ 7. 모듈×학습법 도식 ============ -->
+  <h2><span class="num">08</span> 모듈 × 학습법 — 전체 구조 (I/O)</h2>
+  <p class="h2sub">모든 신경망 모듈을 <b>학습법 3갈래</b>로 나눈다 — <span style="color:var(--rl);font-weight:600">RL(보상)</span> · <span style="color:var(--dist);font-weight:600">지도(회귀·증류)</span> · <span style="color:var(--rep);font-weight:600">생성(복원+KL)</span>. 각 카드 = 타입 · 입력→출력 · 배포여부 · 보유상태(HAVE/BUILD).</p>
+  <div class="mlm">
+    <div class="mlgroup g-rl">
+      <div class="gh">RL <span class="gt">PPO 보상 최대화 · 한 덩어리로 학습</span></div>
+      <div class="mcard"><div class="mh"><span class="mn">Actor (tracker)</span><span class="mtype">MLP</span></div><div class="mio">in: proprio+잠재(+발판/cmd) <b>→</b> 관절목표 τ</div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">Critic</span><span class="mtype">MLP</span></div><div class="mio">in: 정책obs+특권 <b>→</b> V(가치)</div><div class="mbadges"><span class="mbadge mb-train">학습전용</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">priv_encoder (교사)</span><span class="mtype">MLP</span></div><div class="mio">in: 참 특권(마찰·질량) <b>→</b> 잠재 z</div><div class="mbadges"><span class="mbadge mb-train">학습전용</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">Elevation Encoder (지형교사)</span><span class="mtype">MLP/CNN</span></div><div class="mio">in: 특권 heightmap <b>→</b> 지형잠재 z</div><div class="mbadges"><span class="mbadge mb-train">학습전용</span><span class="mbadge mb-build">BUILD</span></div></div>
     </div>
-    <div class="rewards" style="margin-top:16px">
-      <div class="rw"><span class="sc">3.0</span><div class="nm">track_lin_vel_xy</div><div class="ds">exp 커널 σ=0.25 · 전진속도 추종(지배항)</div></div>
-      <div class="rw"><span class="sc">0.8</span><div class="nm">gait_stance</div><div class="ds">스케줄된 stance 발 접지 앵커</div></div>
-      <div class="rw"><span class="sc">1.5</span><div class="nm">gait_swing</div><div class="ds">swing 발 clearance(끌기 제거)</div></div>
-      <div class="rw"><span class="sc">1.0</span><div class="nm">feet_air_time</div><div class="ds">공중시간&gt;0.2s(명령 게이트)</div></div>
-      <div class="rw newrw"><span class="sc">−1.0</span><div class="nm">gait_swing_contact</div><div class="ds">자기 swing 중 접촉 벌 → <b>양발 50/50 교대 강제</b></div></div>
-      <div class="rw newrw"><span class="sc">−6</span><div class="nm">flat_foot</div><div class="ds">heel−toe 간격 벌 → 평발. <b>−15→−6 완화</b>(주저앉기 압력↓)</div></div>
+    <div class="mlgroup g-sl">
+      <div class="gh">지도학습 <span class="gt">회귀 / 증류 — 교사출력·참값 모방</span></div>
+      <div class="mcard"><div class="mh"><span class="mn">Estimator (v̂)</span><span class="mtype">MLP/GRU</span></div><div class="mio">in: proprio+prev_act <b>→</b> base속도 v̂ · <i>label=참속도</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">history_encoder (RMA학생)</span><span class="mtype">1D-Conv</span></div><div class="mio">in: 관측이력10 <b>→</b> priv잠재 · <i>label=priv_encoder z</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">Boundary estimator</span><span class="mtype">MLP</span></div><div class="mio">in: 발판→발판 벡터 <b>→</b> 충돌 최저경계 · <i>label=기하</i></div><div class="mbadges"><span class="mbadge mb-dep">배포(planner)</span><span class="mbadge mb-build">BUILD</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">Depth CNN (지형학생)</span><span class="mtype">CNN</span></div><div class="mio">in: raw depth <b>→</b> 지형잠재 · <i>label=Elev.Enc z</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-build">BUILD</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">GRU encoder (기억학생)</span><span class="mtype">GRU</span></div><div class="mio">in: 이력/depth열 <b>→</b> 잠재 · <i>label=교사 z</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-build">BUILD</span></div></div>
     </div>
-    <p class="cap" style="margin-top:12px;font-size:11.5px">위 두 신규 항은 순간값(리셋버퍼 없음)이고 <code>getattr</code> cfg 게이트 뒤에 있어 point-foot task(<code>HindLegHistoryEnvCfg</code>)엔 무영향 — env.py 수정 없이 하위클래스 오버라이드만.</p>
-
-    <div class="step" style="margin-top:16px">
-      <div class="k" style="background:var(--okbg);color:var(--ok)">4</div>
-      <div class="body"><b>Posture(자세) 진단 — 재균형#4 (2026-07-28)</b> — 대칭 평발본이 <span class="prob">base를 ~4cm 웅크리고(0.42→0.38) 기울어짐(tilt 14°)</span>. 사용자 통찰: <span class="prob">웅크리면 스윙 여유가 없어 다리를 못 들어 shuffle</span>. 원인 = <span class="mono">flat_foot(−15)</span>가 주저앉는 게 이득인데 <span class="mono">flat_orientation</span> OFF·<span class="mono">base_height</span> 약함. <span class="fix">수정: flat_orientation <span class="mono">0→−3</span>·base_height <span class="mono">−10→−25</span>·flat_foot <span class="mono">−15→−6</span>·swing_height <span class="mono">0.07→0.11</span>·gait_swing <span class="mono">1.5→2.0</span></span> → 수평·높은 자세 + 다리 들기.</div>
+    <div class="mlgroup g-gen">
+      <div class="gh">생성모델 <span class="gt">복원 + KL · self-supervised</span></div>
+      <div class="mcard"><div class="mh"><span class="mn">CVAE map generator</span><span class="mtype">VAE·MLP</span></div><div class="mio">in: ψ+조건y <b>→</b> ψ생성 · <i>넘어선 ψ로 학습</i></div><div class="mbadges"><span class="mbadge mb-train">커리큘럼전용</span><span class="mbadge mb-build">BUILD</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">TVAE (APT 스킬)</span><span class="mtype">VAE+디코더</span></div><div class="mio">in: TO모션 <b>→</b> 잠재+토크 · <i>사전학습→freeze</i></div><div class="mbadges"><span class="mbadge mb-train">사전학습</span><span class="mbadge mb-build">BUILD</span></div></div>
     </div>
-    <div class="res" style="margin-top:14px">
-      <div class="metric"><div class="v good">0.38→0.42</div><div class="l">서기 base_h <b>웅크림 해소</b> <span class="mono">(측정)</span></div></div>
-      <div class="metric"><div class="v good">14°→~5°</div><div class="l">tilt <b>수평 잡힘</b> <span class="mono">(서기·보행 공통)</span></div></div>
-      <div class="metric"><div class="v good">swing 0.03→1.66</div><div class="l">다리 들기 <b>대폭 개선</b>(shuffle 해소)</div></div>
-      <div class="metric"><div class="v good">falls 0</div><div class="l">iter 12000 수렴 · vx 0.25 추종</div></div>
-    </div>
-    <p class="cap" style="margin-top:10px;font-size:11.5px">학습 iter 12103서 <code>std≥0</code> PPO 수치 크래시 있었으나 <b>model_12000는 크래시 전 정상 저장</b>(reward는 iter 4000에 이미 평탄화, 12000=성숙). 장기 재학습 시 log_std 클램프 안전장치 권장.</p>
+  </div>
+  <div class="mlrel">
+    <b>핵심 연결</b> — <span class="rarrow">priv_encoder → history_encoder</span> · <span class="rarrow">Elevation Enc → Depth CNN/GRU</span> = 교사→학생 증류(지도). <span class="rarrow">Actor → τ</span> = 배포 정책. <span class="rarrow">CVAE ⇄ tracker</span> = 경쟁 커리큘럼.<br>
+    <b>배포(로봇 탑재)</b> = Actor · Estimator · history_encoder (+지각시 Depth CNN·GRU) · Boundary estimator. &nbsp; <b>학습전용(버림)</b> = Critic · priv_encoder · Elevation Encoder(증류 후) · CVAE · TVAE.<br>
+    <b>규칙</b>: 정책·가치·교사인코더=RL / 추정기·학생(증류)·경계추정=지도 / CVAE·TVAE=생성. <b>새로 만드는 것</b>은 주로 CVAE·Boundary·Depth CNN/GRU (tracker는 기존 Actor의 obs·보상 교체).
   </div>
 
-  <!-- results -->
-  <h2 style="font-size:16px;margin-top:26px"><span class="num" style="font-size:11px">결과</span> 실측 — 정직하게</h2>
-  <div class="res">
-    <div class="metric"><div class="v good">reward 70</div><div class="l">정체 33에서 상승 <span class="mono">track_lin_vel 2.86</span></div></div>
-    <div class="metric"><div class="v good">97–98%</div><div class="l">전진 속도 추종 <span class="mono">vx 0.5→0.48 · 1.0→0.98(헤드리스)</span></div></div>
-    <div class="metric"><div class="v good">falls 0</div><div class="l">2점 평발 <b>전진 보행 달성</b> — 모델기반이 못한 것</div></div>
-    <div class="metric"><div class="v good">heel 0.10→0.04</div><div class="l">발끝걸음 해소 <span class="mono">duty 79/52 → 45/48 대칭</span></div></div>
-    <div class="metric"><div class="v weak">측방 19%</div><div class="l">lateral 추종 약함(point/flat-foot yaw 약점)</div></div>
-    <div class="metric"><div class="v weak">제자리선회 4%</div><div class="l">in-place turn 거의 안 됨</div></div>
+  <div class="panel" style="margin-top:16px">
+    <h3>용어·기호가 뜻하는 것</h3>
+    <p class="cap">위 카드의 입력→출력에 나오는 말들.</p>
+    <div class="gloss">
+      <div><b>proprio (자기수용 관측)</b><span>로봇이 자기 몸을 느끼는 값 — 관절 위치·속도(엔코더) + 몸통 자세·각속도(IMU) + 직전 액션. <i>실기에서 항상 있다.</i></span></div>
+      <div><b>정책 obs (policy observation)</b><span>Actor(정책 신경망)에 실제로 들어가는 <i>입력 벡터 전체</i> = proprio + 추정잠재 z + (발판·명령). 즉 "정책이 보는 것".</span></div>
+      <div><b>특권정보 (privileged)</b><span>sim에선 알지만 실기엔 <i>없는</i> 값 — 마찰계수·질량·외력·정확한 지형. 교사가 쓰고, 학생이 관측만으로 흉내낸다.</span></div>
+      <div><b>잠재 z (latent)</b><span>특권정보·지형을 신경망이 압축한 <i>작은 코드</i>(예: 20~32차원 벡터). 정책이 이 z 하나로 "지금 환경이 어떤지"를 안다.</span></div>
+      <div><b>v&#770; (base velocity 추정)</b><span>로봇은 <i>자기 몸통 속도</i>를 직접 못 잰다(가속도계만 있음) → 관측에서 추정. 보행 제어에 필수.</span></div>
+      <div><b>&#964; (tau · 제어 출력)</b><span>각 관절에 줄 <i>힘(토크) 또는 목표각</i>. 로봇이 실제로 받는 명령 = 정책의 최종 출력.</span></div>
+      <div><b>&#968; (psi · 지형 파라미터)</b><span>CVAE에서 stepping stone 배치를 정하는 <i>6D 숫자</i>(간격 r·방향 &#952;·기울기 tilt…). 이걸 바꾸면 지형 난이도가 바뀐다.</span></div>
+      <div><b>heightmap</b><span>로봇 주변 <i>지형 높이 격자</i>(2.5D). 어디가 높고 낮은지 = 지형 인지의 원천.</span></div>
+    </div>
   </div>
-  <div class="callout"><b>한계(숨기지 않음)</b> — ① <s>웅크림 ~4cm</s> → <b>재균형#4로 해소</b>(0.42·tilt 5°, 위 참조). ② 측방·제자리선회는 여전히 약함 — 전진 보행 전용(point/flat-foot yaw 약점). ③ vx 0.5/1.0 추종치는 넓은 명령범위 학습본 기준이고, 대칭·재균형#4본은 <code>[0.1, 0.3]</code> 저속 범위. 배포는 <b>전진 2점 보행 실증</b>까지가 검증됨.</div>
+
+  <div class="panel" style="margin-top:14px">
+    <h3>각 모듈이 하는 일 (비유로)</h3>
+    <p class="cap">신경망 하나하나가 왜 있고 무슨 역할인지.</p>
+    <div class="tbl-scroll"><table>
+    <thead><tr><th>모듈</th><th>비유</th><th>하는 일</th></tr></thead>
+    <tbody>
+      <tr><td class="mod">Actor (정책 π)</td><td>두뇌</td><td>obs를 받아 "지금 각 관절을 어떻게 움직일지(&#964;)"를 결정. RL로 보상 최대화 학습. <b>유일하게 로봇을 실제로 움직인다.</b></td></tr>
+      <tr><td class="mod">Critic</td><td>코치</td><td>"이 상태가 얼마나 좋은지(가치 V)"를 평가해 Actor 학습을 도움. 학습에만 쓰고 로봇엔 안 실림.</td></tr>
+      <tr><td class="mod">priv_encoder</td><td>교사(내부)</td><td>sim의 특권정보(마찰·질량)를 잠재 z로 압축 → Actor가 환경을 앎. 실기엔 특권이 없어 배포 못 함.</td></tr>
+      <tr><td class="mod">Elevation Encoder</td><td>교사(지형)</td><td>특권 heightmap을 지형잠재 z로 압축. 지형 인지의 교사(학생 Depth CNN의 정답).</td></tr>
+      <tr><td class="mod">Estimator</td><td>속도계</td><td>못 재는 몸통 속도 v&#770;를 관측에서 추정(참 속도에 회귀). 배포.</td></tr>
+      <tr><td class="mod">history_encoder</td><td>학생(적응)</td><td>과거 10프레임 관측<b>만으로</b> 교사(priv_encoder)의 z를 흉내내도록 학습(증류). 실기에선 이게 특권정보를 대신. 배포.</td></tr>
+      <tr><td class="mod">Boundary estimator</td><td>충돌 예측기</td><td>발판 계획 때 "이 경로로 가면 지형에 부딪히나"(충돌 최저경계)를 예측 → planner 필터. 롤아웃 없이 빠르게.</td></tr>
+      <tr><td class="mod">Depth CNN</td><td>학생(눈)</td><td>raw depth 카메라 영상에서 지형잠재를 직접 뽑음(Elevation Enc z 흉내). 명시 heightmap 없이 배포.</td></tr>
+      <tr><td class="mod">GRU encoder</td><td>학생(기억)</td><td>관측·영상 시퀀스를 순환 기억으로 압축(고정창 1D-Conv 대신 가변 시계열).</td></tr>
+      <tr><td class="mod">CVAE map generator</td><td>지형 출제자</td><td>지형(&#968;)을 생성. tracker가 넘어선 지형을 배워 <i>조금 더 어려운</i> 지형 출제(경쟁 커리큘럼). 로봇엔 안 실림.</td></tr>
+      <tr><td class="mod">TVAE</td><td>스킬 사전</td><td>TO 모션 데이터를 잠재 스킬 라이브러리로 압축(사전학습). APT가 재사용하는 스킬.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
 
   <!-- ============ 7. 액추에이터 정합 ============ -->
-  <h2><span class="num">08</span> 액추에이터 정합 — PACE (배포 직전 sim2real)</h2>
+  <h2><span class="num">09</span> 액추에이터 정합 — PACE (배포 직전 sim2real)</h2>
   <p class="h2sub">정책이 sim에서 잘 걸어도, 실모터의 <b>반사관성·마찰·지연</b>이 안 맞으면 실기서 무너진다. PACE(ETH RSL)로 실측 데이터에서 액추에이터 파라미터를 <b>식별(system-ID)</b>해 sim 모터모델을 실기에 맞춘다.</p>
   <div class="grid2">
     <div class="panel">
@@ -508,7 +604,7 @@
   </div>
 
   <!-- ============ 9. 보강 로드맵 ============ -->
-  <h2><span class="num">09</span> 보강 로드맵 — Hwangbo 2019 대조서 도출</h2>
+  <h2><span class="num">10</span> 보강 로드맵 — Hwangbo 2019 대조서 도출</h2>
   <p class="h2sub">계보의 <b>Hwangbo 2019</b>와 대조하면 <b>정책 아키텍처는 이미 넘어섰고</b>(RMA·estimator·GPU 4096) 진짜 구조적 갭은 <b>①actuator net 한 곳</b>. 나머지 ②–⑤는 <b>조건부 후보</b>(지금 필수 아님) — 정직하게 "새 제안 vs 기존 계획", "언제 값어치"를 구분한다.</p>
   <div class="tbl-scroll">
   <table>
@@ -546,16 +642,61 @@
         <td class="mod">⑤</td>
         <td><b>RMA 복잡도 정당화 → 지각 켜기</b><small>blind엔 과설계</small></td>
         <td>기존 계획 (경로 A/B)</td>
-        <td>관찰(행동 아님). 해법=Elevation Encoder/Depth CNN 켜기 = §06 로드맵. <b>Lee 2020 · Miki 2022 · APT 2026</b></td>
+        <td>관찰(행동 아님). 해법=Elevation Encoder/Depth CNN 켜기 = §07 로드맵. <b>Lee 2020 · Miki 2022 · APT 2026</b></td>
         <td><span class="pill p-part">계획됨</span></td>
       </tr>
     </tbody>
   </table>
   </div>
-  <div class="callout"><b>정직 요약</b> — 당장 로드맵에 새로 넣을 <b>필수 항목은 없다</b>. ①(actuator 실측)은 이미 #1 갭이고 하드웨어 대기, ⑤(지각 켜기)는 이미 §06 계획. <b>②·③효율은 순수 신규 후보</b>로, 그 문제(잦은 낙상 / 배터리·발열)가 실제 나타나면 그때 얹는다. 지금 순서 = <b>재균형#4 자세개선(③자세) → 액추에이터 실측(①) → 지각(⑤)</b>, 최종 = APT.</div>
+  <div class="callout"><b>정직 요약</b> — 당장 로드맵에 새로 넣을 <b>필수 항목은 없다</b>. ①(actuator 실측)은 이미 #1 갭이고 하드웨어 대기, ⑤(지각 켜기)는 이미 §07 계획. <b>②·③효율은 순수 신규 후보</b>로, 그 문제(잦은 낙상 / 배터리·발열)가 실제 나타나면 그때 얹는다. 지금 순서 = <b>재균형#4 자세개선(③자세) → 액추에이터 실측(①) → 지각(⑤)</b>, 최종 = APT.</div>
+
+  <!-- ============ 11. 프로젝트 구조 부록 ============ -->
+  <h2><span class="num">11</span> 부록 — RobotSW_IsaacLab 프로젝트 구조</h2>
+  <p class="h2sub"><b>NVIDIA IsaacLab(Isaac Sim RL 프레임워크) fork + 회사·개인 커스터마이즈.</b> 표준 프레임워크 위에 로봇 태스크·에셋·RMA 알고리즘을 얹은 구조. <span style="color:var(--plan);font-weight:600">주황=우리 DTC 작업이 걸린 곳</span>.</p>
+
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>폴더</th><th>분류</th><th>역할</th></tr></thead>
+    <tbody>
+      <tr><td class="mod">source/isaaclab/</td><td>프레임워크 코어</td><td>엔진 — sim·assets·sensors·envs·terrains·managers·utils</td></tr>
+      <tr><td class="mod">source/isaaclab_assets/</td><td>프레임워크 코어</td><td>로봇 에셋 cfg(ArticulationCfg). ★<b>rga.py=QUAD_17DOF_CFG·HIND_LEG_CFG</b></td></tr>
+      <tr><td class="mod">source/isaaclab_tasks/</td><td>프레임워크 코어</td><td>RL 태스크. ★<b>direct/=우리 커스텀 태스크</b>(아래)</td></tr>
+      <tr><td class="mod">source/isaaclab_rl · _mimic · _contrib</td><td>프레임워크</td><td>RL 래퍼(rsl_rl·skrl·rl_games) · 모방학습(MimicKit) · 기여확장</td></tr>
+      <tr><td class="mod">source/_workspace/sim2real/</td><td>커스텀</td><td>sim2real 워크스페이스</td></tr>
+      <tr><td class="mod">rsl_rl/</td><td>★RL 두뇌</td><td><b>RSL-RL fork</b> — PPO·<b>ActorCriticRMA</b>·PPOParkour·estimator·StateHistoryEncoder·Depth CNN/GRU 백본. 정책이 여기서 나옴</td></tr>
+      <tr><td class="mod">skrl/</td><td>RL 라이브러리</td><td>대체 RL 라이브러리(AMP 등)</td></tr>
+      <tr><td class="mod">scripts/</td><td>진입 스크립트</td><td>reinforcement_learning(train·play)·imitation_learning(AMP)·mpc·real2sim·sim2sim_transfer·<b>tools(convert_mjcf=USD변환)</b>·autoresearch·isaac_worker·demos·tutorials</td></tr>
+      <tr><td class="mod">apps/ · docker/ · docs/</td><td>프레임워크</td><td>Kit 앱 설정 · 컨테이너 · 문서</td></tr>
+      <tr><td class="mod">isaaclab.sh</td><td>런처</td><td>★메인 진입점 (<code>./isaaclab.sh -p …</code>)</td></tr>
+      <tr><td class="mod">JSH/</td><td>★내 산출물</td><td>회사 원본과 분리(개인 fork). ★<b>USD 여기</b>: Hind_Leg·Hind_Leg_Flat·<b>quad_17dof</b> · pace_hindleg(PACE)</td></tr>
+      <tr><td class="mod">run/</td><td>커스텀 실행</td><td>실행 진입점(launch·play_hind_leg·parkour_demo·plot)</td></tr>
+      <tr><td class="mod">.claude/ · .agents/</td><td>개발 인프라</td><td>Claude Code 설정(agents·skills·commands) · 에이전트 규칙 · CLAUDE.md(orchestration 지침)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 style="font-size:14.5px;margin-top:18px">커스텀 RL 태스크 (<code>direct/</code>)</h3>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>태스크</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="mod" style="color:var(--plan)">quad17/</td><td><b>★17-DOF quad — DTC 트랙</b>(Quad17-Velocity-Direct-v0). P1 워커→P2 tracker</td></tr>
+      <tr><td class="mod" style="color:var(--plan)">hind_leg/</td><td><b>★2족 biped</b>(HindLeg-Direct/Flat — 점발·평발 RL)</td></tr>
+      <tr><td class="mod">parkour/ · parkour_imitation/</td><td>Go2 파쿠어 (DTC 알고리즘 참조 — ActorCriticRMA·terrain)</td></tr>
+      <tr><td class="mod">go2/ · go2_amp/ · go2_imitation(_tracking)/ · go2_recovery/</td><td>Unitree Go2 (속도·AMP·모방·낙상복구)</td></tr>
+      <tr><td class="mod">R_Skeleton/ · R_Skeleton_amp/</td><td>휴머노이드 스켈레톤(AMP)</td></tr>
+      <tr><td class="mod">r2s_hind_leg/ · motion_jig/</td><td>real2sim hind_leg · 모션 지그</td></tr>
+      <tr><td class="mod" style="color:var(--faint)">ant·cartpole·anymal_c·humanoid·shadow_hand…</td><td>IsaacLab 기본(참조용, 미사용)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 style="font-size:14.5px;margin-top:18px">우리 DTC 작업이 걸린 4곳</h3>
+  <div class="tree"><b>RobotSW_IsaacLab/</b>  (IsaacLab fork)
+├─ source/isaaclab_tasks/.../direct/<span class="ours">quad17/</span>        ← P1 워커·P2 tracker (env 개발)
+├─ source/isaaclab_assets/.../<span class="ours">rga.py</span>              ← QUAD_17DOF_CFG (로봇 cfg)
+├─ <span class="ours">rsl_rl/</span>rsl_rl/                              ← ActorCriticRMA (정책 두뇌·재사용)
+├─ <span class="ours">JSH/quad_17dof/</span>quad_17dof.usd              ← 로봇 USD (P0 산출)
+└─ scripts/tools/convert_mjcf.py · reinforcement_learning/  ← USD변환 · train/play</div>
 
   <div class="foot">
-    <b>요약</b> — 이 RL 제어기는 <b>8편 계보</b>(Posa14·Hwangbo19·Lee20/Miki22·RMA21·AMP21·DTC24·APT26)를 뼈대로 쌓으며 <b>최종은 APT</b>. 현재 = <b>RMA</b> 아키텍처(ActorCriticRMA)로 <b>2점 평발 전진보행</b> 실증(보상 3-재균형; 자세개선 재균형#4 학습중). Stage A(TVAE)·Stage C(Depth CNN+GRU 지각증류)는 다음 단계. 구조적 갭은 <b>actuator net(Hwangbo19)</b> 한 곳, ②–⑤는 조건부 보강.<br>
-    <b>참조 8편</b> — Posa 2014(contact-implicit TO) · Hwangbo 2019(ANYmal, actuator net, Sci.Robotics) · Lee 2020(teacher-student) · Miki 2022(perceptive) · RMA 2021(Kumar) · AMP 2021(Peng) · DTC 2024(Jenelten, arXiv:2309.15462) · APT 2026(Kang, skillquad). 코드: <code>HindLeg-Flat-Direct-v0</code>, rsl_rl <code>ActorCriticRMA</code> · 전체 스택: <code>pipeline_fullstack.html</code>.
+    <b>요약</b> — 이 RL 제어기는 <b>9편 계보</b>(Posa14·Hwangbo19·Lee20/Miki22·RMA21·AMP21·DTC24·<b>Kim25</b>·APT26)를 뼈대로 쌓으며 <b>최종은 APT</b>(quad DTC 트랙 목표=Kim25). 현재 = <b>RMA</b> 아키텍처(ActorCriticRMA)로 <b>2점 평발 전진보행</b> 실증(보상 3-재균형; 자세개선 재균형#4 학습중). Stage A(TVAE)·Stage C(Depth CNN+GRU 지각증류)는 다음 단계. 구조적 갭은 <b>actuator net(Hwangbo19)</b> 한 곳, ②–⑤는 조건부 보강.<br>
+    <b>참조 9편</b> — Posa 2014(contact-implicit TO) · Hwangbo 2019(ANYmal, actuator net, Sci.Robotics) · Lee 2020(teacher-student) · Miki 2022(perceptive) · RMA 2021(Kumar) · AMP 2021(Peng) · DTC 2024(Jenelten, arXiv:2309.15462) · <b>Kim 2025(Hwangbo, Raibo 사족 DTC, arXiv:2506.02835)=quad DTC 목표 아키텍처</b> · APT 2026(Kang, skillquad). 코드: <code>HindLeg-Flat-Direct-v0</code>, rsl_rl <code>ActorCriticRMA</code> · 전체 스택: <code>pipeline_fullstack.html</code>.
   </div>
 </div>

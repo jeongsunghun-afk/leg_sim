@@ -14,22 +14,33 @@
 | 제어기 | pipeline | params | 비고 |
 |---|---|---|---|
 | **A** (MPC+WBIC, **배포**) | [pipeline_a.html](pipeline_a.html) | [params_a.html](params_a.html) | 솔버 문제정의·I/O·값전체+파리티+튕김조절 |
-| **B·C·D1** (OCP/NMPC, 연구·분석) | [pipeline_bcd1.html](pipeline_bcd1.html) | (pipeline 내) | Kinodyn OCP+TSID / FullDyn OCP+Riccati / OCS2 NMPC — 각 **구조·입출력** |
+| **B·C** (OCP, 연구·분석) | [pipeline_bc.html](pipeline_bc.html) | (pipeline 내) | Kinodyn OCP+TSID / FullDyn OCP+Riccati — 각 **구조·입출력** |
+| **D1** (OCS2 통합 NMPC, **포팅·진행**) | [pipeline_d1.html](pipeline_d1.html) | (pipeline 내) | OCS2 legged_robot→02_Leg MuJoCo 포팅. 동적 TROT falls=0·16-DOF·perceptive 3a. `pipeline_tamols` 양식(대조용) |
 | **제어기 비교** (A·B·C·D1·CI) | [제어기_비교.html](제어기_비교.html) | — | 5종 **구조·솔버·I/O·실시간·지형·성능** 대조 + 지형유형 정직비교 |
-| **CI** (Contact-Implicit, **종결**) | [pipeline_ci.html](pipeline_ci.html) · [CI-MPC_개발_리포트.md](CI-MPC_개발_리포트.md) | [params_ci.html](params_ci.html) | 종결(§11): 로버스트 험지 부적합 확정. 완성분=해석그래디언트·자세(서기/눕기/앉기). 상세=리포트 |
+| **CI** (Contact-Implicit, **종결**) | [pipeline_ci.html](pipeline_ci.html) · [params_ci.html](params_ci.html) | — | 종결: 로버스트 험지 부적합. 상세=아래 개발리포트 |
+
+### 🔬 모델기반 트랙 개발리포트 (통일 `<트랙>_개발리포트.md`)
+각 제어기/트랙의 개발 기록·결정·현재상태. (2026-07-30 이름 통일·최신화·트림. 원본 백업=`.docbackup_20260730/`.)
+
+| 리포트 | 트랙 | 상태 |
+|---|---|---|
+| **[DTC_개발리포트.md](DTC_개발리포트.md)** | **DTC**(MPC 교사 + RL 추종) — 17-DOF quad 위 P0(자산)·P1(속도워커) 완료·**P2(발판추종 tracker) 진행**·P3(지형·CVAE) 예정. 목표 아키텍처=Kim2025(Raibo). 하이브리드 5패턴·H0~H3 로드맵 포함. (구 MPC_RL 하이브리드 전략 리포트 재초점) | ★활성 |
+| **[D1_OCS2_개발리포트.md](D1_OCS2_개발리포트.md)** | **D1**(OCS2 통합 perceptive NMPC → 02_Leg) — Phase 1·2 완료·**Phase 2b 동적 TROT 성공**(0.3m/s·13s+·falls=0, 2bb8dd4). 다음=Phase 3 perceptive. **B(quad_centroidal) perceptive NMPC 승격(보류)** 흡수(§0.1) | ★활성 |
+| **[CI-MPC_개발리포트.md](CI-MPC_개발리포트.md)** | **CI-MPC**(Contact-Implicit) — 로버스트 험지 부적합 확정, 수행분(해석그래디언트·서기/눕기/앉기 자세)만 남기고 접음. 이후=TOWR+RL | ★종결 |
+| **[TAMOLS_개발리포트.md](TAMOLS_개발리포트.md)** | **TAMOLS** — whole-body 온라인 추종(④W_AM 해결·⑤리앵커링 미해결) + **갭 크로싱·C++ TAMOLS 솔버 완성**(§7, 구 갭크로싱 리포트 통합). full TAMOLS 단발 추종=막다른길 → RL 피벗 | 종결→RL |
+| **[TOWR_개발리포트.md](TOWR_개발리포트.md)** | **TOWR** — 오프라인 지형 planning(수렴)·추종/폐루프 조사로 모델기반 상한 확정 → robust 불연속 험지=RL. TOWR·훅=RL 교사/오프라인 참조 자산 | 피벗→RL |
 
 ### 실행 · 품질 · 기타
 | 문서 | 역할 | 형식 |
 |---|---|---|
 | **[RUN.md](RUN.md)** | 실행 레시피(빌드·GUI·헤드리스·지형·회귀·데모) | md |
 | **[MAINTENANCE.md](MAINTENANCE.md)** | 품질 프로세스(하네스·스킬·파리티·문서동기화 규칙) | md |
-| **[TOWR_모델기반지형_리포트.md](TOWR_모델기반지형_리포트.md)** | **TOWR 트랙** — 오프라인 지형 planning·추종 한계·폐루프 조사 결론(모델기반 상한→RL) | md |
 | **[datasheet_load_17dof.html](datasheet_load_17dof.html)** | 관절별 τ·ω peak/RMS 부하 데이터시트(trot·walk, 실모터 한계 대비) | 아티팩트 |
 | **[sim2real_checklist_17dof.html](sim2real_checklist_17dof.html)** | 실기 이식 갭(액추에이터 물리·미모델·운용) | 아티팩트 |
 | **[biped.html](biped.html)** | **biped** — 2족 MPC+WBIC. 점발/평발 접촉모드·1점/2점 전환·개발여정(C++ 배포) | 아티팩트 |
 | [RECORDING.md](RECORDING.md) · [DEVLOG.md](DEVLOG.md) | 화면 녹화 가이드 · 개발일지(연대기) | md |
 
-문서 원칙: **값은 params에만**, 나머지는 포인터로 위임(중복 금지). params=값 / pipeline=수식·구조 / sim2real=실기 갭. nav·RL은 fullstack으로 통합(개별 pipeline_nav·pipeline_rl 폐지).
+문서 원칙: **값은 params에만**, 나머지는 포인터로 위임(중복 금지). params=값 / pipeline=수식·구조 / sim2real=실기 갭 / **개발리포트=트랙별 개발기록·결정**. nav·RL은 fullstack으로 통합(개별 pipeline_nav·pipeline_rl 폐지).
 
 ## 🔧 코드·도구 (simulation/)
 | 위치 | 내용 |
@@ -45,28 +56,24 @@
 | `.claude/skills/controller-review/SKILL.md` | **스킬** — 검수 SOP(`/controller-review`) |
 | `quad/offline/jump/` · `offline/getup/` | 오프라인 궤적(점프 OCP·기립 gather) 생성 파이프라인 |
 | `quad/tools/` | 모델 빌드(build_real_quad_17dof·gen_sphere_17dof·plot_perfoot) |
+| `quad/tamols/` · `quad/cpp/tamols/` | TAMOLS Drake 레퍼런스 + C++ 솔버(실시간+cold-start) — 상세=TAMOLS 개발리포트 |
+| `quad/towr/` (+`towr_ext/`) | TOWR planning(CasADi+원조 ifopt) — 상세=TOWR 개발리포트 |
+| `quad/ocs2_02leg/` · `quad/ocs2_ws/` | D1 OCS2 포팅(우리 소스+3rd-party) — 상세=D1 개발리포트 |
+| `quad/ci_mpc/` · `cpp/ci_mpc/` | CI-MPC(종결) — 상세=CI-MPC 개발리포트 |
 | `quad/research/quad_mpc_wbic.py` + `teleop_gui.py` | 14-DOF(구 본선, 연구) |
 | `biped/` | **뒷다리 2족 보행**(MPC+WBIC event-DCM·base-frame·GUI). Python+**C++ 배포**(cpp/, 파리티 1e-11). 실행 `biped/run_gui_biped.sh`(Py)·`run_gui_cpp.sh`(C++). 상세=`biped/README.md`·메모리 biped-mpc-reimpl |
 | `simple_mpc/` | 구조 B/C(FullDynamics·Centroidal, marginal 연구) |
 | `gait_sim/` | ★구 gait_sim 연구노트(v13/v14 다수 md) — 히스토리, 아카이브 후보 |
 
 ## 🧠 메모리 (~/.claude/.../memory) — 프로젝트 방향·진단
-`MEMORY.md`(인덱스) + biped-wbic-mpc-project(메인) · 02leg-motor-spec · joint-load-trot-walk · quad-abc-io-structure · haunch-sit-posture · getup-trajopt-wip · rbq-sdk-reference · no-unphysical-sim2real-hacks · sim2real-checklist(·17dof).
+`MEMORY.md`(인덱스) + biped-wbic-mpc-project(메인) · dtc-17dof-development(DTC 트랙) · 02leg-motor-spec · joint-load-trot-walk · quad-abc-io-structure · perceptive-nav-tamols · b-elevation-tamols-towr-track · ci-mpc-track · haunch-sit-posture · getup-trajopt-wip · rbq-sdk-reference · no-unphysical-sim2real-hacks · sim2real-checklist(·17dof).
 → sim2real 체크리스트 **값·표는 위 HTML이 정본**, 메모리는 결정·통찰만(중복 슬림).
 
 ## 🗺️ 로드맵 / 향후 기능
 | 문서 | 내용 | 상태 |
 |---|---|---|
-| **[TAMOLS_online_tracking_fix.md](TAMOLS_online_tracking_fix.md)** | TAMOLS whole-body 추종 안정화(P0~P3). ④lateral=W_AM·⑤online=re-anchor frame. GM-observer·swing commitment. | 진행·진단완료 |
 | **[WBC_layer2_standalone_fix.md](WBC_layer2_standalone_fix.md)** | 2층(TAMOLS→WBC) baseline. standalone WBC z침하=QP 힘품질. 논문(계층적 WBC·GM-observer) 해법. "최소 baseline→RL" 전략. | 진행·게이트 |
-| **[D1_OCS2_porting.md](D1_OCS2_porting.md)** | ★**현재 트랙** — OCS2 통합 perceptive NMPC를 02_Leg에 포팅(강건 모델기반). OCS2 클론됨(ros2, ocs2_perceptive·legged_robot·python_interface). 관문=Jazzy/Humble 빌드. | 착수·빌드 |
 | **[pipeline_tamols.html](pipeline_tamols.html)** | TAMOLS 계획층(A 실행스택 위 ③④ 주입)·TAM_BASE base-발판 협조 실증·한계·D1포팅/DTC. | 아티팩트 |
-| **[B_elevation_perceptive_NMPC.md](B_elevation_perceptive_NMPC.md)** | B→Grandia식 통합 perceptive NMPC 계획. ★**보류**(D1/OCS2 채택, B는 20Hz 실시간 열세). | 보류 |
-| **[MPC_RL_하이브리드_전략_리포트.md](MPC_RL_하이브리드_전략_리포트.md)** | MPC/RL 하이브리드 5패턴(A=MPC교사·B=계층·C=주입·D=안전필터·E=샘플링prior) + R.pet 로드맵(H0~H3) + **§9 crocoddyl/aligator 실시간화**(RTI·호라이즌다이어트·모델계층화) + 6-DoF머리. ★**다음단계=crocoddyl C++ 실시간 OCP**의 전략 근거. | 전략·설계 |
-| **[RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)** | 6-DoF 머리(목) 체인 추가 → 예측형 시선 안정화·반작용 질량 협조·시선/균형 중재. 단계 **G0(23-DoF 모델)→G1(반응층 기준선)→G2(WBIC gaze task)→G3(예측 ff, lite/full)→G4(반작용 질량)→G5(중재)**. 착수순서 G0→G1→G2(기존 스택 3주 데모). | 설계완료·미착수 |
-| RPET_ALIGATOR_MPC.md | (위 문서가 참조하는 Phase 0–3 로드맵 — aligator OCP) | 참조·아직 없음 |
-
-**★ head(머리·시선) 기능을 TODO에 추가할 땐 위 [RPET_HEAD_GAZE_MPC.md](RPET_HEAD_GAZE_MPC.md)를 정본으로 참조** — 모델 확장(23-DoF)·gaze 잔차(z_C×u)·WBIC task 삽입 위치·검증 지표·함정이 이미 정리됨. 기존 스택(WBIC 각운동량 task·sit_pitch 자세목표 주입)의 직접 확장이라 G2까지는 재사용률 높음.
 
 ## ✅ 유지 워크플로 (요약)
 1. 변경 → `cd quad/cpp && ./verify.sh` (회귀 PASS 확인).
@@ -74,7 +81,7 @@
 3. 스킬 `/controller-review`가 이 절차를 자동 수행(MAINTENANCE.md 기준).
 4. 논리단위 커밋(요청 시). 상세=[MAINTENANCE.md](MAINTENANCE.md).
 
-## 🗑️ 정리됨 (2026-07-09)
-- 삭제: `RBQGUI-x86_64.AppImage`(167M)·`squashfs-root/`(448M) = RBQ GUI 앱·압축해제본(써드파티, 재다운로드 가능).
-- 상위 흩어진 노트(`실행코드`·`obs.md`·`개발일지`·`메모`) → 이 docs/로 통합.
-- [모델기반 갭크로싱 탐색리포트](모델기반_갭크로싱_탐색리포트.html) — TOWR·TAMOLS·실행3시도·실시간측정 종합, C++ 착수 근거
+## 🗑️ 정리됨
+- (2026-07-30) **개발리포트 6개 → 5개로 통일·최신화·트림** (`<트랙>_개발리포트.md`): B_elevation_perceptive_NMPC → D1에 흡수, MPC_RL_하이브리드_전략_리포트 → DTC로 재초점, `모델기반_갭크로싱_탐색리포트.html` → TAMOLS §7 통합(삭제). 원본 백업=`.docbackup_20260730/`.
+- (2026-07-30) **RPET 미래설계/계획서 3종 삭제**(제어기 개발기록이 아님·백업됨): RPET_JUMP(점프는 live-solve로 완료, DTC §5) · RPET_TERRAIN_MAP(perception 인프라 설계, 메모리 `terrainmap-elevation-pointcloud`) · RPET_HEAD_GAZE(head 미래설계). RPET_ALIGATOR 참조행도 제거.
+- (2026-07-09) 삭제: `RBQGUI-x86_64.AppImage`(167M)·`squashfs-root/`(448M) = 써드파티. 상위 흩어진 노트(`실행코드`·`obs.md`·`개발일지`·`메모`) → 이 docs/로 통합.

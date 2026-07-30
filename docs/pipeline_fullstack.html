@@ -549,7 +549,7 @@
     <!-- 발판·타이밍 생성기 (중간, ④ 채널·모델기반 개발방향) -->
     <rect x="360" y="165.6" width="162" height="88.8" rx="4" fill="#FDEAE0" stroke="#E8551E" stroke-width="1.5" stroke-dasharray="4 3"/>
     <text x="441" y="187.2" font-size="9" text-anchor="middle" font-weight="bold" fill="#E8551E">궤적최적화 TO <tspan font-size="6.4" font-weight="normal" fill="#5A6577">발판·타이밍</tspan></text>
-    <text x="441" y="204" font-size="6.1" text-anchor="middle" fill="#5A6577">in: heightmap · route · 상태·명령 · 게이트스케줄</text>
+    <text x="441" y="204" font-size="6.1" text-anchor="middle" fill="#5A6577">in: heightmap · cmd_vel · 상태 · 게이트스케줄</text>
     <text x="441" y="220.8" font-size="6.3" text-anchor="middle" fill="#E8551E" font-weight="bold">현재=TOWR(오프라인) · 실시간=TAMOLS(구축예정)</text>
     <text x="441" y="237.6" font-size="6.6" text-anchor="middle" font-weight="bold" fill="#1B2431">out: p_tgt · cs · base참조 (관절·힘 차단)</text>
     <text x="441" y="248.4" font-size="5.2" text-anchor="middle" font-weight="bold" fill="#E8551E">★추후: 정책으로 흡수</text>
@@ -560,13 +560,13 @@
     <text x="441" y="333.6" font-size="6.7" text-anchor="middle" fill="#5A6577">in: PCD 전역지도 · /goal_pose · /livox · map→base</text>
     <text x="441" y="349.2" font-size="6.7" text-anchor="middle" font-weight="bold" fill="#1B2431">out: /stgn/output/path · /stgn/replan_needed</text>
     <text x="441" y="364.8" font-size="6.1" text-anchor="middle" fill="#E8551E">★추가: 스킬-인지 통행비용 — 정책 돌파가능 지형=↓ (경로만)</text>
-    <text x="441" y="380.4" font-size="6" text-anchor="middle" font-weight="bold" fill="#1B2431">path → Nav2 controller → cmd_vel(⑤)</text>
+    <text x="441" y="380.4" font-size="6" text-anchor="middle" font-weight="bold" fill="#1B2431">path → Nav2 → cmd_vel → TO④·정책⑤ 공급</text>
 
     <!-- 내부 수직 수렴 : TerrainMap→발판생성기(heightmap ↓) · STGN→발판생성기(경로 ↑) -->
     <line x1="441" y1="122.4" x2="441" y2="165.6" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
     <text x="468" y="147.6" font-size="6.3" text-anchor="middle" font-weight="bold" fill="#1B2431">heightmap</text>
     <line x1="441" y1="288" x2="441" y2="254.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
-    <text x="466" y="274.8" font-size="6.3" text-anchor="middle" font-weight="bold" fill="#1B2431">route</text>
+    <text x="466" y="274.8" font-size="6.3" text-anchor="middle" font-weight="bold" fill="#1B2431">cmd_vel</text>
 
     <!-- 제어층 π + MLP 추정기 -->
     <rect x="560" y="62.4" width="150" height="252" rx="5" fill="#fff" stroke="#1B2431" stroke-width="1.9" stroke-dasharray="6 3"/>
@@ -576,7 +576,7 @@
     <text x="635" y="154.8" font-size="7.1" text-anchor="middle" fill="#5A6577">② heightmap → 내부 인코더(CNN)</text>
     <text x="635" y="172.8" font-size="7.1" text-anchor="middle" fill="#5A6577">③ <tspan font-family="'DejaVu Sans',sans-serif">v&#770;</tspan> (Estimator)</text>
     <text x="635" y="190.8" font-size="7.1" text-anchor="middle" fill="#5A6577">④ p_tgt · cs (발판·타이밍)</text>
-    <text x="635" y="208.8" font-size="7.1" text-anchor="middle" fill="#5A6577">⑤ cmd_vel (목표속도·Nav2)</text>
+    <text x="635" y="208.8" font-size="7.1" text-anchor="middle" fill="#5A6577">⑤ cmd_vel (Nav2)</text>
     <text x="635" y="236.4" font-size="7" text-anchor="middle">APT: 게이트(2 Hz)→디코더→Σ</text>
     <text x="635" y="264" font-size="8.6" text-anchor="middle" font-weight="bold" fill="#1B2431">out: τ_input ∈ R¹⁷</text>
     <text x="635" y="280.8" font-size="6.2" text-anchor="middle" fill="#E8551E">다리 16(발목 포함) + 허리 1</text>

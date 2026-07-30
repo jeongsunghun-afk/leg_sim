@@ -1,26 +1,26 @@
 targetDisplacementVelocity          0.5;
 targetRotationVelocity              0.3;
 
-comHeight                           0.445
+comHeight                           0.500
 
 defaultJointState
 {
    (0,0)   0.000  ; FL_hip
-   (1,0)   0.180  ; FL_thigh
-   (2,0)  -0.285  ; FL_calf
-   (3,0)   0.000  ; FL_foot
+   (1,0)  -0.186  ; FL_thigh
+   (2,0)  0.340  ; FL_calf
+   (3,0)  -0.500  ; FL_foot (앞발목=A FRONT_ANKLE -0.5)
    (4,0)   0.000  ; FR_hip
-   (5,0)   0.180  ; FR_thigh
-   (6,0)  -0.285  ; FR_calf
-   (7,0)   0.000  ; FR_foot
+   (5,0)  -0.186  ; FR_thigh
+   (6,0)  0.340  ; FR_calf
+   (7,0)  -0.500  ; FR_foot (앞발목)
    (8,0)   0.000  ; HL_hip
-   (9,0)  -0.212  ; HL_thigh
-   (10,0)  0.332  ; HL_calf
-   (11,0)  0.000  ; HL_foot
+   (9,0)  0.057  ; HL_thigh
+   (10,0)  -0.099  ; HL_calf
+   (11,0) -0.300  ; HL_foot (뒷발목=A REAR_ANKLE -0.3)
    (12,0)  0.000  ; HR_hip
-   (13,0) -0.212  ; HR_thigh
-   (14,0)  0.332  ; HR_calf
-   (15,0)  0.000  ; HR_foot
+   (13,0)  0.057  ; HR_thigh
+   (14,0)  -0.099  ; HR_calf
+   (15,0) -0.300  ; HR_foot (뒷발목)
 }
 
 initialModeSchedule

@@ -50,7 +50,7 @@ swing_trajectory_config
 {
   liftOffVelocity               0.1
   touchDownVelocity            -0.2
-  swingHeight                   0.05
+  swingHeight                   0.08
   touchdownAfterHorizon         0.2
   swingTimeScale                0.15
 }
@@ -184,28 +184,28 @@ initialState
    ;; Base Pose: [position, orientation] ;;
    (6,0)  0.0     ; p_base_x
    (7,0)  0.0     ; p_base_y
-   (8,0)  0.45    ; p_base_z   (02_Leg standing, ankle-locked point-foot)
+   (8,0)  0.50    ; p_base_z   (02_Leg standing, ankle-locked point-foot)
    (9,0)  0.0     ; theta_base_z
    (10,0) 0.0     ; theta_base_y
    (11,0) 0.0     ; theta_base_x
 
    ;; Leg Joint Positions: [FL, FR, HL, HR] x (hip, thigh, calf, foot/ankle) — 16-DOF ;;
    (12,0)  0.000  ; FL_hip
-   (13,0)  0.180  ; FL_thigh
-   (14,0) -0.285  ; FL_calf
-   (15,0)  0.000  ; FL_foot
+   (13,0)  -0.186  ; FL_thigh
+   (14,0)  0.340  ; FL_calf
+   (15,0) -0.500  ; FL_foot (앞발목 -0.5)
    (16,0)  0.000  ; FR_hip
-   (17,0)  0.180  ; FR_thigh
-   (18,0) -0.285  ; FR_calf
-   (19,0)  0.000  ; FR_foot
+   (17,0)  -0.186  ; FR_thigh
+   (18,0)  0.340  ; FR_calf
+   (19,0) -0.500  ; FR_foot (앞발목 -0.5)
    (20,0)  0.000  ; HL_hip
-   (21,0) -0.212  ; HL_thigh
-   (22,0)  0.332  ; HL_calf
-   (23,0)  0.000  ; HL_foot
+   (21,0)  0.057  ; HL_thigh
+   (22,0)  -0.099  ; HL_calf
+   (23,0) -0.300  ; HL_foot (뒷발목 -0.3)
    (24,0)  0.000  ; HR_hip
-   (25,0) -0.212  ; HR_thigh
-   (26,0)  0.332  ; HR_calf
-   (27,0)  0.000  ; HR_foot
+   (25,0)  0.057  ; HR_thigh
+   (26,0)  -0.099  ; HR_calf
+   (27,0) -0.300  ; HR_foot (뒷발목 -0.3)
 }
 
 ; standard state weight matrix

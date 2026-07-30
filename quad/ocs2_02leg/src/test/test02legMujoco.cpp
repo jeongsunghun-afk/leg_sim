@@ -127,6 +127,9 @@ int main(int argc, char** argv) {
   if (getenv("REG")) wbcL.reg_ = atof(getenv("REG"));
   if (getenv("NWSR")) wbcL.nWsr_ = atoi(getenv("NWSR"));
   if (getenv("SWING_FF")) wbcL.swingFF_ = atoi(getenv("SWING_FF"));
+  if (getenv("POST")) wbcL.wPosture_ = atof(getenv("POST"));      // ★널스페이스 posture 가중
+  if (getenv("KP_POST")) wbcL.kpPost_ = atof(getenv("KP_POST"));
+  if (getenv("KD_POST")) wbcL.kdPost_ = atof(getenv("KD_POST"));
   wbcL.basePd_ = !getenv("NO_BASE_PD");   // ★표준=FF+PD (Bellicoso2016 식17/18): aBaseFF + Kp·posErr + Kd·velErr
   if (getenv("BASE_NOFF")) wbcL.baseNoFF_ = true;   // 순수PD(진단용)
   if (getenv("KP_B")) wbcL.kpBase_ = atof(getenv("KP_B"));

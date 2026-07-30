@@ -86,6 +86,7 @@ class WbcLegged {
     addCost(swingTask(), wSwing_);
     addCost(baseAccelTask(), wBase_);
     addCost(contactForceTask(inputDesired), wForce_);
+    if (wPosture_ > 0) addCost(postureTask(), wPosture_);  // ★널스페이스 posture(재중복 발목 표류 제어)
 
     vector_t x(nx_);
 #ifdef WBC_USE_QPOASES
@@ -154,6 +155,7 @@ class WbcLegged {
   double swingKp_ = 350, swingKd_ = 30;
   bool swingFF_ = false;  // ★스윙 가속도 ff(eq19). SWING_FF=1로 켬(accD=J·u̇_des, jAccel 노이즈로 12-DOF선 버징 미개선)
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
+  double wPosture_ = 0.5, kpPost_ = 20, kdPost_ = 2;  // ★널스페이스 posture task(기본ON, 16-DOF 발목표류 제어=A swing_w_r/f). POST=0으로 끔
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
@@ -257,6 +259,12 @@ class WbcLegged {
       a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3);
       b.segment(3 * jc, 3) = accel - dj_.middleRows(3 * i, 3) * vM_; jc++;
     }
+    return {a, b};
+  }
+  std::pair<matrix_t, vector_t> postureTask() {  // ★관절 자세 정규화(널스페이스 제어): q̈_joint → PD(관절→desired)
+    matrix_t a = matrix_t::Zero(nJ_, nx_);
+    a.block(0, 6, nJ_, nJ_).setIdentity();  // 결정변수 q̈의 관절부(인덱스 6..6+nJ) 선택
+    vector_t b = kpPost_ * (qD_.tail(nJ_) - qM_.tail(nJ_)) + kdPost_ * (vD_.tail(nJ_) - vM_.tail(nJ_));
     return {a, b};
   }
   std::pair<matrix_t, vector_t> baseAccelTask() {  // q̈[0:6] = aBaseFF (+옵션 PD 되먹임)

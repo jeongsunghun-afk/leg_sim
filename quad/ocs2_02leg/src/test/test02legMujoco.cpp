@@ -124,6 +124,7 @@ int main(int argc, char** argv) {
   if (getenv("KD_F")) wbcL.swingKd_ = atof(getenv("KD_F"));
   if (getenv("REG")) wbcL.reg_ = atof(getenv("REG"));
   if (getenv("NWSR")) wbcL.nWsr_ = atoi(getenv("NWSR"));
+  if (getenv("SWING_FF")) wbcL.swingFF_ = atoi(getenv("SWING_FF"));
   wbcL.basePd_ = !getenv("NO_BASE_PD");   // ★표준=FF+PD (Bellicoso2016 식17/18): aBaseFF + Kp·posErr + Kd·velErr
   if (getenv("BASE_NOFF")) wbcL.baseNoFF_ = true;   // 순수PD(진단용)
   if (getenv("KP_B")) wbcL.kpBase_ = atof(getenv("KP_B"));
@@ -187,6 +188,9 @@ int main(int argc, char** argv) {
   int footGeom[4];
   { const char* sph[4] = {"FL_sphere", "FR_sphere", "HL_sphere", "HR_sphere"};
     for (int i = 0; i < 4; ++i) footGeom[i] = mj_name2id(m, mjOBJ_GEOM, sph[i]); }
+  // ★외란 push용 base body id (free joint의 body)
+  int baseBody = -1;
+  for (int j = 0; j < m->njnt; ++j) if (m->jnt_type[j] == mjJNT_FREE) { baseBody = m->jnt_bodyid[j]; break; }
   int wj = mj_name2id(m, mjOBJ_JOINT, "FB_waist_joint");
   int wq = m->jnt_qposadr[wj], wv = m->jnt_dofadr[wj];
   int wact = mj_name2id(m, mjOBJ_ACTUATOR, "FB_waist");
@@ -260,6 +264,7 @@ int main(int argc, char** argv) {
   const bool pace = mpcThread && !getenv("NO_PACE");
   const auto tWall0 = std::chrono::steady_clock::now();
   int falls = 0; double t = 0;
+  double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(12);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
@@ -319,12 +324,20 @@ int main(int argc, char** argv) {
         double qdDes = uDes(3 * 4 + i);                           // centroidal input: contactForce(3*4)+jointVel(12)
         d->ctrl[act[i]] = tauJ(i) + jkp * (qDes - qMeas) + jkd * (qdDes - qdMeas);  // τ_ff + τ_pd
       }
+      // 앞다리(FL=0,FR=1 → 관절 0~5) 떨림 계측: 관절속도 피크 + 토크 변화(채터) 피크
+      for (int i = 0; i < 6; ++i) { double v = std::abs(d->qvel[vadr[i]]); if (v > frontJvPk) frontJvPk = v;
+        double dtau = std::abs(tauJ(i) - tauPrev(i)); if (dtau > frontTauPk) frontTauPk = dtau; }
+      for (int i = 0; i < 12; ++i) tauPrev(i) = tauJ(i);
+      if (getenv("FINE") && t > 2.0 && t < 2.4)  // 앞다리(FL_thigh=1) 매스텝: vel·tau·접촉 → 진동/충격 분류
+        std::cerr << "  [FINE] t=" << t << " FLthigh_v=" << d->qvel[vadr[1]] << " FLthigh_tau=" << tauJ(1)
+                  << " FLcalf_v=" << d->qvel[vadr[2]] << " FLcontact=" << actC[0] << "\n";
       if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) {
         double tilt2 = std::acos(std::max(-1.0, std::min(1.0, 1 - 2 * (d->qpos[4] * d->qpos[4] + d->qpos[5] * d->qpos[5])))) * 180 / M_PI;
         auto sc = modeNumber2StanceLeg(md);  // 스케줄 stance(0/1) [FL,FR,HL,HR]
         std::cerr << "  [LEGGED] t=" << t << " base_x=" << d->qpos[0] << " base_z=" << d->qpos[2] << " tilt=" << tilt2 << " qpFail=" << wbcL.qpFail_
-                  << " status=" << wbcL.lastStatus_ << " nineq=" << wbcL.nineq_
-                  << "  sched[" << sc[0] << sc[1] << sc[2] << sc[3] << "] act[" << actC[0] << actC[1] << actC[2] << actC[3] << "]\n";
+                  << " nineq=" << wbcL.nineq_ << " frontJvPk=" << frontJvPk << " frontdTauPk=" << frontTauPk
+                  << " sched[" << sc[0] << sc[1] << sc[2] << sc[3] << "]\n";
+        frontJvPk = 0; frontTauPk = 0;
       }
     } else if (useWbc) {
       // ★OCS2 pinocchio 모델 base = Composite(Translation + SphericalZYX) = euler base(nq=nv=18):
@@ -440,8 +453,18 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 4; ++i)  // 발목 0 홀드
       d->ctrl[aact[i]] = KpA * (0.0 - d->qpos[aqadr[i]]) + KdA * (0.0 - d->qvel[avadr[i]]);
     d->ctrl[wact] = KpW * (0.0 - d->qpos[wq]) + KdW * (0.0 - d->qvel[wv]);  // 허리 0 (단단히)
+    // ★외란 push: PUSH(N) 크기·PUSH_T(s) 시각·PUSH_DUR(s) 지속·PUSH_AX(0=x,1=y,2=z) 방향
+    if (getenv("PUSH") && baseBody >= 0) {
+      double pf = std::atof(getenv("PUSH")), pt = getenv("PUSH_T") ? std::atof(getenv("PUSH_T")) : 3.0;
+      double pdur = getenv("PUSH_DUR") ? std::atof(getenv("PUSH_DUR")) : 0.1;
+      int pax = getenv("PUSH_AX") ? std::atoi(getenv("PUSH_AX")) : 1;
+      for (int k = 0; k < 3; ++k) d->xfrc_applied[6 * baseBody + k] = 0.0;
+      if (t >= pt && t < pt + pdur) { d->xfrc_applied[6 * baseBody + pax] = pf; if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) std::cerr << "  [PUSH] t=" << t << " F=" << pf << "N ax=" << pax << "\n"; }
+    }
 
     mj_step(m, d);
+    // ★진단(WAIST_PIN): 허리를 강체로 고정(OCS2 fixed 모델과 정합) — 앞다리 버징 원인 규명용
+    if (getenv("WAIST_PIN")) { d->qpos[wq] = 0; d->qvel[wv] = 0; }
     if (pace) std::this_thread::sleep_until(tWall0 + std::chrono::duration<double>((step + 1) * dt));
 
     // --- 뷰어 렌더(vsync 페이싱) ---

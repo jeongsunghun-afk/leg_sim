@@ -92,6 +92,9 @@ class WbcLegged {
     matrix_t Aw(nrCost, nx_); vector_t bw(nrCost); { int r = 0; for (auto& c : costs) { Aw.middleRows(r, c.first.rows()) = c.first; bw.segment(r, c.second.size()) = c.second; r += c.first.rows(); } }
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> H = Aw.transpose() * Aw;
     vector_t g = -Aw.transpose() * bw;
+    // ★null-space 평활(앞다리 채터 억제): 비용 미지정 방향(관절q̈·τ)이 min-norm으로 튀는 것 방지.
+    //   Bellicoso 식(20) 토크최소화류. reg_ 소량 대각 정규화 → 스텝간 해 연속성↑.
+    H.diagonal().array() += reg_;
     int nCon = neq + nineq;
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Ac(nCon, nx_);
     vector_t lbA(nCon), ubA(nCon);
@@ -146,6 +149,7 @@ class WbcLegged {
   }
 
   double swingKp_ = 350, swingKd_ = 30;
+  bool swingFF_ = false;  // ★스윙 가속도 ff(eq19). SWING_FF=1로 켬(accD=J·u̇_des, jAccel 노이즈로 12-DOF선 버징 미개선)
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
@@ -199,11 +203,15 @@ class WbcLegged {
     momRate.noalias() -= ADot * vD_;
     momRate.noalias() -= Aj * jAccel;
     aBaseFF_ = AbInv * momRate;
-    // 접촉/스윙 발 위치·속도(측정·목표)
+    // 접촉/스윙 발 위치·속도·★가속도 목표(모델정합 r̈_des = J·u̇_des + J̇·u_des, Bellicoso 식19)
+    vector_t uDotDes(nv_); uDotDes.head<6>() = aBaseFF_; uDotDes.tail(nJ_) = jAccel;  // 목표 일반화가속도
+    pinocchio::computeJointJacobiansTimeVariation(model, data, qD_, vD_);  // 목표 config의 J̇
     for (int i = 0; i < 4; ++i) {
       posD_[i] = data.oMf[eeId_[i]].translation();
       matrix_t jac = matrix_t::Zero(6, nv_); pinocchio::getFrameJacobian(model, data, eeId_[i], pinocchio::LOCAL_WORLD_ALIGNED, jac);
       velD_[i] = jac.topRows<3>() * vD_;
+      matrix_t djac = matrix_t::Zero(6, nv_); pinocchio::getFrameJacobianTimeVariation(model, data, eeId_[i], pinocchio::LOCAL_WORLD_ALIGNED, djac);
+      accD_[i] = jac.topRows<3>() * uDotDes + djac.topRows<3>() * vD_;  // 스윙 발 목표 가속도 ff
     }
     auto& mM = pinM_.getModel(); auto& dM = pinM_.getData();
     for (int i = 0; i < 4; ++i) { posM_[i] = dM.oMf[eeId_[i]].translation(); velM_[i] = j_.middleRows(3 * i, 3) * vM_; }
@@ -241,7 +249,8 @@ class WbcLegged {
     int ns = 0; for (int i = 0; i < nc_; ++i) if (swingC_[i]) ns++;
     matrix_t a = matrix_t::Zero(3 * ns, nx_); vector_t b(3 * ns); int jc = 0;
     for (int i = 0; i < nc_; ++i) if (swingC_[i]) {
-      vector3_t accel = swingKp_ * (posD_[i] - posM_[i]) + swingKd_ * (velD_[i] - velM_[i]);
+      // ★eq19: r̈_des(ff) + Kp·posErr + Kd·velErr  (ff가 스윙 운동 담당 → 피드백 부담↓ → 버징↓)
+      vector3_t accel = (swingFF_ ? accD_[i] : vector3_t::Zero()) + swingKp_ * (posD_[i] - posM_[i]) + swingKd_ * (velD_[i] - velM_[i]);
       a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3);
       b.segment(3 * jc, 3) = accel - dj_.middleRows(3 * i, 3) * vM_; jc++;
     }
@@ -273,5 +282,5 @@ class WbcLegged {
   vector_t qM_, vM_, qD_, vD_, nle_, inputLast_, last_;
   matrix_t M_, j_, dj_;
   Eigen::Matrix<double, 6, 1> aBaseFF_ = Eigen::Matrix<double, 6, 1>::Zero();
-  std::array<vector3_t, 4> posD_, velD_, posM_, velM_;
+  std::array<vector3_t, 4> posD_, velD_, posM_, velM_, accD_;
 };

@@ -30,7 +30,7 @@
   <h1>pipeline B · C · D1 — 구조 &amp; 입출력</h1>
   <div class="sub">02_Leg 17-DOF · OCP/NMPC 계열 제어기 3종(연구·분석) 구조와 입출력 변수</div>
   <div class="sub">5종 대조표는 <a href="제어기_비교.html">제어기 비교(A·B·C·D1·CI)</a> · 관련 <a href="pipeline_a.html">A</a> · <a href="pipeline_ci.html">CI</a> · <a href="pipeline_fullstack.html">RL</a></div>
-  <div class="oneliner"><b>개발방향 = APT-RL.</b> 아래 B·C·D1은 <b>모델기반 연구/분석 제어기</b>(전부 비실시간 또는 미구축, 지형 협조 한계). 역할은 <b>오프라인 교사·베이스라인·청사진</b>. 험지 본류는 RL. 상세 지형 실패근거는 <a href="모델기반_갭크로싱_탐색리포트.html">모델기반 갭크로싱 리포트</a>.</div>
+  <div class="oneliner"><b>개발방향 = APT-RL.</b> 아래 B·C는 <b>모델기반 연구/분석 제어기</b>(비실시간·지형 협조 한계, 역할=오프라인 교사·베이스라인). 험지 본류는 RL. 상세 지형 실패근거는 <a href="TAMOLS_개발리포트.md">모델기반 갭크로싱 리포트</a>.<br><b>★단 D1(OCS2 legged_robot→02_Leg MuJoCo 포트)는 격상(2026-07-30)</b>: 실시간(1kHz WBC) <b>동적 TROT falls=0</b>·<b>16-DOF 능동발목</b>·<b>perceptive SDF Phase3a 작동</b>(3b 발판배치 진행) = 실시간 모델기반 배포후보. 아래 표는 외부 NavBotHub 레퍼런스(참조)이고, 우리 포트 상세는 <a href="D1_OCS2_개발리포트.md">D1 개발리포트</a>.</div>
 
   <!-- ============ B ============ -->
   <h2 class="hb"><span class="chip cB">B</span>Kinodynamic OCP + TSID <span class="sub" style="font-weight:400"><span class="mono">quad_centroidal_17dof</span></span></h2>

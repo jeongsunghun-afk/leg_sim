@@ -32,7 +32,8 @@ class Wbc02Leg {
                           const std::array<Eigen::Vector3d, 4>& footPosDes, const std::array<Eigen::Vector3d, 4>& footVelDes,
                           const Eigen::Vector3d& basePosDes, const Eigen::Vector3d& baseLinDes,
                           const Eigen::Matrix3d& baseRotDes, const Eigen::Vector3d& baseAngDes,
-                          const Eigen::VectorXd& fDes, const Eigen::VectorXd& jointPosDes, const Eigen::VectorXd& jointVelDes) {
+                          const Eigen::VectorXd& fDes, const Eigen::VectorXd& jointPosDes, const Eigen::VectorXd& jointVelDes,
+                          const Eigen::Matrix<double, 6, 1>& aBaseFF = Eigen::Matrix<double, 6, 1>::Zero()) {
     using namespace Eigen;
     auto& model = pin_.getModel();
     auto& data = pin_.getData();
@@ -85,12 +86,22 @@ class Wbc02Leg {
       G.noalias() += w * A.transpose() * A;
       g0.noalias() -= w * A.transpose() * b;
     };
-    // base 6D 목표 가속(world). baseHard_면 hard 제약, 아니면 soft task.
+    // base 6D task. useFF_(legged_control식): q̈[0:6]=aBaseFF(MPC 모멘텀률 feedforward, 순수FF).
+    //   아니면 base FRAME 6D PD(world, Jbase). ★FF가 전환 강건성의 본체(PD 되먹임 루프 제거).
     Vector3d oriErr = 0.5 * unskew(baseRotDes * baseRot.transpose() - baseRot * baseRotDes.transpose());
-    Matrix<double, 6, 1> aBaseDes;
+    Matrix<double, 6, 1> aBaseDes;  // base FRAME 6D PD 목표(world) — baseHard_·비FF soft에 사용
     aBaseDes.head<3>() = kpB_ * (basePosDes - basePos) + kdB_ * (baseLinDes - baseVel.head<3>());
     aBaseDes.tail<3>() = kpO_ * oriErr + kdO_ * (baseAngDes - baseVel.tail<3>());
-    if (!baseHard_) {
+    if (useFF_) {
+      // FF task(국소 q̈[0:6]=aBaseFF, MPC 모멘텀률) — legged_control 방식.
+      { MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, 6) = MatrixXd::Identity(6, 6);
+        addTask(A, VectorXd(aBaseFF), wBase_); }
+      // PD 피드백 task(base FRAME world, 별도 공간=프레임 미스매치 없음) — 저게인·저가중이 피드백 담당.
+      if (kpB_ > 0 || kpO_ > 0) {
+        MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, nv) = Jbase;
+        addTask(A, VectorXd(aBaseDes - JdvBase), wBasePD_);
+      }
+    } else if (!baseHard_) {
       MatrixXd A = MatrixXd::Zero(6, nx); A.block(0, 0, 6, nv) = Jbase;
       addTask(A, VectorXd(aBaseDes - JdvBase), wBase_);
     }
@@ -203,8 +214,10 @@ class Wbc02Leg {
   double kpB_ = 100, kdB_ = 20, kpO_ = 100, kdO_ = 20, kpF_ = 400, kdF_ = 40, kpJ_ = 100, kdJ_ = 10;
   double kpJs_ = 150, kdJs_ = 15;  // swing joint-space 게인
   double wBase_ = 10, wSwing_ = 20, wForce_ = 1, wReg_ = 1e-3, wPost_ = 0.0, fzMin_ = 1.0;  // wPost>0=악화 확인
+  double wBasePD_ = 5;  // FF 모드서 별도 PD 피드백 task 가중
   bool baseHard_ = false;  // base 6D task를 hard 제약으로(강한 자세 안정화)
   bool swingJoint_ = false;  // swing을 joint-space 추종(Cartesian 양성피드백 회피)
+  bool useFF_ = false;  // ★base task=MPC 모멘텀률 feedforward(legged_control식). 전환 강건성 본체
   int qpFail_ = 0, lastStatus_ = 0;
 
  private:

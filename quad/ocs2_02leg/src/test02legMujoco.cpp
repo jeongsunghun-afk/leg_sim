@@ -16,7 +16,11 @@
 #include <ocs2_legged_robot/reference_manager/SwitchedModelReferenceManager.h>
 #include <ocs2_centroidal_model/CentroidalModelRbdConversions.h>
 #include <ocs2_centroidal_model/AccessHelperFunctions.h>
+#include <ocs2_centroidal_model/ModelHelperFunctions.h>
 #include <ocs2_robotic_tools/common/RotationDerivativesTransforms.h>
+#include <pinocchio/algorithm/centroidal.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/algorithm/frames.hpp>
 #include <ocs2_sqp/SqpMpc.h>
 #include <ocs2_ddp/GaussNewtonDDP_MPC.h>
 #include <ocs2_mpc/MPC_MRT_Interface.h>
@@ -118,6 +122,16 @@ int main(int argc, char** argv) {
   if (getenv("SWING_JOINT")) wbc.swingJoint_ = true;
   if (getenv("KP_JS")) wbc.kpJs_ = atof(getenv("KP_JS"));
   if (getenv("KD_JS")) wbc.kdJs_ = atof(getenv("KD_JS"));
+  // ★FF_BASE: base task를 MPC 모멘텀률 feedforward로(legged_control식, 전환 강건성 근본fix)
+  const bool ffBase = getenv("FF_BASE");
+  if (ffBase) {  // FF + moderate PD 피드백(별도 task). 순수FF는 KP_B=0으로.
+    wbc.useFF_ = true;
+    if (!getenv("KP_B")) wbc.kpB_ = 30; if (!getenv("KD_B")) wbc.kdB_ = 10;
+    if (!getenv("KP_O")) wbc.kpO_ = 30; if (!getenv("KD_O")) wbc.kdO_ = 10;
+  }
+  if (getenv("W_BASE_PD")) wbc.wBasePD_ = atof(getenv("W_BASE_PD"));
+  PinocchioInterface pinFF = interface.getPinocchioInterface();  // FF 계산용 별도 사본(오염 방지)
+  vector_t uLast = vector_t::Zero(info.inputDim);
   if (getenv("KP_F")) wbc.kpF_ = atof(getenv("KP_F"));
   if (getenv("KD_F")) wbc.kdF_ = atof(getenv("KD_F"));
   const int nqPin = interface.getPinocchioInterface().getModel().nq;
@@ -293,8 +307,32 @@ int main(int argc, char** argv) {
                  baseAngDes.norm(), basePosDes(2), fDes(2));
         std::cerr << b << "\n";
       }
+      // ★base 6D 가속 feedforward (legged_control WbcBase::formulateBaseAccelTask):
+      //   b = Ab⁻¹·(m·정규화모멘텀률(uDes) − Ȧ·vDes − Aj·q̈_joint). pinFF(별도사본)서 계산해 오염 방지.
+      Eigen::Matrix<double, 6, 1> aBaseFF = Eigen::Matrix<double, 6, 1>::Zero();
+      if (ffBase) {
+        auto& mFF = pinFF.getModel(); auto& dFF = pinFF.getData();
+        // ★legged_control updateDesired 순서: FK+프레임배치 먼저(getPositionComToContactPoint용), 그다음 centroidal, 마지막 vel-FK(dccrba용).
+        pinocchio::forwardKinematics(mFF, dFF, qDesPin);
+        pinocchio::updateFramePlacements(mFF, dFF);
+        updateCentroidalDynamics(pinFF, info, qDesPin);
+        pinocchio::forwardKinematics(mFF, dFF, qDesPin, vDesPin);
+        const auto& Amat = getCentroidalMomentumMatrix(pinFF);         // 6×nv
+        Eigen::Matrix<double, 6, 6> Ab = Amat.leftCols<6>();
+        Eigen::Matrix<double, 6, 6> AbInv = computeFloatingBaseCentroidalMomentumMatrixInverse(Ab);
+        Eigen::MatrixXd Aj = Amat.rightCols(nJ);
+        Eigen::MatrixXd ADot = pinocchio::dccrba(mFF, dFF, qDesPin, vDesPin);  // 6×nv
+        vector_t jAccel = centroidal_model::getJointVelocities(vector_t(uDes - uLast), info) / dt;
+        Eigen::Matrix<double, 6, 1> momRate = info.robotMass * getNormalizedCentroidalMomentumRate(pinFF, info, uDes);
+        momRate.noalias() -= ADot * vDesPin;
+        momRate.noalias() -= Aj * jAccel;
+        aBaseFF = AbInv * momRate;
+        uLast = uDes;
+        if (getenv("FF_DBG") && step % int(0.1 / dt) == 0)
+          std::cerr << "  [FF] t=" << t << " aBaseFF=" << aBaseFF.transpose() << "  |momRate|=" << momRate.norm() << "\n";
+      }
       vector_t tauJ = wbc.compute(qPin, vPin, stance, fpDes, fvDes, basePosDes, baseLinDes, baseRotDes, baseAngDes, fDes,
-                                  jointPosDes, jointVelDes);
+                                  jointPosDes, jointVelDes, aBaseFF);
       // WBC 토크 위에 직접 관절 impedance PD(ff+PD의 안정화 요소). stance 발만(swing은 WBC가 담당).
       const double jpdKp = getenv("JPD_KP") ? atof(getenv("JPD_KP")) : 0.0;
       const double jpdKd = getenv("JPD_KD") ? atof(getenv("JPD_KD")) : 0.0;

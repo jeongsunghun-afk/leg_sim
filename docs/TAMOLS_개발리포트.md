@@ -87,8 +87,9 @@ offline 첫계획(정지 덤프 `TAM_DUMP`) 추종에서:
 
 - **붕괴/전복 제거**: injection+RSL은 flat·지형 모두 falls=0, 전복 없음. pure-online의 붕괴도, injection+MPC의 지형 전복도 없다(RSL이 더 안정).
 - **핵심 튜닝**: `W_BASE_XY=40`(A Raibert 발판이 전진 주도; 80은 base task가 발판과 싸워 backward drift)·`KP_BASE=0`(xy 속도제어)·z=`x_ref[5]` 지형적응·λ=중력보상 baseline.
-- **한계(정직)**: 지형서 전방 progression이 ~0.78m서 drift(limit cycle) 잔존 → 추가 튜닝 필요(base task↔발판 협조). 즉 **"안정성"은 해결(붕괴/전복 제거), "전방 도달거리"는 미완**.
-- 기본 A walk(`RSL_TRACK` off)는 불변(회귀 clean, x2.21 falls0).
+- **한계(정직·추가튜닝 후 확정, d146603)**: 지형 전방 traversal은 **게인튜닝으로 해결 불가=구조적**. 전방 lead 자가앵커(RSL_LEAD+KP_BASE)로 **평지는 강전진**(lead0.1·KP60=x2.85·falls0)이나 **지형선 전복**: TAMOLS 발판편차↔RSL base 위치앵커 **충돌**(TAM_BASE 무관·속도↑도 무효·두 지형 동일결과=플랫 접근부서 실패=TAMOLS 발판주입+RSL 비호환, A Raibert 발판만이면 안정). 근본=RSL base task가 **예측힘(모멘텀률 base FF) 없어** TAMOLS 발판과 강건협조 불가. → **"안정성"=해결(붕괴/전복 제거), "지형 전방 도달거리"=구조적 한계(D1식 aBaseFF 필요)**.
+- 기본값=보수(KP_BASE=0=안정, 전방은 A Raibert 담당). 전방 lead는 env 실험용(평지 전용). 기본 A walk(`RSL_TRACK` off) 불변(회귀 clean).
+- **다음(선택)**: D1식 모멘텀률 base 6D FF(aBaseFF=Ab⁻¹(m·ḣ−Ȧv−Aj q̈)) 이식 = RSL이 TAMOLS 발판과 예측적으로 협조하는 유일 경로(§6.1 A-WBIC엔 부재 확인). 복잡·고위험이나 지형 traversal의 근본해결.
 
 **정정**: §6.1의 "D1 재구축과 동치" 결론은 **pure-online 기준**이었고, injection+RSL 경로는 그와 별개로 **붕괴/전복 없이 작동**(사용자 지적이 옳았음). 남은 건 D1식 모멘텀률 FF로 전방 progression 강건화(선택).
 

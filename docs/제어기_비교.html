@@ -80,7 +80,7 @@
         <td>heightmap→footScore<br><span class="mono">옵션(PERCEPTIVE)</span></td>
         <td>heightmap(mj_ray)<br><span class="mono">옵션(HEIGHTMAP)</span></td>
         <td class="no">없음(평지)</td>
-        <td>heightmap→SDF(mj_ray)<br><span class="mono">Phase3a 작동·3b core</span></td>
+        <td>heightmap→SDF(mj_ray)<br><span class="mono"><b>Phase3b 완료</b>(발판배치+지형base)</span></td>
         <td class="no">없음</td></tr>
       <tr><td class="rowh"><b>출력 — 토크</b></td>
         <td>WBIC QP <span class="mono">z=[관절가속;λ]</span> 직접토크</td>
@@ -104,13 +104,13 @@
         <td>Online foothold opt.<br><span class="mono">footScore/selectFoot(폐루프)</span><br>+ <b>TAMOLS base-z 협조 주입</b>(TAM_BASE)<br><span class="mono">★크로싱: injection+TAM_BASE로 지형보행(tilt25→1.2°)·마진 얇음</span></td>
         <td><b>TOWR</b> 소비(오프라인 궤적)<br><span class="mono">TSID 추종 towr_track_B</span><br><span class="mono">★B 자체 ~3.3s 낙상(안정화 미완)</span></td>
         <td class="no">없음(평지)</td>
-        <td>통합 NMPC 내장 perceptive<br><span class="mono">SDF 클리어런스(3a작동)</span><br><span class="mono">발판배치(3b core·통합중)</span></td>
+        <td>통합 NMPC 내장 perceptive<br><span class="mono">SDF 클리어런스 + 발판배치(<b>Phase3b 완료</b>)</span><br><span class="mono">연속지형 지형적응 등반·이산단차=RL</span></td>
         <td>접촉모드 <b>창발</b>(계획 불요)</td></tr>
       <tr><td class="rowh">성능(02_Leg)</td>
         <td class="yes"><b>본선 1.75 m/s</b> trot</td>
         <td>~0.2 m/s 연구</td>
         <td>~0.27 m/s marginal</td>
-        <td class="wa">동적 TROT <b>0.3~0.7 m/s falls=0</b><br><span class="mono">16-DOF·perceptive 3a작동</span><br><span class="mono">3b 발판배치 통합 남음</span></td>
+        <td class="wa">동적 TROT <b>0.3~0.7 m/s falls=0</b><br><span class="mono">16-DOF·perceptive <b>Phase3b 완료</b></span><br><span class="mono">15°ramp 연속지형 등반(base0.50→0.82)·이산단차=RL</span></td>
         <td class="wa"><b>준정적 자세추종 성공</b><br><span class="mono">서기·눕기·앉기·A자세캡처</span><br><b class="no">walk·gap·외란·두발 실패</b><br><span class="mono">(현실접촉서 균형 프론티어 붕괴)</span></td></tr>
       <tr><td class="rowh">접촉모델 / MJCF</td>
         <td>soft-native / <span class="mono">sphere</span></td>
@@ -128,12 +128,13 @@
       <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">✅ <b>좁은갭·stepping 전속도 완주</b>(접촉구 수정)·❌ 넓은갭</td><td>속도-공명=접촉구 아티팩트로 해소. <b>넓은갭=base-발판 협조 필요(계획층 3부재)</b></td></tr>
       <tr><td><span class="chip cB">B</span></td><td>Kinodyn+TSID</td><td class="wa">⚠️ 평지 안정</td><td class="no">❌ 갭서 발 빠짐</td><td>base–발판 협조 없음(greedy)</td></tr>
       <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
-      <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="wa">Phase3a 클리어런스 작동</td><td class="wa">3b 발판배치 통합 남음(현재 blind→턱 전복)</td><td>우리 포팅(test02legMujoco) 동적 TROT falls=0·perceptive 3a작동. 통합 폐루프가 injection 마진 이길지=Phase4 벤치(가설)</td></tr>
+      <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="yes">✅ <b>연속지형 등반 실증</b><br>(15°ramp base0.50→0.82·blind불가)</td><td class="no">❌ 급단차(0.16m 이산)=동적 불안정=RL</td><td><b>Phase3b 완료</b>(발판배치+지형적응 base). 동적TROT 0.3~0.7 falls=0·perceptive 지형적응 작동. 이산험지=RL(DTC)</td></tr>
       <tr><td><span class="chip cCI">CI</span></td><td>Contact-Implicit</td><td class="wa">△ 평지 falls=0(저속)·준정적 자세</td><td class="wa">△ gap 부분크로싱→낙상</td><td>완성분(해석그래디언트·서기/눕기/앉기) 있으나 <b>균형 프론티어(gap·walk·외란·두발) 붕괴</b>→종결·offline</td></tr>
-      <tr><td><span class="chip" style="background:var(--acc)">T</span></td><td><b>TAMOLS + A추종기</b><br>injection(A gait클럭+TAMOLS 주입)</td><td class="wa">walk 저속(정적안정)</td><td class="wa">⚠️ <b>injection 크로싱</b>(hsteps 1.2°·dsteps2 3.4°·falls=0)·마진 얇음</td><td>★<b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 <b>지형 크로싱</b>. 순수 궤적추종(direct)은 1.7× 오버슛 낙상이었으나 <b>injection이 재앵커/오버슛 우회</b>. 남은=짜깁기 <b>마진 얇음</b>→D1포팅/RL</td></tr>
+      <tr><td><span class="chip" style="background:var(--acc)">T</span> <span class="mono" style="font-size:.72em">full</span></td><td><b>full TAMOLS</b>(pure-online)<br>TAMOLS 전계획+RSL-WBC 직접추종</td><td class="no">❌ 붕괴</td><td class="no">❌ 붕괴</td><td>★<b>목표(뚫는 중)</b>. 실측 <span class="mono">MODE=tamols</span>: 평지조차 못 걷고 base 주저앉음(z0.5→0.16·yaw−68°/1s·falls≈4600). 재anchor <b>death spiral</b>(리포트 §5) + base z 침하(WBC base task 약). standalone은 아직 불가</td></tr>
+      <tr><td><span class="chip" style="background:var(--acc)">T</span>+<span class="chip cA" style="font-size:.72em">A</span></td><td><b>injection</b>(TAMOLS+A)<br>A gait클럭+TAMOLS 주입→A WBIC</td><td class="wa">walk 저속(정적안정)</td><td class="wa">⚠️ <b>injection 크로싱</b>(hsteps 1.2°·dsteps2 3.4°·falls=0)·마진 얇음</td><td><b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 <b>지형 크로싱</b> — full TAMOLS의 재anchor/붕괴를 <b>A가 우회</b>. A가 균형(Raibert+capture)·실행(MPC+WBIC) 담당. 남은=짜깁기 <b>마진 얇음</b></td></tr>
     </tbody>
   </table></div>
-  <div class="box"><b>공통 결론(갱신)</b> — <b>TAMOLS 솔버 자체는 완성</b>: "오프라인 583× 느림"을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms 실시간)하고 <b>Drake seed 없이 self-contained cold-start 수렴</b>(elastic-mode globalization). <b>그러나 폐루프 크로싱은 실패</b> — A의 추종기(SRBD MPC)가 크로싱서 오버슛 낙상. <b>병목은 계획(TAMOLS)이 아니라 추종기</b>: A의 SRBD MPC는 속도만 추종하는 <b>정상상태 조절기</b>라, TAMOLS의 공격적 일회성 크로싱을 <b>충실히 execute하지 못함</b>. 모든 모델기반 추종기 조합이 같은 벽(아래 조합 맵). <b>남은 미개척 = TO + RL 추종기(DTC 정석)</b>. 상세 <a href="TAMOLS_개발리포트.md">갭크로싱 리포트</a>.</div>
+  <div class="box"><b>공통 결론(2026-07-31 정정)</b> — <b>TAMOLS 솔버(계획층)는 완성</b>: 583× 느림을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms)·self-contained cold-start. <b>두 실행방식</b>: ①<b class="no">full TAMOLS(pure-online)=붕괴</b>(TAMOLS 전계획+RSL-WBC 직접추종 standalone → 재anchor death spiral+base z 침하, 평지도 falls≈4600). ★이걸 성공시키는 게 목표. ②<b class="wa">injection(TAMOLS+A)=작동·마진 얇음</b>(A gait클럭 위 TAMOLS 주입, 재anchor 우회). <b>full TAMOLS 성공 후보</b>: WBC base-가속 task 강화(z침하, 논문=힘FF불요·WBC가 GRF계산)·월드프레임 계획(재anchor 제거)·WBC가 계획 자세 추종. 상세 <a href="pipeline_tamols.html">pipeline_tamols</a>·<a href="TAMOLS_개발리포트.md">리포트</a>.</div>
 
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>

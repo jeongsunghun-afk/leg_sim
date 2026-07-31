@@ -125,7 +125,7 @@
       <thead><tr><th>제약</th><th>정식화</th><th>활성</th></tr></thead>
       <tbody>
         <tr><td class="p">발-지형 클리어런스<br><span class="dim">Phase 3a ✓</span></td><td class="d">value = SDF(발) − clr · dfdx = ∇SDF·발Jac &nbsp;<span class="dim">(StateSoftConstraint)</span></td><td class="d">swing</td></tr>
-        <tr><td class="p">발판배치<br><span class="dim">Phase 3b core</span></td><td class="d">A·p<sub>foot</sub> + b ≥ 0 (박스 4행) · A,b=<code>LocalConvexRegion</code>(heightmap 자체생성)</td><td class="d">접촉∧valid∧t≥stanceEnd<br>(미래 착지 stance)</td></tr>
+        <tr><td class="p">발판배치<br><span class="dim">Phase 3b ✓</span></td><td class="d">A·p<sub>foot</sub> + b ≥ 0 (박스 4행) · A,b=<code>LocalConvexRegion</code>(heightmap 자체생성)</td><td class="d">접촉∧valid∧t≥stanceEnd<br>(미래 착지 stance)</td></tr>
       </tbody>
     </table></div>
     <p class="dim"><code>ocs2_perceptive</code>(ROS-free ESDF)가 워크스페이스에 이미 존재 → grid_map/CGAL 우회. CGAL은 ConvexRegionSelector 2함수에만 쓰였고, 그마저 <code>LocalConvexRegion</code>(축정렬 박스·순수 Eigen)으로 대체.</p>
@@ -133,17 +133,26 @@
 </section>
 
 <section id="coord">
-  <h2>3 · ★실증 — STANCE·동적 TROT·16-DOF·perceptive <span class="dim">2026-07-30</span></h2>
+  <h2>3 · ★실증 — 평지·16-DOF·연속지형 perceptive <span class="dim">2026-07-31</span></h2>
   <div class="note win"><b>제어기 문제가 아니라 sim 세팅이 A와 달랐던 것</b> — timestep 1ms(1kHz)·solref 0.005·허리 홀드 KpW 300·W_BASE 50로 A 배포 세팅과 정합하니 <b>동적 trot이 즉시 안정화</b>. 앞선 "동적 model-based=RL 영역" 진단은 <b>오진</b>(테스트 오염 VX=0.3 + sim 세팅 불일치)이었고 정정됨.</div>
   <div class="scroll"><table>
     <thead><tr><th>단계</th><th>결과</th><th>비고</th></tr></thead>
     <tbody>
       <tr><td class="p">STANCE (정지)</td><td class="yes">falls=0 · base_z 0.515≈A 0.52 · tilt&lt;0.5°</td><td class="mean">힘균형·qpFail=0 동결</td></tr>
-      <tr><td class="p">동적 TROT (12-DOF)</td><td class="yes">0.30 m/s falls=0 · 13s+ · qpFail=0 내내</td><td class="mean">sched≈act(게이트 정확 추종)</td></tr>
-      <tr><td class="p">16-DOF 능동 발목</td><td class="yes">0.30 m/s · tilt&lt;3° · 10.9s+ · 버징 26→1~2</td><td class="mean">GEARBOX+널스페이스 posture+앞뒤 발목 nominal 필수</td></tr>
-      <tr><td class="p">perceptive gap (Phase 3a)</td><td class="wa">blind x1.16 → clearance x1.50 진입</td><td class="mean">발이 엣지 클리어(SDF 제약)</td></tr>
+      <tr><td class="p">동적 TROT</td><td class="yes">0.30 m/s falls=0 · 13s+ · qpFail=0 내내</td><td class="mean">16-DOF 버징 26→1~2(GEARBOX+posture+발목nominal)</td></tr>
+      <tr><td class="p">perceptive clearance (3a)</td><td class="yes">gap blind x1.16 → clearance x1.50</td><td class="mean">발이 엣지 클리어(SDF 제약)</td></tr>
+      <tr><td class="p" style="color:var(--d1)">★perceptive 지형적응 (3b)</td><td class="yes">평지 회귀 falls=0 불변 · <b>15° 램프 base 0.50→0.84 등반</b>(tilt&lt;18°·qpFail=0)</td><td class="mean">발판배치+지형 base높이(a1c1841). blind는 램프 못올라 x1.4 전복</td></tr>
     </tbody>
   </table></div>
+  <h3>★연속지형 벤치 — blind vs D1 (첫 tilt&gt;90° base_x / falls, VX=0.2)</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>지형</th><th>Blind</th><th class="p" style="color:var(--d1)">D1 perceptive</th><th>등반 base_z</th></tr></thead>
+    <tbody>
+      <tr><td class="p">rough (±0.04 굴곡)</td><td class="wa">1.47 / 7059</td><td class="yes">2.12 / 994 <span class="dim">(낙상 7×↓)</span></td><td>0.58</td></tr>
+      <tr><td class="p">slope (15° 램프)</td><td class="wa">1.36 / 5219</td><td class="yes">2.65 / 958 <span class="dim">(낙상 5×↓)</span></td><td class="yes">0.84 <span class="dim">(blind 0.53)</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="dim"><b>D1 지형적응이 연속지형서 일관되게 blind 압도</b>(+0.7~1.3m 전진·낙상 5~7×↓·램프 등반). 전복은 지형의 <b>이산 난구간</b>(rough 끝·램프 crest)서만 → §4.</p>
   <h3>16-DOF 능동 발목 — 안정 3요소 (A 이식)</h3>
   <div class="scroll"><table>
     <thead><tr><th>요소</th><th>없으면</th><th>역할</th></tr></thead>
@@ -156,32 +165,32 @@
 </section>
 
 <section id="limit">
-  <h2>4 · 한계 — 고속 상한 · perceptive 미완결 <span class="dim">(정직)</span></h2>
+  <h2>4 · 한계 — 이산 급단차 = 동적 불안정 <span class="dim">(정직·RL 영역)</span></h2>
   <div class="scroll"><table>
     <thead><tr><th>한계</th><th>내용</th></tr></thead>
     <tbody>
-      <tr><td class="p">고속 상한</td><td class="mean">고정 0.35s phase가 고속엔 너무 길어 발판 과전방→지지부족→<b>base 침하(sink)</b>. 주기 0.50s로 <b>~0.7 m/s</b>(A ~2.0 대비 열세). 완전해결=walk/trot/run 프리셋(미적용)</td></tr>
-      <tr><td class="p">perceptive 미완결</td><td class="mean">Phase 3a=<b>클리어런스만</b>(발이 엣지 회피). <b>발판을 플랫폼에 '놓지' 않음</b>(발판 여전히 blind Raibert)+지형 base높이 없어 <b>턱 오르다 전복</b>. 3b core는 작성됐으나 <b class="nn">브리지 통합 안 됨</b></td></tr>
-      <tr><td class="p">고정 스케줄</td><td class="mean">접촉 타이밍이 고정 입력 — gap 간격이 cadence와 우연히 맞아야(속도-공명). 타이밍 최적화는 CI-MPC 영역</td></tr>
+      <tr><td class="p" style="color:var(--no)">★이산 급단차</td><td class="mean">계단코스(0.16m 급단차)=<b>전복</b>. 처음엔 swing height(0.08) 탓으로 봤으나 <b>0.20으로 올려도 여전히 전복</b>(평지 falls=0 유지)=발 클리어런스 아닌 <b>급단차 등판의 동적 불안정</b>(앞다리 등판시 base pitch 급증·뒷다리 못따라감). 지형변조 swing도 못고침 → <b>RL(DTC) 영역</b>(이산험지=RL 프로젝트 논지와 수렴)</td></tr>
+      <tr><td class="p">고속 상한</td><td class="mean">고정 0.35s phase가 고속엔 너무 길어 발판 과전방→<b>base 침하</b>. 주기 0.50s로 <b>~0.7 m/s</b>(A ~2.0 대비 열세). walk/trot/run 프리셋 미적용</td></tr>
+      <tr><td class="p">고정 스케줄</td><td class="mean">접촉 타이밍 고정 입력 — gap 간격이 cadence와 우연히 맞아야(속도-공명). 타이밍 최적화는 CI-MPC 영역</td></tr>
       <tr><td class="p">게인 drop-in 아님</td><td class="mean">legged Go1(12kg/Gazebo)↔02_Leg(37.9kg/MuJoCo) 재튜닝 필수(W_BASE·허리홀드·1ms·solref·GEARBOX)</td></tr>
-      <tr><td class="p">Phase 3b 근사</td><td class="mean">발판영역=축정렬 박스(nV=4, convex 다각형 아님)·base pitch만 지형적응(roll 제외) — 복잡 지형서 정밀도 한계 가능</td></tr>
+      <tr><td class="p">Phase 3b 근사</td><td class="mean">발판영역=축정렬 박스(nV=4)·base pitch만 적응(roll 제외)·단일 box(호라이즌 노드별 아님) — 복잡 지형 정밀도 한계 가능</td></tr>
     </tbody>
   </table></div>
-  <p class="dim"><b>남은 통합(다음)</b>: 브리지에 <code>LocalConvexRegion</code>+FootPlacement 4발 주입 · 매틱 nominal foothold(<code>getNominalFoothold</code>)+stance타이밍→<code>updateFoot()</code> · 지형적응 base높이(Z=h+comH/cos(pitch)) · gap 크로싱 검증.</p>
+  <p class="dim"><b>연속(경사·rough)=모델기반 작동 / 이산(급단차)=동적한계=RL</b>. D1 모델기반의 값=연속지형 지형적응·실시간 배포. 현 지형들은 base 모델 <b>무한 floor plane</b> 포함=계단코스(진짜 홀 아님).</p>
 </section>
 
 <section id="dir">
-  <h2>5 · 방향 — Phase 3b 완결 후 벤치</h2>
+  <h2>5 · 방향 — 연속지형 강건화 · 이산은 RL</h2>
   <div class="scroll"><table>
     <thead><tr><th>단계</th><th>내용</th><th>상태</th></tr></thead>
     <tbody>
-      <tr><td class="p">Phase 3b 브리지 통합</td><td class="mean">발판배치를 폐루프에 연결 → gap/stepping 크로싱(perceptive의 실목표)</td><td class="wa">진행</td></tr>
-      <tr><td class="p">Phase 4 벤치</td><td class="mean">D1(통합 NMPC) vs <a href="pipeline_tamols.html">injection</a> vs A — 동일 지형·지표(falls/tilt/외란/속도). 가설=통합 NMPC가 injection 마진 이김</td><td class="wa">예정</td></tr>
-      <tr><td class="p">TAMOLS WBC 전환</td><td class="mean">D1 WeightedWbc를 TAMOLS 트래커로(TSID 개념정합) — OCS2 의존성 분리 필요</td><td class="wa">후속</td></tr>
-      <tr><td class="p">DTC (Phase 5)</td><td class="mean">OCS2/TAMOLS TO 참조 → RL 추종. NMPC 완성 후 or 병행</td><td class="wa">별도</td></tr>
+      <tr><td class="p">Phase 3b 통합·검증</td><td class="mean">발판배치+지형 base높이 폐루프 연결. 연속지형(램프/rough) 등반·blind 압도 실증</td><td class="yes">완료</td></tr>
+      <tr><td class="p">Phase 4 벤치</td><td class="mean">연속지형 D1 vs <a href="pipeline_tamols.html">injection</a> vs A — 등반각·falls·tilt·속도. D1 값=연속지형 모델기반 지형적응</td><td class="wa">예정</td></tr>
+      <tr><td class="p">연속지형 강건화</td><td class="mean">crest(급단차 전환)·rough·외란 안정화. 단일 box→호라이즌 노드별 발판</td><td class="wa">후속</td></tr>
+      <tr><td class="p">이산험지 → DTC (RL)</td><td class="mean">급단차=동적한계=RL 영역. OCS2/TAMOLS TO 참조 → RL 추종</td><td class="wa">별도(Phase 5)</td></tr>
     </tbody>
   </table></div>
-  <div class="note"><b>★위치(2026-07-30)</b>: D1 = <b>injection의 얇은 마진을 통합 폐루프 perceptive NMPC로 근본해결</b>하려는 배포용 모델기반 트랙. <b>동적 TROT falls=0·16-DOF 능동발목·Phase 3a perceptive 작동</b>까지 실증. 단 <b>perceptive의 핵심(발판배치·지형 base)은 3b 브리지 통합이 남아</b>, 현재 D1은 클리어런스만으로 지형을 '건너지'는 못한다. 외부 <b>legged_control</b>(NavBotHub, ROS/Gazebo 파쿠르)은 이 트랙의 <b>레퍼런스</b>(우리 포팅과 별개). B승격 아님(B aligator 20Hz 실시간 열세) · DTC와 별개(폐루프 NMPC).</div>
+  <div class="note"><b>★위치(2026-07-31)</b>: D1 = <b>injection의 얇은 마진을 통합 폐루프 perceptive NMPC로 근본해결</b>하려는 배포용 모델기반 트랙. <b>동적 TROT falls=0·16-DOF·Phase 3b perceptive(발판배치+지형 base높이) 통합</b> 완료. <b>연속지형(15° 램프·rough)서 지형적응 등반이 blind를 일관 압도</b>(§3 벤치). <b>단 이산 급단차(0.16m)는 동적 불안정으로 전복</b>(swing height 무효)=<b>RL(DTC) 영역</b>(perceptive-nav·CI-MPC 트랙과 수렴). 즉 D1 모델기반 가치=<b>연속지형 지형적응·실시간 배포</b>. 외부 <b>legged_control</b>(NavBotHub)은 레퍼런스(별개). B승격 아님·DTC와 별개.</div>
 </section>
 
 <footer>

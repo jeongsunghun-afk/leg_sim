@@ -101,7 +101,9 @@ P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = D
 
 **★iter 5000 균형 판정 = 정체 확정**: foothold_track 0.28→**0.34**(계속 상승, 추종 우수) but **epLen ~200 평탄**(190~218 진동, 상승無)·**progress ~0.03 평탄**·**base_contact ~20 평탄**(낙상 안 줆). = 3200 iter 동안 **발판 추종만 개선·균형/생존은 정체**. → 정책대로 **커리큘럼 전환**.
 
-**★적응형 터레인 level 커리큘럼 전환 (2026-07-31, 자율)**: dtc_gap 중단(체크포인트 저장) → **커리큘럼 학습 발사**(tmux `dtc_curric`, `QUAD17_TERRAIN_CURRICULUM=1`). env 배선(worker): `_build_gap_terrain`을 **10 난이도 lane**으로 확장(level0=평지→level9 gap 0.20m, +y로 lane 배치), per-env `_terrain_level` 진행거리 기반 승강(promote>0.8·demote<0.4·corridor 8m), per-level gap 테이블로 캐시 통합 유지, `Metrics/terrain_level` 로그, 토글 OFF=현재 동작 불변. 스모크 통과(10 lane 빌드·terrain_level 로그·무오류). **가설**: 잘 되는 것(고정 trot+TAMOLS 발판 추종) + 빠진 것(평지부터 걷기 배우는 적응형 커리큘럼) 조합 → 균형 병목 해소. 결과=terrain_level 승급(평지 걷기 학습)·epLen 상승 여부로 판정. **정체 지속 시 2순위 = gait 게인 튜닝**(고정 trot 게인·속도 하향). (진행 중)
+**★적응형 터레인 level 커리큘럼 전환 (2026-07-31, 자율)**: dtc_gap 중단(체크포인트 저장) → **커리큘럼 학습 발사**(tmux `dtc_curric`, `QUAD17_TERRAIN_CURRICULUM=1`). env 배선(worker): `_build_gap_terrain`을 **10 난이도 lane**으로 확장(level0=평지→level9 gap 0.20m, +y로 lane 배치), per-env `_terrain_level` 진행거리 기반 승강(promote>0.8·demote<0.4·corridor 8m), per-level gap 테이블로 캐시 통합 유지, `Metrics/terrain_level` 로그, 토글 OFF=현재 동작 불변. 스모크 통과(10 lane 빌드·terrain_level 로그·무오류). **가설**: 잘 되는 것(고정 trot+TAMOLS 발판 추종) + 빠진 것(평지부터 걷기 배우는 적응형 커리큘럼) 조합 → 균형 병목 해소.
+
+**★★iter 1500 결과 = 커리큘럼 정공 검증(2026-08-01)**: iter ~1100 breakthrough(RL 전형 slow-start→급상승) — **epLen 150→~500**(4→10초 생존)·**progress 0.008→0.22**(전진!)·**base_contact 종료 28→7**(낙상 4×↓)·foothold_track→0.56·**Mean reward 22.7**·**★terrain_level 0→0.57**(평지 마스터 후 **gap 레벨 승급 시작**). = **"빠진 것=적응형 커리큘럼"이 균형 병목의 원인**이었음이 검증. dtc_gap(정체 epLen200·progress0.03)와 극명 대조. **정책대로 개선이니 지속**(gait 튜닝 불요). terrain_level 승급 지속(→gap 크로싱 난이도↑)을 장기 모니터.
 - **남은 것(구조)**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만(base=env 램프·gait=고정 trot). 3D 지형(계단/슬로프)=full base 플랜 후속. in-loop 재검토=서버 코어 확대/GPU-batched QP 시.
 
 ### P3 — 지형·강건성·CVAE (예정)

@@ -739,13 +739,30 @@ struct TrotCtrl {
       if(have_prev[i]) for(int c=0;c<3;c++) v_tgt[c]=tc_clip((p_tgt[c]-ptgt_prev[i][c])/dt,-1.0,1.0);
       ptgt_prev[i]=p_tgt; have_prev[i]=true; swing[i]={p_tgt,v_tgt}; }
     double dmpc=t-mpc_t;
-    if(!st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
+    // ★RSL_TRACK: injection을 RSL-WBC로 추종(SRBD MPC 대체). A gait의 깨끗한 참조(Raibert 발판+측방 capture)라
+    //   pure-online의 재앵커 오염/nominal 발판 없음 → RSL 붕괴(yaw/lateral) 회피 기대. injection=속도제어라 xy 위치추종 off·속도 ff로 전진.
+    bool rsl_inj=getenv("RSL_TRACK");
+    if(rsl_inj){
+      q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):40.0;   // ★40=A Raibert 발판이 전진 주도(80은 base task가 발판과 싸워 backward drift)
+      q.w_ori   =getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★자세 강홀드(축소지지 레벨링)
+      q.KP_BASE =getenv("KP_BASE")?atof(getenv("KP_BASE")):0.0;   // xy=속도제어(위치추종 off): 전진은 A Raibert 발판이 담당, base task는 안정화만
+      q.KD_BASE =getenv("KD_BASE")?atof(getenv("KD_BASE")):25.0;
+      q.SW_TRACK_W=getenv("SW_TRACK_W")?atof(getenv("SW_TRACK_W")):90.0;
+      q.com_ref[0]=d->qpos[0]; q.com_ref[1]=d->qpos[1]; q.com_ref[2]=x_ref[5];   // xy=현위치(위치풀 없음)·z=지형적응(x_ref[5])
+      q.com_vel_ref[0]=vx_w; q.com_vel_ref[1]=vy_w; q.com_vel_ref[2]=0.0;        // 속도 ff=전진
+      q.com_acc_ref.setZero();
+    }
+    else if(!st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
       std::vector<std::array<int,4>> cs(q.mpc.N);
       for(int k=0;k<q.mpc.N;k++) for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg+k*q.mpc.DT,sch,sp); cs[k][i]=sch?1:0; }
       Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
-    Vector3d lam_use[4]; for(int i=0;i<4;i++) lam_use[i]= st.empty()?Vector3d::Zero():lam_des[i];
+    Vector3d lam_use[4];
+    if(rsl_inj){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // RSL: λ=중력보상 baseline(WBC base task가 실제분배)
+      for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
+    else for(int i=0;i<4;i++) lam_use[i]= st.empty()?Vector3d::Zero():lam_des[i];
     q.yaw_des=yaw_ref;                                     // ★자세 task가 명령헤딩 추종(선회시 yaw와 안싸움)
-    if(!q.wbic_track(st,swing,lam_use)) q.wbic_stance();
+    double wl_inj=rsl_inj?(getenv("W_LAM")?atof(getenv("W_LAM")):0.1):10.0;
+    if(!q.wbic_track(st,swing,lam_use,wl_inj)) q.wbic_stance();
   }
   double tiltdeg(){ double R[9]; mju_quat2Mat(R,&q.d->qpos[3]); return std::acos(tc_clip(R[8],-1,1))*180/M_PI; }
 };

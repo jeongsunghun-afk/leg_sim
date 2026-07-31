@@ -197,6 +197,31 @@
   </table></div>
   <div class="box acc"><b>★핵심 축 = 힘(GRF) 권한이 어디 있나</b> — <b>A</b>: 힘원천=MPC / WBIC=<b>보정자</b>(δf 미세수정), 볼록QP라 견고. <b>legged/D1</b>: 힘원천=NMPC / WBC=<b>추종자</b>(ff realize), NMPC 비선형=전환·스레딩 취약. <b>TAMOLS+RSL</b>: 상류가 <b>힘을 안 줌</b>(GIAC=실현가능성만) / WBC=<b>원천 계산자</b>(힘분배 백지계산=중간 힘-MPC층 우회). ★<b>legged_control ≈ 우리 D1 포트</b>(OCS2 centroidal NMPC+WeightedWbc). <b>RSL-WBC 성능향상 방향 = D1식(연속 gait클럭+지형적응 base_z)으로 재앵커·base_z 침하 해결</b>(§ pipeline_tamols·TAMOLS 리포트).</div>
 
+  <h2><span class="n">2.7</span>WBC(추종기) 정식화 — HQP(계층) vs TSID(가중) <span class="sub" style="font-weight:400">계열·표준·우리 매핑·핵심 실측</span></h2>
+  <div class="scroll"><table>
+    <thead><tr><th>축</th><th>HQP (계층적)</th><th>TSID (가중)</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">task 우선순위</td><td>★<b>엄격</b> — null-space 사영(상위 task 불변)</td><td><b>소프트</b> — 가중합 단일 QP</td></tr>
+      <tr><td class="rowh">대표</td><td>Bellicoso2016(HO)·MIT <b>WBIC</b>·legged <b>HoQp</b></td><td>Del Prete <b>TSID</b>·legged <b>WeightedWbc</b></td></tr>
+      <tr><td class="rowh">하드 제약</td><td colspan="2" style="text-align:center">둘 다 동일(EOM·마찰콘·τ한계=QP 제약). 차이는 <b>소프트 task 우선순위뿐</b></td></tr>
+      <tr><td class="rowh">장·단</td><td class="wa">우선순위 보장 / 브리틀·계산↑</td><td class="yes">단순·수치안정·튜닝쉬움 / 우선순위 경합</td></tr>
+      <tr><td class="rowh">표준</td><td colspan="2" style="text-align:center">★<b>단일 표준 없음</b>. 최근 추세=가중(TSID류) 실무 흔함. 성능은 <b>task/게인 튜닝이 지배</b>(계층↔가중 아님)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="scroll"><table>
+    <thead><tr><th>우리 제어기</th><th>WBC 계열</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip cA">A</span> WBIC</td><td>★<b>HQP 계열</b>(null-space 사영+QP relaxation) = MIT식</td></tr>
+      <tr><td><span class="chip cD">D1</span> WeightedWbc</td><td><b>TSID 계열</b>(가중 QP·1kHz 실시간) = legged식</td></tr>
+      <tr><td><span class="chip cB">B</span> KinodynamicsID</td><td><b>TSID 계열</b>(가중 QP)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box acc"><b>★추종기 핵심 실측·정리(2026-07-31)</b><br>
+  ① <b>capture-point(A KCAP) ↔ GIAC(TAMOLS) = 상보</b>: 반응형 발배치("어디 디딜까") vs 계획형 실현가능성 제약("이 CoM 가속 되나"), 같은 CoM–지지 물리의 두 표현(ZMP/LIP·contact-wrench-cone 계보). <b>대체 아닌 보완</b>(다른 시간스케일).<br>
+  ② <b>W_AM(각운동량 task)은 A도 미사용</b>(17dof W_AM=0, 주석 "외란복구 무의미·측방 push 오히려↑"). A의 push 복구 = <b>capture-point + MPC 예측</b>.<br>
+  ③ <b>모멘텀률 base FF(aBaseFF=Ab⁻¹(m·ḣ−Ȧv−Aj q̈))는 planner의 힘 필요</b>(D1 NMPC의 desired GRF→base 가속). <b>TAMOLS(무-힘, GIAC만)엔 직접 불가</b>. ★단 실측: <b>힘-생성형 base task(순수 PD)도 KD 튜닝(KD_B 10→30)이면 base_z 유지</b>(침하 0.38→0.52, 모멘텀률 FF 없이). ⇒ <b>TAMOLS 추종기 = 잘 튜닝된 힘-생성형 WBC</b>(ETH TAMOLS+RSL식, D1 WeightedWbc 템플릿)면 충분.<br>
+  ④ <b>capture-point를 D1 WBC swing target에 애드온 = 실패</b>(CAPTURE_K 전복 악화): NMPC가 발위치+GRF+base를 협조계획하는데 WBC서 발만 shift=계획-추종 불일치. → NMPC 내부(foothold cost)거나 힘-생성형 재구축. (D1은 tight-coupled, A는 loose-coupled라 A식은 추종기 capture 자연.)</div>
+
   <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>
   <ul>
     <li><span class="chip cA">A</span> <b>본선 배포</b> — 1kHz 실시간, GUI 전기능 조종. 평지·중속·선회·기립. 연속지형 반응형.</li>

@@ -150,7 +150,7 @@
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적(base_z 포함 최적화됨)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Grandia 2023</span></td>
         <td>통합 Perceptive NMPC(OCS2)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
-        <td>WeightedWbc(단일 QP)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(qpos/qvel)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> soft-가중 QP[q̈·f·τ]→τ(FF+PD)</td><td class="yes">1 kHz WBC 실시간</td><td class="wa">동적TROT falls=0·perceptive 3a작동·3b 통합중</td></tr>
+        <td>WeightedWbc(단일 QP)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(qpos/qvel)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> soft-가중 QP[q̈·f·τ]→τ(FF+PD)</td><td class="yes">1 kHz WBC 실시간</td><td class="wa">동적TROT falls=0·Phase3b 통합·<b>연속지형(15°램프 base0.53→0.84·rough) blind 압도</b>·이산급단차=동적한계=RL</td></tr>
       <tr><td><span class="chip cCI">CI</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Kim(HOUND) 2023</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
         <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
@@ -168,6 +168,34 @@
   <div class="box"><b>★base_z</b>(입력·고정·최적화는 별개 축, <b>입력받음≠고정</b>) — <b>A만 최적화 X</b>: body_h 명령을 <b>고정 setpoint</b> 추종(<span class="mono">com_ref[2]</span>)=base–발판 협조 부재(갭실패 원인). <b>C·CI</b>는 body_h/pose를 <b>입력받되 OCP서 최적화</b>(입력≠고정). <b>B</b>는 nominal 참조로 최적화. <b>TAMOLS/D1</b>만 <b>지형적응</b>(z를 발판과 공동최적화, TAMOLS=스플라인 <span class="mono">a[k](z,·)∈nz</span>).</div>
   <div class="box acc"><b>★검증 provenance(2026-07-28 실측 기준)</b> — 표의 성능 중 <b>이번 세션 직접 실측</b>: <b>TAMOLS</b>(솔버 실시간·Drake정합·RSL추종 tilt2~6°·온라인 walk falls=0 stall) · <b>TOWR+WBIC-lite</b>(flat서도 낙상 @1s, 부양base 불안정 확인). <b>과거 노트(현 env 재검증 불가=simple_mpc C++ 미설치)</b>: <b>B</b>(3.3s낙상·~14Hz) · <b>C</b>(~0.27m/s·6–13Hz) · <b>TOWR+B-TSID</b>. <b>외부·미구축</b>: <b>D1</b>(OCS2/ROS). ★즉 B/C/D1 성능수치는 확정 아님(과거·외부). A·TAMOLS·TOWR(WBIC-lite)만 재현 검증.</div>
   <div class="box"><b>요지</b> — ★<b>RSL식 WBC 직접추종이 돌파구</b>: SRBD MPC(속도재계획=overshoot 주범)를 빼고 WBC가 base 위치를 직접 추종+자세 강홀드(w_ori=200)하니 <b>tilt 2~6°로 계획을 충실히 추종·overshoot 해소</b>. ★<b>receding-horizon 온라인 통합 작동</b>(solve_fast 재계획+RSL-WBC를 매 스텝 루프): 평지 저속 walk <b>falls=0·실시간(~10×)·10s</b>. <b>단 순수 online은 ~0.3m서 stall</b>(매 replan 재앵커 frame 불일치=gait 교란, 미해결). <b>★해결(2026-07-29)=injection</b>: 순수 online 대신 <b>A의 검증된 연속 gait클럭에 TAMOLS base·발판만 주입</b>(재앵커 우회) → <b>지형 크로싱 성공</b>(hsteps 등반 tilt&lt;1.2°·dsteps2 갭+높이 3.4°·falls=0). <b>base-발판 협조 실증</b>(TAM_BASE: base z를 발판·GIAC와 co-optimize). 단 injection=짜깁기라 <b>마진 얇음</b>(연속~0.24m·이산 형상민감·"불안불안"). <b>참고: 로봇 자체는 A로 1.4~2.0 m/s</b>. <b>강건 = D1 포팅(OCS2 통합 폐루프 NMPC) 또는 RL(DTC)</b>. 상세=<b>pipeline_tamols.html</b>. <br><b>★sim2real(PACE 실기 액추에이터 식별)</b> — A·TAMOLS(RSL-WBC)는 <span class="mono">QuadControl GEARBOX</span>(반사관성 armature=Irot·N²·damping·friction) <b>구조 보유</b>(단 데이터시트 placeholder값 Irot1e-4·dmp0.1·frc0.5, PACE 실측 아님). B/C/CI/TOWR은 별도 Pinocchio 모델이라 <b>미보유</b> → <b>전 제어기 코드에 동일 액추에이터 물리 추가 필요</b>(하드웨어 확보 시 PACE 실측값으로 교체).</div>
+
+  <h2><span class="n">2.6</span>힘(GRF) 권한 축 — 계획 생성 → 실현 <span class="sub" style="font-weight:400">A · legged/D1 · TAMOLS+RSL, WBC 3형(보정자·추종자·원천계산자)</span></h2>
+  <div class="scroll"><table>
+    <thead><tr>
+      <th>축</th>
+      <th class="a">A안 (WBIC)</th>
+      <th class="d1">legged_control / D1 (WBC)</th>
+      <th style="color:var(--acc)">TAMOLS + RSL</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="rowh" colspan="4" style="background:var(--acc-soft);color:var(--acc)">━━ 계획층 — 계획을 어떻게 생성하나</td></tr>
+      <tr><td class="rowh">구성 모듈</td><td>gait scheduler + Raibert selectfoot + <b>SRBD MPC</b></td><td>ModeSchedule + SwingTrajectoryPlanner + <b>OCS2 NMPC</b></td><td><b>TAMOLS TO</b> (단일 NLP)</td></tr>
+      <tr><td class="rowh">접촉 타이밍</td><td>scheduler 고정주기 (최적화 X)</td><td>ModeSchedule 고정입력 (최적화 X)</td><td>고정입력 (최적화 X)</td></tr>
+      <tr><td class="rowh">발판 위치</td><td>Raibert 반응식 — blind</td><td>Raibert류 + swing z 프로파일 — blind</td><td class="yes">★TO 결정변수 — GIAC·edge회피·도달성으로 지형과 co-opt</td></tr>
+      <tr><td class="rowh">base 운동</td><td>MPC 예측궤적 (SRBD 12상태)</td><td>NMPC 예측궤적 (centroidal+full kin)</td><td>스플라인 결정변수 — 발판과 동시최적화</td></tr>
+      <tr><td class="rowh"><b>힘 (GRF)</b></td><td class="yes">★<b>MPC 결정변수 = 힘 원천</b></td><td class="yes">★<b>NMPC 결정변수 = 힘 원천</b></td><td><b>결정변수 아님</b> — GIAC로 실현가능성만, 힘은 하류 위임</td></tr>
+      <tr><td class="rowh">문제 성질</td><td class="yes">볼록 QP (yaw선형화·콘) — 해보장·매사이클 견고</td><td class="wa">비선형 SQP-RTI+HPIPM — 전환·스레딩 취약(실측)</td><td class="wa">비선형 NLP (Drake) — 조건화·속도 취약(marginal 실측)</td></tr>
+      <tr><td class="rowh">지형 인지</td><td>발 z만</td><td>blind (perceptive는 별도 확장=Phase3)</td><td class="yes">✅ elevation map 소비</td></tr>
+      <tr><td class="rowh">계획 rate</td><td>MPC 50 Hz</td><td>NMPC 100 Hz (별도 스레드)</td><td>receding &lt;10ms 목표 (우리구현 미달)</td></tr>
+      <tr><td class="rowh" colspan="4" style="background:var(--acc-soft);color:var(--acc)">━━ 추종층 — 계획을 어떻게 실현하나</td></tr>
+      <tr><td class="rowh"><b>힘 권한</b></td><td><b>보정자</b> — 결정변수=δf, 최종 f=f<sub>MPC</sub>+δf (대페널티로 MPC해 주변 미세수정)</td><td><b>추종자</b> — NMPC 힘·모멘텀률을 feedforward로 realize</td><td>★<b>원천 계산자</b> — 힘참조 無 → 매순간 힘분배 백지최적화 (중력보상 포함)</td></tr>
+      <tr><td class="rowh">base 실현</td><td>MPC GRF ff + pose task PD 보정</td><td>모멘텀률 ff (PD≈0, w=1) — 측정 되먹임 증폭 루프 부재</td><td>TO base궤적 추종 + 자체 힘분배</td></tr>
+      <tr><td class="rowh">구조</td><td>task 우선순위 널스페이스 사영 + QP relax</td><td>계층/가중 QP</td><td>가중 QP 직접추종 (<b>중간 힘-MPC층 無 = "MPC 우회"</b>)</td></tr>
+      <tr><td class="rowh">kinematic task</td><td>contact→body pose→swing 우선순위</td><td>swing·base·force 가중 (100:1:0.01)</td><td>base·발 궤적 추종</td></tr>
+      <tr><td class="rowh">추종 rate</td><td>1 kHz</td><td>고주기 (NMPC와 스레드 분리)</td><td>고주기 직접추종</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box acc"><b>★핵심 축 = 힘(GRF) 권한이 어디 있나</b> — <b>A</b>: 힘원천=MPC / WBIC=<b>보정자</b>(δf 미세수정), 볼록QP라 견고. <b>legged/D1</b>: 힘원천=NMPC / WBC=<b>추종자</b>(ff realize), NMPC 비선형=전환·스레딩 취약. <b>TAMOLS+RSL</b>: 상류가 <b>힘을 안 줌</b>(GIAC=실현가능성만) / WBC=<b>원천 계산자</b>(힘분배 백지계산=중간 힘-MPC층 우회). ★<b>legged_control ≈ 우리 D1 포트</b>(OCS2 centroidal NMPC+WeightedWbc). <b>RSL-WBC 성능향상 방향 = D1식(연속 gait클럭+지형적응 base_z)으로 재앵커·base_z 침하 해결</b>(§ pipeline_tamols·TAMOLS 리포트).</div>
 
   <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>
   <ul>

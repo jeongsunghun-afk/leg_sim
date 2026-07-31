@@ -91,8 +91,16 @@ P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = D
 
 **env 배선 (`RobotSW_IsaacLab/.../quad17/quad17_env.py`, worker 위임)**: `_regen_footholds`의 절차적 Raibert를 캐시 lookup+재앵커로 대체(토글 `use_tamols_cache`, Raibert는 A/B용 보존). leg 매핑(cache FL,FR,RL,RR ↔ env sole 기하 부호매칭 `cache2sole=[2,3,0,1]`, 검증 assert), 3축 lookup(vx·per-gap폭[스트립간격서 도출]·gap거리[searchsorted]), forward-vx 한정(vy=yaw=0, TAMOLS가 vx-only). **obs=101 불변**(발판 출처만 교체). 스모크(64-env) 통과: 캐시 로드·매핑·무오류·foothold_track 산출.
 
-**학습 착수 (GPU2 4096-env, tmux `dtc_gap`)**: 20000 iter, **2.4s/iter → ~13h**(주말 완주). **초기 신호 = foothold_track 상승**(0.016→0.023, iter7→41) — **P2가 flat(obs 무시)이던 것과 대조** = 지형유래(gap-straddle) 발판이 obs를 유의미하게 만들어 RL이 attend 시작. 수천 iter 추세(foothold_track·terrain·epLen)가 실질 판정(진행 중).
-- **남은 것**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만 사용(base=env 전진램프·gait=고정 trot로 충분, 평지 gap). 3D 지형(계단/슬로프)은 full base 플랜 필요 → 후속. in-loop 재검토는 서버 코어 확대/GPU-batched QP 시.
+**학습 착수 (GPU2 4096-env, tmux `dtc_gap`)**: 20000 iter, **2.4s/iter → ~13h**(주말 완주).
+
+**★iter 1500 진단 — 두 층으로 갈림(정직):**
+- ✅ **추종 층 = 해결**: **foothold_track 0.016→0.27**(iter7→1500, ~15× 상승) + **foot_in_gap ≈ −0.0005**(발이 gap에 거의 안 빠짐=straddle 작동) + Mean reward −7→**+6.5**(양전환). = **P2의 근본 실패(base상대 발판=obs 무시)를 지형유래 발판이 극복** = DTC 오프라인 메커니즘 검증.
+- ⚠️ **균형/보행 층 = 현 병목**: **종료=base_contact 지배**(~4초 후 토르소 낙상, time_out 0) + **progress 0.033**(전진 거의 못함) + **epLen ~200/1000**(생존 20%). 발판은 맞추나 **안정된 보행으로 실행 못함** = parkour서 본 무거운 로봇 균형 문제. **spawn 근처(거의 평지)서 이미 낙상**.
+
+**★Go2 파이프라인 대조 (현 병목 관련)**: 현재 quad17 DTC env는 Go2 파쿠르의 두 요소가 없음 — ①**heightmap 지각**(`num_heights=0`, DTC가 의도적으로 foothold 참조로 대체) ②**정식 IsaacLab 적응형 터레인 커리큘럼**(현재=`_build_gap_terrain` 손수 공간 gap 램프, Go2=`TerrainGeneratorCfg(curriculum=True)` level 승강). ②가 병목 기여 후보(평지 걷기 마스터 전에 gap 마주). 단 parkour 포팅(①②다 갖춤)도 tilt했음=원인은 **gait-free가 무거운 로봇엔 too hard**였고, 현재 고정 trot은 그 문제 없음(그래서 추종 성공).
+
+**다음 레버 (준비 중)**: **정식 적응형 터레인 level 커리큘럼**(평지 level0 → 진행거리 기반 gap 승급)을 현재 고정-trot DTC env에 이식(토글, cache/`_build_gap_terrain` 통합 유지, worker 위임). = 잘 되는 것(고정 trot+TAMOLS 발판) + 빠진 것(적응형 커리큘럼) 조합. iter 5000 균형 추세(epLen·progress·base_contact)로 전환 결정 — 정체면 커리큘럼(1순위)·gait 게인(2순위), 개선이면 그대로 완주.
+- **남은 것(구조)**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만(base=env 램프·gait=고정 trot). 3D 지형(계단/슬로프)=full base 플랜 후속. in-loop 재검토=서버 코어 확대/GPU-batched QP 시.
 
 ### P3 — 지형·강건성·CVAE (예정)
 지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체 ← **P2.5서 실현(오프라인 캐시)**, height scan(발→목표 직선).

@@ -40,7 +40,9 @@ struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool wa
   double gap_x0 = -1, gap_x1 = -1;   // ★로컬 프레임 gap [x0,x1](base 기준). <0 = gap 없음(평지 walk)
   int phase_off = 0;                 // ★horizon-shift 위상 오프셋(매 replan 증가 → swing 실행)
   bool walk = false;                 // ★walk(crawl 4-phase 한발씩=정적안정) vs trot(5-phase 대각쌍)
-  bool z0_terrain = false; };        // ★지형모드: base z 밴드를 z0 기준 상대로(계단 상승 허용)
+  bool z0_terrain = false;           // ★지형모드: base z 밴드를 z0 기준 상대로(계단 상승 허용)
+  bool straddle_init = true; };      // ★aggressive 발판 straddle 초기화. false=nominal init+gap회피는 constraint 담당
+                                     //   (RL offline 캐시용: 먼 gap의 도달불가 straddle 방지, 필요한 최소 shift만)
 
 inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int map_size,
                               double z0, double yaw0, double vx0, double vy0,
@@ -71,7 +73,7 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
     st.epsilon = VectorXd::Zero(P);
   }
   bool gap_near = cfg.gap_x0 >= 0 && cfg.gap_x0 < xf + 0.45 && cfg.gap_x1 > -0.15;   // gap이 horizon 전방 도달권
-  if (gap_near) { double m = 0.04;
+  if (gap_near && cfg.straddle_init) { double m = 0.04;
     st.p(0,0) = st.p(1,0) = cfg.gap_x1 + m;   // 앞발(FL,FR) = 갭 너머
     st.p(2,0) = st.p(3,0) = cfg.gap_x0 - m;   // 뒷발(RL,RR) = 갭 앞
   }

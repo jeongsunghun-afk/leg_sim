@@ -1,6 +1,6 @@
 # DTC 개발리포트 — Deep Tracking Control (MPC 교사 + RL 추종)
 
-> **상태: 활성 (DTC 트랙 정본) · 2026-07-30.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0(자산)·P1(속도 워커) 완료 · P2(발판 추종 tracker) 진행 중 · P3(지형·CVAE) 예정.**
+> **상태: 활성 (DTC 트랙 정본) · 2026-07-31.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0(자산)·P1(속도 워커) 완료 · P2(절차적 발판 tracker: IK obs로 lazy-agent 규명) 완료 · ★P2.5 실제 TAMOLS 오프라인 캐시 파이프라인 구축 → 4096-env 학습 착수(초기 foothold_track↑) · P3(지형 커리큘럼·CVAE) 진행.**
 > 이 문서 = DTC 트랙의 개발 기록·설계 근거. (전신 = MPC–RL 하이브리드 전략 리포트; 실행 트랙이 DTC로 좁혀져 이 이름으로 통합.) 학습법 심화는 `rl_module_train.html`, 작업 메모리는 `dtc-17dof-development`.
 
 ---
@@ -71,8 +71,31 @@ DTC tracker를 **절차적 랜덤 발판**(실제 TAMOLS의 대역, from-scratch
 **분기 (Run-D gate)**: gap 열리면 → **IK가 enabler = 평지 발판추종 해결**, 수렴·정확도(cm) 튜닝. gap 0이면 → 평지+소프트보상 추종은 근본 부족 확정 → **P3의 구조적 발판+지형 물리압력(DTC-identical env)** 으로 조기 이행.
 - ★참고: DTC도 tracking을 **지형 커리큘럼**(갭·stepping)에서 학습했다(평지는 배포 결과). 평지 소프트보상 단독 추종은 물리적 압력이 없어 본질적으로 어려울 수 있음.
 
+### P2.5 — 오프라인 TAMOLS 캐시 파이프라인 (실제 TAMOLS 발판) ★2026-07-31 핵심
+P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = DTC 논문 그대로 "full TAMOLS planner → RL 추종". 단 **온라인 solve가 IsaacLab 스케일서 불가**해 오프라인 캐시로 실현(= APT-RL 방식).
+
+**아키텍처 결정 — in-loop 불가 → 오프라인 캐시:**
+```
+[in-loop DTC 원전]  4096 env × touchdown마다 TAMOLS solve
+   벤치(순수 C++ OpenMP, 20코어, tamols/bench_batch.cpp): warm solve 13ms → 배치 ~400 solves/s
+   4096 env @0.4s 재풀이 = 10,240 solves/s 필요 → 25× 부족 (서버 64코어도 alloc경합 포함 ~500 env 상한)
+   = DTC가 CPU 클러스터+2주 쓴 이유. 우리 자원선 불가.
+        ↓ pivot
+[오프라인 캐시 = APT-RL]  TAMOLS를 학습 전 격자로 사전풀이 → 학습중 조회+재앵커(solve 0)
+```
+- **핵심 통찰**: TAMOLS 플랜은 로컬 프레임(base 원점·전방+x)이라 절대 위치/yaw 무관 → 플랜 모양은 `(vx, gap폭, gap거리)`만으로 결정 → 격자 사전풀이 가능. 학습중 env가 `world = base_pos + Rz(yaw)·local`로 재앵커. 재앵커가 로봇을 따라가 reactive·나머지 균형(capture-point)은 RL이 = **DTC 분업**. (in-loop이 pure-online서 실패한 근본원인 = capture-point 부재였고, RL이 그걸 채우는 게 DTC 존재이유 → 오프라인 캐시도 동일 분업.)
+
+**캐시 (`tamols/cache_gen.cpp` → `cache/{footholds,base,contacts}.bin`+meta.json)**: `vx{0.2~0.6} × width{0.06~0.26} × gapd{-0.2~0.8}` = **1230셀**, 셀당 로컬 발판(4×3)+base궤적(51×12)+접촉(51×4). 50초 생성, 실패 0.
+- **도달성 수정**(중요): aggressive straddle-init 끔(`OnlineCfg.straddle_init` 신규 플래그, 기본 true=컨트롤러 불변) + **foot-in-gap 게이트**(nominal 발판[앞~0.51·뒤~0.06]이 실제 gap에 빠질 때만 회피, 아니면 nominal). → 먼 gap의 도달불가 straddle(FL 1.0m 앞) 제거. 검증: straddle이 두 밴드(앞발 gapd~0.4·뒷발~-0.1)에만·전부 도달가능(최대 hip 앞 ~0.29m).
+- **width 축**: env gap폭(0.05~0.26 커리큘럼 램프)을 캐시가 커버 → 폭 불일치 해소.
+
+**env 배선 (`RobotSW_IsaacLab/.../quad17/quad17_env.py`, worker 위임)**: `_regen_footholds`의 절차적 Raibert를 캐시 lookup+재앵커로 대체(토글 `use_tamols_cache`, Raibert는 A/B용 보존). leg 매핑(cache FL,FR,RL,RR ↔ env sole 기하 부호매칭 `cache2sole=[2,3,0,1]`, 검증 assert), 3축 lookup(vx·per-gap폭[스트립간격서 도출]·gap거리[searchsorted]), forward-vx 한정(vy=yaw=0, TAMOLS가 vx-only). **obs=101 불변**(발판 출처만 교체). 스모크(64-env) 통과: 캐시 로드·매핑·무오류·foothold_track 산출.
+
+**학습 착수 (GPU2 4096-env, tmux `dtc_gap`)**: 20000 iter, **2.4s/iter → ~13h**(주말 완주). **초기 신호 = foothold_track 상승**(0.016→0.023, iter7→41) — **P2가 flat(obs 무시)이던 것과 대조** = 지형유래(gap-straddle) 발판이 obs를 유의미하게 만들어 RL이 attend 시작. 수천 iter 추세(foothold_track·terrain·epLen)가 실질 판정(진행 중).
+- **남은 것**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만 사용(base=env 전진램프·gait=고정 trot로 충분, 평지 gap). 3D 지형(계단/슬로프)은 full base 플랜 필요 → 후속. in-loop 재검토는 서버 코어 확대/GPU-batched QP 시.
+
 ### P3 — 지형·강건성·CVAE (예정)
-지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체, height scan(발→목표 직선).
+지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체 ← **P2.5서 실현(오프라인 캐시)**, height scan(발→목표 직선).
 
 ---
 

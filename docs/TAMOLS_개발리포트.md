@@ -72,9 +72,25 @@ offline 첫계획(정지 덤프 `TAM_DUMP`) 추종에서:
 | slope 15° | **x2.17·z0.838·falls0 완주** | x0.6·z0.50 **stall(미등반)** | x0.34·**z0.166 붕괴** | x2.65·z0.84(crest 전복) |
 | rough | **x2.14·falls0 완주** | x0.6 **stall** | x0.21·**z0.156 붕괴** | x2.12(이후 전복) |
 
-**진단(TAM_DBG 실측)**: pure-online RSL 붕괴는 base_z droop이 아니라 **yaw 급발산(0→−50°)+횡드리프트(comy 0→−0.27)=붕괴**(t≈0.4s부터). §3·§5의 ④lateral/⑤death-spiral·H2(각운동량) 재확인. injection stall은 **TAMOLS 발판이 명목(fwd0=0)이라 전방 Raibert 스텝 부재→A의 전진추진 제거**(원인 규명).
+**진단(TAM_DBG 실측)**: pure-online RSL 붕괴는 base_z droop이 아니라 **yaw 급발산(0→−50°)+횡드리프트(comy 0→−0.27)=붕괴**(t≈0.4s부터). §3·§5의 ④lateral/⑤death-spiral·H2(각운동량) 재확인. **injection "stall"의 진짜 원인=gap-slow 오발동**: 이 지형들은 무한 floor plane(group0)+group2 블록이라, group2 미커버 영역서 `!tmap.valid`→"void 오판"→0.3× 상시 감속(평지도 x0.37/8s). `GAP_SLOW=1.0`으로 끄면 injection 전진 회복(rough x0.6→2.52)하나 그 뒤 지형서 **전복**(slope1.03/rough2.29)=injection+MPC가 연속지형선 A보다 약함.
 
-**D1 참조가 근본해결 못하는 이유**: D1가 base_z·yaw를 잡는 것은 (a)통합 NMPC의 base 궤적 + (b)WeightedWbc **모멘텀률 base 6D FF**(A WBIC엔 없음·순수 PD) + (c)연속 gait클럭 덕. 이를 TAMOLS+RSL에 이식하려면 **사실상 D1 컨트롤러 자체**가 된다(이미 보유·연속지형 작동). 순수 WBC 게인/FF로는 **참조 오염(재앵커 death spiral)**을 못 고침이 §6 결론 그대로. 연속 world 클럭+전방 발판(TAM_CONT 실험)은 stall만 미미 개선(x0.34→0.44)·붕괴 잔존이라 폐기.
+## 6.2 ★injection+RSL — 돌파(사용자 지적 반영, 2026-07-31, 커밋 629209e)
+
+사용자 통찰: **pure-online RSL은 injection 성능 향상 수단이지 별도 컨트롤러가 아니다.** RSL-WBC 직접추종을 **injection(A gait) 경로에 배선**(`RSL_TRACK`, move 경로 env-gated)하니 pure-online의 붕괴가 사라진다 — injection이 **A gait의 깨끗한 참조**(Raibert 발판+측방 capture)를 주므로 재앵커 오염·nominal 발판이 없기 때문.
+
+**실측**:
+| | flat | slope 15° | rough |
+|---|---|---|---|
+| injection+MPC(기존) | 정상 | x1.03 **전복** | x2.29 **전복** |
+| pure-online RSL | z0.16 **붕괴** | 붕괴 | 붕괴 |
+| **injection+RSL(신규)** | **x1.5·z0.55·falls0** | **falls0·전복 없음** | **falls0·전복 없음** |
+
+- **붕괴/전복 제거**: injection+RSL은 flat·지형 모두 falls=0, 전복 없음. pure-online의 붕괴도, injection+MPC의 지형 전복도 없다(RSL이 더 안정).
+- **핵심 튜닝**: `W_BASE_XY=40`(A Raibert 발판이 전진 주도; 80은 base task가 발판과 싸워 backward drift)·`KP_BASE=0`(xy 속도제어)·z=`x_ref[5]` 지형적응·λ=중력보상 baseline.
+- **한계(정직)**: 지형서 전방 progression이 ~0.78m서 drift(limit cycle) 잔존 → 추가 튜닝 필요(base task↔발판 협조). 즉 **"안정성"은 해결(붕괴/전복 제거), "전방 도달거리"는 미완**.
+- 기본 A walk(`RSL_TRACK` off)는 불변(회귀 clean, x2.21 falls0).
+
+**정정**: §6.1의 "D1 재구축과 동치" 결론은 **pure-online 기준**이었고, injection+RSL 경로는 그와 별개로 **붕괴/전복 없이 작동**(사용자 지적이 옳았음). 남은 건 D1식 모멘텀률 FF로 전방 progression 강건화(선택).
 
 **결론 재확정**: 연속지형=**A(반응형) 또는 D1(perceptive)**가 강건(실측). pure-online TAMOLS+RSL은 구조적 막다른길(재확인). 이산험지=RL. D1 참조의 실질 = "연속지형은 D1/A 쓰라"이며, 그것이 이미 결론.
 

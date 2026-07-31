@@ -62,6 +62,22 @@ offline 첫계획(정지 덤프 `TAM_DUMP`) 추종에서:
 
 **이관**: 험지 크로싱은 RL(하이브리드) 트랙으로. 위 WBIC 실행층·지형맵·footScore는 RL의 실행층/관측으로 재사용(콜드스타트 아님). 모델기반 실시간 OCP(B2/B3)는 살아있으나 현재 미착수 — 착수 시 합성 정상-cadence plan으로 이 추종기를 재검증한다.
 
+## 6.1 재확인 — Phase 4 교차 벤치 + D1 참조 평가 (2026-07-31)
+
+사용자 요청("TAMOLS+RSL를 D1 참조로 재앵커·base_z 침하 근본해결")에 따라 **독립 재조사**했고, §3~§6 결론을 **정량 재확인**했다.
+
+**Phase 4 교차 벤치**(동일 17-DOF·동일 지형·연속지형, VX=0.2, C++ trot_sim, 첫 tilt>90° base_x / 최종 상태):
+| 지형 | A(반응형·plain) | injection(TAMOLS 발판주입) | pure-online RSL | D1(perceptive NMPC) |
+|---|---|---|---|---|
+| slope 15° | **x2.17·z0.838·falls0 완주** | x0.6·z0.50 **stall(미등반)** | x0.34·**z0.166 붕괴** | x2.65·z0.84(crest 전복) |
+| rough | **x2.14·falls0 완주** | x0.6 **stall** | x0.21·**z0.156 붕괴** | x2.12(이후 전복) |
+
+**진단(TAM_DBG 실측)**: pure-online RSL 붕괴는 base_z droop이 아니라 **yaw 급발산(0→−50°)+횡드리프트(comy 0→−0.27)=붕괴**(t≈0.4s부터). §3·§5의 ④lateral/⑤death-spiral·H2(각운동량) 재확인. injection stall은 **TAMOLS 발판이 명목(fwd0=0)이라 전방 Raibert 스텝 부재→A의 전진추진 제거**(원인 규명).
+
+**D1 참조가 근본해결 못하는 이유**: D1가 base_z·yaw를 잡는 것은 (a)통합 NMPC의 base 궤적 + (b)WeightedWbc **모멘텀률 base 6D FF**(A WBIC엔 없음·순수 PD) + (c)연속 gait클럭 덕. 이를 TAMOLS+RSL에 이식하려면 **사실상 D1 컨트롤러 자체**가 된다(이미 보유·연속지형 작동). 순수 WBC 게인/FF로는 **참조 오염(재앵커 death spiral)**을 못 고침이 §6 결론 그대로. 연속 world 클럭+전방 발판(TAM_CONT 실험)은 stall만 미미 개선(x0.34→0.44)·붕괴 잔존이라 폐기.
+
+**결론 재확정**: 연속지형=**A(반응형) 또는 D1(perceptive)**가 강건(실측). pure-online TAMOLS+RSL은 구조적 막다른길(재확인). 이산험지=RL. D1 참조의 실질 = "연속지형은 D1/A 쓰라"이며, 그것이 이미 결론.
+
 ## 7. 별도 실행 시도 — 갭 크로싱 + C++ TAMOLS 솔버 (2026-07-27~28)
 
 §2~6은 A 실행층 위 whole-body **평지** 추종이었고, 이건 **불연속 지형(갭) 크로싱**을 TAMOLS 계획 + C++ 전용 솔버로 실행한 별도 시도다. 결론은 같다 — **계획(TAMOLS)은 OK, 추종기(executor)가 벽**. (구 `모델기반_갭크로싱_탐색리포트.html` 통합.)

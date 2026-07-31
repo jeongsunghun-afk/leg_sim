@@ -116,8 +116,13 @@
 - **★급단차(계단코스 0.16m) 미해결 — 근본원인 규명(정직)**: 처음엔 swing height(0.08<0.16) 탓으로 봤으나 **swingHeight 0.20으로 올려 재실험→여전히 전복**(hsteps x≈1.2·gap x≈1.9, 평지는 falls=0 유지). ⇒ **발 클리어런스 문제가 아니라 급단차 등판의 동적 불안정**(앞다리 등판시 base pitch 급증·뒷다리 못따라감). 지형변조 swing(SwingTrajectoryPlanner 높이 주입)도 이 문제는 못 고침(클리어런스 아님). **결론: 연속지형(램프/경사)=모델기반 작동 / 급단차·이산=동적 불안정=RL 영역**([[perceptive-nav-tamols]]·[[ci-mpc-track]]의 "이산 험지=RL" 프로젝트 논지와 수렴).
 - **자산 재사용**: `getNominalFoothold`(Raibert항은 legged_perceptive서도 주석처리·미사용, 능동경로=desired FK−pitch offset)·`getPolygonConstraint`(순수 Eigen)·mj_terrain_sdf.
 
-### Phase 4 — 벤치·판단 — 예정
-- **D1(OCS2) NMPC vs injection vs A**: 동일 지형·지표(falls/tilt/외란복구/속도). 핵심 가설=통합 NMPC가 injection 마진 이김. 실기갭·실시간(OCS2 rate).
+### Phase 4 — 교차 벤치 (2026-07-31, 실측)
+동일 17-DOF·연속지형·VX=0.2, 첫 tilt>90° base_x / 상태(C++ trot_sim·D1 bridge):
+- **A(반응형)**: slope x2.17·z0.838·falls0 완주 / rough x2.14·falls0 완주 = **연속지형 최강건**.
+- **injection(TAMOLS 발판주입)**: slope/rough 모두 **x0.6 stall**(TAMOLS 명목발판 fwd0=0→A 전진추진 제거).
+- **pure-online RSL**: **z0.16 붕괴**(yaw 0→−50°+횡드리프트=death spiral, TAM_DBG 실측).
+- **D1(perceptive NMPC)**: slope x2.65·z0.84·rough x2.12 등반(이후 이산난구간서 전복).
+- **결론**: 연속지형=A/D1 강건 / injection·pure-online RSL=미달(재앵커·발판·모멘텀률FF 부재, [[perceptive-nav-tamols]]·TAMOLS §6.1). D1 참조로 RSL 근본해결=사실상 D1 자체(이미 보유).
 
 ### Phase 5 — DTC (별도, 후속)
 OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.

@@ -745,10 +745,14 @@ struct TrotCtrl {
     if(rsl_inj){
       q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):40.0;   // ★40=A Raibert 발판이 전진 주도(80은 base task가 발판과 싸워 backward drift)
       q.w_ori   =getenv("W_ORI")?atof(getenv("W_ORI")):200.0;   // ★자세 강홀드(축소지지 레벨링)
-      q.KP_BASE =getenv("KP_BASE")?atof(getenv("KP_BASE")):0.0;   // xy=속도제어(위치추종 off): 전진은 A Raibert 발판이 담당, base task는 안정화만
+      // ★기본=KP_BASE 0(위치추종 off·안정, 전방은 A Raibert 발판 담당). 전방 progression drift는 KP_BASE>0+RSL_LEAD로
+      //   전방 lead 위치앵커 실험 가능(자가앵커=현위치+lead·windup無): 평지 강전진(lead0.1·KP60=x2.85)이나 지형선 TAMOLS
+      //   발판편차와 충돌해 전복(fragile)=RSL base task가 예측힘(모멘텀률FF) 없어 발판과 강건협조 불가. 근본해결=D1식 aBaseFF.
+      q.KP_BASE =getenv("KP_BASE")?atof(getenv("KP_BASE")):0.0;
       q.KD_BASE =getenv("KD_BASE")?atof(getenv("KD_BASE")):25.0;
       q.SW_TRACK_W=getenv("SW_TRACK_W")?atof(getenv("SW_TRACK_W")):90.0;
-      q.com_ref[0]=d->qpos[0]; q.com_ref[1]=d->qpos[1]; q.com_ref[2]=x_ref[5];   // xy=현위치(위치풀 없음)·z=지형적응(x_ref[5])
+      double _lead=getenv("RSL_LEAD")?atof(getenv("RSL_LEAD")):0.0;              // 전방 lead(KP_BASE>0일 때만 유효)
+      q.com_ref[0]=d->qpos[0]+_lead*cy; q.com_ref[1]=d->qpos[1]+_lead*sy; q.com_ref[2]=x_ref[5];  // xy=현위치(+lead)·z=지형적응
       q.com_vel_ref[0]=vx_w; q.com_vel_ref[1]=vy_w; q.com_vel_ref[2]=0.0;        // 속도 ff=전진
       q.com_acc_ref.setZero();
     }

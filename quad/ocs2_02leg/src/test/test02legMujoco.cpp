@@ -162,6 +162,13 @@ int main(int argc, char** argv) {
   if (gait != "stance") {
     auto tmpl = loadModeSequenceTemplate(std::string(argv[3]).substr(0, refFile.find_last_of('/') + 1) + "gait.info",
                                          gait, false);
+    // ★GAIT_T: gait 주기(총 switching 시간) 스케일 → 고속=짧은 주기(A 속도의존 주기 원리, 고정 0.70s가 ~0.7m/s 상한).
+    //   고정 phase가 고속엔 너무 길어 발판 과전방→지지부족→base 침하. 짧은 주기=빠른 cadence로 고속 추종. 미설정=gait.info 그대로.
+    if (getenv("GAIT_T") && !tmpl.switchingTimes.empty()) {
+      const double want = std::atof(getenv("GAIT_T")), cur = tmpl.switchingTimes.back();
+      if (cur > 1e-6 && want > 1e-6) { const double sc = want / cur; for (auto& tt : tmpl.switchingTimes) tt *= sc;
+        std::cerr << "[GAIT] 주기 " << cur << "→" << want << "s (고속 스케일)\n"; }
+    }
     // SETTLE(env, 기본 1.0s): 시작 STANCE 후 gait 개시 → MPC가 CoM 사전이동 준비.
     const double settle = getenv("SETTLE") ? std::atof(getenv("SETTLE")) : 0.0;
     refMgr->getGaitSchedule()->insertModeSequenceTemplate(tmpl, settle, simTime + 5.0);

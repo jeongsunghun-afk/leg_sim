@@ -131,7 +131,7 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).
 - **모델 포팅 근사(해소)**: 발목 잠금(point-foot)은 **Phase 2c에서 16-DOF 능동 발목으로 해소**(허리만 fixed 유지). 발목 능동화엔 GEARBOX(반사관성)·널스페이스 posture·앞뒤 발목 nominal이 필수.
 - **게이트/속도 범위(배포성 진행, 2026-07-31, eb31e48)**: **GAIT_T 주기 스케일링 구현** → 안정 0.3~0.5(기본 0.70s)·**0.7(GAIT_T=0.5, falls=0)**로 확대(기본 주기선 VX0.7 낙상). ~1.0(GAIT_T0.45)=marginal(z0.48·falls758). **1.4~2.0(A급)은 full 고속 WBC튜닝(SW_KP·재기어·reach) 별도 필요.** 프리셋 권장 walk T0.7@0.3-0.5·trot T0.5@0.6-0.7.
-- **외란 강건성(배포성 진단)**: 측방 push 40N=falls0 복구·**60N=위상민감(t3.15 복구 falls0 / t3.0·3.3 낙상)**·80N=falls0. 즉 **위상에 따라 60N서 낙상=불균일**. 배포급 강건성엔 A식 각운동량 task·capture-point 보강 필요(현재 순수 PD 자세).
+- **외란 강건성(배포성 진단, 정직)**: 측방 push 40N/80N 복구·**60N 위상민감**(경계 근처라 **build/run마다 결과 변동=marginal chaos**, 124/0/837↔504/0/0). ★**W_AM은 A도 안 씀**(17dof서 W_AM=0, "외란복구 무의미·측방 오히려↑"). A의 실제 push복구=**capture-point 발배치(KCAP·(v_meas−v_des))+MPC 예측**. ★**capture-point를 D1 WBC swing target에 이식=실패**(CAPTURE_K 0.12/0.2 전부 전복 악화): NMPC가 발위치X+GRF/base를 협조계획하는데 WBC서 발target을 shift하면 계획-추종 불일치→붕괴(RSL과 동일 교훈=반응층이 예측계획과 싸움). **결론: capture-point는 WBC 애드온이 아니라 NMPC 내부(foothold cost)로 들어가야 계획+반응 협조**(더 큰 작업). GIAC(TAMOLS)와 capture-point는 상보(계획형 제약 vs 반응형 발배치, 같은 CoM-지지 물리).
 - **legged 게인은 drop-in 아님**: Go1(12kg/Gazebo)↔02_Leg(37.9kg/MuJoCo)로 재튜닝 필요(W_BASE·허리 홀드·sim 세팅=1ms·solref 0.005·GEARBOX가 그 예).
 - **Phase 3b 경량 근사**: CGAL(convex_plane_decomposition) 미설치 → 발판영역을 축정렬 박스(nV=4)로 근사(convex 다각형 대신). 복잡 지형서 정밀도 한계 가능(이후 nV 확장/실 convex화 여지). 지형 base pitch 적응(roll 제외)도 근사.
 

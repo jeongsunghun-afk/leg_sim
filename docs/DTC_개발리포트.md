@@ -105,7 +105,9 @@ P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = D
 
 **★★iter 1500 결과 = 커리큘럼 정공 검증(2026-08-01)**: iter ~1100 breakthrough(RL 전형 slow-start→급상승) — **epLen 150→~500**(4→10초 생존)·**progress 0.008→0.22**(전진!)·**base_contact 종료 28→7**(낙상 4×↓)·foothold_track→0.56·**Mean reward 22.7**·**★terrain_level 0→0.57**(평지 마스터 후 **gap 레벨 승급 시작**). = **"빠진 것=적응형 커리큘럼"이 균형 병목의 원인**이었음이 검증. dtc_gap(정체 epLen200·progress0.03)와 극명 대조. **정책대로 개선이니 지속**(gait 튜닝 불요).
 
-**★★iter 8751 = 강한 성공 궤적**: **terrain_level 2.17→~4.6-5.5**(level 5 ≈ 11cm gap까지 크로싱, 계속 상승)·epLen 567·progress 0.22·falls 7·reward ~26 유지. = 로봇이 **걷기 + 점점 넓은 gap 크로싱을 순차 학습**. DTC 오프라인+커리큘럼 정공 작동. 완주(20000 iter)까지 terrain_level 승급 지속 모니터(→최대 level 9=20cm gap 도달 여부).
+**★★iter 8751 = 강한 성공 궤적**: **terrain_level 2.17→~4.6-5.5**(level 5 ≈ 11cm gap까지 크로싱, 계속 상승)·epLen 567·progress 0.22·falls 7·reward ~26 유지. = 로봇이 **걷기 + 점점 넓은 gap 크로싱을 순차 학습**. DTC 오프라인+커리큘럼 정공 작동.
+
+**★크래시→robustness 복구 (iter ~11800)**: 물리 blowup(wide gap 극한상태)→NaN이 정책 std를 NaN화 → `RuntimeError: normal expects std>=0` 크래시(cfg에 obs/reward NaN-guard 없었음). terrain_level ~6.5까지 달성·체크포인트 보존. **자율 복구**: ①model_11700 재개 ②NaN-guard robustness 추가(always-on: obs/reward `nan_to_num`+clamp, blowup 종료[비유한/폭주속도/고도이탈], 체크포인트 호환) ③fix 포함 재재개(dtc_curric3). **검증: fix가 크래시난 terrain_level ~6.5 지점을 무크래시 통과**(재climb 0→6.3, epLen562·progress0.26 유지) = robustness가 std-NaN 방지 실증. ★resume 특성: iter카운터·terrain_level은 0 재시작하나 로드된 정책이 실력유지→빠르게 재승급. 커밋=RobotSW_IsaacLab 9c1a2d917(커리큘럼+robustness). 완주까지 terrain_level 최대 도달(→level9=20cm gap) 모니터.
 - **남은 것(구조)**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만(base=env 램프·gait=고정 trot). 3D 지형(계단/슬로프)=full base 플랜 후속. in-loop 재검토=서버 코어 확대/GPU-batched QP 시.
 
 ### P3 — 지형·강건성·CVAE (예정)

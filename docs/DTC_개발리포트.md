@@ -1,6 +1,6 @@
 # DTC 개발리포트 — Deep Tracking Control (MPC 교사 + RL 추종)
 
-> **상태: 활성 (DTC 트랙 정본) · 2026-07-31.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0(자산)·P1(속도 워커) 완료 · P2(절차적 발판 tracker: IK obs로 lazy-agent 규명) 완료 · ★P2.5 실제 TAMOLS 오프라인 캐시 파이프라인 구축 → 4096-env 학습 착수(초기 foothold_track↑) · P3(지형 커리큘럼·CVAE) 진행.**
+> **상태: 활성 (DTC 트랙 정본) · 2026-08-01.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0(자산)·P1(속도 워커) 완료 · P2(절차적 발판=lazy-agent 규명) 완료 · ★★P2.5 실제 TAMOLS 오프라인 캐시 + 적응형 커리큘럼 = end-to-end 검증(걷기 완전학습 + gap 크로싱 terrain_level ~6-7.6≈13-17cm, 무크래시). frontier ~level6-7(20cm gap은 kinematic/gait 한계) · P3(3D지형·CVAE·frontier 돌파) 다음.**
 > 이 문서 = DTC 트랙의 개발 기록·설계 근거. (전신 = MPC–RL 하이브리드 전략 리포트; 실행 트랙이 DTC로 좁혀져 이 이름으로 통합.) 학습법 심화는 `rl_module_train.html`, 작업 메모리는 `dtc-17dof-development`.
 
 ---
@@ -108,6 +108,8 @@ P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = D
 **★★iter 8751 = 강한 성공 궤적**: **terrain_level 2.17→~4.6-5.5**(level 5 ≈ 11cm gap까지 크로싱, 계속 상승)·epLen 567·progress 0.22·falls 7·reward ~26 유지. = 로봇이 **걷기 + 점점 넓은 gap 크로싱을 순차 학습**. DTC 오프라인+커리큘럼 정공 작동.
 
 **★크래시→robustness 복구 (iter ~11800)**: 물리 blowup(wide gap 극한상태)→NaN이 정책 std를 NaN화 → `RuntimeError: normal expects std>=0` 크래시(cfg에 obs/reward NaN-guard 없었음). terrain_level ~6.5까지 달성·체크포인트 보존. **자율 복구**: ①model_11700 재개 ②NaN-guard robustness 추가(always-on: obs/reward `nan_to_num`+clamp, blowup 종료[비유한/폭주속도/고도이탈], 체크포인트 호환) ③fix 포함 재재개(dtc_curric3). **검증: fix가 크래시난 terrain_level ~6.5 지점을 무크래시 통과**(재climb 0→6.3, epLen562·progress0.26 유지) = robustness가 std-NaN 방지 실증. ★resume 특성: iter카운터·terrain_level은 0 재시작하나 로드된 정책이 실력유지→빠르게 재승급. 커밋=RobotSW_IsaacLab 9c1a2d917(커리큘럼+robustness). 완주까지 terrain_level 최대 도달(→level9=20cm gap) 모니터.
+
+**★★★최종 결과 (dtc_curric3 완주 iter 20000, 2026-08-01)**: **무크래시**(robustness 완전 유지, std 0회). **terrain_level frontier ~6**(오실 5-7.6, **최대 7.6 ≈ 17cm gap 크로싱**)·epLen ~510·progress 0.23·falls 낮음. 최종 체크포인트 model_19700+. = **DTC 오프라인 캐시 + 적응형 커리큘럼 end-to-end 검증 완결**: P2 obs무시(정체)→P2.5 오프라인캐시(발판추종 해결)→커리큘럼(걷기+gap 크로싱 해결). **핵심 교훈**: ①in-loop TAMOLS는 스케일 불가→오프라인 캐시(APT-RL)가 실전 해법 ②"발판 추종"과 "걷기"는 별개층=발판은 캐시로 풀리나 균형/보행은 **적응형 커리큘럼(평지→gap 승급)이 필수**(무거운 로봇) ③high terrain서 물리 blowup=NaN-guard 필수. **frontier ~level6-7(≈13-17cm gap)**: level9(20cm)는 미달=kinematic/gait 한계(발 reach·고정 trot 케이던스). **다음 실험(frontier 돌파)**: ①발 straddle/reach 확대(캐시 landing-relative 재생성·발판 최적화) ②가변 접촉타이밍 gait(고정 trot→적응) ③3D 지형(계단/슬로프)=full base 플랜 활용(캐시에 base궤적 이미 저장). ★자율운영(사용자 2일 부재): pipeline→진단→커리큘럼전환→크래시복구→디스크대응 전부 정책기반 자율수행+기록.
 - **남은 것(구조)**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만(base=env 램프·gait=고정 trot). 3D 지형(계단/슬로프)=full base 플랜 후속. in-loop 재검토=서버 코어 확대/GPU-batched QP 시.
 
 ### P3 — 지형·강건성·CVAE (예정)

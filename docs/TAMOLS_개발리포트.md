@@ -120,3 +120,17 @@ tamols-rl(ianpedroza, Drake)에 02_Leg 파라미터(m=37.9·nominal 0.52·μ0.6�
 ### 7.5 자산·결론
 자산: `quad/cpp/tamols/`(C++ 솔버)·`quad/cpp/src/terrain_map.hpp`(footScore/edgeSDF/slope)·`quad/tamols/tamols_02leg.py`(Drake 레퍼런스)·`quad/mjcf/quad_tamols_gap.mjcf`(갭 검증 씬). TOWR(오프라인 발판최적화)는 우리 로봇 ROM서 미수렴(상세=`TOWR_개발리포트.md`).
 **결론**: C++ TAMOLS 솔버는 완성(실시간+cold-start)이나 폐루프 크로싱은 A 추종기서 실패 = §1과 동일하게 **병목=추종기** → TAMOLS/TOWR 계획 재사용 + **RL 추종(DTC)** 이 남은 길.
+
+## 8. Go2 이식 교차검증 (2026-08-03) — 종합 리포트: `go2_portability.html`
+
+"우리 로봇(02_Leg)이 문제냐, 접근법이 문제냐"를 가리려 제어기를 **Unitree Go2**(12-DOF·점발·15kg)에 이식. 핵심만:
+
+- **로봇은 병목 아님**: A제어기 Go2 전속도 완주. "①(TAMOLS+WBC)이 서기만 한다"는 **오판**이었고, **버그 3건**이 원인:
+  - **base-z 하드코딩**(계획 z=0.52를 다리0.42 Go2에 명령→붕괴, TAM_DUMP로 규명) → `tam_z0=base_z0`.
+  - **HQP over-determination 크래시**(저-DOF서 nsw≥3면 strict등식>변수→heap corruption) → 가드.
+  - **발판 y_min 하드코딩**(0.10=02_Leg값, Go2 hip폭0.093에 과폭→앞뒤까지 뭉침 WB 0.036) → hip폭 매칭, WB 0.244·tilt 7.4→1.7°.
+- **HQP vs TSID**: 저-DOF(Go2 12관절)엔 **TSID(weighted)가 HQP(strict)보다 강건**. 논문표준 HQP는 여유부족으로 상한 낮음(V≤0.2).
+- **★발판 = solve_fast 버리고 Raibert+footScore(selectFoot)**: solve_fast가 발판 통째 최적화하면 뭉침·충돌 → **Raibert 기본 + 지형 nudge만**(FOOT_NUDGE)로 02_Leg 스테핑 **완주 falls=0**. (사용자 통찰)
+- **험지 = 직교 2축**: **배치**(스테핑·갭 = selectFoot 해결) / **등반**(경사·오르막 = 추진 필요, 미해결). Go2 10°램프·계단 전복은 배치 아닌 **등반**(base-pitch 협조·추진) 문제 = 모델기반의 진짜 벽 → RL.
+
+**커밋**: cea6632·c4c1722·ea3d9d0·e5e80e7·ed90307. 모두 env-gated, 02_Leg 배포경로 무영향. 상세=`go2_portability.html`.

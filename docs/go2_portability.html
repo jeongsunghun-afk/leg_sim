@@ -1,0 +1,204 @@
+<title>Go2 이식으로 본 제어기 — 무엇이 되고 무엇이 안 되나</title>
+<style>
+  :root{
+    --ink:#191d27; --ink2:#4a5265; --line:#dde1e8; --paper:#f5f6f9; --card:#ffffff;
+    --accent:#356ea0; --accent-soft:#e6eef6;
+    --good:#2b8a5b; --good-bg:#e5f3ec; --warn:#b5771f; --warn-bg:#f6eddb; --bad:#bf443f; --bad-bg:#f7e5e4;
+    --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Menlo,Consolas,"Noto Sans KR",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Noto Sans KR","Malgun Gothic",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --ink:#e7eaf0; --ink2:#a3abbd; --line:#2c3444; --paper:#0f131b; --card:#171c26;
+      --accent:#6fa8d6; --accent-soft:#1b2735;
+      --good:#5cc088; --good-bg:#16281f; --warn:#d6a24e; --warn-bg:#2a2313; --bad:#e07670; --bad-bg:#2c1917; }
+  }
+  :root[data-theme="dark"]{ --ink:#e7eaf0; --ink2:#a3abbd; --line:#2c3444; --paper:#0f131b; --card:#171c26;
+    --accent:#6fa8d6; --accent-soft:#1b2735; --good:#5cc088; --good-bg:#16281f; --warn:#d6a24e; --warn-bg:#2a2313; --bad:#e07670; --bad-bg:#2c1917; }
+  :root[data-theme="light"]{ --ink:#191d27; --ink2:#4a5265; --line:#dde1e8; --paper:#f5f6f9; --card:#ffffff;
+    --accent:#356ea0; --accent-soft:#e6eef6; --good:#2b8a5b; --good-bg:#e5f3ec; --warn:#b5771f; --warn-bg:#f6eddb; --bad:#bf443f; --bad-bg:#f7e5e4; }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.62;
+    -webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:860px;margin:0 auto;padding:0 22px 96px}
+  header.top{max-width:860px;margin:0 auto;padding:52px 22px 30px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  h1{font-size:clamp(26px,4.4vw,38px);line-height:1.16;margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance;font-weight:750}
+  .lede{font-size:18px;color:var(--ink2);margin:0;max-width:62ch}
+  .meta{font-family:var(--mono);font-size:12.5px;color:var(--ink2);margin-top:20px;display:flex;gap:18px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px}
+  .meta b{color:var(--ink);font-weight:600}
+
+  h2{font-size:22px;margin:52px 0 6px;letter-spacing:-.01em;font-weight:720;scroll-margin-top:20px}
+  h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent);margin-right:10px}
+  h3{font-size:16.5px;margin:26px 0 8px;font-weight:680}
+  p{margin:10px 0}
+  .sub{color:var(--ink2);margin-top:2px;margin-bottom:8px}
+  a{color:var(--accent)}
+  code{font-family:var(--mono);font-size:.9em;background:var(--accent-soft);color:var(--ink);padding:1px 6px;border-radius:5px}
+  strong{font-weight:680}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:18px 0}
+  .tldr{border-left:3px solid var(--accent)}
+  .callout{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:18px 0;font-size:15px}
+  .callout .lab{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:4px}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11.5px;font-weight:600;
+    padding:2px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.02em}
+  .b-good{background:var(--good-bg);color:var(--good)} .b-warn{background:var(--warn-bg);color:var(--warn)} .b-bad{background:var(--bad-bg);color:var(--bad)}
+
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:520px}
+  th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);font-weight:600;border-bottom:1.5px solid var(--line)}
+  tbody tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;font-family:var(--mono);white-space:nowrap}
+  .rowh{font-weight:640}
+
+  .matrix td{text-align:center} .matrix td:first-child{text-align:left;font-weight:640}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .stat .k{font-family:var(--mono);font-size:11.5px;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+  .stat .v{font-size:26px;font-weight:720;font-variant-numeric:tabular-nums;margin-top:3px;letter-spacing:-.02em}
+  .stat .d{font-size:13px;color:var(--ink2);margin-top:3px}
+  .arrow{color:var(--good);font-weight:700}
+
+  ul.tight{margin:8px 0;padding-left:20px} ul.tight li{margin:5px 0}
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--ink2);font-family:var(--mono)}
+  hr.soft{border:none;border-top:1px solid var(--line);margin:40px 0}
+</style>
+
+<header class="top">
+  <p class="eyebrow">RGA Robotics · 02_Leg 사족보행 제어 · 조사 리포트</p>
+  <h1>Go2 이식으로 본 제어기 — 무엇이 되고 무엇이 안 되나</h1>
+  <p class="lede">"우리 로봇(02_Leg)이 문제인가, 접근법이 문제인가"를 가리려 제어기를 Unitree Go2(12-DOF·점발·15kg)에 이식했다. 그 과정에서 숨은 버그 3개를 잡았고, 무엇이 로봇 특유였고 무엇이 근본 한계인지가 갈렸다.</p>
+  <div class="meta">
+    <span><b>대상</b> 02_Leg(17-DOF) ↔ Go2(12-DOF)</span>
+    <span><b>스택</b> MPC + WBC(TSID/HQP) + TAMOLS</span>
+    <span><b>커밋</b> cea6632 · c4c1722 · ea3d9d0 · e5e80e7</span>
+    <span><b>상태</b> 평지 검증 · 험지 미해결</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="card tldr">
+    <h3 style="margin-top:0">한 줄 결론</h3>
+    <p style="margin-bottom:8px"><strong>로봇은 병목이 아니다.</strong> A제어기가 Go2를 전속도 완주하고, ①(TAMOLS+WBC)도 <em>버그를 고치니</em> 걷는다. 앞서 "①은 서기만 한다 = 접근법 한계"라던 결론은 <strong>틀렸다 — 세 개의 숨은 버그</strong>였다. 남은 진짜 한계는 <strong>험지 통과</strong>이고, 그건 발판·예측층이 아니라 <strong>플래너(solve_fast)의 계획 협조</strong> 문제다.</p>
+    <div class="scroll">
+    <table class="matrix">
+      <thead><tr><th>아키텍처</th><th>평지 보행</th><th>험지(경사·계단·갭)</th></tr></thead>
+      <tbody>
+        <tr><td>① TAMOLS + WBC <span style="color:var(--ink2);font-weight:400">(MPC 없음)</span></td>
+          <td><span class="badge b-good">✓ TSID V≤0.6</span></td><td><span class="badge b-bad">✗ 못 넘음</span></td></tr>
+        <tr><td>② 예측 OCP + WBC <span style="color:var(--ink2);font-weight:400">(B/C·OCS2·crocoddyl)</span></td>
+          <td><span class="badge b-warn">— 미검증</span></td><td><span class="badge b-bad">✗ (CI-MPC 종결)</span></td></tr>
+        <tr><td>③ SRBD-MPC + WBIC <span style="color:var(--ink2);font-weight:400">(= A제어기, MIT식)</span></td>
+          <td><span class="badge b-good">✓ Go2 V≤2.5</span></td><td><span class="badge b-bad">✗ (모델기반 한계)</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="sub" style="margin-top:10px;margin-bottom:0">→ 평지는 ①·③ 둘 다 된다. 험지는 ①·②·③(모델기반) 모두 한계 → <strong>RL 피벗</strong>. D1도 동일 경로(② OCS2 → RL/HIMLoco).</p>
+  </div>
+
+  <h2><span class="n">01</span>왜 Go2로 옮겼나</h2>
+  <p>02_Leg에서 full-TAMOLS+WBC가 "서기만 하고 못 걷는다"는 현상이 <strong>로봇 특유(marginal·leg-heavy·허리·발목)</strong>인지, <strong>접근법 자체</strong>인지 구분이 안 됐다. Go2는 SRBD 가정에 이상적인 로봇(점발·경량 다리·단일 트렁크·12-DOF)이라, <strong>같은 제어기를 얹어 로봇 변수를 통제</strong>하면 원인이 갈린다.</p>
+  <p class="sub">이식 자체는 이름 규약 리네임(RL→HL 등)·모델 자동감지로 해결. MPC 질량·관성은 모델에서 자동 계산(<code>TOTAL_MASS=body_subtreemass[0]</code>)이라 로봇 무관하게 적응.</p>
+
+  <h2><span class="n">02</span>무엇이 되나 — 되는 건 확실히 된다</h2>
+  <div class="grid2">
+    <div class="stat"><div class="k">③ A제어기 (MPC+WBIC)</div><div class="v">falls 0</div><div class="d">Go2 트롯 V=0.3–2.5 전속도. 휴리스틱 발판(capture-point).</div></div>
+    <div class="stat"><div class="k">① TAMOLS+WBC (TSID)</div><div class="v">V ≤ 0.6</div><div class="d">base-z 버그 수정 후 Go2 보행. MPC 예측GRF+capture로 envelope 확장.</div></div>
+  </div>
+  <p><strong>③ A제어기</strong>는 Go2를 전속도로 완주한다 — "예측-힘을 독립 SRBD-MPC 층으로 두고 발판은 휴리스틱"(MIT식)이 이미 견고. <strong>① TAMOLS+WBC</strong>(논문식, MPC 없음)도 버그 수정 후 걷는다. 즉 <strong>제어기·아키텍처는 건전</strong>하고, 실패는 이식 버그였다.</p>
+
+  <h2><span class="n">03</span>찾아 고친 버그 3개 (+되돌린 1개)</h2>
+  <p class="sub">"접근법 한계"로 보이던 것들의 정체. 모두 진단(계획 덤프·gdb·발판 측정)으로 규명.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0"><span class="badge b-bad" style="margin-right:8px">BUG 1</span>계획 base 높이가 로봇에 안 맞음 <span class="badge b-good">FIXED</span></h3>
+    <p style="margin-bottom:6px">TAMOLS 플래너에 넘기는 base z가 <code>0.52</code>(02_Leg값)로 하드코딩. Go2(다리 한계 0.42)엔 <strong>물리적으로 불가능한 높이로 서라고 명령</strong> → 매 스텝 위로 뻗다 붕괴. <code>TAM_DUMP</code>로 계획을 덤프해 규명(계획 z=0.52).</p>
+    <p class="sub" style="margin:0"><b>수정</b> <code>tam_z0 = base_z0</code> → 계획 z 0.52→0.30. <strong>결과: ① pure TAMOLS+WBC가 Go2서 걷기 시작(V≤0.3), injection V≤0.6.</strong></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0"><span class="badge b-bad" style="margin-right:8px">BUG 2</span>strict HQP heap 크래시 (저-DOF) <span class="badge b-good">FIXED</span></h3>
+    <p style="margin-bottom:6px">Go2 HQP가 V≥0.25서 SIGABRT(heap corruption). gdb 백트레이스 → eiquadprog reset의 malloc에서 감지. 근본: <strong>Go2는 관절 12개(nv=18)뿐이라 swing 다리 ≥3인 위상서 strict L2 등식(6+3·nsw+base)이 변수 수를 초과</strong> → 솔버 버퍼 오버런. (02_Leg는 nv=23이라 여유.)</p>
+    <p class="sub" style="margin:0"><b>수정</b> over-determination 가드(등식≥변수면 base-L1 강등→stance 폴백). <strong>HQP도 Go2 평지 보행 가능(V≤0.2).</strong></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0"><span class="badge b-bad" style="margin-right:8px">BUG 3</span>발판 좌우폭 하드코딩 → 발판 뭉침 <span class="badge b-good">FIXED</span></h3>
+    <p style="margin-bottom:8px">뷰어서 <em>"앞다리-뒷다리 거리가 너무 좁다"</em>는 관찰에서 출발. solve_fast의 <code>foot_y</code> 제약 <code>y_min=0.10</code>이 02_Leg값이라, Go2(hip폭 0.093)엔 발을 과하게 넓게 강제 → <strong>전체 최적해를 왜곡해 앞뒤 간격까지 뭉침</strong>.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>지표</th><th class="num">수정 전</th><th class="num">수정 후</th><th class="num">정상(hip)</th></tr></thead>
+      <tbody>
+        <tr><td class="rowh">앞뒤 wheelbase</td><td class="num">0.036</td><td class="num">0.244 <span class="arrow">↑</span></td><td class="num">0.387</td></tr>
+        <tr><td class="rowh">좌우 width</td><td class="num">0.200</td><td class="num">0.071 <span class="arrow">✓</span></td><td class="num">0.093</td></tr>
+        <tr><td class="rowh">보행 tilt (V=0.3)</td><td class="num">7.4°</td><td class="num">1.7° <span class="arrow">↓</span></td><td class="num">—</td></tr>
+        <tr><td class="rowh">보행 tilt (V=0.5)</td><td class="num">12.5°</td><td class="num">6.2° <span class="arrow">↓</span></td><td class="num">—</td></tr>
+      </tbody>
+    </table></div>
+    <p class="sub" style="margin:8px 0 0"><b>수정</b> y_min/y_max를 로봇 hip 폭에서 계산. 좌우 과폭이 앞뒤까지 뭉치게 한 커플링 해소 → 보행 tilt 대폭 감소.</p>
+  </div>
+
+  <div class="card" style="border-style:dashed">
+    <h3 style="margin-top:0"><span class="badge b-warn" style="margin-right:8px">되돌림</span>leg-order 순열 — 시도했다 revert</h3>
+    <p class="sub" style="margin:0">플래너는 발 순서를 [FL,FR,RL,RR], 컨트롤러는 [HL,HR,FL,FR]로 가정. 순열로 맞추려 했으나 <strong>02_Leg를 깨뜨려</strong> 되돌림 — 원 코드가 이미 자기-정합적(각 슬롯이 같은 다리에 앵커·적용)이었음. 발판 뭉침의 원인은 leg-order가 아니라 위 BUG 3(y_min)이었다.</p>
+  </div>
+
+  <h2><span class="n">04</span>HQP vs TSID — 저-DOF 로봇의 반전</h2>
+  <p>논문 표준은 <strong>TAMOLS + HQP</strong>(strict null-space)지만, 우리가 실제로 Go2를 걷게 한 건 <strong>TSID</strong>(weighted WBC)였다. HQP(strict)는 Go2의 낮은 DOF(12관절)에서 strict cascade의 여유가 부족해 상한이 낮고(V≤0.2), 특정 위상서 over-determination 크래시까지 났다.</p>
+  <div class="callout"><span class="lab">교훈</span><strong>저-DOF 로봇엔 TSID(weighted)가 HQP(strict)보다 강건하다.</strong> strict 우선순위는 여유(redundancy)를 요구하는데 12관절은 부족 → soft trade-off인 TSID가 우세. 논문 표준이 항상 우리 로봇에 최적은 아니다.</div>
+
+  <h2><span class="n">05</span>험지 = 안 된다 (그리고 발판폭은 답이 아니다)</h2>
+  <p>평지 성공과 달리, <strong>험지 통과는 로봇을 바꿔도 안 된다.</strong> Go2(이상적 SRBD 로봇)도 3cm 계단·10° 경사에서 넘어진다. 평지 개선(base-z·발판폭)이 험지엔 전이되지 않는다.</p>
+
+  <h3>"발판을 넓히면 더 안정 아닌가?" — 절반만 맞다</h3>
+  <p class="sub">사용자 가설을 직접 검증. 발판폭(wheelbase)을 스윕하며 평지 안정성 + 경사 등반을 측정.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>발판폭 (SWX)</th><th>평지 V=0.3</th><th>경사(10° 램프, x1.0–2.96)</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">1.0× (기본)</td><td><span class="badge b-good">falls 0 · tilt 1.7°</span></td><td><span class="badge b-bad">x=1.29 오르다 붕괴</span></td></tr>
+      <tr><td class="rowh">1.5× (넓게)</td><td><span class="badge b-good">falls 0 · tilt 2.2°</span></td><td><span class="badge b-warn">안 넘어짐 · x=0.99 정체</span></td></tr>
+      <tr><td class="rowh">2.0× (과폭)</td><td><span class="badge b-warn">—</span></td><td><span class="badge b-bad">붕괴 (수직력↓)</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout"><span class="lab">발판폭의 정체</span>
+    <strong>넓은 발판 = 더 안정(안 넘어짐) ✓ — 사용자 직관은 맞다.</strong> 단 2.0×는 과함(뒤집힌 U자). <strong>그러나 험지 통과엔 무이득</strong>: 셋 다 램프를 못 오른다(성공=x&gt;2.9). 넓은 발판은 "붕괴"를 "안정한 정체"로 바꿀 뿐, <em>올라가진 못한다</em>. 발판폭은 <strong>안정성 레버</strong>이지 <strong>추진 레버</strong>가 아니다.</div>
+
+  <h3>왜 못 오르나 — 진짜 병목</h3>
+  <p>참조추종을 계측(<code>TAM_TRK</code>)하니 경사에서: 발이 경사면 접촉을 잃고(nst 4→1→0) → 명령 GRF를 실제로 못 냄 → base pitch가 제어 불가로 폭주(+56°). 그리고 <strong>계획(TAMOLS)이 base를 경사에 맞춰 pitch하지 않는다</strong>(15° 경사에 계획 pitch ~4°). 즉 <strong>발판+base 협조가 계획엔 약하게만 있고, 순간 WBC가 접촉 전이를 예측 못 해 실행이 무너진다.</strong></p>
+
+  <h2><span class="n">06</span>돌파구 — solve_fast를 버리고 Raibert + footScore</h2>
+  <p>발판이 뭉치는 근본은 <strong>solve_fast가 발판을 통째로 최적화하는데 그 품질이 나쁘다</strong>는 것. 발상 전환: <strong>발판 기본값 = Raibert(hip 기준, 자연히 벌어짐·안정 — A제어기가 이미 검증)</strong>로 두고, <strong>TAMOLS/지형은 "안전한 셀로 nudge"하는 보정만</strong> 맡긴다. solve_fast 발판을 아예 안 쓰니 뭉침·충돌이 사라진다. 이게 코드의 <code>FOOT_NUDGE</code>(③selectFoot: Raibert 발타깃 → 반경내 footScore 최고셀로 당김).</p>
+  <div class="scroll"><table>
+    <thead><tr><th>테스트</th><th>발판 소스</th><th>결과</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">02_Leg 스테핑(discrete 발판)</td><td>Raibert + footScore nudge (walk)</td><td><span class="badge b-good">✓ 완주 falls=0 (x=7.0)</span></td></tr>
+      <tr><td class="rowh">02_Leg 스테핑</td><td>solve_fast(MODE=tamols)</td><td><span class="badge b-bad">✗ 뭉침·불안정</span></td></tr>
+      <tr><td class="rowh">Raibert + solve_fast 편차(INJECT)</td><td>혼합</td><td><span class="badge b-warn">— 평지서도 A 악화(오염)</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout"><span class="lab">검증됨</span><strong>Raibert + footScore(selectFoot)가 solve_fast 없이 스테핑을 완주한다.</strong> "기본 Raibert가 발판을 잡고, 지형은 nudge만" — 이 아키텍처가 solve_fast의 뭉침·충돌을 원천 제거한다.</div>
+
+  <div class="callout" style="background:var(--warn-bg);border-color:var(--warn)"><span class="lab" style="color:var(--warn)">단, 결정적 구분</span>
+    <strong>selectFoot = 발판 "배치(placement)" 해결이지 "등반(climbing)" 해결이 아니다.</strong> 스테핑·갭(같은 높이 discrete 발판)은 footScore로 건너지만, 경사·오르막 계단(올라가는 지형)은 <strong>수직 추진</strong>이 필요 → 발판폭·발판선택 어느 것도 못 푼다. 앞의 Go2 경사/계단 실패는 <em>배치</em>가 아니라 <em>등반</em> 문제. 두 축은 직교한다.</div>
+
+  <hr class="soft">
+
+  <h2><span class="n">07</span>결론 & 다음</h2>
+  <ul class="tight">
+    <li><strong>로봇 모델은 병목이 아니다.</strong> A제어기가 Go2 완주. 02_Leg 난점의 상당부분은 로봇 특유였다.</li>
+    <li><strong>"①은 서기만 한다"는 오판이었다.</strong> base-z·HQP·발판 버그 3개가 원인. 고치니 ① 평지 보행 성립.</li>
+    <li><strong>진짜 약한 고리 = solve_fast 발판.</strong> 통째로 최적화하면 뭉치고 충돌한다 → <strong>Raibert가 발판을 잡고 지형은 nudge만</strong>(selectFoot)이 원천 해결. 스테핑 완주 확인.</li>
+    <li><strong>험지엔 두 개의 직교 축이 있다:</strong> <b>배치</b>(스테핑·갭 → selectFoot으로 해결)와 <b>등반</b>(경사·오르막 → 추진 필요, 미해결).</li>
+    <li><strong>로버스트 험지 = RL 피벗</strong>이 유효(D1도 ②→RL 동일). 모델기반(selectFoot·②)은 배치까진 가고, 등반/일반험지는 RL.</li>
+  </ul>
+  <div class="callout" style="background:var(--card)"><span class="lab">다음</span><strong>배치</strong>는 selectFoot으로 확보됐다(Go2는 NUDGE_R 스케일·hard 지형 튜닝 남음). <strong>등반</strong>은 발판이 아닌 <strong>추진/base-pitch 협조</strong>가 관문 — 이게 모델기반의 진짜 벽이고, 못 넘으면 RL로 간다.</div>
+
+  <div class="foot">
+    조사: Go2 이식 세션 · 진단 도구 TAM_DUMP(계획 덤프)·TAM_TRK(참조추종)·analyze_fh(발판측정)·gdb<br>
+    관련 리포트: TAMOLS_개발리포트.md · perceptive-nav-tamols · mpc-rl-hybrid-roadmap · 모든 변경 env-gated(02_Leg 배포경로 무영향)
+  </div>
+</div>

@@ -107,12 +107,13 @@ class SportClient:
 
     def SetMode(self, m):
         self.cmd['mode'] = m
-        if m != 'move':
+        if m not in ('move', 'tamols'):                # ★tamols(full-TAMOLS injection)도 보행모드=속도 허용
             self.cmd.update(v=0.0, vy=0.0, w=0.0)      # 자세전환 = 속도 0
         self._pub()
 
     # ── RBQ 모션 API 별칭(이름 그대로) ──
     def motionDynamicWalk(self):  self.SetMode('move')
+    def motionTamols(self):       self.SetMode('tamols')   # ★full-TAMOLS injection(TAMOLS 발판+MPC 예측GRF+strict HQP)
     def motionStaticReady(self):  self.SetMode('stand_up')     # 서기
     def motionStaticGround(self): self.SetMode('stand_down')   # 눕기
 
@@ -391,6 +392,8 @@ with dpg.window(tag='main'):
         # ★초록 '이동' 버튼 = 이동(move)모드 진입(게이트는 아래 trot/run/walk 선택). walk 게이트와 혼동 방지로 'Run 이동' 표기
         _wb = dpg.add_button(label='Run 이동', width=110, callback=lambda: _mode_btn('move'))
         dpg.bind_item_theme(_wb, _walk_theme)
+        _tb = dpg.add_button(label='TAMOLS 인젝션', width=130, callback=lambda: (_mode_btn('tamols'), _gait_preset('trot'), _status()))  # ★full-TAMOLS injection(발판+MPC예측GRF+HQP). 평지 V≤0.4
+        dpg.bind_item_theme(_tb, _walk_theme)
         _jb = dpg.add_button(label='Jump 점프', width=100, callback=lambda: (sc.Jump(), _status()))
         dpg.bind_item_theme(_jb, _jump_theme)
     with dpg.group(horizontal=True):

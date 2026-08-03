@@ -1,0 +1,52 @@
+# biped_emb 설정 — 실기(Emb) 배포. 파라미터는 전부 여기(env-var 소거, quad_ctrl 원칙 3).
+#   ★단위 규약: SHM 모터 = degree, biped 컨트롤러/MuJoCo = radian. joint_map 이 변환·부호·오프셋 담당.
+#   ★부호(sign)·오프셋(offset_deg)은 실기 캘리브레이션 값 = jog 검증으로 축별 확정(초기값 +1 / 0).
+
+meta:
+  robot: biped_8dof              # HL/HR × (hip·thigh·calf·foot)
+  model: ../biped_flatfoot.mjcf  # 동역학 모델(상태추정 FK·WBIC 재사용). emb/ 기준 상대경로
+  ctrl_hz: 500                   # 제어 루프 주기[Hz]. jog=충분, 모델기반 고속보행만 1kHz(→C++ 이관)
+
+# ── SHM(RobotSharedMem) 백엔드 ──────────────────────────────────────────────
+shm:
+  lib: /home/jsh/문서/jsh/RobotTestGait/build/libbipedshm.so  # hal/build_bridge.sh 산출물(Pi)
+  n_channel: 10                  # Gait 채널 수(MAX_GaitMOT_CHAN). 0~7=다리, 8~9=허리
+  recv_wait_ms: 2000             # 모터 상태 첫 수신 대기(RobotEmbedded 기동 확인). 초과=에러
+  imu_deg: true                  # IMU RPY 단위(true=deg). 컨트롤러용 quat 변환 시 사용
+
+# ── 관절 매핑: biped 컨트롤러 순서(0~7) → Gait 채널 ─────────────────────────
+#   name    : biped 관절명(= robot_interface.JOINT_NAMES 순서, 고정)
+#   channel : RobotSharedMem Gait 채널(ENUM_Gait_JointID)
+#   sign    : 실모터 회전방향 = sign · (컨트롤러 각). ★캘리브레이션(축별 +1/-1)
+#   offset_deg: 실모터 0점 − 컨트롤러 0점[deg]. ★캘리브레이션
+#   min/max_deg: 소프트웨어 관절한계[deg](MJCF range 변환). 명령·jog 모두 클램프
+#   kp/kd   : jog·hold 시 모터 임피던스 게인(모델기반은 tau_ff, kp/kd=0)
+joints:
+  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 8, kd: 0.4}
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 8, kd: 0.4}
+  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 8, kd: 0.4}
+  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 6, kd: 0.3}
+  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 8, kd: 0.4}
+  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 8, kd: 0.4}
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 8, kd: 0.4}
+  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 6, kd: 0.3}
+
+# 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
+waist:
+  channels: [8, 9]
+  hold_deg: [0.0, 0.0]           # 홀드 목표각
+  kp: 10
+  kd: 0.5
+
+# ── jog(각축 검증) ──────────────────────────────────────────────────────────
+#   안전 우선: 저속 위치 램프. GUI가 축별 목표각(deg) 발행 → 여기 속도·한계로 제한.
+jog:
+  max_speed_dps: 20.0            # 축 최대 각속도[deg/s] — 천천히(안전)
+  range_frac: 0.5               # 초기엔 관절한계의 이 비율까지만 허용(캘리브레이션 안전마진)
+  settle_deg: 0.5               # 목표 도달 판정[deg]
+
+# ── 안전 ────────────────────────────────────────────────────────────────────
+safety:
+  tau_max_frac: 0.6             # 모델기반 토크를 actuatorfrcrange 의 이 비율로 클램프
+  tilt_estop_deg: 40            # 기울기 초과 시 안전정지(limp)
+  watchdog_ms: 100              # 명령 채널 무응답 이 시간 초과 시 홀드→limp

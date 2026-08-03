@@ -1,0 +1,115 @@
+/* shm_bridge.cpp — RobotSharedMem(Gait) 위 C ABI 구현. RobotTestGait/src/main.cpp 의
+ *   SHM 사용 패턴(상태 read + MIT command write)을 라이브러리로 추출.
+ *   ★Pi에서만 컴파일(RobotSharedMem.h·defineConfigMotor.h 필요). hal/build_bridge.sh 참조.
+ */
+#include "shm_bridge.h"
+#include <cstring>
+#include <cmath>
+#include <ctime>
+
+#include "define/defineGeneral.h"        // RobotTestGait/inc — ENUM_RESULT_*
+#include "define/defineConfigMotor.h"    //   MotGeneral_t, MAX_GaitMOT_CHAN, ENUM_Gait_JointID_NUM
+#include "RobotSharedMem.h"              // /usr/include — RobotMemGait_* (Pi 전용)
+
+// RobotSharedMem.h 가 제공하는 IMU 인덱스. 심볼명이 다르면 여기만 조정.
+//   RobotTestGait 사용: IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA, IDX_OF_IMU_ARPY, IDX_OF_IMU_ACCL
+#ifndef IDX_OF_IMU_AVEL
+#define IDX_OF_IMU_AVEL (-1)             // ★자이로(각속도) 인덱스 미상 → -1(0채움). Pi에서 실제 심볼로 교체.
+#endif
+
+static const int NCH = (int)MAX_GaitMOT_CHAN;
+static int   g_enabled = 0;
+static float g_last_q[16] = {0};         // limp/hold 기준(마지막 측정 위치)
+static int   g_conn_ctr[16] = {0};       // 채널별 통신연결 카운터(상태 수신 시 리셋, 미수신 시 감쇠)
+static int   g_status[16] = {0};         // 채널별 마지막 ucStatus(모터/펌웨어 보고)
+static const int CONN_WINDOW = 250;      // 이 콜 수(≈0.5s@500Hz) 동안 미수신이면 연결끊김(LED off)
+
+int bridge_n_channel(void){ return NCH; }
+
+static void sleep_ms(int ms){ struct timespec ts{ ms/1000, (long)(ms%1000)*1000000L }; nanosleep(&ts, nullptr); }
+
+int bridge_init(int recv_wait_ms){
+    if (RobotMemGait_InitComm() != ENUM_RESULT_SUCCESS) return -1;
+    // RobotEmbedded 기동 확인: 모터 상태 수신될 때까지 대기(명령 전 안전 핸드셰이크).
+    int waited = 0;
+    while (waited < recv_wait_ms){
+        if (RobotMemGait_IsUpdatedMotorStatus16() == 1) { g_enabled = 0; return 0; }
+        sleep_ms(5); waited += 5;
+    }
+    return -1;   // 미수신 = 임베디드 모터 컨트롤러 미기동
+}
+
+int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
+                float* imu_rpy_deg, float* imu_acc, float* imu_gyro,
+                int* connected, int* status){
+    int mask = 0;
+    // ── 채널별 모터 상태(MotorStatus16) = 값 + 통신연결 + ucStatus. RobotTestGait 활성 경로와 동일. ──
+    //    ★만약 임베디드가 bulk GetPosition 경로만 채운다면 여기를 GetPosition 으로 교체(README TODO).
+    unsigned long flag = 0;
+    if (RobotMemGait_IsUpdatedMotorStatus16() == 1)
+        flag = RobotMemGait_GetUpdatedFlag_MotorStatus16();     // 채널별 상태 수신 비트마스크
+    MotGeneral_t st;
+    for (int i = 0; i < NCH; i++){
+        unsigned long bit = (((unsigned long)1) << i);
+        if (flag & bit){                                        // 이 채널 상태 수신 → 값 갱신·연결 리셋
+            if (RobotMemGait_GetMotorStatus16((MotorParam16_t*)&st, i) == ENUM_RESULT_SUCCESS){
+                if (q_deg)  q_deg[i]  = (float)st.fPosition;
+                if (dq_dps) dq_dps[i] = (float)st.fVelocity;
+                if (tau_nm) tau_nm[i] = (float)st.fTorque;
+                if (cur_a)  cur_a[i]  = (float)st.fCurrent;
+                g_last_q[i]   = (float)st.fPosition;
+                g_status[i]   = (int)st.ucStatus;               // 모터/펌웨어 보고 상태
+                g_conn_ctr[i] = CONN_WINDOW;
+            }
+            mask |= 0x01;
+        } else if (g_conn_ctr[i] > 0){
+            g_conn_ctr[i]--;                                    // 미수신 → 연결 카운터 감쇠
+        }
+        if (connected) connected[i] = (g_conn_ctr[i] > 0) ? 1 : 0;
+        if (status)    status[i]    = g_status[i];
+    }
+    // ── IMU (별도 채널) ──
+    if ((imu_rpy_deg || imu_acc || imu_gyro) && RobotMemGait_IsUpdatedIMU()){
+        float buf[LEN_OF_IMU_DATA] = {0};
+        if (RobotMemGait_GetIMU(buf, IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA) == ENUM_RESULT_SUCCESS){
+            if (imu_rpy_deg) for (int i=0;i<3;i++) imu_rpy_deg[i] = buf[IDX_OF_IMU_ARPY + i];
+            if (imu_acc)     for (int i=0;i<3;i++) imu_acc[i]     = buf[IDX_OF_IMU_ACCL + i];
+            if (imu_gyro){   // ★자이로: 심볼 있으면 사용, 없으면 0(추정기는 gyro 필요 → Pi에서 인덱스 확정).
+                if (IDX_OF_IMU_AVEL >= 0) for (int i=0;i<3;i++) imu_gyro[i] = buf[IDX_OF_IMU_AVEL + i];
+                else                      for (int i=0;i<3;i++) imu_gyro[i] = 0.0f;
+            }
+            mask |= 0x10;
+        }
+    }
+    return mask;
+}
+
+// 공통 MIT 쓰기. tau_ff/dq_des = nullptr 이면 0.
+static int write_mit_impl(const float* q_des, const float* dq_des, const float* tau_ff,
+                          const float* kp, const float* kd, int n){
+    if (n > NCH) n = NCH;
+    MotGeneral_t cmd;
+    for (int i=0;i<n;i++){
+        std::memset(&cmd, 0, sizeof(cmd));
+        cmd.ucDevID  = (unsigned char)(i & 0xff);
+        cmd.ucMode   = 1;                                  // MIT/임피던스
+        cmd.fPosition = (float16)(g_enabled ? q_des[i] : g_last_q[i]);
+        cmd.fVelocity = (float16)(g_enabled && dq_des ? dq_des[i] : 0.0f);
+        cmd.fTorque   = (float16)(g_enabled && tau_ff ? tau_ff[i] : 0.0f);
+        cmd.fGainKp   = (float16)(g_enabled ? kp[i] : 0.0f);   // 전원 off = kp/kd/tau 0 = limp
+        cmd.fGainKd   = (float16)(g_enabled ? kd[i] : 0.0f);
+        cmd.fGainKi   = (float16)0.0f;
+        if (RobotMemGait_SetMotorCommand16((MotorParam16_t*)&cmd, i) != ENUM_RESULT_SUCCESS) return -1;
+    }
+    return 0;
+}
+
+int bridge_write_pos(const float* q_des_deg, const float* kp, const float* kd, int n){
+    return write_mit_impl(q_des_deg, nullptr, nullptr, kp, kd, n);
+}
+int bridge_write_mit(const float* q_des_deg, const float* dq_des_dps, const float* tau_ff_nm,
+                     const float* kp, const float* kd, int n){
+    return write_mit_impl(q_des_deg, dq_des_dps, tau_ff_nm, kp, kd, n);
+}
+
+int bridge_enable(int on){ g_enabled = on ? 1 : 0; return 0; }

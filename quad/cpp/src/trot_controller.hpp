@@ -168,6 +168,7 @@ struct TrotCtrl {
   std::vector<std::array<int,4>> tam_c;       // 샘플별 접촉(4)
   Vector3d tam_fh[4];                          // 발판(world, 로봇중심 프레임)
   double tam_dt=0.005, tam_t=-1, tam_t0=0, tam_ax=0, tam_ay=0; int tam_N=0; bool tam_loaded=false;
+  double tam_vbx=0, tam_vby=0; bool tam_vbinit=false;   // ★VADV_REF: MPC식 계획 위치참조(측정 re-anchor 대신 V로 전진+leaky 이완 → 위치복원력=속도폭주 방지)
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
   Vector3d tam_swtgt[4];   // ★online swing foot commitment: liftoff 시 착지target 동결(재anchor에도 불변, 표준 receding-horizon)
   tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
@@ -198,6 +199,8 @@ struct TrotCtrl {
     int _gnd=0; for(int i=0;i<4;i++) if(q.foot_point(i)[2]<0.04) _gnd++;   // 접지 발 수
     if(!getenv("GAIT_SYNC") || _gnd>=3) tam_ol_phase=(tam_ol_phase+1)%_Pg;   // ★GAIT_SYNC: swing 착지(≥3지지) 시만 phase 진행=실제 발상태 동기(재anchor desync 방지). 미착지면 phase 유지(발 착지 대기)
     double vx0=d->qvel[0], vy0=d->qvel[1];
+    if(getenv("VCLAMP")){ double vc=atof(getenv("VCLAMP"));   // ★plan 초기속도 클램프: 측정 속도스파이크를 plan이 echo/증폭하는 것 차단(vadv 근처로)
+      vx0=tc_clip(vx0, V-vc, V+vc); vy0=tc_clip(vy0, -vc, vc); }
     if(!tam_inj && getenv("GAP_X0")){ cfg.gap_x0=atof(getenv("GAP_X0"))-bx; cfg.gap_x1=atof(getenv("GAP_X1"))-bx; }  // ★월드 gap→로컬. 주입모드는 per-foot 회피(전역straddle 끔)
     cfg.z0_terrain = getenv("TAMOLS_TERRAIN")!=nullptr;   // ★지형모드=z밴드를 z0 기준 상대로(계단 base 상승 허용)
     tamols::online_replan(tam_ol,tam_ol_h,tam_ol_cell,tam_ol_ms, tam_z0,0.0,vx0,vy0, fmeas, cfg);
@@ -356,10 +359,19 @@ struct TrotCtrl {
       int k=std::min((int)(tam_t/tam_dt),tam_N-1); if(k<0)k=0;
       auto& s=tam_s[k]; auto& cc=tam_c[k];
       double tgt_x=tam_ax+s[0], tgt_y=tam_ay+s[1];                      // base 위치 피드백(드리프트 보정) + TAMOLS 속도
+      if(getenv("TAM_WDBG")){ static double _lw=-99; if(d->time-_lw>=0.3){ _lw=d->time;
+        int nsw=0; for(int i=0;i<4;i++) if(cc[i]==0) nsw++;
+        std::printf("[WDBG] t=%.2f comx=%.3f tgtx=%.3f tam_ax=%.3f s0=%.3f s6=%.2f vx=%.2f nsw=%d k=%d/%d phase=%d\n",
+          d->time,d->subtree_com[0],tgt_x,tam_ax,s[0],s[6],d->qvel[0],nsw,k,tam_N,tam_ol_phase); } }
       double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
       if(online && getenv("TAM_CLEANV")){   // ★X(전진)만 clean(solve_fast wild vx 회피). ★Y(sway)·z·자세는 plan 유지=GIAC body-sway 보존(CoM 지지폴리곤 유지=lateral 드리프트 방지). 구버전이 tgt_y=0으로 sway 지운 게 lateral 드리프트 원인
         tgt_x=tam_ax+V*tam_t; vx_w=V; }   // ★(YHOLD 강 lateral 속도홀드 실험=무효 확인, 제거. 횡드리프트는 발배치/gait 타이밍 수준)
+      if(online && getenv("VADV_REF")){   // ★MPC식 계획 위치참조: V로 전진 + 측정으로 leaky 이완. leak↓=강복원(속도폭주 억제·z침하위험)·leak↑=re-anchor(폭주). 위치오차가 복원력 제공
+        double leak=getenv("VADV_LEAK")?atof(getenv("VADV_LEAK")):1.0;
+        if(!tam_vbinit){ tam_vbx=d->qpos[0]; tam_vby=d->qpos[1]; tam_vbinit=true; }
+        tam_vbx += (V + leak*(d->qpos[0]-tam_vbx))*dt; tam_vby += (leak*(d->qpos[1]-tam_vby))*dt;
+        tgt_x=tam_vbx; tgt_y=tam_vby; vx_w=V; }
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
       bool rsl=(getenv("RSL_TRACK")||online) && !getenv("TAM_MPC");   // ★RSL식 직접추종. ★TAM_MPC=1이면 MPC 기반 추종(z침하 해결: RSL gravity-comp가 MPC 우회→침하)
@@ -378,11 +390,21 @@ struct TrotCtrl {
       std::vector<int> st; std::map<int,std::pair<Vector3d,Vector3d>> swing;
       double SW_DUR=getenv("SW_DUR")?atof(getenv("SW_DUR")):(online?0.14:0.4);   // ★swing<위상: 여유 두고 착지완료→위상전환 시 발이 실제 지면(phantom stance 방지). ★env를 offline도 읽음(계획 swing위상에 맞춰야=phantom 방지)
       double sh=online?(getenv("STEP_H")?atof(getenv("STEP_H")):0.05):0.08;      // ★온라인 발높이 낮춤(빠른 착지)
+      // ★capture-point 발배치(A식): raibert FF + 속도오차 피드백=균형(횡드리프트 억제 핵심). leg-독립이라 1회 계산
+      double _rai=getenv("TAM_RAI")?atof(getenv("TAM_RAI")):0.5;      // raibert_k(FF), A표준 0.5
+      double _kcap=getenv("TAM_KCAP")?atof(getenv("TAM_KCAP")):0.16;  // capture 피드백 게인
+      double _tst=getenv("TAM_TST")?atof(getenv("TAM_TST")):0.25;     // stance time(trot T0.5)
+      double _capc=getenv("TAM_CAPCLIP")?atof(getenv("TAM_CAPCLIP")):0.25;
+      mj_subtreeVel(m,d); double _H=std::max(0.1,d->subtree_com[2]), _M=q.mpc.TOTAL_MASS;
+      double vfx=d->subtree_linvel[0]+d->subtree_angmom[1]/(_M*_H);   // CoM 속도(world)+각운동량 capture 보정
+      double vfy=d->subtree_linvel[1]-d->subtree_angmom[0]/(_M*_H);
+      double capx=tc_clip(_rai*_tst*V+_kcap*(vfx-V),-_capc,_capc);     // 전진 capture
+      double capy=tc_clip(_kcap*(vfy-0.0),-_capc,_capc);              // ★횡 capture(v_des_y=0)=균형 핵심
       for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
         if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만
         else if(!sched){ if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=t;   // ★liftoff: 절대시간 캡처(재anchor에도 진행 연속)
-            tam_swtgt[i]=Vector3d(tam_ax+tam_fh[i][0],tam_ay+tam_fh[i][1],tam_fh[i][2]); tam_sw_prev[i]=false; }  // ★착지target 동결(swing foot commitment=표준 receding-horizon)
+            tam_swtgt[i]=Vector3d(tam_ax+tam_fh[i][0]+capx,tam_ay+tam_fh[i][1]+capy,tam_fh[i][2]); tam_sw_prev[i]=false; }  // ★착지target=계획발판+capture 발배치(균형). swing foot commitment 동결
           double sprog=tc_clip((t-tam_sw_start[i])/SW_DUR,0.0,1.0);   // ★절대시간 진행(tam_t 리셋 무관)
           Vector3d p_end=tam_swtgt[i];   // ★동결된 target(재anchor에도 불변→발이 완주해 착지)
           Vector3d bvel(s[6],s[7],0.0);
@@ -398,11 +420,12 @@ struct TrotCtrl {
         for(int kk=0;kk<q.mpc.N;kk++){ int kf=std::min((int)((tam_t+kk*q.mpc.DT)/tam_dt),tam_N-1);
           for(int i=0;i<4;i++) cs[kk][i]=tam_c[kf][i]; }
         Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
-      Vector3d lam_use[4];
+      Vector3d lam_use[4]; bool grfff=getenv("GRF_FF");
       if(rsl){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // ★RSL: λ=중력보상 baseline(WBC가 base task로 실제 분배)
-        for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
+        double M=mj_getTotalmass(m), aGx=grfff?q.com_acc_ref[0]:0.0, aGy=grfff?q.com_acc_ref[1]:0.0;  // ★GRF_FF: 계획 base가속→예측 수평 GRF(50Hz 재풀이라 surge시 감속aB=보정력). 예측 GRF부재가 속도폭주 원인
+        for(int i=0;i<4;i++) lam_use[i]=Vector3d(M*aGx/std::max(1,Kc), M*aGy/std::max(1,Kc), fz); }
       else for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
-      double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):0.1):10.0;   // ★RSL: λ 정규화 약화(base task가 수평 GRF 자유생성)
+      double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):(grfff?5.0:0.1)):10.0;   // ★GRF_FF시 λ정규화 강화(예측 GRF 추종)
       if(getenv("TAM_DBG")){ static long _dc=0; if(_dc++%25==0){
         double* qc2=&d->qpos[3]; double yaw_a=std::atan2(2*(qc2[0]*qc2[3]+qc2[1]*qc2[2]),1-2*(qc2[2]*qc2[2]+qc2[3]*qc2[3]))*180/M_PI;
         std::fprintf(stderr,"[dbg] t=%.2f tt=%.2f z=%.3f stance=%d c=%d%d%d%d footz=%.2f/%.2f/%.2f/%.2f yawR=%.1f yaw=%.1f comy=%.3f\n",

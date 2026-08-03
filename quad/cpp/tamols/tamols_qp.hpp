@@ -68,6 +68,9 @@ inline VectorXd cost_residuals(const TamolsState& st, const Grid& h, double cell
       for (int c = 0; c < 3; ++c) r.push_back(std::sqrt(20.0) * e(c));
     }
   }
+  // ★GIAC_FIX: eps(GIAC slack) 비용 페널티 → 위반을 slack에 흘리는 대신 base/발판을 움직이게(soft=feasible 유지, 하드바운드 near-infeasible 회피)
+  if (getenv("GIAC_FIX")) { double we = getenv("W_EPS") ? atof(getenv("W_EPS")) : 50.0;
+    for (int k = 0; k < st.num_phases(); ++k) r.push_back(std::sqrt(we) * ((k < st.epsilon.size()) ? st.epsilon(k) : 0.0)); }
   return Eigen::Map<VectorXd>(r.data(), r.size());
 }
 
@@ -89,6 +92,8 @@ inline VectorXd ineq_constraints(const TamolsState& st, const QpOptions& o) {
   const double lo = st.prm.l_min * st.prm.l_min, hi = st.prm.l_max * st.prm.l_max;
   const double mu = st.prm.mu, m = st.prm.mass;
   const Vector3d ez(0, 0, 1), gvec(0, 0, -9.81);
+  // ★GIAC_FIX(2026-08-03): GIAC를 실제로 묶기 — ①aB→(aB−gvec) 중력 포함(정적 CoM-지지 테스트=지배항) ②eps 상한(자유 slack이 제약을 무력화하던 것 차단). off=기존(오프라인/DTC 무영향)
+  bool _giacfix=getenv("GIAC_FIX"); double _epsmax=getenv("EPS_MAX")?atof(getenv("EPS_MAX")):0.0;  // 0=소프트페널티만(하드상한 off)
   for (int k = 0; k < st.num_phases(); ++k) {
     double Tk = st.gait[k].duration;
     // friction: az(τ)+9.81 ≥ 0
@@ -104,18 +109,20 @@ inline VectorXd ineq_constraints(const TamolsState& st, const QpOptions& o) {
     std::vector<int> stance; for (int i = 0; i < 4; ++i) if (st.gait[k].contact[i]) stance.push_back(i);
     int N = (int)stance.size(); double eps = (k < st.epsilon.size()) ? st.epsilon(k) : 0.0;
     g.push_back(eps);                                                   // eps ≥ 0
+    if (_giacfix && _epsmax > 0) g.push_back(_epsmax - eps);            // ★eps ≤ epsmax(옵션 하드상한, EPS_MAX=0이면 끔=비용페널티만)
     auto foot = [&](int i) { return st.gait[k].at_des[i] ? Vector3d(st.p.row(i).transpose()) : Vector3d(st.p_meas.row(i).transpose()); };
     for (int s = 0; s < S; ++s) {
       double tau = Tk * s / (double)S;
       Vector3d pB = st.pos_at(k, tau).head<3>(), aB = st.acc_at(k, tau).head<3>(), Ld = st.Ldot_at(k, tau);
-      if (N > 0) g.push_back((mu * aB(2)) * (mu * aB(2)) - aB(0) * aB(0) - aB(1) * aB(1));   // 17a ≥0
+      Vector3d aG = _giacfix ? (aB - gvec) : aB;                        // ★gravito-inertial 가속(aB+(0,0,9.81)): 정적 CoM-지지 테스트가 지배
+      if (N > 0) g.push_back((mu * aG(2)) * (mu * aG(2)) - aG(0) * aG(0) - aG(1) * aG(1));   // 17a ≥0
       if (N >= 3) for (size_t x = 0; x < stance.size(); ++x) for (size_t y = x + 1; y < stance.size(); ++y) {
         Vector3d pi = foot(stance[x]), pj = foot(stance[y]), pij = pj - pi;
-        g.push_back(eps - (m * det3(pij, pB - pi, aB) - pij.dot(Ld)));                        // 17b: lhs≤eps
+        g.push_back(eps - (m * det3(pij, pB - pi, aG) - pij.dot(Ld)));                        // 17b: lhs≤eps
       }
       if (N == 2) {
         Vector3d pi = foot(stance[0]), pj = foot(stance[1]), pij = pj - pi;
-        double val = m * det3(pij, pB - pi, aB) - pij.dot(Ld);
+        double val = m * det3(pij, pB - pi, aG) - pij.dot(Ld);
         g.push_back(eps - val); g.push_back(eps + val);                                       // 17c |val|≤eps
         Vector3d Mi = (pB - pi).cross(gvec - aB) - Ld / m; g.push_back(eps + det3(ez, pij, Mi)); // 17d
       }

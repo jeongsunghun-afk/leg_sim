@@ -366,8 +366,126 @@ struct QuadControl {
     return true;
   }
   // ── wbic_track (검증3과 동일: 기본경로) ──
+  // ★★strict null-space HQP-WBC (TAMOLS 논문충실, Bellicoso 우선순위): 접촉/EOM(하드) > swing(L1) > base+모멘텀+joint(L2).
+  //   cascade 2-레벨: L1=swing만 풀어 최적값 v1 확보 → L2를 A_sw·z=v1(swing 동결) 등식 하에 풂 = base가 swing에 엄격 양보.
+  //   weighted QP(wbic_track)와 차이: swing이 strict 상위라 base task가 swing 추종을 절대 침범 못함. HQP=1 env로 활성.
+  bool wbic_track_hqp(const std::vector<int>& contacts, const std::map<int,std::pair<Vector3d,Vector3d>>& swing,
+                      const Vector3d lam[4], double w_lam=10.0){
+    int Kc=(int)contacts.size(), nzt=nv+3*Kc; auto sl=[&](int k){ return nv+3*k; };
+    std::vector<Matrix<double,3,Dynamic>> cjac(Kc); std::vector<Vector3d> cpos(Kc),clam(Kc);
+    for(int k=0;k<Kc;k++){ int c=contacts[k]; cjac[k]=foot_jac(c); cpos[k]=foot_point(c); clam[k]=lam[c]; }
+    std::vector<double> Mb(nv*nv); mj_fullM(m,Mb.data(),d->qM);
+    Map<Matrix<double,Dynamic,Dynamic,RowMajor>> M(Mb.data(),nv,nv);
+    Map<VectorXd> h(d->qfrc_bias,nv); VectorXd qv=Map<VectorXd>(d->qvel,nv);
+    std::vector<double> jcb(3*nv); mj_jacSubtreeCom(m,d,jcb.data(),0);
+    Matrix<double,3,Dynamic> Jc(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) Jc(r,c)=jcb[r*nv+c];
+    Vector3d Jcqv=Jc*qv;
+    // ── HARD (P0-P1): EOM(6)+contact no-motion(3Kc) 등식 · friction/torque/joint-accel/λz 부등식 ──
+    int neq0=6+3*Kc; MatrixXd A0=MatrixXd::Zero(neq0,nzt); VectorXd b0=VectorXd::Zero(neq0);
+    A0.block(0,0,6,nv)=M.topRows(6); b0.head(6)=-h.head(6);
+    for(int k=0;k<Kc;k++) A0.block(0,sl(k),6,3)=-cjac[k].leftCols(6).transpose();
+    for(int k=0;k<Kc;k++){ A0.block(6+3*k,0,3,nv)=cjac[k];
+      if(STANCE_KD>0) b0.segment(6+3*k,3)=-STANCE_KD*(cjac[k]*qv); }
+    std::vector<VectorXd> Gr; std::vector<double> hv; int sgn[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
+    for(int k=0;k<Kc;k++){ int o=sl(k); for(int s=0;s<4;s++){ VectorXd r=VectorXd::Zero(nzt);
+      r[o]=sgn[s][0]; r[o+1]=sgn[s][1]; r[o+2]=-MU*MU_MARGIN; Gr.push_back(r); hv.push_back(0.0); } }
+    VectorXd h_act=h.segment(6,nu); MatrixXd T_mat=MatrixXd::Zero(nu,nzt); T_mat.leftCols(nv)=M.block(6,0,nu,nv);
+    for(int k=0;k<Kc;k++) T_mat.block(0,sl(k),nu,3)=-cjac[k].block(0,6,3,nu).transpose();
+    for(int i=0;i<nu;i++){ Gr.push_back(T_mat.row(i)); hv.push_back(tau_peak[i]-h_act[i]); }
+    for(int i=0;i<nu;i++){ Gr.push_back(-T_mat.row(i)); hv.push_back(tau_peak[i]+h_act[i]); }
+    { double tla=0.05,c2=0.5*tla*tla;
+      for(int j=0;j<nu;j++){ double qj=d->qpos[7+j],dqj=qv[6+j];
+        double ubp=(qmax[j]-qj-dqj*tla)/c2, lbp=(qmin[j]-qj-dqj*tla)/c2;
+        { VectorXd r=VectorXd::Zero(nzt); r[6+j]=1;  Gr.push_back(r); hv.push_back(ubp);  }   // q̈≤ubp
+        { VectorXd r=VectorXd::Zero(nzt); r[6+j]=-1; Gr.push_back(r); hv.push_back(-lbp); } } }// q̈≥lbp
+    for(int k=0;k<Kc;k++){ VectorXd r=VectorXd::Zero(nzt); r[sl(k)+2]=-1; Gr.push_back(r); hv.push_back(-LAMZ_MIN); }
+    int nci=(int)Gr.size(); MatrixXd CI(nci,nzt); VectorXd ci0(nci);
+    for(int i=0;i<nci;i++){ CI.row(i)=-Gr[i]; ci0[i]=hv[i]; }
+    // ── 자세(roll/pitch)·z 목표가속 먼저 계산(L1 승격 옵션 대비) ──
+    double* qc=&d->qpos[3];
+    double yaw_m=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
+    double qlev[4]={std::cos(yaw_m/2),0,0,std::sin(yaw_m/2)};
+    double oerr[3]; mju_subQuat(oerr,&d->qpos[3],qlev);
+    double _okp=getenv("ORI_KP")?atof(getenv("ORI_KP")):150.0, _okd=getenv("ORI_KD")?atof(getenv("ORI_KD")):20.0;
+    double _wori=getenv("W_ORI")?atof(getenv("W_ORI")):w_ori;
+    double a_ori[2]; for(int j=0;j<2;j++) a_ori[j]=_okp*(-oerr[j])-_okd*qv[3+j];
+    double zref=com_ref[2]+_body_terr;
+    if(getenv("ZREF_FIX")) zref=atof(getenv("ZREF_FIX"));   // ★진단/고정 z 참조(plan z침하 우회)
+    bool _zvff=!getenv("ZREF_FIX");   // 고정 z면 plan z-속도/가속 ff 무시(상수홀드)
+    double _kpz=getenv("KP_Z")?atof(getenv("KP_Z")):200.0, _kdz=getenv("KD_Z")?atof(getenv("KD_Z")):25.0, _wz=getenv("W_Z")?atof(getenv("W_Z")):150.0;
+    double a_z=_kpz*(zref-d->subtree_com[2])+_kdz*((_zvff?com_vel_ref[2]:0.0)-Jcqv[2])+(_zvff?com_acc_ref[2]:0.0);
+    double yaw_err=std::atan2(std::sin(yaw_des-yaw_m),std::cos(yaw_des-yaw_m));   // ★MODE=tamols=MPC없음→WBC가 yaw 잡아야(방치시 스핀→붕괴)
+    double _ykp=getenv("YAW_KP")?atof(getenv("YAW_KP")):150.0, _ykd=getenv("YAW_KD")?atof(getenv("YAW_KD")):20.0;
+    double a_yaw=_ykp*yaw_err-_ykd*qv[5];
+    // ── L1 (swing [+옵션 base 자세·yaw·z], P2): 엄격 상위 ──
+    double _swkp=getenv("SW_KP")?atof(getenv("SW_KP")):2400.0, _swkd=getenv("SW_KD")?atof(getenv("SW_KD")):110.0;
+    bool _basel1=getenv("HQP_BASE_L1"); int nbl=_basel1?4:0;   // ★구조옵션: base roll/pitch/yaw/z를 L1 strict로 승격(marginal 로봇=base 고우선, yaw방치=스핀사)
+    int nsw=(int)swing.size(); std::set<int> sw_vidx; int nL1=3*nsw+nbl;
+    MatrixXd A1=MatrixXd::Zero(std::max(1,nL1),nzt); VectorXd b1=VectorXd::Zero(std::max(1,nL1));
+    { int row=0; for(auto&kv:swing){ int leg=kv.first; Matrix<double,3,Dynamic> J=foot_jac(leg);
+        Vector3d accel=_swkp*(kv.second.first-foot_point(leg))+_swkd*(kv.second.second-J*qv);
+        A1.block(row,0,3,nv)=J; b1.segment(row,3)=accel; row+=3;
+        for(int t=0;t<leg_dof[leg];t++) sw_vidx.insert(legqv[leg][t]); }
+      if(nbl){ A1(row,3)=1; b1[row]=a_ori[0]; row++;                       // roll 가속
+               A1(row,4)=1; b1[row]=a_ori[1]; row++;                       // pitch 가속
+               A1(row,5)=1; b1[row]=a_yaw; row++;                          // yaw 가속(스핀 방지)
+               A1.block(row,0,1,nv)=Jc.row(2); b1[row]=a_z; row++; } }     // z 가속(CoM)
+    // ── L2 (base xy + 모멘텀 + joint + λ, P3-P4): 가중 QP (P,g) ──
+    MatrixXd P=MatrixXd::Zero(nzt,nzt); VectorXd g=VectorXd::Zero(nzt);
+    if(!_basel1){ for(int j=0;j<2;j++){ P(3+j,3+j)+=_wori; g[3+j]-=_wori*a_ori[j]; }   // 자세=L2(미승격시)
+      double _wyaw=getenv("W_YAW")?atof(getenv("W_YAW")):w_yaw; P(5,5)+=_wyaw; g[5]-=_wyaw*a_yaw; }
+    if(!_basel1){ P.topLeftCorner(nv,nv)+=_wz*(Jc.row(2).transpose()*Jc.row(2)); g.head(nv)-=_wz*a_z*Jc.row(2).transpose(); }  // z=L2(미승격시)
+    if(W_BASE_XY>0){ for(int ax=0;ax<2;ax++){
+      double a_xy=KP_BASE*(com_ref[ax]-d->subtree_com[ax])+KD_BASE*(com_vel_ref[ax]-Jcqv[ax])+com_acc_ref[ax];
+      P.topLeftCorner(nv,nv)+=W_BASE_XY*(Jc.row(ax).transpose()*Jc.row(ax)); g.head(nv)-=W_BASE_XY*a_xy*Jc.row(ax).transpose(); } }
+    for(int j=0;j<nu;j++){ double a_post,w_post;
+      if(j==waist_idx){ a_post=WAIST_KP*(waist_ref-d->qpos[7+j])-WAIST_KD*qv[6+j]; w_post=WAIST_W; }
+      else { a_post=60*(q_home[j]-d->qpos[7+j])-5*qv[6+j]; double sw=(is_front[j]?swing_w_f:swing_w_r);
+        w_post=(is_ankle[j])?20.0:(sw_vidx.count(6+j)?sw:1.0);
+        if(getenv("W_POST")&&!is_ankle[j]&&!sw_vidx.count(6+j)) w_post=atof(getenv("W_POST")); }
+      P(6+j,6+j)+=w_post; g[6+j]-=w_post*a_post; }
+    P.topLeftCorner(nv,nv)+=1e-3*MatrixXd::Identity(nv,nv);
+    if(getenv("W_LAM")) w_lam=atof(getenv("W_LAM"));
+    for(int k=0;k<Kc;k++){ P.block(sl(k),sl(k),3,3)+=w_lam*Matrix3d::Identity(); g.segment(sl(k),3)-=w_lam*clam[k]; }
+    if(W_AM>0 && Kc>0){ mj_subtreeVel(m,d);
+      Vector3d h_ang(d->subtree_angmom[0],d->subtree_angmom[1],d->subtree_angmom[2]);
+      Vector3d hdes=-KD_AM*h_ang; Vector3d com(d->subtree_com[0],d->subtree_com[1],d->subtree_com[2]);
+      MatrixXd A_am=MatrixXd::Zero(3,nzt);
+      for(int k=0;k<Kc;k++){ Vector3d r=cpos[k]-com; int o=sl(k);
+        A_am(0,o+1)=-r[2]; A_am(0,o+2)=r[1]; A_am(1,o)=r[2]; A_am(1,o+2)=-r[0]; A_am(2,o)=-r[1]; A_am(2,o+1)=r[0]; }
+      P+=W_AM*(A_am.transpose()*A_am); g-=W_AM*(A_am.transpose()*hdes); }
+    double _qreg=getenv("QREG")?atof(getenv("QREG")):1e-8;
+    P=(0.5*(P+P.transpose())).eval()+_qreg*MatrixXd::Identity(nzt,nzt);
+    // ── cascade solve ──
+    VectorXd z(nzt);
+    double _l1reg=getenv("L1REG")?atof(getenv("L1REG")):1e-6;
+    if(nL1>0){ MatrixXd Ps=2.0*(A1.transpose()*A1); Ps.diagonal().array()+=_l1reg; Ps=(0.5*(Ps+Ps.transpose())).eval();
+      VectorXd gs=-2.0*(A1.transpose()*b1);
+      MatrixXd CE1=A0; VectorXd ce01=-b0;
+      _qp_tr.reset(nzt,(int)CE1.rows(),nci);
+      double r1=_qp_tr.solve_quadprog(Ps,gs,CE1,ce01,CI,ci0,z);
+      if(r1!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
+      VectorXd v1=A1*z;                                          // L1(swing[+base]) 최적 달성값(동결)
+      MatrixXd CE2(neq0+nL1,nzt); CE2<<A0,A1; VectorXd ce02(neq0+nL1); ce02<<-b0,-v1;
+      _qp_tr.reset(nzt,(int)CE2.rows(),nci);
+      double r2=_qp_tr.solve_quadprog(P,g,CE2,ce02,CI,ci0,z);
+      if(r2!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
+    } else {                                                     // 스윙 없음(전지지)=L2만
+      MatrixXd CE=A0; VectorXd ce0=-b0; _qp_tr.reset(nzt,(int)CE.rows(),nci);
+      double r0=_qp_tr.solve_quadprog(P,g,CE,ce0,CI,ci0,z);
+      if(r0!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) return false;
+    }
+    VectorXd qdd=z.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
+    for(int k=0;k<Kc;k++) tau-=cjac[k].block(0,6,3,nu).transpose()*z.segment(sl(k),3);
+    for(int i=0;i<nu;i++){ double lim=tau_peak[i];
+      if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);
+      d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    return true;
+  }
+
   bool wbic_track(const std::vector<int>& contacts, const std::map<int,std::pair<Vector3d,Vector3d>>& swing,
                   const Vector3d lam[4], double w_lam=10.0){
+    if(getenv("HQP")) return wbic_track_hqp(contacts, swing, lam, w_lam);   // ★strict null-space HQP(논문충실)
     int Kc=(int)contacts.size(), nzt=nv+3*Kc; auto sl=[&](int k){ return nv+3*k; };
     std::vector<Matrix<double,3,Dynamic>> cjac(Kc); std::vector<Vector3d> cpos(Kc),clam(Kc);
     for(int k=0;k<Kc;k++){ int c=contacts[k]; cjac[k]=foot_jac(c); cpos[k]=foot_point(c); clam[k]=lam[c]; }

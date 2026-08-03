@@ -422,6 +422,10 @@ struct QuadControl {
     double _swkp=getenv("SW_KP")?atof(getenv("SW_KP")):2400.0, _swkd=getenv("SW_KD")?atof(getenv("SW_KD")):110.0;
     bool _basel1=getenv("HQP_BASE_L1"); int nbl=_basel1?4:0;   // ★구조옵션: base roll/pitch/yaw/z를 L1 strict로 승격(marginal 로봇=base 고우선, yaw방치=스핀사)
     int nsw=(int)swing.size(); std::set<int> sw_vidx; int nL1=3*nsw+nbl;
+    // ★over-determination 가드: strict L2 등식(neq0+nL1)이 변수수(nzt) 이상이면 eiquadprog 내부버퍼 오버런=heap corruption.
+    //   적은-DOF 로봇(예 Go2 nv=18, 12관절)서 nsw≥3 위상이면 6+3·nsw+nbl > nv → 초과. base-L1(nbl) 먼저 강등, 그래도 초과면 이 틱 stance 폴백.
+    if(neq0+nL1>=nzt && nbl){ nbl=0; nL1=3*nsw; }   // base-L1 강등(swing 등식은 필수라 유지)
+    if(neq0+nL1>=nzt) return false;                 // nsw 과다(flight성 위상)=이 틱 wbic_stance 폴백(크래시 방지)
     MatrixXd A1=MatrixXd::Zero(std::max(1,nL1),nzt); VectorXd b1=VectorXd::Zero(std::max(1,nL1));
     { int row=0; for(auto&kv:swing){ int leg=kv.first; Matrix<double,3,Dynamic> J=foot_jac(leg);
         Vector3d accel=_swkp*(kv.second.first-foot_point(leg))+_swkd*(kv.second.second-J*qv);

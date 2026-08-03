@@ -61,11 +61,12 @@ inline VectorXd cost_residuals(const TamolsState& st, const Grid& h, double cell
     int k = st.num_phases() - 1; double tau = st.gait[k].duration / 2.0;
     Vector6d pose = st.pos_at(k, tau); Vector3d pB = pose.head<3>();
     Eigen::Matrix3d R = R_B(pose.tail<3>()); Vector3d l_des(0, 0, st.prm.h_des);
+    static double _wnom = getenv("TAM_WNOM") ? atof(getenv("TAM_WNOM")) : 20.0;   // ★명목 발위치(hip 아래) 비용 가중. ↑=발판을 hip 폭으로 벌림(뭉침 방지)
     for (int i = 0; i < 4; ++i) {
       Vector3d bml = pB + R * st.prm.hip_offsets.row(i).transpose() - l_des;
       Vector3d pi = st.gait[k].at_des[i] ? Vector3d(st.p.row(i).transpose()) : Vector3d(st.p_meas.row(i).transpose());
       Vector3d e = bml - pi;
-      for (int c = 0; c < 3; ++c) r.push_back(std::sqrt(20.0) * e(c));
+      for (int c = 0; c < 3; ++c) r.push_back(std::sqrt(_wnom) * e(c));
     }
   }
   // ★GIAC_FIX: eps(GIAC slack) 비용 페널티 → 위반을 slack에 흘리는 대신 base/발판을 움직이게(soft=feasible 유지, 하드바운드 near-infeasible 회피)

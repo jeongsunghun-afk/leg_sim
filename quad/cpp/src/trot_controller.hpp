@@ -211,7 +211,8 @@ struct TrotCtrl {
     } else if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_z0=getenv("TAM_PRM_MODEL")?q.base_z0:0.52; tam_ol_mapinit=true; }
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
-    tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=getenv("PHASE_DUR")?atof(getenv("PHASE_DUR")):0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;   // ★phase_dur 노출: 짧을수록 빠른 cadence(고속 발 따라잡기). 주입=plan 정지
+    int _rti=getenv("RTI_ITER")?atoi(getenv("RTI_ITER")):5;   // ★warm RTI iteration(기본5). ↑=warm-drift↓(발판 명목 회복 여유)
+    tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=getenv("PHASE_DUR")?atof(getenv("PHASE_DUR")):0.2; cfg.rti_iter=tam_ol_warm?_rti:60; cfg.warm=tam_ol_warm;   // ★phase_dur 노출: 짧을수록 빠른 cadence(고속 발 따라잡기). 주입=plan 정지
     cfg.walk = getenv("RSL_GAIT") && !std::strcmp(getenv("RSL_GAIT"),"walk");   // ★walk(정적안정) vs trot
     int _Pg = cfg.walk?4:5;
     cfg.phase_off=tam_ol_phase;   // ★horizon-shift: 위상 회전(swing 실행)

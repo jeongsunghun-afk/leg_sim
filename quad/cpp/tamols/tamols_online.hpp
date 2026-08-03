@@ -79,6 +79,8 @@ inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int m
   }
   QpOptions o; o.max_iter = cfg.rti_iter;
   o.rp_max = 0.06; o.zlo = z0 - 0.04; o.zhi = z0 + 0.03; o.yaw_max = 0.10; o.x_target = xf * 0.9;   // ★z밴드=z0 상대(로봇무관: 02_Leg z0=0.52→0.48/0.55 동일, Go2 z0=0.30→0.26/0.33)
+  if (getenv("TAM_PRM_MODEL")) { double hy = std::abs(st.prm.hip_offsets(0, 1));   // ★발 좌우폭을 로봇 hip 폭에 맞춤(하드코딩 0.10/0.22는 02_Leg값=Go2엔 과폭)
+    o.y_min = std::max(0.02, 0.6 * hy); o.y_max = hy + 0.06; }
   if (cfg.z0_terrain) { o.zlo = z0 - 0.06; o.zhi = z0 + 0.06; o.rp_max = 0.20; }   // ★지형: z밴드=z0 상대(계단 상승)·롤피치 여유↑(경사 흡수)
   o.gap = gap_near; o.gap_lo = cfg.gap_x0; o.gap_hi = cfg.gap_x1;   // ★gap 회피 발판 제약(로컬)
   return solve_fast(st, h, cell, map_size, o);

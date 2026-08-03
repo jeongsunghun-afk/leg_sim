@@ -404,7 +404,13 @@ struct TrotCtrl {
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
         if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만
         else if(!sched){ if(tam_sw_prev[i]){ tam_lift[i]=q.foot_point(i); tam_sw_start[i]=t;   // ★liftoff: 절대시간 캡처(재anchor에도 진행 연속)
-            tam_swtgt[i]=Vector3d(tam_ax+tam_fh[i][0]+capx,tam_ay+tam_fh[i][1]+capy,tam_fh[i][2]); tam_sw_prev[i]=false; }  // ★착지target=계획발판+capture 발배치(균형). swing foot commitment 동결
+            double tgx=tam_ax+tam_fh[i][0]+capx, tgy=tam_ay+tam_fh[i][1]+capy, tgz=tam_fh[i][2];
+            if(getenv("FOOT_SNAP") && getenv("TAMOLS_TERRAIN") && !tmap.valid(tgx,tgy)){   // ★발이 void 위→안전지형 snap(전방우선=gap 건너 far 플랫폼 도달). capture와 지형제약 reconcile
+              double _sr=getenv("SNAP_REACH")?atof(getenv("SNAP_REACH")):0.35;
+              for(double dx=0.04; dx<=_sr; dx+=0.04){ if(tmap.valid(tgx+dx,tgy)){ tgx+=dx; break; }
+                                                       if(tmap.valid(tgx-dx*0.5,tgy)){ tgx-=dx*0.5; break; } } }
+            if(getenv("FOOT_SNAP") && getenv("TAMOLS_TERRAIN")){ double tz=tmap.z(tgx,tgy); if(tz>-50.0) tgz=tz; }  // 발 z=지형 높이
+            tam_swtgt[i]=Vector3d(tgx,tgy,tgz); tam_sw_prev[i]=false; }  // ★착지target=계획발판+capture+지형snap. swing foot commitment 동결
           double sprog=tc_clip((t-tam_sw_start[i])/SW_DUR,0.0,1.0);   // ★절대시간 진행(tam_t 리셋 무관)
           Vector3d p_end=tam_swtgt[i];   // ★동결된 target(재anchor에도 불변→발이 완주해 착지)
           Vector3d bvel(s[6],s[7],0.0);

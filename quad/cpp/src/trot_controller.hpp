@@ -414,18 +414,19 @@ struct TrotCtrl {
           tam_ptgt[i]=p_tgt; tam_have_ptgt[i]=true; swing[i]={p_tgt,v_tgt}; }
         else { Vector3d fp=q.foot_point(i);   // ★sched stance인데 공중=phantom → 지면 착지 유도(stance 취급X)
           swing[i]={Vector3d(fp[0],fp[1],0.0),Vector3d::Zero()}; tam_sw_prev[i]=true; } }
-      double dmpc=t-mpc_t;
-      if(!rsl && !st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
+      double dmpc=t-mpc_t; bool rslmpc=getenv("RSL_MPC");   // ★★injection: rsl(plan base 참조)+MPC 예측GRF 결합 — pure plan은 예측GRF 못내는 벽을 MPC로 우회
+      if((!rsl || rslmpc) && !st.empty() && (mpc_t<0||dmpc<0||dmpc>=q.mpc.DT)){
         std::vector<std::array<int,4>> cs(q.mpc.N);
         for(int kk=0;kk<q.mpc.N;kk++){ int kf=std::min((int)((tam_t+kk*q.mpc.DT)/tam_dt),tam_N-1);
           for(int i=0;i<4;i++) cs[kk][i]=tam_c[kf][i]; }
         Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
       Vector3d lam_use[4]; bool grfff=getenv("GRF_FF");
-      if(rsl){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // ★RSL: λ=중력보상 baseline(WBC가 base task로 실제 분배)
-        double M=mj_getTotalmass(m), aGx=grfff?q.com_acc_ref[0]:0.0, aGy=grfff?q.com_acc_ref[1]:0.0;  // ★GRF_FF: 계획 base가속→예측 수평 GRF(50Hz 재풀이라 surge시 감속aB=보정력). 예측 GRF부재가 속도폭주 원인
+      if(rsl && rslmpc && !st.empty()){ for(int i=0;i<4;i++) lam_use[i]=lam_des[i]; }   // ★rsl+MPC GRF(예측 피드백력)
+      else if(rsl){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // ★RSL: λ=중력보상 baseline(WBC가 base task로 실제 분배)
+        double M=mj_getTotalmass(m), aGx=grfff?q.com_acc_ref[0]:0.0, aGy=grfff?q.com_acc_ref[1]:0.0;  // ★GRF_FF: 계획 base가속→예측 수평 GRF
         for(int i=0;i<4;i++) lam_use[i]=Vector3d(M*aGx/std::max(1,Kc), M*aGy/std::max(1,Kc), fz); }
       else for(int i=0;i<4;i++) lam_use[i]=st.empty()?Vector3d::Zero():lam_des[i];
-      double wl=rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):(grfff?5.0:0.1)):10.0;   // ★GRF_FF시 λ정규화 강화(예측 GRF 추종)
+      double wl=(rsl&&rslmpc)?(getenv("W_LAM")?atof(getenv("W_LAM")):10.0):(rsl?(getenv("W_LAM")?atof(getenv("W_LAM")):(grfff?5.0:0.1)):10.0);   // ★rsl+MPC: λ강추종(예측GRF)
       if(getenv("TAM_DBG")){ static long _dc=0; if(_dc++%25==0){
         double* qc2=&d->qpos[3]; double yaw_a=std::atan2(2*(qc2[0]*qc2[3]+qc2[1]*qc2[2]),1-2*(qc2[2]*qc2[2]+qc2[3]*qc2[3]))*180/M_PI;
         std::fprintf(stderr,"[dbg] t=%.2f tt=%.2f z=%.3f stance=%d c=%d%d%d%d footz=%.2f/%.2f/%.2f/%.2f yawR=%.1f yaw=%.1f comy=%.3f\n",

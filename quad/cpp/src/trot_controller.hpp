@@ -187,8 +187,9 @@ struct TrotCtrl {
     P.l_max=q.base_z0*1.5; P.l_min=q.base_z0*0.35;                    // 다리 reach(base_z0 비례 근사)
     Matrix3d Ic=q.compute_Icom(); P.inertia_diag=Vector3d(Ic(0,0),Ic(1,1),Ic(2,2));
     Vector3d base(q.d->qpos[0],q.d->qpos[1],q.d->qpos[2]);           // hip_offsets=hip xy(base 상대), q.legs순
+    double _swx=getenv("TAM_SWX")?atof(getenv("TAM_SWX")):1.0, _swy=getenv("TAM_SWY")?atof(getenv("TAM_SWY")):1.0;   // ★발판 스탠스 폭 스케일(hip 대비): 앞뒤(x)·좌우(y). 최적폭 탐색용
     for(int i=0;i<4;i++){ int hb=q.hip_bid[i];
-      P.hip_offsets(i,0)=q.d->xpos[hb*3]-base[0]; P.hip_offsets(i,1)=q.d->xpos[hb*3+1]-base[1]; P.hip_offsets(i,2)=0; }
+      P.hip_offsets(i,0)=(q.d->xpos[hb*3]-base[0])*_swx; P.hip_offsets(i,1)=(q.d->xpos[hb*3+1]-base[1])*_swy; P.hip_offsets(i,2)=0; }
     std::printf("[tamols-prm] mass=%.1f h=%.3f fr=%.3f l_max=%.2f I=(%.3f,%.3f,%.3f) hipx=%.3f hipy=%.3f\n",
       P.mass,P.nominal_height,P.foot_radius,P.l_max,P.inertia_diag[0],P.inertia_diag[1],P.inertia_diag[2],
       P.hip_offsets(0,0),P.hip_offsets(0,1));

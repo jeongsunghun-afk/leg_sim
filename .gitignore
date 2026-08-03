@@ -35,8 +35,6 @@ squashfs-root/
 *.AppImage
 quad/backup/logs/
 quad/meshes_sim_17dof/
-/02_Leg_UFDF_260701/
-/02_Leg_UFDF_260703_2/
 quad/towr/towr_cd_bin
 
 # C++ 빌드산물·테스트 바이너리(재빌드)

@@ -107,6 +107,7 @@ struct QuadControl {
         if(gbx){ double N=gear[gi]*gmul; int dof=m->jnt_dofadr[jid];
           m->dof_armature[dof]=Irot*N*N; m->dof_damping[dof]=jdmp; m->dof_frictionloss[dof]=jfrc; } }
     }
+    if(getenv("BASE_Z0")) base_z0=atof(getenv("BASE_Z0"));   // ★서기높이 기준 override(다른 로봇 이식 테스트용, 예 Go2=0.30). 02_Leg는 미설정→기본 유지
     q_home.resize(nu);
   }
   Vector3d foot_point(int i){ Vector3d p(d->geom_xpos[fgid[i]*3],d->geom_xpos[fgid[i]*3+1],d->geom_xpos[fgid[i]*3+2]); p[2]-=fr[i]; return p; }

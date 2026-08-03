@@ -175,7 +175,26 @@ struct TrotCtrl {
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
   double tam_z0=0.52;   // ★online_replan에 넘길 base z 기준(지형모드=지형+명목높이)
+  bool tam_prm_done=false;   // ★prm(로봇 파라미터) 모델주입 1회 완료 플래그
+  // ★TAMOLS 플래너 파라미터를 현재 모델에서 채움(로봇 무관 이식용, TAM_PRM_MODEL=1).
+  //   기본 prm은 02_Leg 하드코딩(mass37.9·height0.52·hip_offsets±0.225/±0.14·[FL,FR,RL,RR]순)이라
+  //   다른 로봇(Go2) 이식·공정비교 불가 + hip_offsets가 발측정(q.legs=[HL,HR,FL,FR]순)과 leg-order 불일치.
+  //   여기서 mass·높이·발반경·관성·hip_offsets(실제 hip위치, q.legs순)를 모델서 계산→양쪽 로봇 동일 정합.
+  void tamols_init_prm(){
+    mjModel* m=q.m; auto& P=tam_ol.prm;
+    P.mass=m->body_subtreemass[0]; P.foot_radius=q.fr[0]; P.g=9.81;
+    P.nominal_height=q.base_z0; P.h_des=q.base_z0;
+    P.l_max=q.base_z0*1.5; P.l_min=q.base_z0*0.35;                    // 다리 reach(base_z0 비례 근사)
+    Matrix3d Ic=q.compute_Icom(); P.inertia_diag=Vector3d(Ic(0,0),Ic(1,1),Ic(2,2));
+    Vector3d base(q.d->qpos[0],q.d->qpos[1],q.d->qpos[2]);           // hip_offsets=hip xy(base 상대), q.legs순
+    for(int i=0;i<4;i++){ int hb=q.hip_bid[i];
+      P.hip_offsets(i,0)=q.d->xpos[hb*3]-base[0]; P.hip_offsets(i,1)=q.d->xpos[hb*3+1]-base[1]; P.hip_offsets(i,2)=0; }
+    std::printf("[tamols-prm] mass=%.1f h=%.3f fr=%.3f l_max=%.2f I=(%.3f,%.3f,%.3f) hipx=%.3f hipy=%.3f\n",
+      P.mass,P.nominal_height,P.foot_radius,P.l_max,P.inertia_diag[0],P.inertia_diag[1],P.inertia_diag[2],
+      P.hip_offsets(0,0),P.hip_offsets(0,1));
+  }
   void tamols_online_replan(mjData* d){
+    if(getenv("TAM_PRM_MODEL") && !tam_prm_done){ tamols_init_prm(); tam_prm_done=true; }
     mjModel* m=q.m; double bx=d->qpos[0], by=d->qpos[1];
     bool terr = getenv("TAMOLS_TERRAIN")!=nullptr;   // ★지형 heightmap을 솔버에 주입(flat_costmap 대체). off=평지회귀
     if(terr){   // ── mj_ray 실측 지형 → 로컬 heightmap(yaw회전·월드z) ──
@@ -187,9 +206,9 @@ struct TrotCtrl {
       for(int k=0;k<N;k++) for(int l=0;l<N;l++){
         double lx=k*cell-off, ly=l*cell-off, wx=bx+cs*lx-sn*ly, wy=by+sn*lx+cs*ly;
         double z=tmap.z(wx,wy); tam_ol_h(k,l)=(z<-50.0)?0.0:z; }   // 무효셀=0(평지)
-      tam_z0=tmap.z(bx,by); if(tam_z0<-50.0) tam_z0=0.0; tam_z0+=0.50;   // base=로봇밑 지형+명목높이
+      tam_z0=tmap.z(bx,by); if(tam_z0<-50.0) tam_z0=0.0; tam_z0+=getenv("TAM_PRM_MODEL")?q.base_z0:0.50;   // base=로봇밑 지형+명목높이(로봇무관: base_z0)
       tam_ol_mapinit=true;
-    } else if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_z0=0.52; tam_ol_mapinit=true; }
+    } else if(!tam_ol_mapinit){ tamols::flat_costmap(tam_ol_h,tam_ol_cell,tam_ol_ms); tam_z0=getenv("TAM_PRM_MODEL")?q.base_z0:0.52; tam_ol_mapinit=true; }
     Eigen::Matrix<double,4,3> fmeas;
     for(int i=0;i<4;i++){ Vector3d fp=q.foot_point(i); fmeas(i,0)=fp[0]-bx; fmeas(i,1)=fp[1]-by; fmeas(i,2)=fp[2]; }
     tamols::OnlineCfg cfg; cfg.vadv=tam_inj?0.0:V; cfg.phase_dur=getenv("PHASE_DUR")?atof(getenv("PHASE_DUR")):0.2; cfg.rti_iter=tam_ol_warm?5:60; cfg.warm=tam_ol_warm;   // ★phase_dur 노출: 짧을수록 빠른 cadence(고속 발 따라잡기). 주입=plan 정지
@@ -791,7 +810,8 @@ struct TrotCtrl {
       for(int k=0;k<q.mpc.N;k++) for(int i=0;i<4;i++){ bool sch; double sp; gait(i,tg+k*q.mpc.DT,sch,sp); cs[k][i]=sch?1:0; }
       Matrix<double,4,3> L=q.mpc_grf(x_ref,cs); for(int i=0;i<4;i++) lam_des[i]=L.row(i).transpose(); mpc_t=t; }
     Vector3d lam_use[4];
-    if(rsl_inj){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // RSL: λ=중력보상 baseline(WBC base task가 실제분배)
+    bool no_mpc=getenv("NO_MPC");   // ★판별실험: 예측GRF(MPC) 제거→중력보상 baseline만(full-TAMOLS+WBC와 동일 조건). WBIC base task가 분배. 로봇모델이 marginal이면 발산
+    if(rsl_inj||no_mpc){ int Kc=(int)st.size(); double fz=Kc>0? mj_getTotalmass(m)*9.81/Kc : 0.0;   // RSL: λ=중력보상 baseline(WBC base task가 실제분배)
       for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,fz); }
     else for(int i=0;i<4;i++) lam_use[i]= st.empty()?Vector3d::Zero():lam_des[i];
     q.yaw_des=yaw_ref;                                     // ★자세 task가 명령헤딩 추종(선회시 yaw와 안싸움)

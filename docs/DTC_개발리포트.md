@@ -1,6 +1,6 @@
 # DTC 개발리포트 — Deep Tracking Control (MPC 교사 + RL 추종)
 
-> **상태: 활성 (DTC 트랙 정본) · 2026-08-01.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0(자산)·P1(속도 워커) 완료 · P2(절차적 발판=lazy-agent 규명) 완료 · ★★P2.5 실제 TAMOLS 오프라인 캐시 + 적응형 커리큘럼 = end-to-end 검증(걷기 완전학습 + gap 크로싱 terrain_level ~6-7.6≈13-17cm, 무크래시). frontier ~level6-7(20cm gap은 kinematic/gait 한계) · P3(3D지형·CVAE·frontier 돌파) 다음.**
+> **상태: 활성 (DTC 트랙 정본) · 2026-08-04.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0·P1·P2 완료 · P2.5 오프라인 TAMOLS 캐시+커리큘럼 end-to-end 검증(걷기+gap 크로싱). ★★P2.7 DTC 가치 통제검증 = task-dependent 확정: 평지 gap(관용지형)엔 캐시가 방해(RL이 emergent로 이김), 계단(정밀지형)엔 full-TAMOLS-DTC가 도움(학습 2.8× 빠름·최종 ~25%·더 reliable). DTC는 정밀 발배치 지형서만 가치.**
 > 이 문서 = DTC 트랙의 개발 기록·설계 근거. (전신 = MPC–RL 하이브리드 전략 리포트; 실행 트랙이 DTC로 좁혀져 이 이름으로 통합.) 학습법 심화는 `rl_module_train.html`, 작업 메모리는 `dtc-17dof-development`.
 
 ---
@@ -111,6 +111,36 @@ P2의 "절차적 랜덤 발판"을 **실제 C++ TAMOLS 플랜**으로 대체 = D
 
 **★★★최종 결과 (dtc_curric3 완주 iter 20000, 2026-08-01)**: **무크래시**(robustness 완전 유지, std 0회). **terrain_level frontier ~6**(오실 5-7.6, **최대 7.6 ≈ 17cm gap 크로싱**)·epLen ~510·progress 0.23·falls 낮음. 최종 체크포인트 model_19700+. = **DTC 오프라인 캐시 + 적응형 커리큘럼 end-to-end 검증 완결**: P2 obs무시(정체)→P2.5 오프라인캐시(발판추종 해결)→커리큘럼(걷기+gap 크로싱 해결). **핵심 교훈**: ①in-loop TAMOLS는 스케일 불가→오프라인 캐시(APT-RL)가 실전 해법 ②"발판 추종"과 "걷기"는 별개층=발판은 캐시로 풀리나 균형/보행은 **적응형 커리큘럼(평지→gap 승급)이 필수**(무거운 로봇) ③high terrain서 물리 blowup=NaN-guard 필수. **frontier ~level6-7(≈13-17cm gap)**: level9(20cm)는 미달=kinematic/gait 한계(발 reach·고정 trot 케이던스). **다음 실험(frontier 돌파)**: ①발 straddle/reach 확대(캐시 landing-relative 재생성·발판 최적화) ②가변 접촉타이밍 gait(고정 trot→적응) ③3D 지형(계단/슬로프)=full base 플랜 활용(캐시에 base궤적 이미 저장). ★자율운영(사용자 2일 부재): pipeline→진단→커리큘럼전환→크래시복구→디스크대응 전부 정책기반 자율수행+기록.
 - **남은 것(구조)**: base궤적·접촉 캐시는 저장했으나 첫 배선은 발판만(base=env 램프·gait=고정 trot). 3D 지형(계단/슬로프)=full base 플랜 후속. in-loop 재검토=서버 코어 확대/GPU-batched QP 시.
+
+### P2.7 — DTC 가치 통제검증(ablation) + 3D 계단 실험 ★★2026-08-03~04 핵심
+P2.5가 "파이프라인 작동"(커리큘럼+캐시로 걷기+gap크로싱)을 확립했으나 **DTC(발판 planner)가 실제로 가치를 더하는가**는 미검증. 통제 ablation으로 답함.
+
+**① 1차 ablation (평지 gap) — ★캐시가 오히려 방해:** 동일 커리큘럼·robustness서 발판 출처만 다르게(env-var `QUAD17_USE_TAMOLS_CACHE`, worker):
+- **DTC-OFF**(Raibert, 무구속 발판): terrain_level **~8.9**(거의 max=20cm gap)·epLen 724·progress 0.34
+- **DTC-ON**(TAMOLS 캐시 추종): terrain_level **~6**·epLen 570·progress 0.23
+- = **캐시 발판 prescription이 gap 크로싱을 방해**. RL이 캐시 없이 emergent하게 더 잘·빨리 넘음. **이전 "frontier~6=kinematic한계"는 틀렸음**(캐시가 인위적 제한). 원인=gap은 "안 빠지기"라 정밀 발판 불필요→캐시 추종(foothold_track 0.5-0.6)이 정책을 suboptimal 배치에 구속. Raibert는 도달가능+무구속이라 정책이 무시하고 자유 학습.
+
+**② 재설계 (★사용자 정정)**: 1차는 의도한 DTC 프레임워크가 아니었음. 정본 = baseline은 **heightmap-RL**(지형지각+emergent, 발판obs 없음), DTC는 **full TAMOLS**(base+발판+접촉 전부 추종), 비교는 **평지 gap이 아니라 3D 계단**서(평지선 base궤적·접촉이 trivial→full TAMOLS≈발판만). → 계단 실험 재구축.
+
+**③ 계단 실험 배선** (worker+C++): heightmap RayCaster(187ray·**rigid-body 부착**=41s/iter버그 회피)·계단 커리큘럼(`_build_stair_terrain_curriculum` level0평지→level9 step0.15m·step_depth0.35)·**3D 계단 캐시**(`cache_gen_stairs.cpp`: 앞발 step-up tread·뒷발 현단·base z상승, z0_terrain, `test_stairs.cpp`로 TAMOLS 계단 feasibility 사전확인)·full TAMOLS 배선(tread발판+base-z ref[Eq1 z확장] 추종). 명령범위 균등([0.2,0.4] 양쪽). 스모크 통과(obs baseline248·DTC288·계단캐시로드).
+
+**④ 계단 결과 (4-병렬 2-seed, GPU0-3, iter10000)** — ★DTC가 계단선 도움:
+| | baseline(heightmap-RL) | DTC(full-TAMOLS) |
+|---|---|---|
+| iter4000 (matched) | 1.82 (2seed평균) | **5.12** = **2.8× 빠름**(두 seed 일관·겹침無) |
+| iter10000 최종 | 5.57 (base42 6.36/base7 4.78) | **6.94** (dtc42 6.54/dtc7 7.34) ≈ +25% |
+- **DTC 확실한 가치 = 학습 속도(샘플효율)**: iter4000서 2.8× 앞섬(두 seed 일관). 최종은 baseline이 상당히 따라잡음(seed42 거의 동률 6.4/6.5, seed7 큰차 4.8/7.3).
+- **DTC 더 reliable**: base7이 4.78서 stuck, DTC 두 seed는 6.5-7.3 도달 = 캐시가 stuck-seed 방지. (4-병렬 CPU 경합 無, 전부 ~2.2s/iter.)
+
+**★★핵심 결론 — DTC 가치는 task-dependent:**
+| 지형 | planner(DTC) 효과 | 이유 |
+|---|---|---|
+| **평지 gap**(관용) | ❌ **방해** | gap="안빠지기"→RL emergent 쉬움, 발판 prescription 구속 |
+| **계단**(정밀) | ✅ **도움**(학습 2.8×·최종 +25%·reliable) | tread 정밀발판+base상승 필요→RL 혼자 느림/불안정, planner 제공 |
+
+= **DTC는 "무용"도 "만능"도 아님. 정밀 발배치 지형(계단·stepping stone)엔 크게 기여(특히 샘플효율)·관용 지형(gap)엔 방해.** 이 nuance는 3D 재설계로만 드러남.
+
+**자산·주의**: `tamols/{cache_gen_stairs,test_stairs}.cpp`·`tamols_stair_cache/`·env 토글 `QUAD17_{HEIGHTMAP,FOOTHOLD_OBS,TERRAIN_KIND,FULL_TAMOLS,USE_TAMOLS_CACHE}`. 학습 dir=`2026-08-03_{14-52-36 base42·17-34-56 dtc42}`. 비교영상=`stair_compare.mp4`(iter5000). ★런치 주의: 동일-초 발사 시 IsaacLab이 같은 타임스탬프 dir 충돌(base7/dtc7 겹침)→발사 간 sleep 필요. GPU0/1/3=사용자 임시허가(내일까지)로 4-병렬, 이후 GPU2-only 복귀.
 
 ### P3 — 지형·강건성·CVAE (예정)
 지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체 ← **P2.5서 실현(오프라인 캐시)**, height scan(발→목표 직선).

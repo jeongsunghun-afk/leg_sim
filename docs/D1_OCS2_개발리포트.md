@@ -124,6 +124,34 @@
 - **D1(perceptive NMPC)**: slope x2.65·z0.84·rough x2.12 등반(이후 이산난구간서 전복).
 - **결론**: 연속지형=A/D1 강건 / injection·pure-online RSL=미달(재앵커·발판·모멘텀률FF 부재, [[perceptive-nav-tamols]]·TAMOLS §6.1). D1 참조로 RSL 근본해결=사실상 D1 자체(이미 보유).
 
+### Phase 4.5 — 험지 강건화 env 튜닝 캠페인 (2026-08-04, 27 config 실측·헤드리스)
+사용자 "험지보행 뚫기" 요청 → D1 험지 env 노브 전면 스윕(SMOOTH_W·W_BASE·swingHeight·VX·gait·GAIT_T·momentum).
+- **★속도 정정(중요)**: "D1 ~0.03× 실시간"은 **오측정** — `test02legMujoco.cpp:318 const bool view=getenv("VIEW")`가 값 아닌 **존재만** 체크 → `VIEW=0`도 뷰어 무한루프(simTime 무시). **VIEW를 unset하면 헤드리스 정상·~0.2~0.3× 실시간**(3s sim=14s 벽시계)=벤치/튜닝 실용화. 평지 t=141s·tilt<3° 견고.
+- **외란(push)=재현되는 강점**: 측방 60·90N push **falls=0·tilt≤4°**(flat, W_BASE 20~50 무관). Phase 3 "60N marginal chaos"보다 개선(config 안정). D1 disturbance rejection 견고.
+- **★crest(15° 램프 볼록엣지 ≈x2.6)=env 저항적(핵심 결과)**: SMOOTH_W(0.14~0.40)·W_BASE(15~100)·swingHeight(0.08/0.14)·VX(0.2~0.5)·gait(trot/static_walk)·GAIT_T·모멘텀 **전부 시험 → 어떤 config도 crest 크로싱 실패**. 패턴: compliant base(W_BASE↓)는 나쁜 참조와 덜 싸워 tumble 지연(더 멀리 등반, tilt 165→105→33°)하나 결국 crest서 tumble 또는 그 앞 stall. ★"W_BASE20 falls=0"(x2.32)은 **sim시간 artifact**(13s에 crest 미도달, 28s 주면 x2.55서 tumble169°). = **env로 안 뚫림**.
+- **rough(±0.04)=marginal chaos**: reached_x 1.0~2.6로 config 미세변화가 결과 뒤집음(WB25가 VX0.3선 x2.58·VX0.2선 x1.47), 신뢰 완주 없음. Phase 4 "rough x2.12"는 그 chaotic 범위의 한 샘플.
+- **이산(hsteps)=tumble**(x1.03)=RL 벽 재확인.
+- **★진단·다음 레버**: 병목 = crest서 base terrain-z/pitch **참조 품질**(TERRAIN_Z가 forward-predict한 base_z가 볼록엣지서 flat-top 높이를 조기 명령 → 물리 지지와 불일치 → tumble; compliant base가 더 버팀=참조와 싸운다는 증거). **env 아닌 코드레벨 참조 셰이핑**(base-z를 도달가능 지지높이로 캡·crest 근처 pitch-rate 제한, `test02legMujoco.cpp:411-436`)이 다음 레버 — 단 OCS2 재빌드 필요·working 등반 깨질 위험. 그마저 볼록엣지=준-이산이라 궁극 험지 크로싱은 RL(DTC)로 수렴. **최적 지형 config(크로싱 아닌 참고)**: W_BASE≈20~25·SMOOTH_W0.25·swingHeight0.14(tumble 최소·최원거리 등반).
+
+**★TAMOLS 교훈 적용 검토 (2026-08-04, 사용자 "TAMOLS서 배운거 적용 가능한지 확인")**:
+- ① **base-z 참조 rate-limit(TAMOLS z-band 클램프+slew 교훈)**: D1 `test02legMujoco.cpp:411-436` TERRAIN_Z 참조에 상승률 캡 추가(`ZRATE` env 게이트, 미설정=원본, 51s 재빌드·마스터+워크스페이스 동기). **결과: 램프 tumble 못 막음**(ZRATE 0.12~0.20 전부 tumble). ⇒ **base-z가 병목 아님** — 램프면을 정확 추종(climb_z 0.9=램프높이+comH)하는데도 램프 중간서 넘어짐.
+- ② **★진짜 병목 규명=capture-point 부재(결정적 대조)**: **A(배포 trot+perceptive)는 동일 15° 램프를 x3.23·z1.11·tilt1.2°·falls0로 안정 등반**(VX0.4는 top x3.9 끝단 dropoff서만 낙하). **D1은 램프 중간 x2.5서 tumble**(tilt146°+). ⇒ **15° 램프=모델기반 한계 아님(A가 넘음)·D1 특유 갭**. 차이 = **A의 capture-point(속도오차 반응 발배치)를 D1이 못 씀** — NMPC가 발판+GRF+base를 협조계획하므로 WBC 발target shift 이식은 실패(§리스크, "NMPC 내부 foothold cost로 가야=큰 작업"). **= pure-online TAMOLS가 실패하고 injection이 A의 capture-point 빌려 해결한 그 갭과 동일**.
+- **결론**: 적용되는 TAMOLS 교훈은 base-z(z침하)가 아니라 **"capture-point=반응층 필수"**. D1 램프 실패의 진짜 레버 = **NMPC 내부 반응형 발배치**(env·base-z 참조론 불가). 이건 [[perceptive-nav-tamols]]·[[full-tamols-modelbased-tracker]]의 "예측 NMPC+반응 발배치 협조" 미해결 과제이자, 궁극 험지=RL(DTC) 논지와 수렴. **A는 왜 되나=loose-coupled(capture 발배치가 독립 반응)·D1은 tight-coupled(발+GRF+base 협조계획이라 반응 발shift가 계획과 싸움)**.
+
+**★D1 경사 envelope 실측 (2026-08-04, 5~15° 램프, 사용자 "경사는?")**: D1 연속경사 등반 한계 ≈ **8~10°**. **5°·8°**=램프 top(x3.9) 넘어 완주(끝단 dropoff서만 낙하)·**10°**=상단 marginal(x3.08)·**12°**(x2.99)·**15°**(x2.5)=연속면 tumble. 가팔수록 낙하점 앞당김=**graded 마진 한계**. cf. **A(반응형)는 15° tilt1.2°·falls0 완주** → 격차(A≥15° vs D1~8-10°)=반응형 균형의 몫.
+
+**★"지형 SDF 넣고 최적화까지 하는데 왜 더 강건 안 되나?" (2026-08-04 사용자 핵심질문)**:
+- **SDF/perceptive가 주는 것 = 기하(kinematic) 적응만** — 발판배치·base높이/pitch·swing 클리어런스. **실제로 도움됨**(blind는 경사서 base 고정→x1.4 전복 / perceptive는 지형추종 base로 **8~10° 등반**). 즉 SDF는 "못 오름→오름"으로 robustness를 **올렸다**.
+- **SDF가 안 주는 것 = 반응형 동적 균형**. 경사 실패는 기하 아닌 **동적 문제**(경사방향 중력=지속외란 + heavy-leg 모델오차 → 속도오차 누적). 증거: D1 base-z가 경사면을 **완벽 추종**(climb_z=램프높이+comH)하는데도 tumble = **기하는 풀렸고 균형이 안 풀림**.
+- **왜 예측 NMPC가 자동으로 robust하지 않나**: ①NMPC=**nominal 모델 최적화**(명시적 disturbance/model-error robustness 없음, robust/stochastic MPC 아님) ②02_Leg **모델오차**(centroidal SRBD가 heavy-leg 모멘텀 미포착)→경사서 nominal-최적 plan이 어긋남 ③재계획 사이엔 WBC가 **stale plan 추종**(반응형 발조정 X). A의 Raibert/capture=**매스텝 속도오차 직접 상쇄 tight feedback**이라 "덜 똑똑해도 더 robust". = **지형 인지 ≠ 동적 robustness**(직교·상보). 둘 다 얻으려면 반응형 발배치를 NMPC 내부(foothold cost)로 = **DTC/Kim2025 방향**(어려움).
+
+**★★capture-point NMPC 주입 실험 (2026-08-04, 사용자 "foothold cost에 넣어 계획+반응 협조 진행")**:
+- **구현**: A식 capture(CoM 선속도+각운동량 → 속도오차 만큼 발판 shift)를 NMPC foothold seed(`region->updateFoot`)에 주입(`CAPTURE_K` env). 효과 약해 placement 박스 tight화(`CAP_BOX`)로 강제주입도 추가. 3회 재빌드(각 ~45s, 마스터+워크스페이스 동기).
+- **★결과: 협조가 아니라 "싸움"**. ①**soft 주입**(CAPTURE_K, 큰 walkable 박스)=거의 무효(발이 ±12cm 박스 안서 NMPC 원하는 대로, reached_x 2.18~2.53 노이즈). ②**강제 주입**(tight-box ±3~5cm + capture)=**오히려 악화**(reached_x 2.37→**0.48~1.43** 조기 전복). tight-box 단독(capture無)도 악화(x2.04). ⇒ **soft=무효·hard=싸움 → 외부 주입 sweet spot 없음**.
+- **★근본 원인=tight-coupling(구조적, 구현 문제 아님)**: D1 NMPC는 발판+GRF+base를 **함께 협조 최적화**하므로, 발판을 **외부서 강제하면 GRF/base 계획과 불일치→붕괴**. 리포트 "capture-point WBC 이식=실패(전복 악화)"를 NMPC-foothold 레벨서도 재확인. **A가 되는 건 loose-coupled**(MPC 힘계획 ↔ Raibert 발배치 ↔ WBIC 독립)라 반응 발배치가 힘계획과 안 싸움.
+- **★결론**: 반응형 발배치는 D1 NMPC에 **외부 bolt-on 불가**. 반응 보정이 **NMPC 내부 비용**(속도오차를 발판+GRF로 함께 푸는 재정식화=큰 작업)이거나 **RL**(end-to-end 반응정책 학습)이어야 함 = **DTC 존재이유 실증**.
+- **★★사용자 확정 원칙 (2026-08-04): "각 컨트롤러를 자기 표준에 충실히"** — A=레퍼런스(loose-coupled Raibert/capture, 유지) · **D1=D1 표준**(Grandia perceptive NMPC, tight-coupled: 발판=지형 feasibility 제약, 균형=재계획+피드백) · TAMOLS=TAMOLS 표준(GIAC 안정성 cone이 균형 담당+재-solve). **교차 이식(A-capture를 D1/TAMOLS에) 금지**. ⇒ 이 세션서 D1에 실험 추가한 **CAPTURE_K·CAP_BOX·ZRATE를 전부 revert**(A-graft 제거, D1 표준 복원·재빌드·평지/완만경사 회귀 falls=0 확인). 각 균형 메커니즘: A=Raibert/capture(반응 휴리스틱)·TAMOLS=GIAC(계획 안정성제약)·D1=NMPC dynamics+재계획. **경사/외란 반응성=A(또는 TAMOLS injection), D1=전신 perceptive 계획, 강건 험지=RL(DTC)** 역할분담이 아키텍처적으로 정당.
+
 ### Phase 5 — DTC (별도, 후속)
 OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 

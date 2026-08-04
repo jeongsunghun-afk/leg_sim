@@ -76,6 +76,13 @@
 </header>
 
 <section id="pipeline">
+  <div class="note" style="border-color:var(--yes);border-left:4px solid var(--yes)">
+  <b class="nn">★★방향 확정 (2026-08-04, 사용자 원칙: 각 컨트롤러를 자기 표준으로)</b><br>
+  <b>pure-online(GIAC 안정성 cone이 균형 담당 + WBC 추종)이 TAMOLS 표준</b> — 이것만 개발. <b class="nn">injection(아래 §1-B, A-capture 차용 하이브리드) = 개발 중단</b>(비표준). 균형은 GIAC가 담당(A의 Raibert/capture 차용 아님).<br>
+  <b>· Go2(15kg) = 성공</b>(pure-online 걷기 V≤0.3 falls0, go2 investigation. 단 현 assets 트리선 미재현 — 검증 config가 <span class="mono">strict-hqp-tamols-wip</span> 브랜치·일부 미커밋).<br>
+  <b class="nn">· 02_Leg(37.9kg) = 미완</b> — 무거운 base를 <b>순수 WBC가 GRF로 못 잡아 침하</b>(서기도 z0.5→0.13 붕괴·뒤로 pitch). GIAC_FIX·HQP·VADV_REF(월드프레임 재anchor 우회)·GM관측기(VI-B)·KP_Z 다 시도해도 안 잡힘 → <b>heavy-robot WBC base-hold 한계 = 모델 문제로 분류·보류</b>(TAM_MPC/MPC-GRF는 잡으나 비순수). 근본 = WBC가 MPC처럼 무거운 floating-base GRF 분배를 스스로 계산해야 함.<br>
+  <span class="dim">아래 §1 "우회책 injection" 서술은 기록 보존용(개발 중단됨). 상세 <a href="제어기_비교.html">제어기_비교</a>·<a href="D1_OCS2_개발리포트.md">D1 리포트 §4.5</a>.</span></div>
+
   <h2>1 · 두 파이프라인 — <span style="color:var(--tam)">full TAMOLS</span>(pure-online) vs <span style="color:var(--tam)">injection</span>(TAMOLS+A)</h2>
   <p>TAMOLS를 쓰는 방식이 둘이다. <b>A = full TAMOLS(pure-online)</b>: TAMOLS가 base·발판·자세 <b>전부 계획</b>하고 WBC가 직접 추종 — <b class="nn">현재 붕괴</b>이나 <b>우리 목표</b>(진짜 지형인지 계획). <b>B = injection</b>: A의 실행스택 위에 TAMOLS 계획만 주입 — <b class="yes">작동(마진 얇음)</b>, 현재 우회책.</p>
 

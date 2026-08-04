@@ -28,9 +28,13 @@ inline void set_trot_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) 
 //   LS crawl 순서 RR→FR→RL→FL(idx 3,1,2,0). off=horizon-shift 위상.
 inline void set_walk_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) {
   int P = 4; st.gait.resize(P);
-  int cs[4][4] = {{1,1,1,0},{1,0,1,1},{1,1,0,1},{0,1,1,1}};   // swing: RR,FR,RL,FL
+  // ★구 order는 planner라벨[FL,FR,RL,RR]기준 LS crawl(RR→FR→RL→FL). 그런데 컨트롤러가 cs[i]를 q.legs[HL,HR,FL,FR][i]에
+  //   그대로 적용 → 실제 스윙순서 FR→HR→FL→HL(같은쪽 연속=횡불안정→즉시전복). WALK_QLEG=1: q.legs 기준 대각크롤(FR→HL→FL→HR, A와 일치).
+  int cs_old[4][4]  = {{1,1,1,0},{1,0,1,1},{1,1,0,1},{0,1,1,1}};
+  int cs_qleg[4][4] = {{1,1,1,0},{0,1,1,1},{1,1,0,1},{1,0,1,1}};   // q.legs 대각크롤: 스윙 FR→HL→FL→HR
+  bool fix = getenv("WALK_QLEG");
   for (int k = 0; k < P; ++k) { int s = ((k + off) % P + P) % P; st.gait[k].duration = phase_dur;
-    for (int i = 0; i < 4; ++i) { st.gait[k].contact[i] = cs[s][i]; st.gait[k].at_des[i] = (cs[s][i]==0)?1:0; } }
+    for (int i = 0; i < 4; ++i) { int c = fix ? cs_qleg[s][i] : cs_old[s][i]; st.gait[k].contact[i] = c; st.gait[k].at_des[i] = (c==0)?1:0; } }
 }
 
 // ── 온라인 replan: 현재 상태 → TamolsState(로컬, 앞으로 vadv 전진) → solve_fast(warm-start) ──

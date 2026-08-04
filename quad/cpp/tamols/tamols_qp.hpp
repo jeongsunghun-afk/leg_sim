@@ -72,6 +72,16 @@ inline VectorXd cost_residuals(const TamolsState& st, const Grid& h, double cell
   // ★GIAC_FIX: eps(GIAC slack) 비용 페널티 → 위반을 slack에 흘리는 대신 base/발판을 움직이게(soft=feasible 유지, 하드바운드 near-infeasible 회피)
   if (getenv("GIAC_FIX")) { double we = getenv("W_EPS") ? atof(getenv("W_EPS")) : 50.0;
     for (int k = 0; k < st.num_phases(); ++k) r.push_back(std::sqrt(we) * ((k < st.epsilon.size()) ? st.epsilon(k) : 0.0)); }
+  // ★CoM-centering(walk 정적안정): base (x,)y가 각 phase 지지발 centroid를 따라가게 = CoM을 지지삼각형 안으로.
+  //   walk 크롤이 CoM을 한쪽으로 0.32m 쏠리게 하던 근본(GIAC slack이 느슨해 방치) 해결. COM_W>0 시 활성(FD jacobian 필요).
+  if (getenv("COM_W")) { double cw = atof(getenv("COM_W"));
+    bool cx = getenv("COM_WX") != nullptr;   // x도 centering(기본 y만=전진 방해 안 함)
+    for (int k = 0; k < st.num_phases(); ++k) {
+      double yc = 0, xc = 0; int nst = 0;
+      for (int i = 0; i < 4; ++i) if (st.gait[k].contact[i]) { xc += st.p_meas(i, 0); yc += st.p_meas(i, 1); nst++; }
+      if (nst > 0) { yc /= nst; xc /= nst; double tau = st.gait[k].duration / 2.0; Vector6d pk = st.pos_at(k, tau);
+        r.push_back(std::sqrt(cw) * (pk(1) - yc));
+        if (cx) r.push_back(std::sqrt(cw) * (pk(0) - xc)); } } }
   return Eigen::Map<VectorXd>(r.data(), r.size());
 }
 

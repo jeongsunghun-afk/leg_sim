@@ -18,17 +18,17 @@ ENVSTR="QUAD_CMD='$CMD' QUAD_STATE='$STATE'"
 [ -n "${MOCK_CONNECTED:-}" ] && ENVSTR="$ENVSTR MOCK_CONNECTED='$MOCK_CONNECTED'" \
     && echo "★부분연결 시뮬: 채널 [$MOCK_CONNECTED] 만 통신연결(LED 초록)"
 
-pkill -f "app/biped_emb.py" 2>/dev/null; pkill -f "gui/teleop_emb.py" 2>/dev/null; sleep 1
+pkill -f "app/biped_emb.py" 2>/dev/null; pkill -f "teleop_gui_biped.py" 2>/dev/null; sleep 1
 echo '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}' > "$CMD"
 
 # ① app (RT 루프: read→매핑→모드→write, 상태발행)
 setsid bash -c "cd '$HERE'; $ENVSTR '$PY' app/biped_emb.py > /tmp/biped_emb_app.log 2>&1" </dev/null &
 sleep 2
-# ② GUI (각축 JOG 슬라이더 + 모터 on/off + 통신 LED + 모드버튼)
-setsid bash -c "cd '$HERE'; QUAD_CMD='$CMD' QUAD_STATE='$STATE' DISPLAY='$DISPLAY' '$PY' gui/teleop_emb.py > /tmp/biped_emb_gui.log 2>&1" </dev/null &
+# ② GUI (통합 biped GUI: 조이스틱 + 각축 JOG 슬라이더 + 통신 LED). biped/teleop_gui_biped.py 사용.
+setsid bash -c "cd '$HERE'; QUAD_CMD='$CMD' QUAD_STATE='$STATE' DISPLAY='$DISPLAY' '$PY' ../teleop_gui_biped.py > /tmp/biped_emb_gui.log 2>&1" </dev/null &
 sleep 2
 
-pgrep -f "app/biped_emb.py"  >/dev/null && echo "✅ app RUNNING"  || { echo "❌ app DEAD";  tail -8 /tmp/biped_emb_app.log; }
-pgrep -f "gui/teleop_emb.py" >/dev/null && echo "✅ GUI RUNNING"  || { echo "❌ GUI DEAD";  tail -8 /tmp/biped_emb_gui.log; }
+pgrep -f "app/biped_emb.py"    >/dev/null && echo "✅ app RUNNING"  || { echo "❌ app DEAD";  tail -8 /tmp/biped_emb_app.log; }
+pgrep -f "teleop_gui_biped.py" >/dev/null && echo "✅ GUI RUNNING"  || { echo "❌ GUI DEAD";  tail -8 /tmp/biped_emb_gui.log; }
 echo "명령채널=$CMD · 로그=/tmp/biped_emb_app.log,/tmp/biped_emb_gui.log"
-echo "종료: pkill -f app/biped_emb.py; pkill -f gui/teleop_emb.py"
+echo "종료: pkill -f app/biped_emb.py; pkill -f teleop_gui_biped.py"

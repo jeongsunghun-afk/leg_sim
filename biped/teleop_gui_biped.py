@@ -23,12 +23,31 @@ WZ_MAX = float(os.environ.get('WZ_MAX', '0.30'))  # 선회 상한[rad/s]
 H_MIN, H_MAX, H_DEF = 0.36, 0.54, 0.38  # 슬라이더 전체범위·시작(2점)기본
 H_DEF_1PT, H_DEF_2PT = 0.50, 0.38       # ★접촉모드별 기본 몸통높이(점발/평발, 접촉구2배 자연높이)
 
+# ── 각축(JOG) 검증용 관절 정의 — emb/config/biped_emb.yaml 있으면 로드, 없으면 기본값 ──
+#   실기(app/biped_emb.py) 배포 시 축별 목표각·통신 LED로 각 모터 확인. sim에선 inert(무해).
+JOG_NAMES = ['HL_hip', 'HL_thigh', 'HL_calf', 'HL_foot', 'HR_hip', 'HR_thigh', 'HR_calf', 'HR_foot']
+JOG_LIM   = [(-17, 17), (-67, 32), (-27, 32), (-40, 20)] * 2   # jog 안전범위(deg)=mjcf range×0.5
+try:
+    import yaml
+    _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb', 'config', 'biped_emb.yaml')
+    _cfg = yaml.safe_load(open(_cfgp))
+    _frac = float(_cfg.get('jog', {}).get('range_frac', 0.5))
+    JOG_NAMES = [j['name'] for j in _cfg['joints']]
+    JOG_LIM = [(j['min_deg'] * _frac, j['max_deg'] * _frac) for j in _cfg['joints']]
+except Exception:
+    pass
+NJ = len(JOG_NAMES)
+
 
 class Pub:
     def __init__(self, path=CMD):
         self.path = path
-        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'stand', 'contact': '2pt'}  # ★시작=2점 서기
+        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'stand', 'contact': '2pt',
+                    'jog_deg': [0.0] * NJ}  # ★시작=2점 서기. jog_deg=각축 목표각(emb JOG용)
         self._pub()
+
+    def set_jog(self, i, val):
+        self.cmd['jog_deg'][i] = float(val); self._pub()
 
     def set(self, **kw):
         self.cmd.update(kw)
@@ -130,6 +149,16 @@ def on_turn(_, val): pub.set(w=round(val, 3))
 def on_height(_, val): pub.set(body_h=round(val, 3))
 
 
+def on_jog(sender, val, i):           # 각축 슬라이더 → 목표각(deg) 발행
+    pub.set_jog(i, val)
+
+
+def jog_zero():                       # 전체 0(home)
+    for i in range(NJ):
+        dpg.set_value(f'jog_{i}', 0.0)
+    pub.set(jog_deg=[0.0] * NJ)
+
+
 def set_mode(mode):
     if mode == 'reset':
         left.clear(); right.clear()
@@ -146,7 +175,15 @@ def set_mode(mode):
         dpg.set_value('h_sl', H_DEF_2PT)
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
         return
-    pub.set(mode=mode)          # off 등
+    if mode == 'jog':           # ★각축 검증 진입: 슬라이더를 현재 실측각으로 정렬(명령 점프 방지)
+        try:
+            q = json.load(open(STATE)).get('q_leg_deg', [0.0] * NJ)
+            for i in range(NJ):
+                v = float(max(JOG_LIM[i][0], min(JOG_LIM[i][1], q[i])))
+                dpg.set_value(f'jog_{i}', v); pub.cmd['jog_deg'][i] = v
+        except Exception:
+            pass
+    pub.set(mode=mode)          # off/jog/hold 등
     left.clear(); right.clear(); pub.set(v=0.0, vy=0.0, w=0.0)
     dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
 
@@ -202,6 +239,8 @@ with dpg.window(tag='main'):
         dpg.bind_item_theme(_rb, _stop)
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
+        dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
+        dpg.add_button(label='Hold', width=70, callback=lambda: set_mode('hold'))
         with dpg.group():              # ★Stand=2점접촉 서기(자동 전환)
             dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
             dpg.add_text('(2점접촉)', color=(120, 130, 150))
@@ -211,6 +250,25 @@ with dpg.window(tag='main'):
         dpg.bind_item_theme(_wb, _walk)
     dpg.add_text('복구 순서: 전원(Off) → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
                  color=(150, 155, 175))
+    dpg.add_separator()
+    # ── ★각축(JOG) 패널: 8관절 슬라이더(모터 1:1) + 실측 + 통신 상태 LED ──
+    dpg.add_text('● 각축 JOG 검증 (슬라이더=목표각° · 실측° · ●=상태LED)', color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        dpg.add_button(label='모두 0 (home)', width=110, callback=jog_zero)
+        dpg.add_text('LED 초록=정상·노랑=에러·회색=무통신 · 실기(app/biped_emb.py)서 각 모터 확인',
+                     color=(120, 130, 150))
+    _LED_R = 7
+    for i, nm in enumerate(JOG_NAMES):
+        with dpg.group(horizontal=True):
+            with dpg.drawlist(width=2 * _LED_R + 6, height=2 * _LED_R + 6, tag=f'leddl_{i}'):
+                dpg.draw_circle([_LED_R + 3, _LED_R + 3], _LED_R, fill=(70, 70, 78),
+                                color=(30, 30, 36), tag=f'led_{i}')
+            dpg.add_text(f'{nm:9s}', color=(190, 195, 210))
+            dpg.add_slider_float(tag=f'jog_{i}', default_value=0.0,
+                                 min_value=JOG_LIM[i][0], max_value=JOG_LIM[i][1],
+                                 width=240, format='%.1f', user_data=i,
+                                 callback=lambda s, v, u: on_jog(s, v, u))
+            dpg.add_text('--.-', tag=f'meas_{i}', color=(150, 220, 150))
     dpg.add_separator()
     dpg.add_text('-', tag='state', color=(150, 220, 150))
 
@@ -223,22 +281,36 @@ with dpg.handler_registry():
 dpg.bind_theme(_dark)
 if _kf is not None:
     dpg.bind_font(_kf)
-dpg.create_viewport(title='biped teleop', width=680, height=430)
+dpg.create_viewport(title='biped teleop', width=700, height=800)
 dpg.setup_dearpygui(); dpg.show_viewport(); dpg.set_primary_window('main', True)
 
+_LED = {'ok': (60, 210, 90), 'fault': (235, 200, 60), 'dead': (70, 70, 78)}
 while dpg.is_dearpygui_running():
     try:
         with open(STATE) as f:
             st = json.load(f)
-        line = ('mode=%s  높이%.2f  vx%+.2f vy%+.2f wz%+.2f  yaw%+.0f°  tilt%.1f°  (%+.1f,%+.1f)'
-                % (st['mode'], st['base_z'], st['vx_cmd'], pub.cmd['vy'], st.get('wz_cmd', 0),
-                   st.get('yaw', 0), st['tilt'], st['x'], st.get('y', 0)))
-        if 'est_perr' in st:                       # biped_deploy 실행 시 = leg-odometry 추정오차(GT 대비)
-            line += '\n추정(leg-odom) 오차: pos %.1fcm  vel %.3fm/s   EST(%+.2f,%+.2f)' % (
-                st['est_perr']*100, st['est_verr'], st.get('est_x', 0), st.get('est_y', 0))
+        if 'health' in st or 'q_leg_deg' in st:          # ── emb(app/biped_emb) 상태: LED+실측 ──
+            q = st.get('q_leg_deg', [0.0] * NJ)
+            health = st.get('health', ['dead'] * NJ)
+            for i in range(min(NJ, len(q))):
+                dpg.set_value(f'meas_{i}', f'{q[i]:+6.1f}')
+            for i in range(min(NJ, len(health))):
+                dpg.configure_item(f'led_{i}', fill=_LED.get(health[i], (70, 70, 78)))
+            line = ('[emb] mode=%s  backend=%s  정상%d/에러%d/두절%d/%d  tilt%.1f°  loop%.0fHz'
+                    % (st.get('mode', '-'), st.get('backend', '-'), st.get('n_ok', 0),
+                       st.get('n_fault', 0), st.get('n_dead', NJ), NJ,
+                       st.get('tilt_deg', 0), st.get('loop_hz', 0)))
+        else:                                            # ── sim(biped_run/view) 상태 ──
+            line = ('mode=%s  높이%.2f  vx%+.2f vy%+.2f wz%+.2f  yaw%+.0f°  tilt%.1f°  (%+.1f,%+.1f)'
+                    % (st.get('mode', '-'), st.get('base_z', 0), st.get('vx_cmd', 0), pub.cmd['vy'],
+                       st.get('wz_cmd', 0), st.get('yaw', 0), st.get('tilt', 0),
+                       st.get('x', 0), st.get('y', 0)))
+            if 'est_perr' in st:                         # biped_deploy = leg-odometry 추정오차(GT 대비)
+                line += '\n추정(leg-odom) 오차: pos %.1fcm  vel %.3fm/s   EST(%+.2f,%+.2f)' % (
+                    st['est_perr']*100, st['est_verr'], st.get('est_x', 0), st.get('est_y', 0))
         dpg.set_value('state', line)
     except Exception:
-        dpg.set_value('state', '(biped_run.py 대기중…)')
+        dpg.set_value('state', '(컨트롤러 대기중…)')
     # ★연속 발행: 스틱을 가만히 눌러 유지해도(=drag 이벤트 없음) 명령이 계속 전송되게.
     #   dpg drag 핸들러는 마우스가 움직일 때만 발화 → 정지 유지 시 패킷 끊김 → sim이 옛 명령 유지/누락.
     #   매 프레임 현재 pub.cmd를 UDP로 재전송(≈60Hz)해 이벤트 타이밍 의존 제거.

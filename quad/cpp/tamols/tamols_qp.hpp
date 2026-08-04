@@ -79,7 +79,9 @@ inline VectorXd cost_residuals(const TamolsState& st, const Grid& h, double cell
     for (int k = 0; k < st.num_phases(); ++k) {
       double yc = 0, xc = 0; int nst = 0;
       for (int i = 0; i < 4; ++i) if (st.gait[k].contact[i]) { xc += st.p_meas(i, 0); yc += st.p_meas(i, 1); nst++; }
-      if (nst > 0) { yc /= nst; xc /= nst; double tau = st.gait[k].duration / 2.0; Vector6d pk = st.pos_at(k, tau);
+      if (nst > 0) { yc /= nst; xc /= nst;
+        double _lead = getenv("COM_LEAD") ? atof(getenv("COM_LEAD")) : 0.0;   // ★리드(위상분수): 0=mid-phase, 0.5=phase-start(리프트 시점에 centroid 도달=선행). CoM sway가 리프트를 앞서게.
+        double tau = st.gait[k].duration * std::max(0.0, 0.5 - _lead); Vector6d pk = st.pos_at(k, tau);
         r.push_back(std::sqrt(cw) * (pk(1) - yc));
         if (cx) r.push_back(std::sqrt(cw) * (pk(0) - xc)); } } }
   return Eigen::Map<VectorXd>(r.data(), r.size());
@@ -126,7 +128,11 @@ inline VectorXd ineq_constraints(const TamolsState& st, const QpOptions& o) {
       double tau = Tk * s / (double)S;
       Vector3d pB = st.pos_at(k, tau).head<3>(), aB = st.acc_at(k, tau).head<3>(), Ld = st.Ldot_at(k, tau);
       Vector3d aG = _giacfix ? (aB - gvec) : aB;                        // ★gravito-inertial 가속(aB+(0,0,9.81)): 정적 CoM-지지 테스트가 지배
-      if (N > 0) g.push_back((mu * aG(2)) * (mu * aG(2)) - aG(0) * aG(0) - aG(1) * aG(1));   // 17a ≥0
+      // ★정적walk(COM_W, 2026-08-04): 17a 마찰콘 z-예산만 gravito-inertial(aB_z+9.81)=GIAC 본래정의.
+      //   기존 aG(2)=aB_z≈0(수평정지)이라 (μ·0)²≥aB_x²+aB_y² → 수평 base 가속을 0으로 하드강제 → CoM sway(±0.047m 필요=~9m/s²) 불가능=COM_W 무력.
+      //   z-예산을 aB_z+9.81로 하면 수평 예산 0→~5.9m/s². 17b/c/d는 aG 유지(eps 폭주 방지). off=byte-identical(A/DTC 불변).
+      double az17a = getenv("COM_W") ? (aB(2) + 9.81) : aG(2);
+      if (N > 0) g.push_back((mu * az17a) * (mu * az17a) - aG(0) * aG(0) - aG(1) * aG(1));   // 17a ≥0
       if (N >= 3) for (size_t x = 0; x < stance.size(); ++x) for (size_t y = x + 1; y < stance.size(); ++y) {
         Vector3d pi = foot(stance[x]), pj = foot(stance[y]), pij = pj - pi;
         g.push_back(eps - (m * det3(pij, pB - pi, aG) - pij.dot(Ld)));                        // 17b: lhs≤eps

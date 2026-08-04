@@ -3,6 +3,7 @@
 //        ff토크(RBD 역동역학) + 관절 PD → MuJoCo ctrl → mj_step.
 //  발목(foot)·허리(waist)는 0 홀드(OCS2 point-foot 모델이 발목잠금이므로 정합).
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <array>
 #include <cmath>
@@ -290,8 +291,21 @@ int main(int argc, char** argv) {
   const double comHeight = 0.50;                                  // reference.info comHeight(지형적응 base높이 기준)
   const double mpcHorizon = interface.mpcSettings().timeHorizon_; // 발판 stanceEnd 탐색·참조 재구성 창
 
-  // 전진 목표 (VX env, 기본 0.3; stance 격리시 VX=0)
-  const double vx = getenv("VX") ? std::atof(getenv("VX")) : 0.3;
+  // 전진 목표 (VX env, 기본 0.3; stance 격리시 VX=0). ★GUI 배선: CMDFILE(teleop_gui JSON) 라이브 구동
+  double vx = getenv("VX") ? std::atof(getenv("VX")) : 0.3;
+  double vyCmd = 0.0, wCmd = 0.0;
+  const char* cmdfile = getenv("CMDFILE");   // teleop_gui_17dof가 발행하는 /tmp/quad_cmd.json
+  auto readCmd = [&]() {                      // JSON 최소파싱(v/vy/w). 없거나 실패=값 유지
+    if (!cmdfile) return;
+    std::ifstream cf(cmdfile); if (!cf.good()) return;
+    std::string s((std::istreambuf_iterator<char>(cf)), std::istreambuf_iterator<char>());
+    auto num = [&](const char* k, double& o) {
+      std::string key = std::string("\"") + k + "\"";
+      auto p = s.find(key); if (p == std::string::npos) return;
+      p = s.find(':', p + key.size()); if (p == std::string::npos) return;
+      o = std::atof(s.c_str() + p + 1); };
+    num("v", vx); num("vy", vyCmd); num("w", wCmd); };
+  readCmd();
   vector_t xGoal = x0;
   centroidal_model::getBasePose(xGoal, info)(0) += vx * simTime;
   interface.getReferenceManagerPtr()->setTargetTrajectories(
@@ -361,6 +375,7 @@ int main(int argc, char** argv) {
   int falls = 0; double t = 0;
   double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
+    if (cmdfile && step % 20 == 0) readCmd();   // ★GUI: 50Hz로 명령 갱신(v/vy/w)
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
     vector_t rbd_s(6 + nJ + 6 + nJ);
@@ -409,8 +424,10 @@ int main(int argc, char** argv) {
       // (B) 지형적응 base높이: [t,t+H] 11노드 참조(base z=h+comH/cos pitch·pitch=지형법선). modifyReferences 포팅.
       //   ★base x,y는 원본 절대 forward 램프(x0_x+vx·tn) 유지(modifyReferences가 desired x,y 보존하듯) — z/pitch만 덮어씀.
       if (getenv("TERRAIN_Z")) {
-        vector_t x0m = x0; const double x0x = centroidal_model::getBasePose(x0m, info)(0),
-                                        x0y = centroidal_model::getBasePose(x0m, info)(1);
+        // ★GUI: 참조 원점=현재 base pose(로봇-상대 속도명령)·cmdfile 없으면 x0(원래 절대 forward 램프=하위호환)
+        const double oX = cmdfile ? d->qpos[0] : centroidal_model::getBasePose(x0, info)(0);
+        const double oY = cmdfile ? d->qpos[1] : centroidal_model::getBasePose(x0, info)(1);
+        const double oYaw = cmdfile ? z : 0.0;   // z=현재 yaw(quat2zyx)
         // ★smooth heightmap(box-avg ±SW): legged_perceptive "smooth_planar" 대응. 원 mj_ray 계단 날카로움 완화
         //   → base z가 계단 앞서 점진 상승(급점프 전복 방지). pitch도 step=0.3 넓은 차분(legged_perceptive 동일).
         const double SW = getenv("SMOOTH_W") ? std::atof(getenv("SMOOTH_W")) : 0.14;
@@ -422,20 +439,34 @@ int main(int argc, char** argv) {
         for (int n = 0; n < N; ++n) {
           double tn = t + (double)n * H / (N - 1);
           vector_t xn = x0;                                                     // nominal 자세·momentum, base만 지형적응
-          double bx = x0x + vx * tn, by = x0y;                                  // 절대 forward 램프(원본 xGoal와 동일)
-          double refYaw = centroidal_model::getBasePose(xn, info)(3);            // 직진=0
+          double yawN = oYaw + wCmd * tn;                                       // ★GUI 선회(yaw-rate 적분)
+          double bx = oX + vx * tn * std::cos(oYaw + 0.5 * wCmd * tn) - vyCmd * tn * std::sin(oYaw);
+          double by = oY + vx * tn * std::sin(oYaw + 0.5 * wCmd * tn) + vyCmd * tn * std::cos(oYaw);
           double nX = (hS(bx - STEP, by) - hS(bx + STEP, by)) / (2 * STEP);      // n=[-∂h/∂x,-∂h/∂y,1]=법선(smooth·넓은차분)
           double nY = (hS(bx, by - STEP) - hS(bx, by + STEP)) / (2 * STEP);
-          double vx_ = std::cos(refYaw) * nX + std::sin(refYaw) * nY;           // (Rz(yaw)ᵀ·n).x
+          double vx_ = std::cos(yawN) * nX + std::sin(yawN) * nY;               // (Rz(yaw)ᵀ·n).x
           double pitch = std::atan2(vx_, 1.0);
           centroidal_model::getBasePose(xn, info)(0) = bx;
           centroidal_model::getBasePose(xn, info)(1) = by;
+          centroidal_model::getBasePose(xn, info)(3) = yawN;                     // ★yaw 참조(GUI 선회)
           centroidal_model::getBasePose(xn, info)(4) = pitch;                    // pitch 먼저(z가 읽음)
           centroidal_model::getBasePose(xn, info)(2) = hS(bx, by) + comHeight / std::cos(pitch);
           tt[n] = tn; xs[n] = xn; us[n] = vector_t::Zero(info.inputDim);
         }
         interface.getReferenceManagerPtr()->setTargetTrajectories(TargetTrajectories(std::move(tt), std::move(xs), std::move(us)));
       }
+    }
+    else if (cmdfile && step % mpcDecim == 0) {   // ★GUI 평지(perceptive off): 라이브 속도 목표(로봇-상대·선회)
+      const double Hh = mpcHorizon;
+      vector_t xa = x0, xb = x0;
+      centroidal_model::getBasePose(xa, info)(0) = d->qpos[0];
+      centroidal_model::getBasePose(xa, info)(1) = d->qpos[1];
+      centroidal_model::getBasePose(xa, info)(3) = z;
+      centroidal_model::getBasePose(xb, info)(0) = d->qpos[0] + vx * Hh * std::cos(z + 0.5 * wCmd * Hh) - vyCmd * Hh * std::sin(z);
+      centroidal_model::getBasePose(xb, info)(1) = d->qpos[1] + vx * Hh * std::sin(z + 0.5 * wCmd * Hh) + vyCmd * Hh * std::cos(z);
+      centroidal_model::getBasePose(xb, info)(3) = z + wCmd * Hh;
+      interface.getReferenceManagerPtr()->setTargetTrajectories(TargetTrajectories({t, t + Hh}, {xa, xb},
+          {vector_t::Zero(info.inputDim), vector_t::Zero(info.inputDim)}));
     }
     // --- MPC 관측 공급 + 정책 스왑 ---
     obs.time = t; obs.state = xMeas;

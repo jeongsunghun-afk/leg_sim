@@ -84,7 +84,7 @@
 
   <div class="card tldr">
     <h3 style="margin-top:0">한 줄 결론</h3>
-    <p style="margin-bottom:8px"><strong>로봇은 병목이 아니다.</strong> A제어기가 Go2를 전속도 완주하고, ①(TAMOLS+WBC)도 <em>버그를 고치니</em> 걷는다. 앞서 "①은 서기만 한다 = 접근법 한계"라던 결론은 <strong>틀렸다 — 세 개의 숨은 버그</strong>였다. 남은 진짜 한계는 <strong>험지 통과</strong>이고, 그건 발판·예측층이 아니라 <strong>플래너(solve_fast)의 계획 협조</strong> 문제다.</p>
+    <p style="margin-bottom:8px"><strong>로봇은 병목이 아니다.</strong> A제어기가 Go2를 전속도 완주하고, TAMOLS도 <em>버그를 고치니</em> 걷는다. solve_fast에서 <strong>정식화 버그 4개</strong>(base-z·y_min·HQP·walk-CoM)를 찾아 고쳤고 <strong>진단은 매번 맞았다</strong>. 그런데 <strong>계단 실험이 최종 판정을 내린다</strong>: A(Raibert+footScore)는 계단을 오르고(02_Leg 0.48m 완주) <strong>TAMOLS solve_fast는 0계단</strong>. → <strong>TAMOLS는 평지도 A만 못하고(발판 뭉침) 험지도 완패 = 존재 이유 없음.</strong> solve_fast는 폐기하고 <strong>A+footScore가 배포 험지, TAMOLS는 DTC(RL 레퍼런스)로</strong> 자리를 옮긴다.</p>
     <div class="scroll">
     <table class="matrix">
       <thead><tr><th>아키텍처</th><th>평지 보행</th><th>험지(경사·계단·갭)</th></tr></thead>
@@ -187,15 +187,26 @@
 
   <hr class="soft">
 
-  <h2><span class="n">07</span>결론 & 다음</h2>
+  <h2><span class="n">07</span>계단 판정 — TAMOLS vs A</h2>
+  <p>TAMOLS의 존재 이유 = <strong>험지에서 A보다 나아야 함</strong>(평지는 떨어져도 됨). 계단으로 직접 판정:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>계단 (얼마나 높이 오르나)</th><th>A (Raibert+footScore+walk)</th><th>TAMOLS (solve_fast)</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">Go2</td><td><span class="badge b-good">3계단 (0.12m)</span></td><td><span class="badge b-bad">0계단</span></td></tr>
+      <tr><td class="rowh">02_Leg</td><td><span class="badge b-good">16계단 = 0.48m 완주</span></td><td><span class="badge b-bad">0계단</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout" style="background:var(--bad-bg);border-color:var(--bad)"><span class="lab" style="color:var(--bad)">판정</span><strong>solve_fast 정식화 버그 4개(base-z·y_min·HQP·walk-CoM)를 다 고쳐도 계단 0 = A에 완패.</strong> 평지도 A만 못하고(발판 뭉침) 험지도 못 이긴다 → 존재 이유 없음. solve_fast는 Gauss-Newton SQP로 <em>구조는 건전</em>하나, cost/constraint 정식화가 계통적으로 약하다(nominal 약함·GIAC slack 느슨·CoM centering 부재).</div>
+
+  <h2><span class="n">08</span>결론 & 다음</h2>
   <ul class="tight">
-    <li><strong>로봇 모델은 병목이 아니다.</strong> A제어기가 Go2 완주. 02_Leg 난점의 상당부분은 로봇 특유였다.</li>
-    <li><strong>"①은 서기만 한다"는 오판이었다.</strong> base-z·HQP·발판 버그 3개가 원인. 고치니 ① 평지 보행 성립.</li>
-    <li><strong>진짜 약한 고리 = solve_fast 발판.</strong> 통째로 최적화하면 뭉치고 충돌한다 → <strong>Raibert가 발판을 잡고 지형은 nudge만</strong>(selectFoot)이 원천 해결. 스테핑 완주 확인.</li>
-    <li><strong>험지엔 두 개의 직교 축이 있다:</strong> <b>배치</b>(스테핑·갭 → selectFoot으로 해결)와 <b>등반</b>(경사·오르막 → 추진 필요, 미해결).</li>
-    <li><strong>로버스트 험지 = RL 피벗</strong>이 유효(D1도 ②→RL 동일). 모델기반(selectFoot·②)은 배치까진 가고, 등반/일반험지는 RL.</li>
+    <li><strong>로봇 모델은 병목이 아니다.</strong> A제어기가 Go2 완주. 02_Leg 난점 상당부분은 로봇 특유.</li>
+    <li><strong>"TAMOLS는 서기만 한다"는 오판이었다.</strong> 정식화 버그 4개가 원인, 진단은 매번 맞았다(walk-CoM은 "플래너가 walk에 맞춰 gait 생성해야"라는 사용자 진단 → 지지발 centroid 추종 비용으로 해결).</li>
+    <li><strong>그래도 A를 못 이긴다.</strong> A+footScore(selectFoot)가 배치 험지(스테핑·계단)를 실제로 건넌다 — solve_fast 없이.</li>
+    <li><strong>험지 = 직교 2축:</strong> <b>배치</b>(스테핑·갭 → selectFoot)와 <b>등반</b>(경사·계단 높이 ~0.06m 벽 → 추진/base-pitch, 미해결).</li>
+    <li><strong>TAMOLS는 폐기가 아니라 이사.</strong> solve_fast(발판 플래너)는 배포서 A+footScore로 대체하되, TAMOLS TO는 <strong>DTC(RL 레퍼런스)</strong>로 재사용.</li>
   </ul>
-  <div class="callout" style="background:var(--card)"><span class="lab">다음</span><strong>배치</strong>는 selectFoot으로 확보됐다(Go2는 NUDGE_R 스케일·hard 지형 튜닝 남음). <strong>등반</strong>은 발판이 아닌 <strong>추진/base-pitch 협조</strong>가 관문 — 이게 모델기반의 진짜 벽이고, 못 넘으면 RL로 간다.</div>
+  <div class="callout" style="background:var(--card)"><span class="lab">DTC 방향</span>DTC(TAMOLS TO → RL)에선 <strong>base-z·실행은 RL/WBC가 담당</strong>(TO는 참조만) → TO는 실행가능성 부담 없음. 정밀 험지(계단)엔 <strong>walk 정식화(CoM-centering 포함)</strong>가 trot보다 낫고(정적 발배치), <strong>오프라인 캐시라 솔버 iteration 넉넉</strong>히 써 발판 품질↑ 가능. TO의 값어치 = <strong>발판+접촉스케줄</strong>이지 실행가능 base 궤적이 아니다. 평지·관용 gap엔 DTC 끄고 순수 Raibert-RL(P2.7).</div>
 
   <div class="foot">
     조사: Go2 이식 세션 · 진단 도구 TAM_DUMP(계획 덤프)·TAM_TRK(참조추종)·analyze_fh(발판측정)·gdb<br>

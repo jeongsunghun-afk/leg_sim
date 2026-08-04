@@ -1,6 +1,6 @@
 # DTC 개발리포트 — Deep Tracking Control (MPC 교사 + RL 추종)
 
-> **상태: 활성 (DTC 트랙 정본) · 2026-08-04.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0·P1·P2 완료 · P2.5 오프라인 TAMOLS 캐시+커리큘럼 end-to-end 검증(걷기+gap 크로싱). ★★P2.7 DTC 가치 통제검증 = task-dependent 확정: 평지 gap(관용지형)엔 캐시가 방해(RL이 emergent로 이김), 계단(정밀지형)엔 full-TAMOLS-DTC가 도움(학습 2.8× 빠름·최종 ~25%·더 reliable). DTC는 정밀 발배치 지형서만 가치.**
+> **상태: 활성 (DTC 트랙 정본) · 2026-08-04.** 17-DOF quad(02_Leg) 위 DTC(모델기반 planner → RL 추종). **P0·P1·P2 완료 · P2.5 오프라인 TAMOLS 캐시+커리큘럼 end-to-end 검증(걷기+gap 크로싱). ★★P2.7 DTC 가치 통제검증 = task-dependent 확정: 평지 gap(관용지형)엔 캐시가 방해(RL이 emergent로 이김), 계단(정밀지형)엔 full-TAMOLS-DTC가 도움 — **확실한 이득=샘플효율(iter4000서 2.8× 빠름, 2-seed 일관)**, 최종성능은 seed편차(clean seed42 동률~6.4·seed7만 DTC우세=baseline 정체)라 점근이득 아님. DTC는 정밀 발배치 지형서 '빠르게 배우는' 레버.**
 > 이 문서 = DTC 트랙의 개발 기록·설계 근거. (전신 = MPC–RL 하이브리드 전략 리포트; 실행 트랙이 DTC로 좁혀져 이 이름으로 통합.) 학습법 심화는 `rl_module_train.html`, 작업 메모리는 `dtc-17dof-development`.
 
 ---
@@ -128,19 +128,31 @@ P2.5가 "파이프라인 작동"(커리큘럼+캐시로 걷기+gap크로싱)을 
 | | baseline(heightmap-RL) | DTC(full-TAMOLS) |
 |---|---|---|
 | iter4000 (matched) | 1.82 (2seed평균) | **5.12** = **2.8× 빠름**(두 seed 일관·겹침無) |
-| iter10000 최종 | 5.57 (base42 6.36/base7 4.78) | **6.94** (dtc42 6.54/dtc7 7.34) ≈ +25% |
-- **DTC 확실한 가치 = 학습 속도(샘플효율)**: iter4000서 2.8× 앞섬(두 seed 일관). 최종은 baseline이 상당히 따라잡음(seed42 거의 동률 6.4/6.5, seed7 큰차 4.8/7.3).
-- **DTC 더 reliable**: base7이 4.78서 stuck, DTC 두 seed는 6.5-7.3 도달 = 캐시가 stuck-seed 방지. (4-병렬 CPU 경합 無, 전부 ~2.2s/iter.)
+| iter10000 최종 | 5.57 (base42 **6.36**/base7 4.78) | 6.94 (dtc42 **6.54**/dtc7 7.34) — 평균 +25%지만 **seed편차**(clean seed42 동률·seed7만 우세) |
+- **DTC 확실한(robust) 가치 = 학습 속도(샘플효율)뿐**: iter4000서 2.8× 앞섬(두 seed 일관·겹침無). **최종 점근성능은 동률** — clean seed42는 baseline이 6.36까지 따라잡아 dtc 6.54와 사실상 같음(tee-log 최종 base42 6.43·dtc42 6.3~6.8). "+25%"는 seed7 하나(base7 4.78 정체)가 끌어올린 것.
+- **DTC가 stuck-seed 방지 가능성(잠정)**: base7이 4.78서 정체, DTC 두 seed는 6.5-7.3 도달. 단 **2-seed라 'reliable' 단정 불가**(seed42는 baseline도 6.36 도달). (4-병렬 CPU 경합 無, 전부 ~2.2s/iter.)
 
 **★★핵심 결론 — DTC 가치는 task-dependent:**
 | 지형 | planner(DTC) 효과 | 이유 |
 |---|---|---|
 | **평지 gap**(관용) | ❌ **방해** | gap="안빠지기"→RL emergent 쉬움, 발판 prescription 구속 |
-| **계단**(정밀) | ✅ **도움**(학습 2.8×·최종 +25%·reliable) | tread 정밀발판+base상승 필요→RL 혼자 느림/불안정, planner 제공 |
+| **계단**(정밀) | ✅ **도움**(샘플효율 2.8× @iter4000·2seed일관; 최종 점근은 동률·seed편차) | tread 정밀발판+base상승 필요→RL 혼자 느림, planner가 초기 학습 가속 |
 
 = **DTC는 "무용"도 "만능"도 아님. 정밀 발배치 지형(계단·stepping stone)엔 크게 기여(특히 샘플효율)·관용 지형(gap)엔 방해.** 이 nuance는 3D 재설계로만 드러남.
 
 **자산·주의**: `tamols/{cache_gen_stairs,test_stairs}.cpp`·`tamols_stair_cache/`·env 토글 `QUAD17_{HEIGHTMAP,FOOTHOLD_OBS,TERRAIN_KIND,FULL_TAMOLS,USE_TAMOLS_CACHE}`. 학습 dir=`2026-08-03_{14-52-36 base42·17-34-56 dtc42}`. 비교영상=`stair_compare.mp4`(iter5000). ★런치 주의: 동일-초 발사 시 IsaacLab이 같은 타임스탬프 dir 충돌(base7/dtc7 겹침)→발사 간 sleep 필요. GPU0/1/3=사용자 임시허가(내일까지)로 4-병렬, 이후 GPU2-only 복귀.
+
+### P2.8 — TO 정식화 선택: walk-TO 레퍼런스 (★2026-08-04, Go2 이식 세션서 도출)
+
+Go2 이식 조사(`go2_portability.html`)서 solve_fast 정식화 버그 4건(base-z·y_min·HQP·walk-CoM)을 규명하며 **DTC용 TO 정식화 방향이 정해짐**:
+
+- **base-z·실행은 RL/WBC 담당, TO는 참조만.** 순수-TAMOLS(TO→WBC직접)는 base 궤적이 실행가능해야 했지만, **DTC는 RL이 실행·robustify**하므로 TO는 실행가능성 부담이 없다. 발견한 base-z 버그(계획이 불가능한 0.52 명령)는 TO config 버그였고, base 높이 추종·안정화 자체는 실행층 몫. → **DTC TO는 base z 레퍼런스(명목+지형)만 내면 됨.**
+- **정밀 험지(계단)엔 walk 정식화 > trot.** walk(정적안정·한 발씩)가 발판을 정밀하게 놓는 깔끔한 레퍼런스를 줌(A가 계단 오른 게 walk). trot 레퍼런스는 동적이라 RL이 정밀 발배치 배우기 어려움. **P2.7 결론(계단=정밀배치서 DTC 가치)과 정합.**
+- **walk-CoM·크롤순서 수정이 valid walk 레퍼런스의 전제**(커밋 11ad476). solve_fast가 walk서 CoM을 한쪽 0.32m로 몰던 근본(GIAC slack 느슨·CoM centering 부재) → cost_residuals에 **지지발 centroid 추종 비용(COM_W)** 추가 + 크롤순서 q.legs 정합(WALK_QLEG)로 평지 walk falls=0 성립. CoM 쏠린 walk는 레퍼런스로도 무의미하니 이 수정이 DTC-walk 직결.
+- **오프라인 캐시라 솔버 iteration 넉넉 → 발판 품질↑.** online RTI 5-iter 제약이 solve_fast 발판 품질을 낮췄으나, DTC 오프라인 캐시는 수십 iter 가능 → 더 나은 발판.
+- **TO의 값어치 = 발판+접촉스케줄**이지 실행가능 base 궤적이 아님. 배포 험지는 A+footScore(selectFoot)로 가고(계단 실측 A 완주 vs solve_fast 0), TO는 정밀 험지 DTC 레퍼런스로 재사용.
+
+**요약: DTC TO 정식화 = walk(CoM-centering+크롤순서 수정) + footScore 발판, 오프라인 캐시(iter 넉넉). base-z/실행=RL. 평지·관용 gap엔 DTC off(순수 Raibert-RL, P2.7).**
 
 ### P3 — 지형·강건성·CVAE (예정)
 지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체 ← **P2.5서 실현(오프라인 캐시)**, height scan(발→목표 직선).

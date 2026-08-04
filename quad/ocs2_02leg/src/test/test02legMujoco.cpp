@@ -280,6 +280,10 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < holdQ.size(); ++i) d->qpos[holdQ[i]] = 0.0;
   d->qpos[wq] = 0.0;
   mj_forward(m, d);
+  // ★GUI: 초기 qpos 캡처(Reset/Ready 버튼서 복원) + 발배치 시각화 버퍼
+  std::vector<double> qpos0(d->qpos, d->qpos + m->nq);
+  double resetSeq = 0, homeSeq = 0; int lastResetSeq = 0, lastHomeSeq = 0;
+  double vizSeed[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
 
   // ★Phase 3b: nominal 발-base xy 오프셋(yaw프레임). 초기 nominal stance(yaw=0)서 발 sphere − base.
   //   매틱 발판영역 씨앗 = base_xy + vel·Δt + Rz(yaw)·offset (≈ getNominalFoothold FK, 평지 pitch≈0).
@@ -304,7 +308,8 @@ int main(int argc, char** argv) {
       auto p = s.find(key); if (p == std::string::npos) return;
       p = s.find(':', p + key.size()); if (p == std::string::npos) return;
       o = std::atof(s.c_str() + p + 1); };
-    num("v", vx); num("vy", vyCmd); num("w", wCmd); };
+    num("v", vx); num("vy", vyCmd); num("w", wCmd);
+    num("reset_seq", resetSeq); num("home_seq", homeSeq); };   // ★Reset/Ready 버튼(카운터)
   readCmd();
   vector_t xGoal = x0;
   centroidal_model::getBasePose(xGoal, info)(0) += vx * simTime;
@@ -375,7 +380,16 @@ int main(int argc, char** argv) {
   int falls = 0; double t = 0;
   double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
-    if (cmdfile && step % 20 == 0) readCmd();   // ★GUI: 50Hz로 명령 갱신(v/vy/w)
+    if (cmdfile && step % 20 == 0) {            // ★GUI: 50Hz로 명령 갱신(v/vy/w)
+      readCmd();
+      if ((int)resetSeq != lastResetSeq || (int)homeSeq != lastHomeSeq) {   // ★Reset/Ready 버튼=초기자세 복원
+        lastResetSeq = (int)resetSeq; lastHomeSeq = (int)homeSeq;
+        for (int q = 0; q < m->nq; ++q) d->qpos[q] = qpos0[q];
+        for (int v2 = 0; v2 < m->nv; ++v2) d->qvel[v2] = 0.0;
+        mj_forward(m, d);
+        std::cerr << "  [RESET] 로봇 초기자세 복원(t=" << t << ")\n";
+      }
+    }
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
     vector_t rbd_s(6 + nJ + 6 + nJ);
@@ -418,7 +432,10 @@ int main(int argc, char** argv) {
           }
           double dtm = ((stanceEnd_i > t) ? 0.5 * (t + stanceEnd_i) : t + 0.5 * H) - t;  // stance 중간≈착지 부근
           double rx = cy * footOff[i][0] - sy * footOff[i][1], ry = sy * footOff[i][0] + cy * footOff[i][1];
-          region->updateFoot(i, d->qpos[0] + baseVx * dtm + rx, d->qpos[1] + baseVy * dtm + ry, stanceEnd_i);
+          double seedX = d->qpos[0] + baseVx * dtm + rx, seedY = d->qpos[1] + baseVy * dtm + ry;
+          region->updateFoot(i, seedX, seedY, stanceEnd_i);
+          vizSeed[i][0] = seedX; vizSeed[i][1] = seedY;                    // ★발배치 시각화(seed=발판 목표)
+          vizSeed[i][2] = terrainSdf ? terrainSdf->height(seedX, seedY) : 0.0;
         }
       }
       // (B) 지형적응 base높이: [t,t+H] 11노드 참조(base z=h+comH/cos pitch·pitch=지형법선). modifyReferences 포팅.
@@ -654,6 +671,23 @@ int main(int argc, char** argv) {
       cam.lookat[0] = d->qpos[0]; cam.lookat[1] = d->qpos[1];  // 로봇 추종
       mjrRect vp{0, 0, 0, 0}; glfwGetFramebufferSize(win, &vp.width, &vp.height);
       mjv_updateScene(m, d, &vopt, nullptr, &cam, mjCAT_ALL, &scn);
+      // ★발배치 시각화(기본 on, VIZ_OFF로 끔): walkable 영역 박스(녹색 반투명) + 발판 seed(노랑 구)
+      if (!getenv("VIZ_OFF") && region) {
+        for (int i = 0; i < 4 && scn.ngeom + 2 <= scn.maxgeom; ++i) {
+          if (region->valid(i)) {
+            const auto& ab = region->params(i);
+            double hx = (ab.b(0) + ab.b(1)) / 2, cx = (ab.b(1) - ab.b(0)) / 2;
+            double hy = (ab.b(2) + ab.b(3)) / 2, cy = (ab.b(3) - ab.b(2)) / 2;
+            double hz = terrainSdf ? terrainSdf->height(cx, cy) : 0.0;
+            mjtNum szb[3] = {hx > 0.02 ? hx : 0.02, hy > 0.02 ? hy : 0.02, 0.004}, posb[3] = {cx, cy, hz + 0.008};
+            float grn[4] = {0.15f, 0.85f, 0.25f, 0.35f};
+            mjv_initGeom(&scn.geoms[scn.ngeom++], mjGEOM_BOX, szb, posb, nullptr, grn);
+          }
+          mjtNum szs[3] = {0.028, 0.028, 0.028}, poss[3] = {vizSeed[i][0], vizSeed[i][1], vizSeed[i][2] + 0.02};
+          float yel[4] = {1.0f, 0.85f, 0.1f, 0.95f};
+          mjv_initGeom(&scn.geoms[scn.ngeom++], mjGEOM_SPHERE, szs, poss, nullptr, yel);
+        }
+      }
       mjr_render(vp, &scn, &con);
       char hud[128]; snprintf(hud, sizeof(hud), "t=%.1fs  base_z=%.3f  gait=%s  %s", t, d->qpos[2], gait.c_str(),
                               useWbc ? "WBC" : "ff+PD");

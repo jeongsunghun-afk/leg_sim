@@ -36,6 +36,18 @@ CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1"
 - perceptive 자동 ON(지형 씬). 평지만 원하면 `run_gui.sh flat`.
 - **★강건 기립(2026-07-15)**: 앉기→서기 = **앉기→눕기→서기 라우팅**(haunch 직접상승은 측방 발산 → 대칭 저크라우치 거쳐 검증된 상승). 버튼 조작 동일.
 
+## D1 (OCS2 perceptive NMPC) GUI 텔레옵 — 원샷 (2026-08-04 배선)
+```bash
+# ★GUI(dearpygui)+D1 뷰어 동시 기동. GUI의 v/vy/w를 D1이 CMDFILE(/tmp/quad_cmd.json)로 50Hz 소비.
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh          # 기본=종합코스
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh rough   # 맵: course|flat|rough|slope|<절대경로.mjcf>
+```
+- **좌스틱=전후·측방, 우스틱=선회**(yaw-rate). GUI에서 **Walk 먼저** 누르고 조이스틱. D1은 trot 보행+선회 지원.
+- **★GUI python=proxddp env**(`/home/jsh/miniforge3/envs/proxddp/bin/python`=dearpygui 설치됨). 기본 `python`엔 dearpygui 없어 `python teleop_gui_17dof.py` 직접 실행은 실패 → **이 스크립트 사용**(올바른 python 자동).
+- **A와 차이**: D1=OCS2 NMPC 별도 바이너리(~0.2–0.3× 실시간=뷰어 슬로모션). 배선=A와 동일 CMDFILE JSON 채널(v/vy/w). CMDFILE 없으면 고정 VX(하위호환).
+- **보행성(실측)**: 평지·rough·완만경사(~8–10°) 보행 OK / **이산 갭·급단차는 낙상**(D1 프론티어, 험지 크로싱=RL 몫). 종합코스=rough 라인 보행·갭 라인 낙상 → 깔끔 데모는 **rough/slope 맵** 권장.
+- D1 재빌드: `(cd /home/jsh/문서/jsh/simulation/quad/ocs2_ws && source /opt/ros/humble/setup.bash && source install/setup.bash && env -u PYTHONPATH colcon build --packages-select ocs2_legged_robot --cmake-args -DCMAKE_CXX_FLAGS="-include cstddef -include cstdint")`. 상세=[D1_OCS2_개발리포트.md](D1_OCS2_개발리포트.md).
+
 ## ★지형 crossing — ③ selectFoot (perceptive foothold, FOOT_NUDGE)
 갭·스테핑을 건너려면 **footScore 기반 발판선택**을 켜야 함(perceptive 착지높이와 별개):
 ```bash

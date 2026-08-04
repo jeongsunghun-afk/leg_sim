@@ -110,8 +110,10 @@
         <td class="yes"><b>본선 1.75 m/s</b> trot</td>
         <td>~0.2 m/s 연구</td>
         <td>~0.27 m/s marginal</td>
-        <td class="wa">동적 TROT <b>0.3~0.7 m/s falls=0</b><br><span class="mono">16-DOF·perceptive <b>Phase3b 완료</b></span><br><span class="mono">15°ramp 연속지형 등반(base0.50→0.82)·이산단차=RL</span></td>
+        <td class="wa">동적 TROT <b>0.3~0.7 m/s falls=0</b><br><span class="mono">16-DOF·perceptive <b>Phase3b 완료</b></span><br><span class="mono">15°ramp 연속지형 등반(base0.53→0.84·blind 5×↓)·이산단차=RL</span></td>
         <td class="wa"><b>준정적 자세추종 성공</b><br><span class="mono">서기·눕기·앉기·A자세캡처</span><br><b class="no">walk·gap·외란·두발 실패</b><br><span class="mono">(현실접촉서 균형 프론티어 붕괴)</span></td></tr>
+      <tr><td class="rowh" style="color:var(--acc)">성능 — TAMOLS<br><span class="mono" style="font-weight:400;color:var(--muted)">계획층·배포아님</span></td>
+        <td colspan="5" style="background:var(--acc-soft)"><b>02_Leg 실측(2026-08-04, §2.1):</b> <b class="no">A에 전면 열등</b> — <b>injection</b>(A클럭+주입)=평지 erratic(<b>V0.4 낙상</b>·tilt22~33°)·연속 경사/계단 <b>stall</b>(x0.55, 못 오름)·계단코스 hsteps/dsteps2만 크로싱하나 tilt11~16°(A의 4~6배=마진 얇음). <b>pure-online</b>(전계획+RSL-WBC)=<b>붕괴</b>(V0.3 falls826·pitch37°·z→0.40, Go2식 발벌림/base_z 수정으로도 못 살림). vs 같은 지형서 A는 경사 z0.93·계단 z0.79 tilt&lt;2° 등반. ⇒ <b>배포가치 없음, DTC(RL 레퍼런스)용 계획층 자산으로만 잔존</b>.</td></tr>
       <tr><td class="rowh">접촉모델 / MJCF</td>
         <td>soft-native / <span class="mono">sphere</span></td>
         <td>rigid(STIFF) / <span class="mono">pt</span></td>
@@ -128,13 +130,65 @@
       <tr><td><span class="chip cA">A</span></td><td>SRBD-MPC+WBIC</td><td class="yes">✅ 반응형</td><td class="wa">✅ <b>좁은갭·stepping 전속도 완주</b>(접촉구 수정)·❌ 넓은갭</td><td>속도-공명=접촉구 아티팩트로 해소. <b>넓은갭=base-발판 협조 필요(계획층 3부재)</b></td></tr>
       <tr><td><span class="chip cB">B</span></td><td>Kinodyn+TSID</td><td class="wa">⚠️ 평지 안정</td><td class="no">❌ 갭서 발 빠짐</td><td>base–발판 협조 없음(greedy)</td></tr>
       <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
-      <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="yes">✅ <b>연속지형 등반 실증</b><br>(15°ramp base0.50→0.82·blind불가)</td><td class="no">❌ 급단차(0.16m 이산)=동적 불안정=RL</td><td><b>Phase3b 완료</b>(발판배치+지형적응 base). 동적TROT 0.3~0.7 falls=0·perceptive 지형적응 작동. 이산험지=RL(DTC)</td></tr>
+      <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="yes">✅ <b>연속지형 등반 실증</b><br>(15°ramp base0.53→0.84·blind 5×↓)</td><td class="no">❌ 급단차(0.16m 이산)=동적 불안정=RL</td><td><b>Phase3b 완료</b>(발판배치+지형적응 base). 동적TROT 0.3~0.7 falls=0·perceptive 지형적응 작동. 이산험지=RL(DTC)</td></tr>
       <tr><td><span class="chip cCI">CI</span></td><td>Contact-Implicit</td><td class="wa">△ 평지 falls=0(저속)·준정적 자세</td><td class="wa">△ gap 부분크로싱→낙상</td><td>완성분(해석그래디언트·서기/눕기/앉기) 있으나 <b>균형 프론티어(gap·walk·외란·두발) 붕괴</b>→종결·offline</td></tr>
       <tr><td><span class="chip" style="background:var(--acc)">T</span> <span class="mono" style="font-size:.72em">full</span></td><td><b>full TAMOLS</b>(pure-online)<br>TAMOLS 전계획+RSL-WBC 직접추종</td><td class="no">❌ 붕괴</td><td class="no">❌ 붕괴</td><td>★<b>목표(뚫는 중)</b>. 실측 <span class="mono">MODE=tamols</span>: 평지조차 못 걷고 base 주저앉음(z0.5→0.16·yaw−68°/1s·falls≈4600). 재anchor <b>death spiral</b>(리포트 §5) + base z 침하(WBC base task 약). standalone은 아직 불가</td></tr>
       <tr><td><span class="chip" style="background:var(--acc)">T</span>+<span class="chip cA" style="font-size:.72em">A</span></td><td><b>injection</b>(TAMOLS+A)<br>A gait클럭+TAMOLS 주입→A WBIC</td><td class="wa">walk 저속(정적안정)</td><td class="wa">⚠️ <b>injection 크로싱</b>(hsteps 1.2°·dsteps2 3.4°·falls=0)·마진 얇음</td><td><b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 <b>지형 크로싱</b> — full TAMOLS의 재anchor/붕괴를 <b>A가 우회</b>. A가 균형(Raibert+capture)·실행(MPC+WBIC) 담당. 남은=짜깁기 <b>마진 얇음</b></td></tr>
     </tbody>
   </table></div>
   <div class="box"><b>공통 결론(2026-07-31 정정)</b> — <b>TAMOLS 솔버(계획층)는 완성</b>: 583× 느림을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms)·self-contained cold-start. <b>두 실행방식</b>: ①<b class="no">full TAMOLS(pure-online)=붕괴</b>(TAMOLS 전계획+RSL-WBC 직접추종 standalone → 재anchor death spiral+base z 침하, 평지도 falls≈4600). ★이걸 성공시키는 게 목표. ②<b class="wa">injection(TAMOLS+A)=작동·마진 얇음</b>(A gait클럭 위 TAMOLS 주입, 재anchor 우회). <b>full TAMOLS 성공 후보</b>: WBC base-가속 task 강화(z침하, 논문=힘FF불요·WBC가 GRF계산)·월드프레임 계획(재anchor 제거)·WBC가 계획 자세 추종. 상세 <a href="pipeline_tamols.html">pipeline_tamols</a>·<a href="TAMOLS_개발리포트.md">리포트</a>.</div>
+
+  <h2><span class="n">2.1</span>지형 등반 실측 벤치 <span class="sub" style="font-weight:400">02_Leg 직접측정 · trot_sim · 2026-08-04</span></h2>
+  <p style="font-size:8.6pt;color:var(--muted);margin:1mm 0 2mm">Go2→<b>02_Leg</b>로 로봇 변경 후 <b>TAMOLS 제어기 성능 실측</b>(injection·pure-online 두 실행모드) + 동일 지형에서 A(배포 본선)·D1(리포트값) 대조. 수치=<span class="mono">falls</span>(0=완주)·<span class="mono">z</span>(base높이=등반량)·<span class="mono">tilt</span>(마진). 지형 8s·평지 3s.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>지형</th>
+      <th class="a">A <span class="mono" style="font-weight:400;color:var(--muted)">배포·본선</span></th>
+      <th style="color:var(--acc)">TAMOLS injection <span class="mono" style="font-weight:400;color:var(--muted)">A클럭+발판/base 주입</span></th>
+      <th style="color:var(--acc)">TAMOLS pure-online <span class="mono" style="font-weight:400;color:var(--muted)">전계획+RSL-WBC</span></th>
+      <th class="d1">D1 <span class="mono" style="font-weight:400;color:var(--muted)">리포트값</span></th>
+      <th>판정</th></tr></thead>
+    <tbody>
+      <tr><td class="rowh">평지 최고속</td>
+        <td class="yes"><b>1.4 m/s</b> x2.34·tilt1.9°·falls0<br><span class="mono">(본선 1.75)</span></td>
+        <td class="wa">erratic: V≤0.2 clean(3.8°)·<b class="no">V0.4 낙상</b>·V0.5~0.7 생존(tilt23~33°)</td>
+        <td class="no"><b>붕괴</b> V0.3 falls826·pitch37°·z→0.40</td>
+        <td class="wa">0.3~0.7 falls0</td>
+        <td>A ≫ inj ≫ pure</td></tr>
+      <tr><td class="rowh">연속 경사 15°</td>
+        <td class="yes"><b>등반</b> x2.65·z0.52→<b>0.93</b>·tilt1.8°·falls0</td>
+        <td class="no"><b>stall</b> x0.55<br><span class="mono">(명목발판 fwd0=0→추진 제거)</span></td>
+        <td class="no">붕괴</td>
+        <td class="yes">등반 x2.65·z→0.84<br><span class="mono">blind 5×↓</span></td>
+        <td>A·D1 등반 / <b>TAMOLS ❌</b></td></tr>
+      <tr><td class="rowh">계단 H=0.06<br><span class="mono" style="font-weight:400">(균일)</span></td>
+        <td class="yes"><b>등반</b> x2.62·z0.52→<b>0.79</b>(+0.27m)·falls0<br><span class="mono">H≥0.10 낙상=A 상한</span></td>
+        <td class="no"><b>stall</b> x0.55 (0 climb)</td>
+        <td class="no">붕괴</td>
+        <td class="no">급단차 0.16m 동적불안정<br><span class="mono">(연속만)</span></td>
+        <td><b>A만 등반</b> / 나머지=RL</td></tr>
+      <tr><td class="rowh">계단코스<br><span class="mono" style="font-weight:400">hsteps·dsteps2</span></td>
+        <td class="yes">완주 tilt2.7°/3.7°·falls0</td>
+        <td class="wa">크로싱하나 tilt<b>11.5°/16.4°</b><br><span class="mono">(A의 4~6배=마진 얇음)</span></td>
+        <td class="no">붕괴</td>
+        <td class="yes">연속형 통과</td>
+        <td>A 안정 / <b>inj 아슬</b></td></tr>
+      <tr><td class="rowh">이산 갭·stepping</td>
+        <td class="wa">속도공명·튜닝의존(V0.4 falls)</td>
+        <td class="no">stall x0.55</td>
+        <td class="no">붕괴</td>
+        <td class="no">❌ 동적한계</td>
+        <td>모두 취약 = <b>RL(DTC)</b></td></tr>
+    </tbody>
+  </table></div>
+  <div class="box acc"><b>실측 결론(2026-08-04) — TAMOLS 성능은 A에 전면 열등</b>
+    <ul>
+      <li><b>TAMOLS는 A보다 평지·험지 모두 못함</b>(fresh 02_Leg): ①<b>평지</b>=injection erratic(V0.4 낙상·tilt 22~33°), pure-online 붕괴 vs A 1.4 m/s tilt1.9°. ②<b>연속(경사·계단)</b>=injection이 명목발판 fwd0=0로 <b>지형 앞 x0.55 stall</b>(전혀 못 오름) vs A가 경사 z0.93·계단 z0.79로 <b>깔끔히 등반</b>(tilt&lt;2°). ③injection이 넘는 계단코스(hsteps/dsteps2)도 <b>tilt 11~16°</b>(A의 4~6배)=짜깁기 마진. ⇒ <b>배포가치 없음</b>(<a href="go2_portability.html">go2_portability</a>: Go2도 동일).</li>
+      <li><b>연속지형 = 모델기반(A·D1) 강함</b>: A는 경사·균일계단(H≤~0.06)을 반응형으로 등반, D1(perceptive NMPC)은 지형적응 base높이로 <b>blind를 낙상 5~7× 압도</b>(15°램프 z→0.84). = A·D1의 배포가치.</li>
+      <li><b>이산 험지(급단차 H≥0.10·갭·stepping) = RL(DTC)</b>: A도 속도공명 취약, D1은 0.16m 급단차 동적불안정, TAMOLS는 stall. 어느 모델기반도 강건 못함 → <b>DTC(TAMOLS TO를 RL 레퍼런스로)</b> 이관. TAMOLS solve_fast는 배포 아닌 <b>DTC용 계획층 자산</b>으로 잔존(walk 정식화·base-z는 WBC).</li>
+    </ul>
+  </div>
+  <p style="font-size:8pt;color:var(--muted);margin:1.5mm 0"><b>※ pure-online 붕괴 ≠ Go2식 발벌림 누락</b> — 검증(2026-08-04): 02_Leg pure-online은 <b>Go2를 걷게 한 수정(발 좌우폭 모델화·base_z·COM_W walk센터)을 적용해도 못 살림</b>. 오히려 발폭을 모델값으로 강제하면(<span class="mono">TAM_PRM_MODEL</span>) base가 <b>z→0.07로 즉시 주저앉음</b>(falls826→1339). 이유: 하드코딩 stance(<span class="mono">y 0.10/0.22·z0 0.52</span>)가 <b>이미 02_Leg native 정합값</b>(Go2엔 과폭·과고라 그때만 좁혀/낮춰야 했음). ⇒ 02_Leg pure-online 붕괴의 원인 = foot-width 아닌 <b>재anchor death spiral + base sink</b>(injection이 A gait클럭으로 우회하는 바로 그 문제).</p>
+  <p style="font-size:8pt;color:var(--muted);margin:1.5mm 0"><b>※ 다리 무게(로봇모델) vs 정식화(제어기) 분해</b> — 다리 distal 질량 0.35×(15.7→5.5kg)로 재실험: ①<b>pure-online은 여전히 붕괴</b>(falls826→1337·z→0.18) = 붕괴는 <b>다리무게 아닌 정식화 문제</b>(capture-point 부재+허리·발목 표류; Go2는 이상SRBD라 표류 작아 버팀). ②<b>injection 마진은 무거운 다리가 주범</b> — 가볍게 하니 <b>tilt 22°→3.5°·native 낙상 V0.4→falls0</b>. ⇒ "pure-online 걷/붕괴=제어기 지배, injection 깨끗/불안=로봇모델(다리무게) 지배". A(capture 내장)는 무거운 다리 그대로 2.5 m/s 완주 = <b>로봇이 못 걷는 게 아니라 TAMOLS 정식화가 이 로봇 표류를 못 잡음</b>.</p>
 
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>
@@ -233,5 +287,5 @@
   </ul>
   <div class="box acc"><b>결론(2026-07-29) — 계획기 완성 · injection 크로싱 실증 · 강건=D1포팅/RL</b><br>① <b>계획기(TAMOLS/TOWR) 완성</b>: 실시간 솔버(&lt;20ms)·self-contained cold-start. ② <b>★injection 크로싱 실증</b>: 순수 궤적추종은 오버슛 낙상이나, <b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 지형 크로싱(hsteps 1.2°·dsteps2 3.4°·falls=0). 단 짜깁기라 <b>마진 얇음</b>(연속~0.24m·이산 형상민감). ③ <b>강건 = D1 포팅(OCS2 통합 폐루프 perceptive NMPC) 또는 RL(DTC)</b>: injection의 얇은 마진을 근본 해결. D1=배포용 모델기반 정점 / DTC=TAMOLS TO+RL(외란까지). 상세=<b>pipeline_tamols.html</b>. 각 제어기 I/O는 개별 pipeline 문서.</div>
 
-  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · 상세 I/O는 각 pipeline 문서(<a href="pipeline_a.html">A</a>·<a href="pipeline_bc.html">B·C</a>·<a href="pipeline_d1.html">D1</a>·<a href="pipeline_ci.html">CI</a>) · 개발방향 APT-RL</div>
+  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · 상세 I/O는 각 pipeline 문서(<a href="pipeline_a.html">A</a>·<a href="pipeline_bc.html">B·C</a>·<a href="pipeline_d1.html">D1</a>·<a href="pipeline_ci.html">CI</a>) · 개발방향 APT-RL · <b>2026-08-04</b> §2.1 지형 등반 실측 벤치(D1 성능 + TAMOLS Go2→02_Leg) 반영</div>
 </div>

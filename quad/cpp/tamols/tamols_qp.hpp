@@ -139,12 +139,16 @@ inline VectorXd ineq_constraints(const TamolsState& st, const QpOptions& o) {
       }
     }
     // base bounds (nsamp, τ>0): z·roll·pitch·yaw
+    // ★BASE_YBND(2026-08-04): base y(lateral) 위치 제한 — GIAC binding이 sway를 낼 때 x/y 무경계라 폭주(−1.09m)하던 것 방지.
+    //   sway는 지지삼각형 centroid(±~0.05m)까지만 필요 → |y|≤ybnd로 묶으면 GIAC가 그 안에서 clean sway. 기본 off(오프라인/DTC 무영향).
+    double _ybnd = getenv("BASE_YBND") ? atof(getenv("BASE_YBND")) : 0.0;
     for (int j = 1; j <= o.base_nsamp; ++j) {
       double tau = Tk * j / (double)o.base_nsamp; Vector6d s = st.pos_at(k, tau);
       g.push_back(s(2) - o.zlo); g.push_back(o.zhi - s(2));
       g.push_back(s(3) + o.rp_max); g.push_back(o.rp_max - s(3));
       g.push_back(s(4) + o.rp_max); g.push_back(o.rp_max - s(4));
       g.push_back(s(5) + o.yaw_max); g.push_back(o.yaw_max - s(5));
+      if (_ybnd > 0) { g.push_back(s(1) + _ybnd); g.push_back(_ybnd - s(1)); }   // |y|≤ybnd
     }
   }
   // foot_y 대칭: 좌(0,2) y∈[ymin,ymax], 우(1,3) y∈[−ymax,−ymin]

@@ -382,8 +382,22 @@ struct TrotCtrl {
       double tgt_x=tam_ax+s[0], tgt_y=tam_ay+s[1];                      // base 위치 피드백(드리프트 보정) + TAMOLS 속도
       if(getenv("TAM_WDBG")){ static double _lw=-99; if(d->time-_lw>=0.3){ _lw=d->time;
         int nsw=0; for(int i=0;i<4;i++) if(cc[i]==0) nsw++;
-        std::printf("[WDBG] t=%.2f comx=%.3f tgtx=%.3f tam_ax=%.3f s0=%.3f s6=%.2f vx=%.2f nsw=%d k=%d/%d phase=%d\n",
-          d->time,d->subtree_com[0],tgt_x,tam_ax,s[0],s[6],d->qvel[0],nsw,k,tam_N,tam_ol_phase); } }
+        // ★2-접촉 wrench 랭크결손 진단: 두 지지발을 잇는 대각선 축(u)에 대한 모멘트는 점접촉 힘으로 절대 못 냄(rank-5).
+        //   M_null=m·g·d_perp(CoM의 대각선 수직거리)=uncorrectable 전복 모멘트. tilt와 함께 커지면 곧 그 축 벽의 smoking gun.
+        double d_perp=0, M_null=0; std::vector<int> _stf;
+        for(int i=0;i<4;i++) if(cc[i]!=0) _stf.push_back(i);
+        if(_stf.size()==2){ Vector3d p1=q.foot_point(_stf[0]), p2=q.foot_point(_stf[1]);
+          double ux=p2[0]-p1[0], uy=p2[1]-p1[1], ul=std::hypot(ux,uy);
+          if(ul>1e-6){ ux/=ul; uy/=ul;
+            double cx=d->subtree_com[0]-p1[0], cy=d->subtree_com[1]-p1[1];
+            d_perp=cx*(-uy)+cy*ux;                       // CoM→대각선 수직거리(부호)
+            M_null=q.mpc.TOTAL_MASS*9.81*d_perp; } }     // 대각선 축 uncorrectable 모멘트
+        int ng=0; for(int i=0;i<4;i++) if(q.foot_point(i)[2]<0.03) ng++;   // ★실제 접지 발 개수(계획 nsw와 별개=phantom stance 검출)
+        double qw=d->qpos[3],qx=d->qpos[4],qy=d->qpos[5],qz=d->qpos[6];     // ★roll(측방)/pitch(전후) 분리=붕괴 축 진단
+        double roll=std::atan2(2*(qw*qx+qy*qz),1-2*(qx*qx+qy*qy))*57.3;
+        double pitch=std::asin(std::max(-1.0,std::min(1.0,2*(qw*qy-qz*qx))))*57.3;
+        std::printf("[WDBG] t=%.2f  comz=%.3f planz=%.3f  roll=%+.1f pitch=%+.1f  comy=%+.3f plany=%+.3f  nsw=%d ng=%d\n",
+          d->time,d->subtree_com[2],s[2],roll,pitch,d->subtree_com[1],s[1],nsw,ng); } }
       double vx_w=s[6]+tc_clip(-1.0*(d->qpos[0]-tgt_x),-0.3,0.3);
       double vy_w=s[7]+tc_clip(-1.0*(d->qpos[1]-tgt_y),-0.3,0.3);
       if(online && getenv("TAM_CLEANV")){   // ★X(전진)만 clean(solve_fast wild vx 회피). ★Y(sway)·z·자세는 plan 유지=GIAC body-sway 보존(CoM 지지폴리곤 유지=lateral 드리프트 방지). 구버전이 tgt_y=0으로 sway 지운 게 lateral 드리프트 원인

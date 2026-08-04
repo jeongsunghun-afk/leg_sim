@@ -346,7 +346,7 @@ inline QpResult solve_fast(TamolsState& st, const Grid& h, double cell, int map_
     TamolsState s = st; pk.unpack(z, s);
     VectorXd R = cost_residuals(s, h, cell, map_size), E = eq_constraints(s), G = ineq_constraints(s, o);
     MatrixXd JR = getenv("COM_W") ? fd_jacobian(Rf, z) : cost_jacobian(s, h, cell, map_size);   // ★COM_W(추가 residual): FD로 정합(해석 jacobian엔 없음). 없으면 기존 해석
-    MatrixXd JE = eq_jacobian(s), JG = ineq_jacobian_full(s, o, pk);   // ★해석
+    MatrixXd JE = eq_jacobian(s), JG = (getenv("BASE_YBND")||getenv("EPS_MAX")) ? fd_jacobian(Gf, z) : ineq_jacobian_full(s, o, pk);   // ★해석(BASE_YBND/EPS_MAX 추가행=FD로 정합, COM_W와 동일 패턴)
     int neq = (int)E.size(), nineq = (int)G.size();
     MatrixXd JRtJR = 2.0 * JR.transpose() * JR; VectorXd gg = 2.0 * JR.transpose() * R;
     MatrixXd CE = JE, CI = JG; VectorXd ce0 = E, ci0 = G;

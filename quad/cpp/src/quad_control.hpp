@@ -431,10 +431,11 @@ struct QuadControl {
         Vector3d accel=_swkp*(kv.second.first-foot_point(leg))+_swkd*(kv.second.second-J*qv);
         A1.block(row,0,3,nv)=J; b1.segment(row,3)=accel; row+=3;
         for(int t=0;t<leg_dof[leg];t++) sw_vidx.insert(legqv[leg][t]); }
-      if(nbl){ A1(row,3)=1; b1[row]=a_ori[0]; row++;                       // roll 가속
-               A1(row,4)=1; b1[row]=a_ori[1]; row++;                       // pitch 가속
-               A1(row,5)=1; b1[row]=a_yaw; row++;                          // yaw 가속(스핀 방지)
-               A1.block(row,0,1,nv)=Jc.row(2); b1[row]=a_z; row++; } }     // z 가속(CoM)
+      if(nbl){   // ★base를 L1 strict 승격(HQP_BASE_L1). ※2-접촉 위상서 대각선 축 tilt는 점접촉 wrench 랭크결손으로 제어불가(재정식화로 못 고침, docs 참조)—스테핑(capture)이 담당.
+        A1(row,3)=1; b1[row]=a_ori[0]; row++;                       // roll 가속(euler)
+        A1(row,4)=1; b1[row]=a_ori[1]; row++;                       // pitch 가속(euler)
+        A1(row,5)=1; b1[row]=a_yaw; row++;                          // yaw 가속(스핀 방지)
+        A1.block(row,0,1,nv)=Jc.row(2); b1[row]=a_z; row++; } }     // z 가속(CoM)
     // ── L2 (base xy + 모멘텀 + joint + λ, P3-P4): 가중 QP (P,g) ──
     MatrixXd P=MatrixXd::Zero(nzt,nzt); VectorXd g=VectorXd::Zero(nzt);
     if(!_basel1){ for(int j=0;j<2;j++){ P(3+j,3+j)+=_wori; g[3+j]-=_wori*a_ori[j]; }   // 자세=L2(미승격시)

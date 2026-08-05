@@ -156,7 +156,7 @@ def main() -> int:
     ap.add_argument("--ch", type=int, action="append", help="시험할 SHM 채널(반복 가능)")
     ap.add_argument("--all", action="store_true", help="spec 의 installed_channels 전부")
     ap.add_argument("--tests", default="friction",
-                help="friction,latency,pace 중 콤마구분 (예: friction,pace)")
+                help="friction,torque,latency,pace 중 콤마구분 (예: friction,pace)")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
     a = ap.parse_args()
@@ -177,6 +177,7 @@ def main() -> int:
     from act_identify_pace import identify_pace
     from act_measure_friction import measure_actuator_friction
     from act_measure_latency import measure_latency_and_backlash
+    from act_probe_torque_mode import probe_torque_mode
 
     jmap = {int(j["ch"]): j for j in spec["joints"]}
     sf, g = spec["safety"], spec["gains"]
@@ -207,6 +208,9 @@ def main() -> int:
                 if "friction" in tests:
                     html, res = measure_actuator_friction(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("friction", res))
+                if "torque" in tests:
+                    res = probe_torque_mode(hw, spec, j)
+                    summary.append(("torque", res))
                 if "latency" in tests:
                     html, res = measure_latency_and_backlash(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("latency", res))
@@ -229,6 +233,9 @@ def main() -> int:
         if kind == "friction":
             print(f"  {r['name']:9s} 마찰  JFRIC={r['jfric']:.4f} Nm  "
                   f"JDAMP={r['jdamp']:.4f} Nm·s/rad  τ_s={r['tau_static']:.4f} Nm  R²={r['r2']:.3f}")
+        elif kind == "torque":
+            tb = f"{r['tau_break_mean']:.3f} Nm" if r["tau_break_mean"] else "—"
+            print(f"  {r['name']:9s} 토크모드  {'지원됨' if r['supported'] else '미지원'}  파단토크={tb}")
         elif kind == "latency":
             lm = f"{r['lost_motion_deg']:.4f}deg" if r["lost_motion_deg"] else "미검출"
             gd = f"{r['group_delay_ms']:.2f}ms" if r["group_delay_ms"] else "—"

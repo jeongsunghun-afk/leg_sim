@@ -87,6 +87,8 @@ class Hardware:
         lib.bridge_read.argtypes = [F32P] * 7 + [I32P, I32P]
         lib.bridge_write_pos.restype = C.c_int
         lib.bridge_write_pos.argtypes = [F32P, F32P, F32P, C.c_int]
+        lib.bridge_write_mit.restype = C.c_int      # q_des, dq_des, tau_ff, kp, kd, n
+        lib.bridge_write_mit.argtypes = [F32P] * 5 + [C.c_int]
         lib.bridge_enable.restype = C.c_int
         lib.bridge_enable.argtypes = [C.c_int]
         self.lib = lib
@@ -255,6 +257,60 @@ class Hardware:
         kp_v = np.zeros(self.n, np.float32); kp_v[ch] = kp
         kd_v = np.zeros(self.n, np.float32); kd_v[ch] = kd
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
+
+    def verify_driver_live(self, ch: int, kp: float = 40.0, kd: float = 2.0,
+                           step_deg: float = 2.0, tau_floor: float = 0.15,
+                           move_floor_deg: float = 0.05) -> None:
+        """드라이버 파워단이 실제로 살아 있는지 확인. 죽어 있으면 SafetyAbort.
+
+        ★왜 stale 검사로는 부족한가 (2026-08-05 실제 사고):
+          EtherCAT·Emb·텔레메트리가 전부 정상인데 **드라이버 파워단만 래치오프**된
+          상태가 존재한다. 명령 스트림이 끊기면(Emb 정지 등) 드라이버가 보호
+          디스에이블로 들어가고 전원 재투입 전까지 안 풀린다. 이때 위치·속도·토크가
+          계속 신선하게 갱신되므로 stale 검사는 통과한다 — 그런데 모터는 죽어 있다.
+          그 상태로 순수토크 프로브를 돌려 "1.4 Nm 까지 미동 → 토크모드 미지원" 이라는
+          **완전히 틀린 결론**을 낼 뻔했다.
+
+        판정: 알려진 크기의 위치오차를 걸면 살아있는 축은 (a) 마찰 수준 이상의 토크를
+        내고 (b) 목표 쪽으로 실제로 움직인다. 죽은 축은 tau≈0.02, 미동이다.
+        """
+        q0 = self.arm(ch, kp, kd)
+        tgt = q0 + step_deg
+        n = max(1, int(0.8 / self.dt))
+        for _ in range(n):
+            s = self.step(ch, tgt, kp, kd)
+            time.sleep(self.dt)
+        moved = (s.q_deg - q0) * (1 if step_deg > 0 else -1)
+        self.limp()
+        if abs(s.tau) < tau_floor or moved < move_floor_deg:
+            raise SafetyAbort(
+                f"드라이버 미응답 — {step_deg:+.1f}° 명령(kp={kp:.0f})에 "
+                f"토크 {s.tau:+.3f} Nm(기준 {tau_floor}), 이동 {moved:+.3f}°(기준 {move_floor_deg}).\n"
+                f"  EtherCAT·텔레메트리는 정상이나 **파워단이 래치오프**된 상태다.\n"
+                f"  복구: Emb 종료 → 모터 전원 OFF/ON → Emb 재기동.\n"
+                f"  (Emb 기동 직후 4.5초 램프에서 관절이 0°로 움직이면 복구 성공)")
+        return None
+
+    # ── 순수 토크 경로 ──────────────────────────────────────────────────────
+    #   ⚠ 위치+게인 모드와 달리 **토크가 자기제한되지 않는다.** Kp=Kd=0 이면 위치 피드백이
+    #     전혀 없어, 마찰(정지 0.71 Nm)을 넘는 토크는 관절을 계속 가속시킨다. 다리 미장착
+    #     상태 관성이 0.0375 kg·m² 라 1 Nm 면 α=26.7 rad/s²(=1528 deg/s²) 다.
+    #     반드시 tau_max 를 작게 잡고 위치·속도 한계를 매 틱 검사할 것.
+    def step_torque(self, ch: int, tau_ff: float, tau_max: float) -> Sample:
+        """Kp=Kd=0 + tau_ff 만 실어 보내는 순수 토크 명령."""
+        if not self._armed:
+            raise RuntimeError("arm() 을 먼저 호출할 것")
+        t = float(np.clip(tau_ff, -abs(tau_max), abs(tau_max)))
+        z = np.zeros(self.n, np.float32)
+        tv = np.zeros(self.n, np.float32); tv[ch] = t
+        self._q_cmd[ch] = self._q[ch]          # 위치명령은 무의미하나 limp 복귀용으로 현재값 유지
+        try:
+            self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(z), _p(z), self.n)
+            q, dq, tau, cur = self.read(ch)
+            self._check(ch, q, dq, tau, q)     # 추종오차 검사는 무의미 → q_cmd=q 로 무력화
+        except SafetyAbort:
+            raise                              # _check 내부에서 이미 limp 함
+        return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), 0.0, 0.0)
 
     def step(self, ch: int, q_cmd_deg: float, kp: float, kd: float) -> Sample:
         """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort."""

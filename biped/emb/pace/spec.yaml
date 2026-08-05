@@ -138,3 +138,12 @@ latency:
   gd_duration_s: 12.0
   lm_amp_deg: 6.0                     # 로스트모션용 저속 왕복
   lm_freq_hz: 0.08
+
+# ── 순수 토크모드 프로브 (act_probe_torque_mode.py) ─────────────────────────
+#   ⚠ 위치+게인 모드와 달리 토크가 자기제한되지 않는다. 마찰(정지 0.71 Nm)을 넘으면
+#     관절이 계속 가속하므로 상한을 정지마찰의 2배 이내로 둔다.
+torque_mode:
+  tau_max_nm: 1.4                     # 정지마찰 0.71 Nm 의 약 2배
+  ramp_nm_per_s: 0.25                 # 느릴수록 파단 판정이 정확
+  move_thresh_deg: 0.30               # 위치 변위 기준(속도 노이즈 ±15deg/s 라 속도로는 불가)
+  trials: 2                           # 방향당

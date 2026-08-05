@@ -14,7 +14,8 @@ python3 actuator_test.py --selftest
 
 # 2) 실기 — Emb 기동 후 5초 이상 지난 뒤
 python3 actuator_test.py --ch 0 --tests friction
-python3 actuator_test.py --ch 0 --tests friction,pace
+python3 actuator_test.py --ch 0 --tests latency        # 왕복지연·로스트모션
+python3 actuator_test.py --ch 0 --tests friction,latency,pace
 python3 actuator_test.py --all --tests friction,pace     # spec 의 installed_channels 전부
 ```
 리포트: `results/output.html` · 데이터셋: `results/pace_dataset_ch##.npz`
@@ -53,8 +54,15 @@ python3 actuator_test.py --all --tests friction,pace     # spec 의 installed_ch
 품질 지표로도 쓴다.
 
 ### (A) 정지마찰 breakaway
-목표각을 `0.6 deg/s` 로 아주 천천히 밀어 `Kp·err` 토크를 키우다가 `|q̇|` 가 임계를
-넘는 순간의 토크를 기록. 방향당 3회 반복해 산포를 본다.
+목표각을 `0.6 deg/s` 로 아주 천천히 밀어 `Kp·err` 토크를 키우다가, **위치가**
+`move_thresh_deg`(0.25°) 이상 실제로 움직인 시점을 파단으로 본다. 방향당 3회 반복.
+
+- **속도로 판정하면 안 된다** — 이 로봇은 정지 중에도 속도 노이즈가 ±15 deg/s 라
+  임계 2 deg/s 를 상시 초과한다. 초기 구현이 그래서 τ_s(0.12) < τ_c(0.51) 라는
+  물리적으로 불가능한 값을 냈다. 위치 노이즈는 ~0.01° 로 25배 여유가 있다.
+- 기록하는 값은 검출 시점의 순간토크가 아니라 **정착 이후 누적 최대토크**다.
+  풀리는 순간 가속하며 추종오차가 줄어 토크가 이미 떨어져 있기 때문 —
+  정지마찰의 정의는 "파단 직전 버틴 최대토크" 다.
 
 ### (B) 등속 스윕 → **JFRIC · JDAMP**
 여러 속도(2~70 deg/s)를 양방향으로 통과, 가감속 구간을 뺀 중앙 60% 구간만 평균.
@@ -77,11 +85,16 @@ ROTOR_I = (I_total − I_link) / N²
 ```
 `I_link` = 그 자세에서의 관절축 링크관성. **MJCF 에서 얻어야 한다**(아래 참조).
 
-> **어느 시험의 값을 쓸 것인가**
-> 셀프테스트 기준 — `JFRIC/JDAMP` 는 **(B) 등속 스윕이 정확**(상대오차 0.0%),
-> 처프 회귀는 속도노이즈 때문에 JDAMP 가 ~20% 흔들린다.
-> 반면 `I_total`(→ROTOR_I)은 가속도 여기가 필요해 **(D) 처프에서만** 나온다.
-> → **JFRIC/JDAMP 는 (B), ROTOR_I 는 (D)** 를 채택하는 것을 권장.
+> **어느 시험의 값을 쓸 것인가** (★실기 실측으로 갱신 — 초기 권고를 뒤집었다)
+> - **JDAMP → (D) 처프.** (B) 스윕은 최고 35 deg/s(=0.61 rad/s)까지밖에 못 돌려
+>   점성 기여가 쿨롱마찰의 0.5% 라 신호에 잡히지 않는다. HL 은 0.0042(사실상 0),
+>   HR 은 **−0.0415 음수**까지 나왔다(R²=0.9992 인데도). 코드가 이제 이를 감지해 무효화한다.
+> - **I_total(→ROTOR_I) → (D) 처프.** 가속도 여기가 필요해 처프에서만 나온다.
+> - **JFRIC → 용도별.** 저속 정지·유지는 (B) 0.50~0.52, 보행 등 동적은 (D) 0.38.
+>   Stribeck 때문에 갈리는 것이지 오류가 아니다.
+>
+> ⚠ `--selftest` 의 "(B) 상대오차 0.0%" 는 **합성 데이터 한정**이다. 합성 신호에는
+> Stribeck 이 없어 선형 f(v)=τ_c+b·v 가 정확히 맞을 뿐, 실기에는 해당하지 않는다.
 
 ## 식별 가능성 확인 (반드시 볼 것)
 
@@ -111,17 +124,20 @@ ROTOR_I = (I_total − I_link) / N²
 
 | 항목 | 왜 필요한가 | 현재 |
 |---|---|---|
-| `units.torque_frame` | 보고 토크가 모터축인지 관절축인지. 관절환산이 N배 달라진다 | **TODO** |
-| `joints[].I_link` | `ROTOR_I = (I_total−I_link)/N²` 분리에 필수 | **TODO** |
+| `units.torque_frame` | 보고 토크가 모터축인지 관절축인지. 관절환산이 N배 달라진다 | ✅ **joint** (36° 명령→출력축 36° 육안확인) |
+| `joints[].I_link` | `ROTOR_I = (I_total−I_link)/N²` 분리에 필수 | ✅ hip=**0.0** (다리 미장착). 장착 시 MJCF 값으로 교체 |
 | `joints[].kt_nm_per_a` | 전류-토크 교차검증(측정 tau 와 cur 이 일치하는지) | **TODO** |
 | `joints[].gear` | 반사관성·관절환산 | 7 / 7 / 10.5 / 8.4 (문서값) |
 | `joints[].q_min/max` | 시험 각도한계 | hip ±20° (checklist 확정값) |
 
-⚠ 문서 간 불일치 두 건 — 확인 필요:
-1. **foot 감속비**: `quad/PARAMS.md:91` 은 14.0(+GEAR_FOOT 0.5714 → 8:1),
-   `docs/sim2real_checklist_17dof.html`(2026-07-21) 은 **8.4 실값**. 여기서는 8.4 채택.
-2. **hip 가동범위**: checklist 는 **±20° 확정**("구 ±35° 폐기") 인데
-   `emb/config/biped_emb.yaml` 은 아직 ±35. 시험은 보수적으로 ±20 을 따른다.
+**기어 구조**(사용자 확인 2026-08-05): 전 관절이 **동일 모터 + 7:1** 이고 관절별로
+추가 감속단만 붙는다 — calf 10.5 = 7×1.5, foot **8.4** = 7×1.2. 총비 8.4 가 맞다
+(`quad/PARAMS.md:91` 의 14.0 은 재기어 이전값이라 stale).
+⇒ `ROTOR_I` 는 모터축 상수라 **전 관절 공통**이고, armature = `ROTOR_I·N²` 로 파생된다.
+
+⚠ 관절한계는 spec.yaml 이 `emb/config/biped_emb.yaml` 보다 **8축 전부 더 좁다**.
+hip ±20° 만 근거가 있고(checklist 2026-07-21 확정, config 는 아직 ±35),
+나머지 6축은 미장착 상태의 임의 시험한계다. 장착 시 재확인할 것.
 
 ## 파일
 
@@ -130,10 +146,14 @@ pace/
 ├── spec.yaml                        하드웨어 스펙 + 안전한계 (사용자 입력)
 ├── hwio.py                          안전 SHM I/O (한계·stale·limp·인가램프)
 ├── actuator_test.py                 하니스 + --selftest
+├── RESULTS.md                       ★실측 결과(HL_hip·HR_hip)
 ├── tests/act_measure_friction.py    (A)(B)(C) 마찰
 ├── tests/act_identify_pace.py       (D) PACE 처프 식별 + npz 내보내기
+├── tests/act_measure_latency.py     (E) 왕복지연 · 로스트모션 · 2엔코더 백래시(대기)
 └── templates/base.html              리포트 템플릿
 ```
 
-⚠ 이 디렉터리는 git 미추적이다. `~/simulation` 은 clone/sync 가 미추적 파일을 지우므로
-(2026-08-05 에 `emb/diag/`·`emb/net/` 가 그렇게 삭제됐다) **커밋해 둘 것**.
+⚠ `~/simulation` 은 clone/sync 가 **미추적 파일을 지운다**(2026-08-05 에 `emb/diag/`·
+`emb/net/` 가 그렇게 삭제됐다). 로봇에서 만든 것은 반드시 커밋할 것.
+빌드 산출물·플롯은 `emb/.gitignore` 로 제외하고, `results/*.npz`(원시 측정데이터)는
+로봇 없이 재현 불가하므로 커밋한다.

@@ -42,7 +42,8 @@ units:
 # ── 축별 스펙 ────────────────────────────────────────────────────────────────
 #   gear        : 감속비 N                           [문서] PARAMS.md:91 / checklist
 #   tau_peak_nm : 관절축 peak 토크                    [문서] 84/84/126/100.8
-#   w_noload    : 무부하 각속도[rad/s]                [문서] 29.6/19.7/14.8
+#   w_noload    : 무부하 각속도[rad/s] = 207/N        [문서] 29.6/19.7 · foot 24.6
+#                 ★foot 은 문서의 14.8(=207/14, 재기어 이전값)이 stale → 207/8.4=24.6
 #   kt_nm_per_a : 토크상수                            TODO (전류→토크 교차검증용)
 #   I_link      : MJCF 링크 관성[kg·m²](관절축 기준)   TODO (ROTOR_I 분리에 필요, 아래 주석 참조)
 #   q_min/max   : ★시험 중 절대 넘지 않는 각도한계[deg]
@@ -64,13 +65,13 @@ joints:
      kt_nm_per_a: TODO, I_link: TODO, q_min: -60.0, q_max: 40.0}
   - {ch: 2, name: HL_calf,  gear: 10.5, tau_peak_nm: 126.0, w_noload: 19.7,
      kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 40.0}
-  - {ch: 3, name: HL_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 14.8,
+  - {ch: 3, name: HL_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 24.6,
      kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 30.0}
   - {ch: 5, name: HR_thigh, gear: 7.0,  tau_peak_nm: 84.0,  w_noload: 29.6,
      kt_nm_per_a: TODO, I_link: TODO, q_min: -60.0, q_max: 40.0}
   - {ch: 6, name: HR_calf,  gear: 10.5, tau_peak_nm: 126.0, w_noload: 19.7,
      kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 40.0}
-  - {ch: 7, name: HR_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 14.8,
+  - {ch: 7, name: HR_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 24.6,
      kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 30.0}
 
 # ── 시험 게인 (2026-08-05 실측 확정) ─────────────────────────────────────────

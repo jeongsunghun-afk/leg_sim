@@ -19,9 +19,11 @@
 """
 from __future__ import annotations
 
+import atexit
 import ctypes as C
 import math
 import signal
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -107,25 +109,45 @@ class Hardware:
                 "  Emb 기동 후 5초(=100+4500 tick @1kHz 게이트) 기다린 뒤 재시도할 것.")
 
         # 종료 경로 일원화: 어떤 신호로 죽어도 limp 를 거친다.
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, self._on_signal)
+        #   ★SIGHUP(ssh 끊김)·SIGQUIT 도 반드시 포함 — 기본동작이 즉사라 핸들러도 __exit__
+        #     도 안 돌고, 그러면 Emb 가 마지막 명령(kp=40 + 처프 setpoint)을 1kHz 로
+        #     영원히 재전송한다. atexit 는 정상/예외 종료의 최후 보루.
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+            try:
+                signal.signal(sig, self._on_signal)
+            except (ValueError, OSError):
+                pass
+        atexit.register(self.limp)
 
     # ── 종료 / limp ─────────────────────────────────────────────────────────
     def _on_signal(self, *_):
         self.limp()
         raise SystemExit(130)
 
-    def limp(self, n_write: int = 25) -> None:
-        """Kp=Kd=0 을 반복 기록해 확실히 무여자로 만든다. 어떤 경로로든 마지막에 호출."""
+    def limp(self, n_write: int = 25) -> int:
+        """Kp=Kd=0 을 반복 기록해 확실히 무여자로 만든다. 어떤 경로로든 마지막에 호출.
+
+        ★성공 횟수를 반환하고, 0 이면 크게 경고한다. bridge_write_pos 는 SetMotorCommand16
+          실패 시 즉시 -1 을 반환하고 남은 채널을 포기하므로(shm_bridge.cpp:104),
+          실패를 삼키면 '실패한 limp' 와 '성공한 limp' 가 구분되지 않는다.
+        """
         self._armed = False
-        try:
-            self.lib.bridge_enable(0)
-            zeros = np.zeros(self.n, np.float32)
-            for _ in range(n_write):
-                self.lib.bridge_write_pos(_p(self._q_cmd), _p(zeros), _p(zeros), self.n)
+        ok = 0
+        zeros = np.zeros(self.n, np.float32)
+        for _ in range(n_write):
+            try:
+                self.lib.bridge_enable(0)
+                if self.lib.bridge_write_pos(_p(self._q_cmd), _p(zeros), _p(zeros), self.n) == 0:
+                    ok += 1
                 time.sleep(self.dt)
-        except Exception:
-            pass
+            except Exception:
+                pass
+        if ok == 0:
+            print("\n" + "!" * 68 +
+                  "\n!! limp 실패 — SHM 에 무여자 명령을 한 번도 쓰지 못했다."
+                  "\n!! Emb 는 마지막 명령을 1kHz 로 계속 재전송한다. **모터 전원을 차단할 것**."
+                  "\n" + "!" * 68, file=sys.stderr, flush=True)
+        return ok
 
     def __enter__(self):
         return self
@@ -165,12 +187,23 @@ class Hardware:
                 if seen >= 5:
                     return
             time.sleep(self.dt)
+        self.limp()
         raise SafetyAbort(
             "MotorStatus16 이 신선하지 않다(값 무변화). EtherCAT OP 이탈 의심.\n"
             "  Emb 는 스스로 복구하지 못한다 → Emb 재기동 필요. 모터 전원도 확인할 것.")
 
     # ── 안전검사 ────────────────────────────────────────────────────────────
     def _check(self, ch: int, q: float, dq: float, tau: float, q_cmd: float) -> None:
+        """위반 시 **반드시 limp 후** SafetyAbort. 호출부(arm/step/step_response)가
+        각자 limp 하는 구조였는데 arm·step_response·wait_fresh 가 빠져 있어서
+        인가된 채로 예외가 올라갔다 → 여기서 일원화한다."""
+        try:
+            self._check_impl(ch, q, dq, tau, q_cmd)
+        except SafetyAbort:
+            self.limp()
+            raise
+
+    def _check_impl(self, ch: int, q: float, dq: float, tau: float, q_cmd: float) -> None:
         L = self.lim
         if self.stale_ms() > L.stale_ms:
             raise SafetyAbort(f"상태 정지 {self.stale_ms():.0f}ms > {L.stale_ms}ms "
@@ -198,6 +231,10 @@ class Hardware:
         q0 = self.read(ch)[0]
         self._q_cmd[:] = 0.0
         self._q_cmd[ch] = q0
+        # ★enable 이전에 kp=kd=0 을 먼저 기록한다. bridge_enable 은 g_enabled 플래그만
+        #   건드리고 SHM 버퍼는 안 쓰므로(shm_bridge.cpp:115), 이 전에 enable 하면
+        #   죽은 writer 가 남긴 임의 게인·setpoint 가 순간 authoritative 가 된다.
+        self._raw_write(ch, q0, 0.0, 0.0)
         self.lib.bridge_enable(1)
         self._armed = True
 
@@ -223,13 +260,9 @@ class Hardware:
         """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort."""
         if not self._armed:
             raise RuntimeError("arm() 을 먼저 호출할 것")
-        try:
-            self._raw_write(ch, q_cmd_deg, kp, kd)
-            q, dq, tau, cur = self.read(ch)
-            self._check(ch, q, dq, tau, self._q_cmd[ch])
-        except SafetyAbort:
-            self.limp()
-            raise
+        self._raw_write(ch, q_cmd_deg, kp, kd)
+        q, dq, tau, cur = self.read(ch)
+        self._check(ch, q, dq, tau, self._q_cmd[ch])      # 위반 시 내부에서 limp 후 raise
         return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), kp, kd)
 
     # ── 궤적 실행 ───────────────────────────────────────────────────────────
@@ -286,8 +319,11 @@ class Hardware:
             ts.append(t); qs.append(q); dqs.append(dq); taus.append(tau)
             self._check(ch, q, dq, tau, q0 + delta_deg)
 
-        # 원위치 복귀(램프)
-        self.goto(ch, q0, kp, kd, speed_dps=6.0)
+        # 원위치 복귀(램프) — 예외가 나도 반드시 수행
+        try:
+            self.goto(ch, q0, kp, kd, speed_dps=6.0)
+        finally:
+            pass
         return {"t": np.array(ts), "q": np.array(qs), "dq": np.array(dqs),
                 "tau": np.array(taus), "tau_base": tau_b, "tau_base_sd": tau_sd,
                 "q0": q0, "delta": delta_deg}

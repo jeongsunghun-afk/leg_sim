@@ -126,7 +126,7 @@ R²: HL 0.9963 · HR 0.9992. Stribeck 비 τ_s/τ_c: HL 1.42 · HR 1.21.
 
 | 항목 | 상태 |
 |---|---|
-| **백래시** | **측정 불가(현 데이터 경로)** — 액추에이터에 입력·출력 엔코더가 2개 있으나 SHM PDO 에는 위치 필드가 하나뿐. `fAccelrationOrTemperture`(현재 상수 1.0, 미사용)에 출력축 엔코더를 실어달라고 MCU 펌웨어에 요청 중. 도착하면 `diag/shm_dump` 가 감지하고 `backlash_from_dual_encoder()` 로 즉시 산출. 현재는 lost motion **0.650°가 상한**(백래시+컴플라이언스+스틱션 합) |
+| **백래시** | **측정 불가(현 데이터 경로)** — 액추에이터에 입력·출력 엔코더가 2개 있으나 SHM PDO 에는 위치 필드가 하나뿐. `fAccelrationOrTemperture`(현재 상수 1.0, 미사용)에 출력축 엔코더를 실어달라고 MCU 펌웨어에 요청 중. 도착하면 `diag/shm_dump` 가 감지하고 `backlash_from_dual_encoder()` 로 즉시 산출. 현재 lost motion 값(0.650°)은 **신뢰 불가** — 정지구간이 사인 반전점을 가로질러 양끝 명령값이 거의 같아져 설계상 자기상쇄된다. 재설계 필요 |
 | HR_hip 지연 | 미측정 |
 | 나머지 6축 | 미장착 |
 | `kt_nm_per_a` | TODO — 전류-토크 교차검증용 |

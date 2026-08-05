@@ -15,12 +15,15 @@
    1차 회귀값은 CMA-ES 의 **초기값·탐색범위**로 쓰면 수렴이 훨씬 빨라진다.
 
 식별 모델 (관절축 1자유도 기준):
-      τ = I_total·q̈ + b·q̇ + τ_c·tanh(q̇/ε) + A·sin(q) + B·cos(q) + c
+      τ = I_total·q̈ + b·q̇ + τ_c·tanh(q̇/ε) + A·sin(q) + c
   - I_total : 관절축 등가 관성 = I_link(링크) + ROTOR_I·N² (반사관성)
               → **ROTOR_I = (I_total − I_link) / N²**   (spec.I_link 필요)
   - b       : 점성감쇠            → JDAMP
   - τ_c     : 쿨롱마찰            → JFRIC
-  - A,B     : 중력항 (m·g·r 의 sin/cos 성분 — 관절 영점 오프셋을 몰라도 흡수)
+  - A       : 중력항. ★cos(q) 는 넣지 않는다 — 가진 진폭이 작으면 상수열과 공선이라
+              조건수가 16348 까지 뛰고 중력·바이어스가 ±13 Nm 로 서로 상쇄되는
+              무의미한 값이 된다(제거 시 365). 단 A·c 는 편향되므로 절대 중력이
+              아니라 '여기범위 내 중력 변화폭' 으로 해석할 것.
   - c       : 토크센서 바이어스
   sign() 대신 tanh(q̇/ε) 를 써서 미분가능·저속 수치안정성을 확보한다.
 
@@ -59,7 +62,7 @@ CMAES_OBJECTIVE = """
 TEMPLATE = Template("""
 <h2>{{ title }}</h2>
 <p>처프(chirp) 위치가진으로 넓은 주파수 대역을 여기시키고, 관절 운동방정식
-<code>τ = I·q̈ + b·q̇ + τ_c·tanh(q̇/ε) + A·sin q + B·cos q + c</code> 를 회귀해
+<code>τ = I·q̈ + b·q̇ + τ_c·tanh(q̇/ε) + A·sin q + c</code> 를 회귀해
 <b>ROTOR_I · JDAMP · JFRIC</b> 를 식별한다.</p>
 
 <table>
@@ -73,7 +76,7 @@ TEMPLATE = Template("""
   <tr><td>I_total (관절축 등가관성)</td><td class="numeric">{{ '%0.6f' % I_total }} ± {{ '%0.6f' % I_sd }} kg·m²</td></tr>
   <tr><td><b>JDAMP</b> (점성감쇠 b)</td><td class="numeric">{{ '%0.4f' % jdamp }} ± {{ '%0.4f' % jdamp_sd }} N·m·s/rad</td></tr>
   <tr><td><b>JFRIC</b> (쿨롱마찰 τ_c)</td><td class="numeric">{{ '%0.4f' % jfric }} ± {{ '%0.4f' % jfric_sd }} N·m</td></tr>
-  <tr><td>중력항 √(A²+B²)</td><td class="numeric">{{ '%0.4f' % grav_mag }} N·m</td></tr>
+  <tr><td>중력항 A <span class="dim">(여기범위 내 변화폭)</span></td><td class="numeric">{{ '%0.4f' % grav_mag }} N·m</td></tr>
   <tr><td>토크 바이어스 c</td><td class="numeric">{{ '%0.4f' % bias }} N·m</td></tr>
   <tr><td><b>ROTOR_I</b> = (I_total − I_link)/N²</td><td class="numeric">{{ rotor_i_str }}</td></tr>
 
@@ -273,7 +276,7 @@ def identify_pace(hw, spec, joint, plotdir, outdir, log=print) -> tuple[str, dic
         rotor_i_str=rotor_i_str, rotor_i_env=rotor_i_env,
         r2=r2, rms=rms, cond=cond, acc_max=float(np.max(np.abs(ddq))),
         warnings=warnings_html, npz=npz.split("/")[-1],
-        plot_fit=p_fit.split("/")[-1], plot_exc=p_exc.split("/")[-1])
+        plot_fit=p_fit.replace(plotdir, "plots"), plot_exc=p_exc.replace(plotdir, "plots"))
 
     return html, {"I_total": I_total, "jdamp": b, "jfric": tau_c, "rotor_i": rotor_i,
                   "r2": r2, "cond": cond, "ch": ch, "name": name, "npz": npz}

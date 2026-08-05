@@ -81,7 +81,7 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
         for trial in range(int(cfg["trials"])):
             q0 = hw.arm(ch, kp, kd)
             time.sleep(0.2)
-            tau_at_move, samples = None, []
+            tau_at_move, samples, t_ref = None, [], None
             t_max = cfg["max_push_deg"] / cfg["ramp_dps"]
 
             def qcmd(t, q0=q0, d=direction):
@@ -101,12 +101,16 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
                 samples.append(s)
                 if t > 0.3 and q_ref is None:
                     q_ref = s.q_deg                      # 인가 정착 후의 기준 위치
+                    t_ref = s.t                          # ★peak-hold 시작 시각도 함께 래치
                 # 미는 방향으로 thr_deg 이상 실제로 이동했을 때만 breakaway 로 인정
                 if q_ref is not None and (s.q_deg - q_ref) * direction > thr_deg:
                     # ★검출 시점의 순간토크가 아니라 **그때까지의 최대토크**를 쓴다.
                     #   관절이 풀리는 순간 가속하면서 추종오차가 줄어 토크가 이미 떨어져 있다.
                     #   정지마찰의 정의는 "파단 직전 버틴 최대토크" 다.
-                    seg = [x.tau * direction for x in samples if x.t >= samples[0].t]
+                    # ★t_ref 이후만 본다. 이전 코드의 `x.t >= samples[0].t` 는
+                    #   Sample.t 가 monotonic 절대시각이라 **항상 참**이어서 필터가 없었고,
+                    #   인가 램프 과도까지 peak-hold 에 섞였다.
+                    seg = [x.tau * direction for x in samples if x.t >= t_ref]
                     tau_at_move = max(seg) * direction
                     break
                 k += 1
@@ -358,7 +362,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
         grav_bias=grav_bias, grav_bias_sd=grav_bias_sd, hysteresis=hysteresis,
         jfric_joint=jf_j, jdamp_joint=jd_j, frame_note=frame_note,
         warnings=warnings_html,
-        plot_fv=p_fv.split("/")[-1], plot_loop=p_loop.split("/")[-1],
-        plot_break=p_brk.split("/")[-1],
+        plot_fv=p_fv.replace(plotdir, "plots"), plot_loop=p_loop.replace(plotdir, "plots"),
+        plot_break=p_brk.replace(plotdir, "plots"),
     ), {"jfric": jfric, "jdamp": jdamp, "tau_static": tau_static, "r2": r2,
         "grav_bias": grav_bias, "v_s": v_s, "ch": ch, "name": name}

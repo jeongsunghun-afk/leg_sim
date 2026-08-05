@@ -336,7 +336,7 @@ def measure_latency_and_backlash(hw, spec, joint, plotdir, log=print) -> tuple[s
         ctrl_str=(f"{gd - t_rt:.2f} ms" if gd is not None else "—"),
         lm_str=(f"{lm:.4f} deg" if lm is not None else "검출 실패"),
         tau_swing=tau_swing, n_rev=n_rev, warnings=warnings_html,
-        plot_step=p_step.split("/")[-1], plot_rev=p_rev.split("/")[-1])
+        plot_step=p_step.replace(plotdir, "plots"), plot_rev=p_rev.replace(plotdir, "plots"))
 
     return html, {"t_rt_ms": t_rt, "t_rt_sd": t_rt_sd, "group_delay_ms": gd,
                   "lost_motion_deg": lm, "tau_swing": tau_swing,

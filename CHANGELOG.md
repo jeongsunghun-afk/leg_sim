@@ -33,6 +33,34 @@ body_h 조절·점프standup 렉 = update_stand_qhome이 높이변경마다 300�
 
 ---
 
+## v15.1 — 실기 액추에이터 파라미터 실측 (2026-08-05)
+
+**모터가 SHM 명령에 무반응하던 문제 해결.** 원인은 게인 단위였다 — 드라이버 MIT 법칙이
+`τ = Kp·err[rad] + Kd·derr[rad/s]` 라 명령이 deg 여도 **Kp 1 = 0.0175 Nm/deg** 뿐이다.
+기존 kp8 로는 정지마찰(0.71 Nm)조차 못 이겨 ±5~8° 명령에 ±0.7° 만 움직였다.
+(부수 원인: EtherCAT OP 이탈 시 드라이버가 보호 디스에이블로 래치 → 전원 재투입 필요.)
+
+- `emb/pace/` 신규 — 액추에이터 마찰·PACE 식별 하니스. 레퍼런스(VECTIONEER
+  motorcortex-python-tools)의 구조를 SHM 경유 실기 측정으로 이식. 가진은 전부 임피던스
+  모드라 토크가 `Kp·err` 로 상한이 걸린다. `--selftest` 로 하드웨어 없이 추정기 검증.
+  레퍼런스 대비 **양방향 상쇄** 추가 — 빼면 JFRIC 이 +92% 과대(셀프테스트가 정량 확인).
+- `emb/diag/` 신규 — `stt_probe`(값 신선도) · `mot_test` · `shm_dump`(전 필드) ·
+  `raw_peek`(lib 없이 SHM 헤더 직독) · `emb_ctl.sh`.
+- **실측**(HL_hip·HR_hip, 다리 미장착 — 상세 `emb/pace/RESULTS.md`):
+  `ROTOR_I 7.65e-4 / 7.12e-4`(양축 7% 일치, placeholder 1e-4 대비 **7.4배**) ·
+  `JDAMP 0.096~0.102 / 0.071` · `JFRIC 0.375~0.52` · `τ_s 0.711 / 0.632` ·
+  왕복지연 `8.39±0.79 ms`(→`ACT_LAT_MS`). 전 관절 동일 모터+7:1 이라 ROTOR_I 는 공통 상수 →
+  armature = `ROTOR_I·N²` (calf 0.0816 · foot 0.0522).
+- `emb/config/biped_emb.yaml`: hip `kp 8→40, kd 0.4→2.0`. 실측 최적은 kp60/kd3(상한).
+- **Emb 결함 문서화**: EtherCAT OP 이탈 시 `commEtherCATm.cpp:520` 조기 return 으로
+  복구 루틴에 영영 도달 못 하고, 그동안 **정지 데이터를 신선한 것처럼 재발행**한다
+  (updated flag 까지 세움). 유일한 복구는 Emb 재기동. 도구가 이를 감지해 차단한다.
+- **미해결**: 백래시. 입력·출력 엔코더가 2개지만 SHM PDO 에 위치 필드가 하나뿐이라
+  관측 불가. `fAccelrationOrTemperture`(현재 상수 1.0, 미사용)에 출력축 엔코더를
+  실어달라고 MCU 펌웨어 요청 중 — PDO·Emb·SHM ABI 무변경으로 가능.
+
+---
+
 ## v15.0 — 17-DOF 배포 완성 baseline (2026-07-10)
 
 최신 태그 v14.5.5(2026-05-18) 이후 272 커밋을 정리한 **17-DOF 실배포 마일스톤**. 여기서부터 버전관리 재개.

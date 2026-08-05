@@ -155,7 +155,8 @@ def main() -> int:
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
     ap.add_argument("--ch", type=int, action="append", help="시험할 SHM 채널(반복 가능)")
     ap.add_argument("--all", action="store_true", help="spec 의 installed_channels 전부")
-    ap.add_argument("--tests", default="friction", help="friction,pace 중 콤마구분")
+    ap.add_argument("--tests", default="friction",
+                help="friction,latency,pace 중 콤마구분 (예: friction,pace)")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
     a = ap.parse_args()
@@ -181,9 +182,15 @@ def main() -> int:
     sf, g = spec["safety"], spec["gains"]
     fragments, summary = [], []
 
+    installed = set(spec["meta"]["installed_channels"])
     for ch in chans:
         if ch not in jmap:
             raise SystemExit(f"ch{ch} 가 spec.joints 에 없다")
+        # ★미장착 채널을 arm 하면 물리적으로 없는 모터에 명령하게 된다.
+        if ch not in installed:
+            raise SystemExit(
+                f"✗ ch{ch}({jmap[ch]['name']}) 는 meta.installed_channels{sorted(installed)} 에 "
+                f"없다 — 미장착 축이다. 장착 후 spec.yaml 을 갱신할 것.")
         j = jmap[ch]
         lim = Limits(q_min=float(j["q_min"]), q_max=float(j["q_max"]),
                      tau_trip=float(sf["tau_trip_nm"]), tau_trip_ms=float(sf["tau_trip_ms"]),

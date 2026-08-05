@@ -27,8 +27,12 @@ struct BipedControl {
   //       ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙상
   //       7.4e-4 + T_STEP 0.32 = 15s 무낙상 tilt 2.7°(전 설정 중 최량) · 0.40/0.50 = 낙상
   //   ⚠ vx=0.15 단일 조건의 4점 스윕으로 잡은 값이다. 속도대역 전반 재검증 필요.
-  double T_STEP=0.32, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
-  double SW_KP=800, SW_KD=60, K_RETURN=0.45, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
+  // ★2026-08-05 재튜닝: T_STEP 0.32→0.38, K_RETURN 0.45→0.15.
+  //   leg-odom 야코비안 편향(구중심 vs 접촉점)을 제거하자 기존 튜닝이 성립하지 않았다 —
+  //   기존 값은 그 편향을 전제로 맞춰져 있었다. 실측 센서노이즈까지 넣고 재스윕한 결과다.
+  //   상세: cpp/STABILITY_MAP.md
+  double T_STEP=0.38, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
+  double SW_KP=800, SW_KD=60, K_RETURN=0.15, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
   double SS_NOMINAL=0.16, SS_MIN=0.10, SS_MAX=0.45, TRIG_Y=0.03, GVEC=9.81;
   double FLAT_KCAP=0.6;               // ★평발 전후 capture 게인(발목ZMP가 주 균형, 약한 보조)
   double FLAT_WANK=150;               // ★평발 보행 발목 flat 고정 가중(밑창 유지)
@@ -89,6 +93,12 @@ struct BipedControl {
     if(getenv("FLAT_CZ")) czwalk=atof(getenv("FLAT_CZ"));
     if(getenv("FLAT_WORI")) FLAT_WORI=atof(getenv("FLAT_WORI"));
     if(getenv("T_TRANS")) T_TRANS=atof(getenv("T_TRANS"));
+    // ★발디딤 게인 env — leg-odom 야코비안 편향(구중심 vs 접촉점)을 제거하면
+    //   K_RETURN 이 보던 오차의 성격이 바뀐다. 편향 위에 얹혀 튜닝돼 있던 값이므로
+    //   추정기 수정과 반드시 짝지어 재튜닝해야 한다.
+    if(getenv("K_RETURN")) K_RETURN=atof(getenv("K_RETURN"));
+    if(getenv("K_CAP"))    K_CAP   =atof(getenv("K_CAP"));
+    if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
   }

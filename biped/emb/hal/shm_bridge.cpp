@@ -13,8 +13,15 @@
 
 // RobotSharedMem.h 가 제공하는 IMU 인덱스. 심볼명이 다르면 여기만 조정.
 //   RobotTestGait 사용: IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA, IDX_OF_IMU_ARPY, IDX_OF_IMU_ACCL
-#ifndef IDX_OF_IMU_AVEL
-#define IDX_OF_IMU_AVEL (-1)             // ★자이로(각속도) 인덱스 미상 → -1(0채움). Pi에서 실제 심볼로 교체.
+// ★2026-08-05 수정. 여기 있던 IDX_OF_IMU_AVEL 은 **SDK 어디에도 없는 심볼**이었다.
+//   ZSource 전체·/usr/include/RobotSharedMem.h 전수 grep 0건. 실명은 IDX_OF_IMU_GYRO(=7).
+//   그 결과 아래 #ifndef 폴백이 항상 발동해 -1 로 정의되고, 사용처의 `if (... >= 0)` 이
+//   **컴파일 타임에 접혀** 자이로가 무조건 0 으로 채워졌다. 경고 하나 없이 조용히 통과한다.
+//   (배포된 libbipedshm.so 역어셈블로 확증: rpy/acc 는 ldr 로 읽는데 gyro 자리는 movi #0x0 상수.)
+//   ⚠ 이걸 고쳐도 **지금은 값이 안 들어온다** — Emb 쪽 결함으로 SHM 슬롯 자체가 0 이다.
+//     자세한 건 emb/IMU_RECOVERY.md. 여기서는 브리지를 올바른 심볼로 맞춰만 둔다.
+#ifndef IDX_OF_IMU_GYRO
+#error "IDX_OF_IMU_GYRO 없음 — RobotSharedMem.h 버전 확인 필요(폴백으로 조용히 0 채우지 말 것)"
 #endif
 
 static const int NCH = (int)MAX_GaitMOT_CHAN;
@@ -74,11 +81,17 @@ int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
         if (RobotMemGait_GetIMU(buf, IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA) == ENUM_RESULT_SUCCESS){
             if (imu_rpy_deg) for (int i=0;i<3;i++) imu_rpy_deg[i] = buf[IDX_OF_IMU_ARPY + i];
             if (imu_acc)     for (int i=0;i<3;i++) imu_acc[i]     = buf[IDX_OF_IMU_ACCL + i];
-            if (imu_gyro){   // ★자이로: 심볼 있으면 사용, 없으면 0(추정기는 gyro 필요 → Pi에서 인덱스 확정).
-                if (IDX_OF_IMU_AVEL >= 0) for (int i=0;i<3;i++) imu_gyro[i] = buf[IDX_OF_IMU_AVEL + i];
-                else                      for (int i=0;i<3;i++) imu_gyro[i] = 0.0f;
-            }
-            mask |= 0x10;
+            if (imu_gyro)    for (int i=0;i<3;i++) imu_gyro[i]    = buf[IDX_OF_IMU_GYRO + i];
+            // ★"신선한 0" 방어. RobotMemGait_IsUpdatedIMU() 는 **내용을 검증하지 않는다** —
+            //   RobotSharedMem_Gait.cpp 의 SetIMU 가 검증 루프를 빈 채로 두고 memcpy 직후
+            //   무조건 ucIsUpdated_IMU=1 을 세운다. 그래서 Emb 이 0 배열을 써도 "신선함"으로 온다.
+            //   값이 0 인 것보다 이게 더 위험하다: freshness 검사로 못 걸러지므로 하류
+            //   tilt E-stop 이 "유효한 수평 자세"로 오해한다(tilt≡0 → 임계 영원히 미도달).
+            //   정상 IMU 는 정지 중에도 가속도계에 중력 ~9.81 m/s^2 가 반드시 잡히므로
+            //   가속도 3축 크기가 사실상 0 이면 센서가 죽은 것이다. 이때는 mask 를 세우지 않아
+            //   **상류가 IMU 없음을 인지**하게 한다(0 을 유효값으로 흘려보내지 않는다).
+            const float ax=buf[IDX_OF_IMU_ACCL+0], ay=buf[IDX_OF_IMU_ACCL+1], az=buf[IDX_OF_IMU_ACCL+2];
+            if (ax*ax + ay*ay + az*az > 0.25f) mask |= 0x10;   // |a| > 0.5 m/s^2 이어야 유효
         }
     }
     return mask;

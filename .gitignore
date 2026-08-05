@@ -47,3 +47,6 @@ quad/cpp/tamols/export_traj
 # 대용량 참조 PDF(메모리서 경로 참조·git 미추적)
 quad/backup/docs/*.pdf
 quad/ocs2_ws/
+
+# 런타임 명령/상태 파일(GUI↔앱 IPC). 커밋 대상 아님
+cmd_biped.json

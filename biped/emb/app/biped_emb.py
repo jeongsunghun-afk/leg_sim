@@ -167,6 +167,11 @@ def main():
     tilt_estop = float(cfg["safety"]["tilt_estop_deg"])
     watchdog_s = float(cfg["safety"]["watchdog_ms"]) / 1000.0
     tau_frac = float(cfg["safety"]["tau_max_frac"])
+    # ★토크/속도 트립(시험 하네스 emb/pace/hwio.py 에서 승격). 미설정이면 하네스 기본값.
+    tau_trip_nm  = float(cfg["safety"].get("tau_trip_nm",  8.0))
+    tau_trip_ms  = float(cfg["safety"].get("tau_trip_ms",  50))
+    vel_trip_dps = float(cfg["safety"].get("vel_trip_dps", 200.0))
+    tau_over_t0  = None                      # 토크 연속초과 시작시각(None=정상)
 
     jog_goal = np.zeros(jm.n_leg)            # GUI 축별 목표각[deg]
     hold_ch  = np.zeros(jm.n_channel)        # hold 목표(채널)
@@ -280,6 +285,35 @@ def main():
               print(f"[biped_emb] ⛔ E-STOP: tilt {tilt_now:.0f}° > {tilt_estop:.0f}° → limp·래치")
               estop_latched = True
               fsm.set(FSM.OFF); hw.enable(False)
+          # ── 토크/속도 트립 ────────────────────────────────────────────────
+          #   ★2026-08-05 추가. 이 임계값들은 emb/pace/hwio.py 에 이미 있었고 실측으로
+          #     확정돼 있었는데 배포 앱은 하나도 쓰지 않았다 — raw.tau_nm / raw.dq_dps 를
+          #     매 틱 읽어놓고 안전 판정에 안 썼다. tilt E-stop 이 IMU 부재로 무력하므로
+          #     실질 런타임 보호가 워치독뿐이었다. 시험 하네스의 검증값을 승격한다.
+          #   ⚠OFF 모드에선 검사하지 않는다 — 무여자 상태의 외력(사람이 다리를 미는 등)까지
+          #     트립으로 잡으면 재기동이 불가능해진다. 여자 중일 때만 의미가 있다.
+          if (not estop_latched) and fsm.mode != FSM.OFF:
+              tau_pk = float(np.max(np.abs(raw.tau_nm))) if raw.tau_nm.size else 0.0
+              vel_pk = float(np.max(np.abs(raw.dq_dps))) if raw.dq_dps.size else 0.0
+              # 토크는 **연속 초과**만 트립(착지 충격 같은 순간 스파이크를 살린다)
+              if tau_pk > tau_trip_nm:
+                  if tau_over_t0 is None:
+                      tau_over_t0 = loop_t
+                  elif (loop_t - tau_over_t0) * 1000.0 >= tau_trip_ms:
+                      ch = int(np.argmax(np.abs(raw.tau_nm)))
+                      print(f"[biped_emb] ⛔ E-STOP: ch{ch} 토크 {tau_pk:.2f}Nm > {tau_trip_nm}Nm "
+                            f"가 {tau_trip_ms}ms 연속 → limp·래치")
+                      estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
+              else:
+                  tau_over_t0 = None                # 한 틱이라도 정상이면 타이머 리셋
+              # 속도는 즉시 트립(폭주는 지연시킬 이유가 없다)
+              if (not estop_latched) and vel_pk > vel_trip_dps:
+                  ch = int(np.argmax(np.abs(raw.dq_dps)))
+                  print(f"[biped_emb] ⛔ E-STOP: ch{ch} 속도 {vel_pk:.0f}dps > {vel_trip_dps}dps → limp·래치")
+                  estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
+          else:
+              tau_over_t0 = None
+
           if estop_latched:
               hw.enable(False)                    # 래치 동안 계속 무여자 강제
 

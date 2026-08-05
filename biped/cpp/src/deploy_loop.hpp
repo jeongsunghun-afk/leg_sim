@@ -18,7 +18,12 @@ struct DeployLoop {
   mjData* dpred=nullptr;
   int sq=-1, sg=-1, SLAT=0, ALAT=0, LCOMP=0, NJ=0, nu=0;
   double NOISE=0;                                // 센서 노이즈 배율(17-DOF GYRON/ENCQN식)
-  std::mt19937 rng{0}; std::normal_distribution<double> nd{0.0,1.0};   // 재현용 시드
+  // ★축별 절대 sigma (실측 주입용). >0 이면 NOISE 배율보다 우선한다.
+  //   2026-08-05 실측(HL/HR hip, limp 8초): ENCQ_N=7.6e-5 rad · ENCDQ_N=0.037 rad/s
+  double ENCQ_N=0, ENCDQ_N=0, GYRO_N=0;
+  // ★재현용 시드. 고정 0 이면 노이즈 실현이 하나뿐이라 "이 시드에서 안 넘어졌다"만 알 수 있다.
+  //   노이즈 강건성은 여러 실현에서 봐야 하므로 SEED 로 바꿀 수 있게 한다.
+  std::mt19937 rng{0}; std::normal_distribution<double> nd{0.0,1.0};
   std::deque<std::vector<double>> sbuf, abuf;   // 센서 스냅샷 / 구동 토크 링버퍼
 
   ~DeployLoop(){ if(dpred) mj_deleteData(dpred); }
@@ -34,6 +39,15 @@ struct DeployLoop {
     ALAT=(int)std::lround(ms("ACT_LAT_MS")/1000.0/dt);
     LCOMP=(int)std::lround(ms("LAT_COMP_MS")/1000.0/dt);
     NOISE=ms("NOISE");
+    ENCQ_N=ms("ENCQ_N"); ENCDQ_N=ms("ENCDQ_N"); GYRO_N=ms("GYRO_N");
+    if(const char* sd=getenv("SEED")) rng.seed((unsigned)atoi(sd));
+    // ★추정기 튜닝 노출. k_anchor 는 BipedEstimator 에 **이미 구현돼 있으나 기본 0(꺼짐)** 이라
+    //   지금까지 xy 가 순수 속도적분이었다. quad 는 stance 앵커가 항상 켜져 있다.
+    //   점발 보행 발디딤이 K_RETURN*(절대 CoM − com0) 을 쓰므로 xy 추정 품질이 제어에 실제로 전달된다
+    //   → 앵커 on/off 를 실험으로 비교할 수 있어야 한다.
+    if(getenv("EST_ANCHOR")) est.k_anchor = atof(getenv("EST_ANCHOR"));
+    if(getenv("EST_ALPHA"))  est.alpha    = atof(getenv("EST_ALPHA"));
+    if(getenv("EST_JAC_CONTACT")) est.jac_at_contact = atoi(getenv("EST_JAC_CONTACT"))!=0;
     if(LCOMP>0) dpred=mj_makeData(m);
   }
   void reset(mjModel* m, mjData* d){
@@ -49,9 +63,19 @@ struct DeployLoop {
     double* gs = sg>=0? &d->sensordata[m->sensor_adr[sg]] : &d->qvel[3];
     for(int a=0;a<4;a++) snap[2*NJ+a]=qs[a];
     for(int a=0;a<3;a++) snap[2*NJ+4+a]=gs[a];
-    if(NOISE>0){                                  // ★센서 노이즈(엔코더 q/dq·자이로). 17-DOF ENCQN/GYRON식
-      for(int j=0;j<NJ;j++){ snap[j]+=NOISE*0.005*nd(rng); snap[NJ+j]+=NOISE*0.05*nd(rng); }
-      for(int a=0;a<3;a++) snap[2*NJ+4+a]+=NOISE*0.02*nd(rng);
+    // ★센서 노이즈. NOISE 스칼라 하나로는 우리 하드웨어를 표현할 수 없다 —
+    //   규약이 sigma_q:sigma_dq = 0.005 rad : 0.05 rad/s (비 10/s) 로 고정인데
+    //   2026-08-05 실측은 7.64e-5 rad : 0.0368 rad/s (비 482/s) 로 **48배 다르다**.
+    //   위치는 규약보다 훨씬 깨끗하고(NOISE 환산 0.015) 속도는 상대적으로 지저분하다
+    //   (0.736). 속도가 위치 차분에서 나오므로 물리적으로 당연한 결과다.
+    //   ⇒ quad_ctrl/hal/mujoco_hal.hpp 규약대로 ENCQ_N/ENCDQ_N/GYRO_N 으로 분리한다.
+    //     지정하지 않으면 기존 NOISE 배율로 폴백해 하위호환을 유지한다.
+    if(NOISE>0 || ENCQ_N>0 || ENCDQ_N>0 || GYRO_N>0){
+      const double sq  = ENCQ_N  > 0 ? ENCQ_N  : NOISE*0.005;   // [rad]
+      const double sdq = ENCDQ_N > 0 ? ENCDQ_N : NOISE*0.05;    // [rad/s]
+      const double sg  = GYRO_N  > 0 ? GYRO_N  : NOISE*0.02;    // [rad/s]
+      for(int j=0;j<NJ;j++){ snap[j]+=sq*nd(rng); snap[NJ+j]+=sdq*nd(rng); }
+      for(int a=0;a<3;a++) snap[2*NJ+4+a]+=sg*nd(rng);
     }
     // ② 센서 지연(링버퍼)
     sbuf.push_back(snap);

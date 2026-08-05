@@ -13,6 +13,9 @@ struct BipedEstimator {
   Eigen::Vector3d p = Eigen::Vector3d::Zero();   // 추정 base 위치(world)
   Eigen::Vector3d v = Eigen::Vector3d::Zero();   // 추정 base 선속도(world)
   double alpha = 0.4, ground_z = 0.0, k_anchor = 0.0;   // 앵커 기본 off(접촉높이가 핵심). >0시 xy 앵커
+  // ★야코비안 평가점. true=접촉점(물리적으로 옳음) · false=구중심(2026-08-05 이전 동작).
+  //   2026-08-05 기본값을 true 로 전환. 근거는 아래 estimate() 주석과 cpp/STABILITY_MAP.md.
+  bool jac_at_contact = true;
   bool contact_height = true;
   std::vector<int> fgeom; std::vector<double> frad;
   Eigen::Vector3d anchor[2]; bool has_anchor[2]={false,false};   // 접촉 xy 앵커(드리프트 완화)
@@ -44,7 +47,15 @@ struct BipedEstimator {
       if(!contacts[k]){ has_anchor[k]=false; continue; }    // 이지=앵커 리셋. stance 발만.
       int g = fgeom[k];
       Vector3d pfb(ed->geom_xpos[3*g], ed->geom_xpos[3*g+1], ed->geom_xpos[3*g+2]-frad[k]);  // 접촉점(base frame)
-      mjtNum pnt[3]={ed->geom_xpos[3*g], ed->geom_xpos[3*g+1], ed->geom_xpos[3*g+2]};
+      // ★위치는 접촉점(pfb=center−r), 속도는 구 **중심**에서 야코비안 → 불일치.
+      //   정지접촉 조건은 "접촉점의 world 속도=0" 이므로 야코비안도 접촉점에서 잡아야 한다.
+      //   두 점의 속도차 = ω_발 × (−r·ẑ) 이고 r=0.036 m 라 |ω|≈2.6 rad/s 에서 ~0.09 m/s —
+      //   vx 지령 0.15 m/s 의 60% 급이며 스탠스 내내 부호가 일정해 **계통 편향**이 된다.
+      //   jac_at_contact=false 로 두면 2026-08-05 이전 동작으로 되돌아간다(회귀 비교용).
+  //   EST_JAC_CONTACT=0 env 로도 끌 수 있다.
+      mjtNum pnt[3];
+      if(jac_at_contact){ pnt[0]=pfb[0]; pnt[1]=pfb[1]; pnt[2]=pfb[2]; }
+      else { pnt[0]=ed->geom_xpos[3*g]; pnt[1]=ed->geom_xpos[3*g+1]; pnt[2]=ed->geom_xpos[3*g+2]; }
       mj_jac(m, ed, jb.data(), nullptr, pnt, m->geom_bodyid[g]);
       Vector3d vfb = Vector3d::Zero();                      // 발 속도(관절 기여, base frame)
       for(int r=0;r<3;r++){ double s=0; for(int c=0;c<m->nv;c++) s+=jb[r*m->nv+c]*ed->qvel[c]; vfb[r]=s; }

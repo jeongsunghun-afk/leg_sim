@@ -7,7 +7,7 @@
     · meshdir = quad 공유. nv=14(freejoint6+관절8), nu=8.
     B0 산출물. home pose·게인·게이트는 B1~ 에서.
   -->
-  <compiler angle="radian" meshdir="/home/jsh/문서/jsh/simulation/quad/meshes_sim_17dof/" />
+  <compiler angle="radian" meshdir="../quad/meshes_sim_17dof/" />
   <asset>
     <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.33 0.36 0.40" rgb2="0.42 0.45 0.50" width="512" height="512" />
     <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="12 12" reflectance="0.12" />

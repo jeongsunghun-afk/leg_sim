@@ -20,13 +20,31 @@ Raibo2025 = **Kim/Hwangbo, "High-speed control and navigation for quadrupedal ro
 python cvae_mapgen.py
 ```
 MockTracker와 Algorithm 1을 돌린 검증(cpu):
-- 부트스트랩(Table S3) → 경쟁 재학습 주기적 발생(9회) → **프론티어 r_max→1.59m**(목표 1.6).
-- ★**핵심 이점 정량 검증 — feasible-fraction: uniform=0.31 vs CVAE=0.998 (3.2× 효율)**: CVAE가 r-φ/θ-x_tilt **상관 manifold를 학습**해 물리 가능 지형을 생성(uniform은 상관 무시→infeasible 낭비). = 논문 고차원 이점의 근거.
+- 부트스트랩(Table S3) → 경쟁 재학습 주기적 발생 → **프론티어 r_max→1.60m**(목표 1.6 정확 달성).
+- ★**핵심 이점 정량 검증 — feasible-fraction: uniform=0.32 vs CVAE=0.996 (3.1× 효율)**: CVAE가 r-φ/θ-x_tilt **상관 manifold를 학습**해 물리 가능 지형을 생성(uniform은 상관 무시→infeasible 낭비). = 논문 고차원 이점의 근거.
+
+## 논문서 가져온 정확 하이퍼파라미터 (Table S1·Network details)
+`KL β=0.04`·`CVAE lr=0.0001`·`num epoch(map generator)=12`·`max_grad_norm=0.5`·enc[512,128]/dec[128,512]·bootstrap=Table S3.
+★**논문 미명시(내 선택, 코드에 표시)**: latent dim(8)·update_period(3)·max_update.
 
 ## 정직한 한계 (mock 특성 — 알고리즘 아님)
-- **9.3/9.15는 논문 값**(실 tracker≈100% feasible 생성 가정). mock은 CVAE ~97~99% feasible → 순차-정지 perf 상한이 낮아 **mock용 8.3/8.0으로 비례 하향**(알고리즘 구조는 동일).
-- **x_tilt 프론티어는 26°까지만**(r은 1.59 달성) = mock 난이도/feasibility(θ↔x_tilt 상관)의 단순함 탓. 알고리즘 문제 아님. 실 tracker에선 논문대로 90°(벽주행).
+- **9.3/9.15는 논문 값**(실 tracker≈100% feasible 생성 가정). mock은 CVAE ~99% feasible → 순차-정지 perf 상한이 낮아 **mock용 8.3/8.0으로 비례 하향**(알고리즘 구조는 동일).
+- **x_tilt 프론티어는 ~34°까지만**(r은 1.60 달성) = mock 난이도/feasibility(θ↔x_tilt 상관)의 단순함 탓. 알고리즘 문제 아님. 실 tracker에선 논문대로 90°(벽주행).
 - **MockTracker·feasible()·PSI 물리영역은 대표 근사**: 실 통합 시 실 tracker 성공신호·우리 로봇 reach/gait로 재매핑.
+
+## 파일
+- `cvae_mapgen.py` — CVAE map generator + Algorithm 1 경쟁 커리큘럼 + self-test(논문 충실).
+- `psi_to_stones.py` — ★ψ → stepping-stone 월드 포즈(Components-of-ψ 기하) + `stones_to_mjcf`(포즈→MuJoCo MJCF). round-trip 검증(오차 0).
+- `terrain_demo.py` — ★end-to-end: CVAE 학습 → ψ 생성(easy/hard) → 포즈 → **로드 가능 MJCF 지형**(`terrain_{easy,hard}.mjcf`). 검증: easy r∈[0.48,0.75] vs hard r∈[0.48,1.55]·둘 다 MuJoCo 로드OK.
+- `RAIBO2025_SYSTEM.md` — ★전체 시스템 스펙(tracker·planner·학습환경 세팅) + 우리 DTC 갭 분석. "CVAE 외 다른 부분".
+
+## ★프레임워크 (MuJoCo vs Isaac Sim)
+- **CVAE(cvae_mapgen.py)·psi_to_stones = 프레임워크 독립**(순수 PyTorch). 둘 다에서 재사용.
+- **MJCF export = 로컬 MuJoCo 검증용**: 실제 DTC/RL 학습 env는 **Isaac Sim(RobotSW_IsaacLab)**이나 로컬에 없어(GPU 서버=A 도메인), 우리 모델기반 스택(MuJoCo, 로컬)으로 지오메트리 로드를 standalone 검증한 것.
+- **실 통합(Isaac Sim, A 도메인)**: `CVAE.generate(ψ,α)` → `psi_to_stones`(★재사용) → **IsaacLab 지형**(USD box primitives 또는 `_build_gap_terrain`에 포즈 주입). MJCF 꼬리만 IsaacLab 빌더로 교체.
+- ★참고: 벽주행(x_tilt 90°)=수직면은 **heightmap(2.5D) 표현 불가** → 3D primitive/mesh 필요(논문도 voxel map 언급). 그래서 방위 box(MJCF/USD)가 맞는 표현.
+
+**완결 파이프라인**: `CVAE.generate(ψ,α)` → `psi_to_stones` → (MuJoCo: `stones_to_mjcf` / Isaac: USD/IsaacLab 빌더) → 지형.
 
 ## RobotSW_IsaacLab (DTC P3) 통합 (★A 워크스트림 충돌 회피 위해 독립 구현)
 3곳만 연결:

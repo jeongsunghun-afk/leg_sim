@@ -205,6 +205,14 @@ def main() -> int:
                       lim, int(spec["shm"]["recv_wait_ms"]),
                       float(g["enable_ramp_s"])) as hw:
             try:
+                # ★모든 시험 앞에서 파워단 생존을 확인한다. 텔레메트리 신선도(stale 검사)
+                #   만으로는 부족하다 — EtherCAT·Emb·값갱신이 전부 정상인데 드라이버
+                #   파워단만 래치오프된 상태가 실재하고, 그 상태의 측정은 전부 무효다.
+                #   (2026-08-05: 그 상태에서 "순수토크 미지원" 이라는 틀린 결론이 나왔다.
+                #    대조군 — 위치+게인으로 같은 크기 토크를 걸어본 것 — 이 잡아냈다.)
+                print(f"  [{j['name']}] 드라이버 생존 확인…", flush=True)
+                hw.verify_driver_live(ch, kp=float(g["kp"]), kd=float(g["kd"]))
+                print(f"  [{j['name']}] ✓ 파워단 정상 — 시험 시작")
                 if "friction" in tests:
                     html, res = measure_actuator_friction(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("friction", res))

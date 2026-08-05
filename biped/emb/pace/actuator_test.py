@@ -127,6 +127,12 @@ def selftest() -> int:
           f"JFRIC {naive[0]:.4f} (참값 {tc_true:.4f}, "
           f"{(naive[0]/tc_true-1)*100:+.0f}% 오차) — 중력·바이어스가 마찰로 둔갑한다")
 
+    # --- 4. FRF 추정기 (공진·감쇠·강성) ---------------------------------
+    print()
+    sys.path.insert(0, os.path.join(HERE, "tests"))
+    from act_measure_frf import selftest as frf_selftest
+    ok &= frf_selftest()
+
     print(f"\n=== 셀프테스트 {'통과' if ok else '실패'} ===")
     return 0 if ok else 1
 
@@ -156,7 +162,7 @@ def main() -> int:
     ap.add_argument("--ch", type=int, action="append", help="시험할 SHM 채널(반복 가능)")
     ap.add_argument("--all", action="store_true", help="spec 의 installed_channels 전부")
     ap.add_argument("--tests", default="friction",
-                help="friction,torque,backlash,latency,pace 중 콤마구분")
+                help="friction,torque,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
     a = ap.parse_args()
@@ -179,6 +185,7 @@ def main() -> int:
     from act_measure_latency import measure_latency_and_backlash
     from act_probe_torque_mode import probe_torque_mode
     from act_measure_backlash import measure_backlash
+    from act_measure_frf import measure_frf
 
     jmap = {int(j["ch"]): j for j in spec["joints"]}
     sf, g = spec["safety"], spec["gains"]
@@ -223,6 +230,9 @@ def main() -> int:
                 if "backlash" in tests:
                     html, res = measure_backlash(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("backlash", res))
+                if "frf" in tests:
+                    html, res = measure_frf(hw, spec, j, plotdir)
+                    fragments.append(html); summary.append(("frf", res))
                 if "latency" in tests:
                     html, res = measure_latency_and_backlash(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("latency", res))
@@ -252,6 +262,11 @@ def main() -> int:
             bl = f"{r['backlash_deg']:.4f}deg" if r["backlash_deg"] is not None else "유의미한 유격 없음"
             st = f"{r['stiffness_nm_per_deg']:.3f}Nm/deg" if r["stiffness_nm_per_deg"] else "—"
             print(f"  {r['name']:9s} 백래시  {bl}  강성={st}  루프폭={r['loop_width_deg']:.4f}deg")
+        elif kind == "frf":
+            fn = f"{r['f_n']:.2f}Hz" if r["f_n"] else "미검출"
+            z = f"{r['zeta']:.3f}" if r["zeta"] else "—"
+            kk = f"{r['k_nm_per_deg']:.2f}Nm/deg" if r["k_nm_per_deg"] else "—"
+            print(f"  {r['name']:9s} FRF  f_n={fn}  zeta={z}  k={kk}  coh={r['coh_mean']:.2f}")
         elif kind == "latency":
             lm = f"{r['lost_motion_deg']:.4f}deg" if r["lost_motion_deg"] else "미검출"
             gd = f"{r['group_delay_ms']:.2f}ms" if r["group_delay_ms"] else "—"

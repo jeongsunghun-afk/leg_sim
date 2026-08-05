@@ -32,12 +32,15 @@ README의 3단계 이관을 **실행 가능한 수준**으로 구체화. 핵심 
 2. **2단계 — EKF(sim서)**: `estimate_kf`를 `estimator/ekf_estimator`로. 노이즈·지연 주입(sim2real-checklist C). 검증: `sim_main EST_CTRL` == `trot_sim EST_CTRL` falls=0(반복기립 포함).
 3. **3단계 — real_hal + robot_main**: [[biped-emb-deploy-interface]] 패턴 역이식(RobotSharedMem Gait/Pi 브리지+Mock+관절맵config+축별JOG→stand→walk). 컨트롤러·estimator 불변. 안전·RT 루프.
 
-## 1단계 착수 체크리스트 (다음 세션)
-- [ ] CMake: MuJoCo(`$CONDA_PREFIX/lib`)+eiquadprog 링크, `quad/cpp/src` include.
-- [ ] `hal/mujoco_hal.hpp/.cpp`: load(재기어/GEARBOX/솔버=quad/cpp `load`+`apply_env_gains` 재사용)·read(d→LowState)·write(LowCmd→d->ctrl+mj_step).
-- [ ] `estimator/sim_estimator`: GT(d_est ← d 직접).
-- [ ] `control/controller`: 기존 `TrotCtrl` 인스턴스 보유, `step(State, HighCmd)`에서 d_est 세팅→`ctrl.control()`→LowCmd 추출.
-- [ ] `app/sim_main`: MujocoHal+SimEstimator+Controller 루프, `MODE`/`TROT_V` 등 HighCmd로.
-- [ ] 검증: `sim_main` 결과가 `trot_sim`과 동등(x·z·falls). **초록불 아니면 다음 단계 금지**.
+## 1단계 진행 (★GT wrap 달성 2026-08-05)
+- [x] CMake: MuJoCo+eiquadprog 링크·`quad/cpp/src` include (`sim_bridge` 타겟, ENV_PREFIX=proxddp).
+- [x] `hal/mujoco_hal.hpp`: `MujocoHal`이 `::QuadControl` 소유(load+apply_env_gains+crouch_home+LUT+setup_mpc)·read(d→LowState)·write(LowCmd.tau_ff→d->ctrl+mj_step).
+- [x] `control/trot_bridge.hpp`: `TrotBridge`가 `::TrotCtrl` wrap(재작성X). set_command(HighCmd→mode/V/gait)·step(control()→LowCmd.tau_ff).
+- [x] `app/sim_bridge.cpp`: MujocoHal+TrotBridge 루프(MODE/GAIT/TROT_V/BODY_H → HighCmd).
+- [x] **검증: `sim_bridge` == `trot_sim`(NO_JUMP_WARMUP) V=0/0.5/1.0 bit-동등**(x·z·tilt·falls 모두 일치). 실행 `quad_ctrl/build/sim_bridge <mjcf>`.
+- [ ] (다음) estimator 정식화: 현재 컨트롤러가 `q.d` 직접(=GT, d_est=d). `estimator/sim_estimator`(GT)+`ekf_estimator`로 d_est 분리(trot_sim `EST_CTRL`·`estimate_kf` 이식) → 2단계.
+- [ ] (다음) wbic/mpc/gait를 `control/` 순수모듈로 쪼개기(현재는 quad/cpp TrotCtrl을 wrap; 점진 분해).
+
+> ★핵심 달성: **배포급 A 컨트롤러가 재작성 없이 quad_ctrl HAL 경계 뒤에서 동작·sim 초록불**. real_hal은 `read/write`만 실센서/모터로 교체(컨트롤러·나머지 불변)=3단계 직결.
 
 > 현 배포 작동본은 `quad/cpp/`. 이관 완료 전까지 그게 진실. big-bang 재작성 금지.

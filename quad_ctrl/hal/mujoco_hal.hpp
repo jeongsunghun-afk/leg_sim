@@ -1,19 +1,41 @@
 #pragma once
-// sim HAL: MuJoCo 백엔드. 현 trot_sim/trot_view의 mj_step·d->ctrl·센서읽기를 이 뒤로 격리.
-// ★이관 원본: simulation/quad/cpp/src/trot_sim.cpp / trot_view.cpp (mj 루프)
-//   read(): d->qpos/qvel/sensordata → LowState (+ ground truth base pose는 확장필드로).
-//   write(): LowCmd(kp/kd/tau_ff) → d->ctrl = tau_ff + kp·(q_des−q) + kd·(dq_des−dq), 한 스텝 mj_step.
-// #include <mujoco/mujoco.h>
+// sim HAL(실물 배선) — MuJoCo 백엔드 + quad/cpp `QuadControl` 코어 소유(재기어/GEARBOX/솔버 셋업 재사용).
+//   read():  q.d → LowState(관절·IMU).   write(): LowCmd.tau_ff → q.d->ctrl + mj_step(1스텝).
+//   ★이관 1단계(GT): 검증된 컨트롤러를 재작성 없이 HAL 경계 뒤로. real_hal은 read/write만 실센서/모터로 교체.
 #include "hal/robot_interface.hpp"
+#include <mujoco/mujoco.h>
+#include "quad_control.hpp"        // quad/cpp/src (CMake include_dir) — ::QuadControl
+#include "trot_controller.hpp"     // apply_env_gains
 
 namespace qc {
 
 class MujocoHal : public RobotInterface {
-  // mjModel* m_; mjData* d_; int nu_;
+  ::QuadControl q_;                 // m,d 소유 + 재기어/게인/q_home LUT/MPC 셋업(quad/cpp 그대로)
  public:
-  // explicit MujocoHal(const std::string& mjcf);   // TODO: mj_loadXML, 재기어/GEARBOX/솔버 설정 이관
-  // int nu() const override; double dt() const override;
-  // bool read(LowState&) override; bool write(const LowCmd&) override;
+  explicit MujocoHal(const char* mjcf) {
+    q_.load(mjcf); apply_env_gains(q_); q_.crouch_home(); q_.build_qhome_lut(); q_.setup_mpc();
+  }
+  ::QuadControl& core() { return q_; }            // 컨트롤러 브리지가 같은 코어 공유(TrotCtrl(q_))
+
+  int    nu() const override { return q_.nu; }
+  double dt() const override { return q_.m->opt.timestep; }
+
+  bool read(LowState& s) override {
+    mjData* d = q_.d; const int nu = q_.nu;
+    s.time = d->time;
+    s.q.resize(nu); s.dq.resize(nu); s.tau_est.resize(nu);
+    for (int i = 0; i < nu; ++i) { s.q[i] = d->qpos[7 + i]; s.dq[i] = d->qvel[6 + i]; s.tau_est[i] = d->actuator_force[i]; }
+    for (int a = 0; a < 4; ++a) s.imu_quat[a] = d->qpos[3 + a];   // wxyz
+    for (int a = 0; a < 3; ++a) s.imu_gyro[a] = d->qvel[3 + a];   // body 각속도
+    return true;
+  }
+
+  bool write(const LowCmd& c) override {
+    mjData* d = q_.d;
+    for (int i = 0; i < q_.nu; ++i) d->ctrl[i] = c.tau_ff[i];     // TrotCtrl이 tau 계산(kp/kd=0 규약)
+    mj_step(q_.m, d);
+    return true;
+  }
 };
 
 }  // namespace qc

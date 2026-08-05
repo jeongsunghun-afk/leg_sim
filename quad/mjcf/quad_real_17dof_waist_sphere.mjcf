@@ -1,5 +1,7 @@
 <mujoco model="02_Leg_UFDF_260703_2">
-  <compiler angle="radian" meshdir="/home/jsh/문서/jsh/simulation/quad/meshes_sim_17dof/" />
+  <!-- meshdir = MJCF 파일 위치 기준 상대경로. 데스크톱/Pi 양쪽에서 동작(quad_go2*.mjcf 와 동일 규약).
+       ※절대경로(/home/jsh/…)는 Pi 에서 로드 실패한다 — 실기 브링업에서 발견(2026-08-05). -->
+  <compiler angle="radian" meshdir="../meshes_sim_17dof/" />
   <asset>
     <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.33 0.36 0.40" rgb2="0.42 0.45 0.50" width="512" height="512" />
     <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="12 12" reflectance="0.12" />

@@ -147,3 +147,13 @@ torque_mode:
   ramp_nm_per_s: 0.25                 # 느릴수록 파단 판정이 정확
   move_thresh_deg: 0.30               # 위치 변위 기준(속도 노이즈 ±15deg/s 라 속도로는 불가)
   trials: 2                           # 방향당
+
+# ── 백래시·컴플라이언스 (act_measure_backlash.py) ───────────────────────────
+#   순수 토크모드가 동작함이 확인돼(2026-08-05) 표준 토션 히스테리시스 시험이 성립한다.
+#   ⚠ τ_max 는 실측 파단토크(최저 0.528, 평균 0.62 Nm)보다 확실히 낮아야 한다 — 회전 금지.
+backlash:
+  tau_max_nm: 0.45
+  ramp_nm_per_s: 0.12
+  cycles: 2
+  tau_break_ref_nm: 0.62              # 실측 파단(참조) — 안전여유 판정용
+  q_elastic_max_deg: 1.5              # 이 이상 움직이면 회전으로 보고 중단

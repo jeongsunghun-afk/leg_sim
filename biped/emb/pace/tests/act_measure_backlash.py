@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""act_measure_backlash.py — 토션 히스테리시스로 백래시·컴플라이언스 분리 측정.
+
+★이 시험이 가능해진 경위 (2026-08-05):
+  아침에 백래시를 못 쟀던 근본 이유는 **토크가 독립 입력이 아니었기** 때문이다.
+  위치+게인 모드에서 드라이버가 보고하는 tau 는 `Kp·err` 로 위치에서 계산되는 값이라,
+  "토크가 낮은 구간 = 유격" 이라는 판정이 "위치오차가 작은 구간 = 위치오차가 작은 구간"
+  이라는 동어반복이 된다. 실제로 그 순환논리로 틀린 결론을 냈다.
+  그 뒤 **순수 토크모드(Kp=Kd=0, fTorque)가 동작하고 크기도 ±0.005 Nm 로 정확함**을
+  확인했다 → 토크가 독립 입력이 되었고, 표준 토션 히스테리시스 시험이 성립한다.
+
+원리 — 관절이 **회전하지 않는 범위**(파단토크 이하)에서 토크를 왕복시키면
+q-τ 평면에 히스테리시스 루프가 그려진다. 그 모양으로 두 성분이 갈린다:
+
+    백래시        : 강성이 ~0 인 **평탄 구간**. 토크는 거의 안 변하는데 q 가 움직인다.
+                    (기어 이빨이 반대면에 닿기 전까지 무저항으로 통과)
+    마찰 히스테리시스: 기울기가 같은 두 분기의 **평행 이동**. q 가 같아도 τ 가 다르다.
+    컴플라이언스   : 물린 구간의 기울기 dτ/dq (드라이브트레인 탄성)
+
+⇒ 국소강성 |dτ/dq| 이 물린 구간 대비 임계 이하로 떨어지는 구간의 **폭이 백래시**다.
+  평탄 구간이 없으면 백래시는 유의미하지 않고 루프 폭은 마찰 히스테리시스다.
+
+⚠ 안전: τ_max 를 **실측 파단토크보다 확실히 낮게** 둔다(회전 금지). 파단 최저값이
+  0.528 Nm 였으므로 기본 0.45 Nm. 회전이 감지되면(누적 이동이 탄성범위 초과) 즉시 중단.
+  다리 미장착 상태가 이 시험에 가장 안전하다.
+"""
+from __future__ import annotations
+
+import time
+
+import matplotlib
+matplotlib.use("agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from jinja2 import Template
+
+TEMPLATE = Template("""
+<h2>{{ title }}</h2>
+<p>순수 토크모드(Kp=Kd=0)로 <b>회전하지 않는 범위</b>에서 토크를 왕복시켜 q-τ 히스테리시스
+루프를 얻고, <b>국소강성이 떨어지는 평탄 구간</b>을 백래시로, 물린 구간 기울기를
+컴플라이언스로 분리한다.</p>
+
+<table>
+  <tr><th colspan="2">시험 조건</th></tr>
+  <tr><td>일시</td><td>{{ datetime }}</td></tr>
+  <tr><td>축</td><td>{{ joint }} (SHM ch{{ ch }})</td></tr>
+  <tr><td>토크 왕복</td><td class="numeric">±{{ '%.2f' % tau_max }} Nm @ {{ '%.2f' % ramp }} Nm/s × {{ cycles }}주기</td></tr>
+  <tr><td>파단토크(참조)</td><td class="numeric">{{ '%.2f' % tau_break }} Nm — 이보다 낮게 유지해 회전 방지</td></tr>
+
+  <tr><th colspan="2">결과</th></tr>
+  <tr><td><b>백래시</b> (평탄구간 폭)</td><td class="numeric">{{ lash_str }}</td></tr>
+  <tr><td><b>컴플라이언스</b> (물린구간 강성)</td><td class="numeric">{{ stiff_str }}</td></tr>
+  <tr><td>루프 전체 폭 (@τ=0)</td><td class="numeric">{{ '%0.4f' % loop_w }} deg
+      <span class="dim">= 백래시 + 마찰 히스테리시스</span></td></tr>
+  <tr><td>총 변형 범위</td><td class="numeric">{{ '%0.4f' % q_span }} deg</td></tr>
+  <tr><td>회전 발생</td><td class="numeric">{{ '예 (무효)' if rotated else '아니오 (정상)' }}</td></tr>
+</table>
+
+{{ warnings }}
+
+<p><img src="{{ plot }}"></p>
+""")
+
+
+def _analyze(q, tau, tau_max, log):
+    """q-τ 루프에서 백래시(평탄구간)·컴플라이언스(물린구간 기울기) 분리."""
+    # 물린 구간 = |τ| 가 큰 영역. 여기서 기준 강성을 구한다.
+    eng = np.abs(tau) > 0.55 * tau_max
+    if eng.sum() < 20:
+        return None, None, float("nan"), "물린 구간 샘플 부족"
+    # 상·하 분기를 나눠 각각 선형적합 → 기울기 평균 = 컴플라이언스 강성
+    dtau = np.gradient(tau)
+    up, dn = eng & (dtau > 0), eng & (dtau < 0)
+    slopes = []
+    for m in (up, dn):
+        if m.sum() >= 10:
+            A = np.polyfit(q[m], tau[m], 1)
+            if A[0] > 0:
+                slopes.append(A[0])
+    if not slopes:
+        return None, None, float("nan"), "물린 구간 기울기 추정 실패"
+    k_deg = float(np.mean(slopes))                     # Nm/deg
+
+    # 국소강성: 토크 변화 대비 위치 변화. 평탄 구간 = 강성이 물린구간의 일부 이하
+    win = 15
+    ks = []
+    for i in range(len(q)):
+        a, b = max(0, i - win), min(len(q), i + win)
+        if b - a < 8: ks.append(np.nan); continue
+        dq = q[b-1] - q[a]
+        ks.append(abs((tau[b-1] - tau[a]) / dq) if abs(dq) > 1e-6 else np.inf)
+    ks = np.array(ks, float)
+    flat = (ks < 0.25 * k_deg) & (np.abs(tau) < 0.5 * tau_max)   # 저강성 + 영교차 부근
+    lash = float(q[flat].ptp()) if flat.sum() >= 8 else None
+    return lash, k_deg, float(flat.sum()), None
+
+
+def measure_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
+    ch = int(joint["ch"])
+    name = joint["name"]
+    cfg = spec.get("backlash", {})
+    tau_max = float(cfg.get("tau_max_nm", 0.45))
+    ramp = float(cfg.get("ramp_nm_per_s", 0.12))
+    cycles = int(cfg.get("cycles", 2))
+    tau_break = float(cfg.get("tau_break_ref_nm", 0.62))
+    q_elastic_max = float(cfg.get("q_elastic_max_deg", 1.5))
+    warn: list[str] = []
+
+    if tau_max >= 0.85 * tau_break:
+        warn.append(f"τ_max({tau_max}) 가 파단토크({tau_break})에 너무 가깝다 — 회전 위험")
+    log(f"  [{name}] 토션 히스테리시스 — ±{tau_max} Nm @ {ramp} Nm/s × {cycles}주기")
+    log(f"           (파단 {tau_break} Nm 이하로 유지 → 회전 없이 탄성·유격만 본다)")
+
+    # 토크 파형: 0 → +max → −max → +max → … → 0
+    segs = [(0.0, tau_max)]
+    for _ in range(cycles):
+        segs += [(tau_max, -tau_max), (-tau_max, tau_max)]
+    segs += [(tau_max, 0.0)]
+
+    hw.arm(ch, 0.0, 0.0)
+    time.sleep(0.3)
+    q0 = hw.read(ch)[0]
+    qs, ts, tc_all, rotated = [], [], [], False
+    for a, b in segs:
+        T = abs(b - a) / ramp
+        t0 = time.monotonic()
+        while True:
+            t = time.monotonic() - t0
+            if t >= T: break
+            tc = a + (b - a) * (t / T)
+            s = hw.step_torque(ch, tc, tau_max)
+            qs.append(s.q_deg - q0); ts.append(s.tau); tc_all.append(tc)
+            if abs(s.q_deg - q0) > q_elastic_max:      # 탄성범위 초과 = 회전 시작
+                rotated = True; break
+            time.sleep(hw.dt)
+        if rotated: break
+    hw.limp()
+
+    q = np.array(qs); tau = np.array(ts); tcmd = np.array(tc_all)
+    if rotated:
+        warn.append(f"<b>관절이 회전했다</b>(이동 {abs(q).max():.2f}° > {q_elastic_max}°) — "
+                    f"τ_max 를 낮춰 재시험할 것. 이 결과는 무효다.")
+        lash = k_deg = None; nflat = 0
+    else:
+        lash, k_deg, nflat, err = _analyze(q, tau, tau_max, log)
+        if err: warn.append(err)
+
+    # 루프 전체 폭(@τ≈0) — 백래시+마찰 히스테리시스 합
+    near0 = np.abs(tau) < 0.08 * tau_max
+    loop_w = float(q[near0].ptp()) if near0.sum() > 4 else float("nan")
+
+    if lash is not None:
+        log(f"  [{name}] → 백래시 {lash:.4f}° · 강성 {k_deg:.3f} Nm/deg "
+            f"({k_deg*180/np.pi:.0f} Nm/rad) · 루프폭 {loop_w:.4f}°")
+        if lash < 0.02:
+            warn.append(f"백래시가 측정 노이즈 수준({lash:.4f}°) — 유의미한 유격 없음으로 볼 것")
+    else:
+        log(f"  [{name}] → 평탄 구간 미검출. 루프폭 {loop_w:.4f}° (= 마찰 히스테리시스로 해석)")
+        warn.append("저강성 평탄 구간이 검출되지 않았다 → <b>유의미한 백래시 없음</b>. "
+                    "루프 폭은 마찰 히스테리시스로 해석해야 한다.")
+
+    # ── 플롯 ────────────────────────────────────────────────────────────────
+    p = f"{plotdir}/backlash_ch{ch:02d}.png"
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+    ax[0].plot(q, tau, lw=.9)
+    ax[0].axhline(0, c="k", lw=.5); ax[0].axvline(0, c="k", lw=.5)
+    ax[0].set_xlabel("deflection (deg)"), ax[0].set_ylabel("measured torque (Nm)")
+    ax[0].set_title("torsional hysteresis loop"), ax[0].grid(alpha=.3)
+    ax[1].plot(tcmd, tau, lw=.8, label="measured")
+    ax[1].plot([-tau_max, tau_max], [-tau_max, tau_max], "k:", lw=.8, label="ideal")
+    ax[1].set_xlabel("commanded torque (Nm)"), ax[1].set_ylabel("measured (Nm)")
+    ax[1].set_title("torque command fidelity"), ax[1].legend(), ax[1].grid(alpha=.3)
+    fig.suptitle(f"Backlash / compliance — {name}")
+    plt.savefig(p, dpi=110, bbox_inches="tight"), plt.close()
+
+    wh = ('<div class="warn"><b>주의</b><ul>' + "".join(f"<li>{w}</li>" for w in warn)
+          + "</ul></div>") if warn else ""
+    html = TEMPLATE.render(
+        title=f"Backlash & Compliance — {name}", datetime=time.strftime("%Y-%m-%d %H:%M:%S"),
+        joint=name, ch=ch, tau_max=tau_max, ramp=ramp, cycles=cycles, tau_break=tau_break,
+        lash_str=(f"{lash:.4f} deg" if lash is not None else "평탄구간 미검출 → 유의미한 백래시 없음"),
+        stiff_str=(f"{k_deg:.3f} Nm/deg ({k_deg*180/np.pi:.0f} Nm/rad)" if k_deg else "—"),
+        loop_w=loop_w, q_span=float(q.ptp()) if q.size else 0.0, rotated=rotated,
+        warnings=wh, plot=p.replace(plotdir, "plots"))
+    return html, {"backlash_deg": lash, "stiffness_nm_per_deg": k_deg, "loop_width_deg": loop_w,
+                  "rotated": rotated, "ch": ch, "name": name}

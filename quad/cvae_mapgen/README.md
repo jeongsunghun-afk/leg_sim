@@ -20,12 +20,16 @@ Raibo2025 = **Kim/Hwangbo, "High-speed control and navigation for quadrupedal ro
 python cvae_mapgen.py
 ```
 MockTracker와 Algorithm 1을 돌린 검증(cpu):
-- 부트스트랩(Table S3) → 경쟁 재학습 주기적 발생(9회) → **프론티어 r_max→1.59m**(목표 1.6).
-- ★**핵심 이점 정량 검증 — feasible-fraction: uniform=0.31 vs CVAE=0.998 (3.2× 효율)**: CVAE가 r-φ/θ-x_tilt **상관 manifold를 학습**해 물리 가능 지형을 생성(uniform은 상관 무시→infeasible 낭비). = 논문 고차원 이점의 근거.
+- 부트스트랩(Table S3) → 경쟁 재학습 주기적 발생 → **프론티어 r_max→1.60m**(목표 1.6 정확 달성).
+- ★**핵심 이점 정량 검증 — feasible-fraction: uniform=0.32 vs CVAE=0.996 (3.1× 효율)**: CVAE가 r-φ/θ-x_tilt **상관 manifold를 학습**해 물리 가능 지형을 생성(uniform은 상관 무시→infeasible 낭비). = 논문 고차원 이점의 근거.
+
+## 논문서 가져온 정확 하이퍼파라미터 (Table S1·Network details)
+`KL β=0.04`·`CVAE lr=0.0001`·`num epoch(map generator)=12`·`max_grad_norm=0.5`·enc[512,128]/dec[128,512]·bootstrap=Table S3.
+★**논문 미명시(내 선택, 코드에 표시)**: latent dim(8)·update_period(3)·max_update.
 
 ## 정직한 한계 (mock 특성 — 알고리즘 아님)
-- **9.3/9.15는 논문 값**(실 tracker≈100% feasible 생성 가정). mock은 CVAE ~97~99% feasible → 순차-정지 perf 상한이 낮아 **mock용 8.3/8.0으로 비례 하향**(알고리즘 구조는 동일).
-- **x_tilt 프론티어는 26°까지만**(r은 1.59 달성) = mock 난이도/feasibility(θ↔x_tilt 상관)의 단순함 탓. 알고리즘 문제 아님. 실 tracker에선 논문대로 90°(벽주행).
+- **9.3/9.15는 논문 값**(실 tracker≈100% feasible 생성 가정). mock은 CVAE ~99% feasible → 순차-정지 perf 상한이 낮아 **mock용 8.3/8.0으로 비례 하향**(알고리즘 구조는 동일).
+- **x_tilt 프론티어는 ~34°까지만**(r은 1.60 달성) = mock 난이도/feasibility(θ↔x_tilt 상관)의 단순함 탓. 알고리즘 문제 아님. 실 tracker에선 논문대로 90°(벽주행).
 - **MockTracker·feasible()·PSI 물리영역은 대표 근사**: 실 통합 시 실 tracker 성공신호·우리 로봇 reach/gait로 재매핑.
 
 ## RobotSW_IsaacLab (DTC P3) 통합 (★A 워크스트림 충돌 회피 위해 독립 구현)

@@ -26,7 +26,9 @@ import torch.nn.functional as F
 
 D2R = math.pi / 180.0
 
-# ─────────── ψ 6성분 (Components of ψ, Table S3) = [r, θ, φ, Δyaw, x_tilt, y_tilt] ───────────
+# ─────────── ψ 6성분 (Components of ψ, 논문 정의) = [r, θ, φ, Δyaw, x_tilt, y_tilt] ───────────
+#   r=수평거리(|x_n|)·θ=진행방향 heading 변화(x_{n-1}↔x_n 각)·φ=고도각(d_n↔지면투영 x_n 각) → 디딤돌 중심위치.
+#   Δyaw·x_tilt·y_tilt = 디딤돌 자세(Z_g·x_ns·y_ns 축 회전). ※latent dim·update_period·max_update는 논문 미명시.
 PSI_DIM = 6
 #                       r     θ        φ        Δyaw     x_tilt   y_tilt
 PSI_LO = torch.tensor([0.40, -45*D2R, -60*D2R, -20*D2R,  0.0,    -15*D2R])
@@ -105,13 +107,14 @@ class Cfg:
     perf_target: float = 8.0             # (논문 9.15)
     alpha_reset: float = 0.7             # 재학습 후 α 리셋값(논문)
     alpha_step: float = 0.02             # α 감소폭(논문)
-    update_period: int = 3               # 재학습 주기(논문 update%period; 값은 예시)
+    update_period: int = 3               # 재학습 주기(논문 Algorithm 1 update%period; ★값은 논문 미명시=예시)
     boot_rounds_per_stage: int = 4       # 초기 커리큘럼 stage당 라운드(데이터 축적)
-    retrain_epochs: int = 150
+    map_epochs: int = 12                 # ★num learning epoch(map generator) = 12 (Table S1)
     retrain_batch: int = 256
-    beta_kl: float = 0.05                # KL 가중(collapse 방지; 논문 supplementary 정확값 미공개→튜닝)
+    beta_kl: float = 0.04                # ★Total loss = MSE + 0.04·KLD (Network details)
+    max_grad_norm: float = 0.5           # ★max grad norm = 0.5 (Table S1)
     buffer_max: int = 8000               # overcome(feasible) ψ 버퍼(최근)
-    lr: float = 1e-3
+    lr: float = 1e-4                     # ★learning rate(map generator) = 0.0001 (Table S1)
 
 
 class CompetitiveCurriculum:
@@ -166,15 +169,19 @@ class CompetitiveCurriculum:
         return float(overcome.mean())
 
     def retrain(self):
-        """map generator.retrain(feasible_param): overcome ψ로 CVAE 재학습(MSE recon + KL)."""
+        """map generator.retrain(feasible_param): overcome ψ로 CVAE 재학습(MSE recon + 0.04·KL, 12 epoch)."""
         c = self.cfg
         if len(self.buf_psi) < c.retrain_batch: return None
         U = psi_normalize(torch.stack(self.buf_psi).to(self.device)); Y = torch.stack(self.buf_y).to(self.device)
         N = U.shape[0]; last = None
-        for _ in range(c.retrain_epochs):
-            idx = torch.randint(0, N, (c.retrain_batch,), device=self.device)
-            loss, rec, kl = self.cvae.loss(U[idx], Y[idx], c.beta_kl)
-            self.opt.zero_grad(); loss.backward(); self.opt.step(); last = float(rec)
+        for _ in range(c.map_epochs):                                  # 12 epoch(=버퍼 full pass)
+            perm = torch.randperm(N, device=self.device)
+            for i in range(0, N, c.retrain_batch):
+                idx = perm[i:i + c.retrain_batch]
+                loss, rec, kl = self.cvae.loss(U[idx], Y[idx], c.beta_kl)
+                self.opt.zero_grad(); loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.cvae.parameters(), c.max_grad_norm)
+                self.opt.step(); last = float(rec)
         return last
 
 

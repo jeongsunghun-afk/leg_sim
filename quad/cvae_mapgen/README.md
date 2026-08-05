@@ -32,6 +32,11 @@ MockTracker와 Algorithm 1을 돌린 검증(cpu):
 - **x_tilt 프론티어는 ~34°까지만**(r은 1.60 달성) = mock 난이도/feasibility(θ↔x_tilt 상관)의 단순함 탓. 알고리즘 문제 아님. 실 tracker에선 논문대로 90°(벽주행).
 - **MockTracker·feasible()·PSI 물리영역은 대표 근사**: 실 통합 시 실 tracker 성공신호·우리 로봇 reach/gait로 재매핑.
 
+## 파일
+- `cvae_mapgen.py` — CVAE map generator + Algorithm 1 경쟁 커리큘럼 + self-test(논문 충실).
+- `psi_to_stones.py` — ★ψ → stepping-stone 월드 포즈(Components-of-ψ 기하). CVAE 출력→실제 지형 브리지. round-trip 검증(오차 0).
+- `RAIBO2025_SYSTEM.md` — ★전체 시스템 스펙(tracker·planner·학습환경 세팅) + 우리 DTC 갭 분석. "CVAE 외 다른 부분".
+
 ## RobotSW_IsaacLab (DTC P3) 통합 (★A 워크스트림 충돌 회피 위해 독립 구현)
 3곳만 연결:
 1. **MockTracker → 실 tracker**: `rollout()`의 `tracker.attempt`를 실 에피소드 overcome 결과로. `env.get_feasible_param()`=현 DTC의 terrain_level/foothold 로직 재사용.

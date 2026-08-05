@@ -3,9 +3,11 @@
 //     루프: RealHal.read → EkfEstimator.update(→d_est) → TrotBridge.step(d_est) → RealHal.write(tau_ff, kp=kd=0 순수토크).
 //   ※Pi 전용(RobotSharedMem). 데스크톱은 자동 skip(#else 스텁).
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <csignal>
 #include "hal/real_hal.hpp"
+#include "common/rt.hpp"
 
 #if defined(QC_HAVE_ROBOT_SHM) || __has_include("/usr/include/RobotSharedMem.h")
 #include "quad_control.hpp"                 // ::QuadControl (모델=M/h/Jac 계산기)
@@ -68,7 +70,9 @@ int main(int argc, char** argv) {
   ctrl.set_command(hc);
 
   std::signal(SIGINT, on_sigint);
-  // TODO(Pi): SCHED_FIFO + mlockall 로 RT 우선순위(지연 예산 <12ms 위해). 여기선 CLOCK_MONOTONIC 절대주기.
+  // ★RT 우선순위 — 일반 우선순위면 RobotEmbedded(CPU ~90%)에 선점당해 주기가 밀린다.
+  //   rtprio ulimit=0 인 기기에서는 sudo 로 실행해야 걸린다. 실패해도 진행하되 사실은 보고한다.
+  rt_report(rt_setup(getenv("RT_PRIO") ? atoi(getenv("RT_PRIO")) : 80));
   const long period_ns = (long)(q.m->opt.timestep * 1e9);       // 제어주기(=모델 timestep, 통상 1ms)
   struct timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
 

@@ -31,6 +31,7 @@
 
 #include "hal/real_hal.hpp"
 #include "config/joint_map_17dof.hpp"
+#include "common/rt.hpp"
 
 #if !(defined(QC_HAVE_ROBOT_SHM) || __has_include("/usr/include/RobotSharedMem.h"))
 int main(){ std::printf("[hal_smoke] Pi 전용(RobotSharedMem.h 없음)\n"); return 0; }
@@ -74,6 +75,13 @@ int main(int argc, char** argv){
   std::printf("            sign=%+d zero=%.2f deg 한계=[%.0f, %.0f] deg\n",
               jc.sign, jc.zero_deg, jc.min_deg, jc.max_deg);
 
+  // ★RT A/B: RT=1 이면 SCHED_FIFO+mlockall 시도. 미지정=일반 우선순위(기존 측정과 동일 조건).
+  //   같은 도구·같은 절차에서 이 스위치만 바꿔 비교 → 지연차의 원인을 스케줄링으로 귀속할 수 있다.
+  if (getenv("RT") && atoi(getenv("RT")) != 0)
+    rt_report(rt_setup(getenv("RT_PRIO") ? atoi(getenv("RT_PRIO")) : 80));
+  else
+    std::printf("[rt] 일반 우선순위(RT=1 로 SCHED_FIFO 시도)\n");
+
   RealHal hal(1, 0.001, { jc });                 // nu=1 — 이 채널 하나만
   if (!hal.init()){ std::printf("[hal_smoke] ✗ SHM 연결/핸드셰이크 실패 — RobotEmbedded 확인\n"); return 1; }
   std::printf("[hal_smoke] SHM 연결 OK\n");
@@ -94,11 +102,14 @@ int main(int argc, char** argv){
   if (frames < ARM_FRAMES){ std::printf("[hal_smoke] ✗ 상태 %d/%d 프레임 — 체인 미생존. 중단\n", frames, ARM_FRAMES); return 1; }
   std::printf("[hal_smoke] 상태 %d프레임 수신 → 무장\n\n", frames);
 
+  Stat jit;                                        // ★루프 실주기[ms] — 스케줄링 지터 관측
   auto hold = [&](double tau, int ms, Stat* sq, Stat* sdq, Stat* stau, double* t_react)->bool {
     const double t0 = now_s();
+    double tprev = t0;
     bool reacted = false;
     cmd.tau_ff[0] = tau;
     while (g_run && (now_s()-t0)*1000.0 < ms){
+      { const double tn = now_s(); jit.add((tn - tprev)*1000.0); tprev = tn; }
       if (hal.read(ls)){
         const double dq_dps = ls.dq[0] * 180.0 / M_PI;
         if (std::fabs(dq_dps) > VEL_ABORT){            // ★속도 가드
@@ -148,7 +159,11 @@ int main(int argc, char** argv){
 
   cmd.tau_ff[0] = 0.0; hal.write(cmd);
   hal.enable(false);                                  // ★종료 = 명시적 limp
-  std::printf("\n[hal_smoke] 종료 — limp 전송 완료 (%s)\n", okrun? "정상" : "중단됨");
+
+  // ★루프 지터 — 목표 1ms 대비 실주기. 최대값이 크면 선점당한 것 = 지연의 스케줄링 성분.
+  std::printf("\n③ 루프 주기: 평균 %.3f ms · sd %.3f · 최대 %.3f ms (목표 1.0, n=%d)\n",
+              jit.mean(), jit.sd(), jit.mx, jit.n);
+  std::printf("[hal_smoke] 종료 — limp 전송 완료 (%s)\n", okrun? "정상" : "중단됨");
   return okrun? 0 : 1;
 }
 #endif

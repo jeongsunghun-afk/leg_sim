@@ -17,7 +17,14 @@ shm:
 # ── 관절 매핑: biped 컨트롤러 순서(0~7) → Gait 채널 ─────────────────────────
 #   name    : biped 관절명(= robot_interface.JOINT_NAMES 순서, 고정)
 #   channel : RobotSharedMem Gait 채널(ENUM_Gait_JointID)
-#   sign    : 실모터 회전방향 = sign · (컨트롤러 각). ★캘리브레이션(축별 +1/-1)
+#   sign    : 실모터 회전방향 = sign · (컨트롤러 각).
+#             ★HL_hip·HR_hip = +1 **실측 확정**(2026-08-05, 육안 검증).
+#               `+` 명령 시 두 축 모두 정면에서 볼 때 **반시계**로 회전한다.
+#               MJCF hip `axis="1 0 0"` 은 정면 관찰자 쪽으로 +X 가 향하므로 오른손
+#               법칙상 `+q` = 반시계 → 실측과 일치 ⇒ sign=+1 (부호 반전 불필요).
+#               **좌우 거울 장착이 아니다** — 두 축을 동시에 같은 각도로 움직였을 때
+#               같은 방향으로 회전함을 확인(이것이 결정적 관찰이었다).
+#             ⚠ 나머지 6축은 미장착 → 여전히 미검증(기본 +1).
 #   offset_deg: 실모터 0점 − 컨트롤러 0점[deg]. ★캘리브레이션
 #   min/max_deg: 소프트웨어 관절한계[deg](MJCF range 변환). 명령·jog 모두 클램프
 #   kp/kd   : jog·hold 시 모터 임피던스 게인(모델기반은 tau_ff, kp/kd=0)
@@ -34,11 +41,11 @@ shm:
 #     장착 후 축별로 mot_test 로 재검증할 것. ⚠Kd 는 속도 노이즈(±15deg/s 관측)를
 #     그대로 토크로 증폭하므로(kd2 → ±0.5Nm) 함부로 올리지 말 것.
 joints:
-  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # 실측 검증
+  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
   - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
   - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
   - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)
-  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★미검증: 텔레메트리 정지 상태였음
+  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
   - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
   - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
   - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)

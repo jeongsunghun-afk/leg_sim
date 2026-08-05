@@ -52,3 +52,17 @@ if(EXISTS "/usr/include/RobotSharedMem.h" AND MUJOCO_LIB AND EIQP_LIB AND EXISTS
 else()
   message(STATUS "robot_main SKIP (RobotSharedMem.h 없음=데스크톱) — Pi에서만 빌드")
 endif()
+
+# ── 실기 진단도구(Pi 전용) — MuJoCo 불필요(RealHal은 Eigen+RobotSharedMem 만 의존) ──
+#   chan_probe : 읽기전용 채널배치/IMU 실측(모터 무동작).
+#   hal_smoke  : RealHal 순수토크 경로 end-to-end 검증(단일 채널·속도가드·토크캡).
+if(EXISTS "/usr/include/RobotSharedMem.h")
+  find_library(RSHM_LIB RobotSharedMem)
+  foreach(_t chan_probe hal_smoke)
+    add_executable(${_t} tools/${_t}.cpp)
+    target_compile_definitions(${_t} PRIVATE QC_HAVE_ROBOT_SHM)
+    target_include_directories(${_t} PRIVATE ${CMAKE_SOURCE_DIR} ${EIGEN_INCLUDE})
+    target_link_libraries(${_t} PRIVATE ${RSHM_LIB} rt pthread)
+  endforeach()
+  message(STATUS "tools(Pi): chan_probe · hal_smoke")
+endif()

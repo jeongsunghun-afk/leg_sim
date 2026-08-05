@@ -179,6 +179,7 @@ def main():
     hw.enable(False)
     t0 = time.perf_counter(); k = 0; last_cmd_t = t0; last_pub = 0.0
     estop_latched = False
+    wd_tripped = False
     # ★tilt E-stop 은 IMU 가 있어야 동작한다. 이 로봇은 현재 SHM IMU 가 전부 0 이라
     #   tilt 가 항상 0 으로 계산되어 **E-stop 이 사실상 비활성**이다. 조용히 넘어가면
     #   보호장치가 있다고 착각하게 되므로 기동 시 명시적으로 경고한다.
@@ -253,10 +254,18 @@ def main():
                               model.reset(walk_cmd["body_h"])
 
           # ── 워치독: 명령 끊기면 안전(limp) ──
-          if fsm.mode != FSM.OFF and (loop_t - last_cmd_t) > watchdog_s:
-              hw.enable(False)
-          elif fsm.mode != FSM.OFF:
-              hw.enable(True)
+          #   ★전이를 출력한다. 조용히 enable(False) 만 하면 워치독이 도는지 운용 중에도
+          #     시험 중에도 알 수 없다 — 실제로 데드코드인 것을 오래 못 봤다.
+          wd_trip = (fsm.mode != FSM.OFF) and (loop_t - last_cmd_t) > watchdog_s
+          if wd_trip != wd_tripped:
+              wd_tripped = wd_trip
+              if wd_trip:
+                  print(f"[biped_emb] 워치독 트립 — 명령 두절 "
+                        f"{loop_t - last_cmd_t:.2f}s > {watchdog_s:.2f}s → limp", flush=True)
+              else:
+                  print("[biped_emb] 워치독 해제 — 명령 복귀", flush=True)
+          if fsm.mode != FSM.OFF:
+              hw.enable(not wd_trip)
 
           # ── 기울기 E-stop ──────────────────────────────────────────────────
           #   ★기존 구현의 결함 셋을 모두 고쳤다:

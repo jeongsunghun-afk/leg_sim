@@ -5,7 +5,7 @@
 실행(proxddp env): /home/jsh/miniforge3/envs/proxddp/bin/python teleop_gui_biped.py
   ① 컨트롤러: python biped_run.py   ② GUI: 위 명령
 """
-import os, json, math, socket
+import os, json, math, socket, time
 import dearpygui.dearpygui as dpg
 
 CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
@@ -42,8 +42,12 @@ NJ = len(JOG_NAMES)
 class Pub:
     def __init__(self, path=CMD):
         self.path = path
-        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'stand', 'contact': '2pt',
-                    'jog_deg': [0.0] * NJ}  # ★시작=2점 서기. jog_deg=각축 목표각(emb JOG용)
+        # ★시작 모드는 반드시 'off'. 'stand' 였을 때는 Pub() 이 import/생성 시점에
+        #   곧바로 _pub() 하므로(뷰포트 생성 전!) **앱이 기동 4초 내 자동 무장**됐다.
+        #   실기에서 사람이 버튼을 누르기도 전에 모터에 전류가 흐르는 것이라 위험하다.
+        #   (README 의 "off 에서 시작해 사용자가 명시적으로 무장" 원칙과도 정면 배치)
+        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'off', 'contact': '2pt',
+                    'jog_deg': [0.0] * NJ, 'seq': 0}
         self._pub()
 
     def set_jog(self, i, val):
@@ -53,13 +57,19 @@ class Pub:
         self.cmd.update(kw)
         # ★스틱/슬라이더로 非零 속도가 들어오면 자동 walk 전환.
         #   (안 그러면 sim이 mode=stand를 보고 속도를 0으로 무시 → "명령이 안 먹는" 증상)
-        if self.cmd.get('mode') in ('stand', 'off') and (
+        # ★'off' 를 자동승격 대상에서 뺐다. off 는 "아직 무장 안 함" 상태이므로
+        #   조이스틱 한 번에 stand 를 건너뛰고 walk 로 뛰어드는 것을 막는다.
+        if self.cmd.get('mode') in ('stand',) and (
             abs(self.cmd.get('v', 0.0)) > 1e-3 or abs(self.cmd.get('vy', 0.0)) > 1e-3
             or abs(self.cmd.get('w', 0.0)) > 1e-3):
             self.cmd['mode'] = 'walk'
         self._pub()
 
     def _pub(self):
+        # ★seq 를 증가시킨다. emb 앱의 워치독은 "파일이 읽히는가" 가 아니라
+        #   "명령 내용이 바뀌는가" 로 살아있음을 판정하므로(biped_emb.read_cmd_fresh),
+        #   정적 파일은 통신두절과 구분되지 않는다. seq 가 그 구분을 만든다.
+        self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
         tmp = self.path + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(self.cmd, f)
@@ -285,6 +295,7 @@ dpg.create_viewport(title='biped teleop', width=700, height=800)
 dpg.setup_dearpygui(); dpg.show_viewport(); dpg.set_primary_window('main', True)
 
 _LED = {'ok': (60, 210, 90), 'fault': (235, 200, 60), 'dead': (70, 70, 78)}
+_last_file_hb = [0.0]          # ★파일 하트비트 타이머(리스트=클로저 없이 가변)
 while dpg.is_dearpygui_running():
     try:
         with open(STATE) as f:
@@ -316,6 +327,15 @@ while dpg.is_dearpygui_running():
     #   매 프레임 현재 pub.cmd를 UDP로 재전송(≈60Hz)해 이벤트 타이밍 의존 제거.
     if _udp_sock is not None:
         try: _udp_sock.sendto(json.dumps(pub.cmd).encode(), _udp_addr)
+        except Exception: pass
+    # ★파일 채널에도 동일한 하트비트(20Hz). 위 주석이 UDP 에 대해 지적한 문제
+    #   ("이벤트가 없으면 패킷이 끊긴다")가 **파일 경로에도 똑같이 있었는데 안 고쳐져
+    #   있었다.** emb 앱 워치독은 이 하트비트로 GUI 생존을 판정한다 — 없으면 워치독이
+    #   jog 램프 중(무이벤트 1.5s) 오작동한다.
+    _now = time.time()
+    if _now - _last_file_hb[0] > 0.05:
+        _last_file_hb[0] = _now
+        try: pub._pub()
         except Exception: pass
     dpg.render_dearpygui_frame()
 

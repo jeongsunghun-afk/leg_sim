@@ -173,6 +173,7 @@ struct TrotCtrl {
   Vector3d tam_swtgt[4];   // ★online swing foot commitment: liftoff 시 착지target 동결(재anchor에도 불변, 표준 receding-horizon)
   tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
   double tam_ent=-1e9;   // ★tamols 진입 절대시각(cold-start settle 계측용, tam_t는 재앵커로 리셋되므로 별도)
+  double comy_lp=0;      // ★횡 CoM 저주파(드리프트) 상태: 빠른 sway 제거하고 느린 드리프트만 발배치로 보정
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
   double tam_z0=0.52;   // ★online_replan에 넘길 base z 기준(지형모드=지형+명목높이)
@@ -436,7 +437,17 @@ struct TrotCtrl {
       double vfy=d->subtree_linvel[1]-d->subtree_angmom[0]/(_M*_H);
       double capx=tc_clip(_rai*_tst*V+_kcap*(vfx-V),-_capc,_capc);     // 전진 capture
       double _kyp=getenv("YPOS_K")?atof(getenv("YPOS_K")):0.0;        // ★횡 위치 앵커(정적crawl drift 보정): CoM y를 tam_ay(직진선)로 되돌림. capy는 속도만 잡아 위치는 누적드리프트
-      double capy=tc_clip(_kcap*(vfy-0.0)+_kyp*(d->subtree_com[1]-tam_ay),-_capc,_capc);   // ★횡 capture(v_des_y=0)+위치앵커
+      double capy;
+      if(getenv("YDRIFT_K")){   // ★★저주파 드리프트 보정(정적 crawl 정석): comy를 low-pass해 빠른 sway 제거→느린 드리프트만 발배치로 보정(sway와 안 싸움. DCM은 sway와 충돌해 발산).
+        double _tau=getenv("YDRIFT_TAU")?atof(getenv("YDRIFT_TAU")):0.6;   // 시상수>gait주기(0.8s) → sway(1.25Hz) 통과 차단, 드리프트(<0.3Hz)만
+        comy_lp += (dt/std::max(0.05,_tau))*((d->subtree_com[1]-tam_ay)-comy_lp);
+        capy=tc_clip(atof(getenv("YDRIFT_K"))*comy_lp,-_capc,_capc);
+      } else if(getenv("DCM_K")){   // ★★DCM 발배치(정석): K_CAP·v + YPOS_K·pos를 ω-원리적으로 통합. ξ_y=com_y+v_y/ω(=capture point), foot 편차=k·ξ_y.
+        double zc=std::max(0.15,d->subtree_com[2]), om=std::sqrt(9.81/zc);   // ω=√(g/z) LIPM
+        double xiy=(d->subtree_com[1]-tam_ay)+vfy/om;                        // 횡 DCM 오차(위치+속도/ω, 물리적 비율 1:1/ω)
+        capy=tc_clip(atof(getenv("DCM_K"))*xiy,-_capc,_capc);
+      } else
+        capy=tc_clip(_kcap*(vfy-0.0)+_kyp*(d->subtree_com[1]-tam_ay),-_capc,_capc);   // 구: K_CAP 속도 + YPOS_K 위치(휴리스틱)
       for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
         if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만

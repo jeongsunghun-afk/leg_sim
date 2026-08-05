@@ -493,7 +493,9 @@ struct TrotCtrl {
         int kl=std::min((int)((tam_t+lead)/tam_dt),tam_N-1); double cyl=0,cxl=0,cx4=0; int ncl=0;
         for(int i=0;i<4;i++){ cx4+=tam_fh[i][0]; if(tam_c[kl][i]!=0){ cyl+=tam_fh[i][1]; cxl+=tam_fh[i][0]; ncl++; } }
         double ycap=getenv("LEAD_YCAP")?atof(getenv("LEAD_YCAP")):0.06;   // ★과드리프트 방지 clamp
-        if(ncl>0){ q.com_ref[1]=tam_ay+tc_clip(cyl/ncl,-ycap,ycap); q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;
+        if(ncl>0){ double _yc=tc_clip(cyl/ncl,-ycap,ycap);
+          if(getenv("LEAD_ACAP")) _yc+=capy;   // ★CoM 참조를 실제 지지(nominal+capy)로 정합: capy 누적 시 CoM ref와 실제 support 어긋남 방지(느린 발산 근본)
+          q.com_ref[1]=tam_ay+_yc; q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;
           if(getenv("LEAD_CX")) q.com_ref[0]=tgt_x+(cxl/ncl - cx4/4);   // x-centroid 오프셋(전후 pitch 관리): 3발 centroid − 4발 평균
         } }
       // ★★CPLAN(offline 주기 CoM 궤적, 정석 static crawl): 게이트 위상 φ에 동기된 매끈한 주기 CoM ref.

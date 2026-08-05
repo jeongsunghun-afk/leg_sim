@@ -172,6 +172,7 @@ struct TrotCtrl {
   Vector3d tam_lift[4]; bool tam_sw_prev[4]={false,false,false,false}; double tam_sw_start[4]={0,0,0,0};
   Vector3d tam_swtgt[4];   // ★online swing foot commitment: liftoff 시 착지target 동결(재anchor에도 불변, 표준 receding-horizon)
   tamols::TamolsState tam_ol; bool tam_ol_warm=false; double tam_ol_last=-1; int tam_ol_phase=0; bool tam_inj=false;   // ★온라인 replan 상태(warm-start·위상·주입모드=plan정지 발판만)
+  double tam_ent=-1e9;   // ★tamols 진입 절대시각(cold-start settle 계측용, tam_t는 재앵커로 리셋되므로 별도)
   tamols::Grid tam_ol_h; double tam_ol_cell=0.05; int tam_ol_ms=41; bool tam_ol_mapinit=false;
   // 현재 MuJoCo 상태 → online_replan → tam_s 리필(receding-horizon). RSL_ONLINE=1.
   double tam_z0=0.52;   // ★online_replan에 넘길 base z 기준(지형모드=지형+명목높이)
@@ -373,7 +374,7 @@ struct TrotCtrl {
           else { tam_t0=t; tam_ax=d->qpos[0]; tam_ay=0.0; } } }  // ★proper receding-horizon: 후속=위치만 재앵커(swing 연속·저크 제거)
       else if(!tam_loaded) load_tamols(getenv("TAMOLS_TRAJ")?getenv("TAMOLS_TRAJ"):"/tmp/tamols_traj.txt");
       if(tam_N<=0){ q.wbic_stance(); armed=false; return; }             // 파일없음=제자리
-      if(tam_t<0){ tam_t0=t; tam_ax=d->qpos[0]; tam_ay=online?0.0:d->qpos[1];   // 진입=현재 위치 앵커. ★온라인=y를 0고정(직선 유지, 드리프트 보정)
+      if(tam_t<0){ tam_t0=t; tam_ent=t; tam_ax=d->qpos[0]; tam_ay=online?0.0:d->qpos[1];   // 진입=현재 위치 앵커. ★온라인=y를 0고정(직선 유지, 드리프트 보정). tam_ent=진입 절대시각(settle)
         for(int i=0;i<4;i++){ tam_sw_prev[i]=(tam_c[0][i]!=0); tam_have_ptgt[i]=false; }
         x_ref.setZero(); x_ref[12]=-9.81; com_h0=d->subtree_com[2]; }
       tam_t=t-tam_t0;
@@ -474,6 +475,21 @@ struct TrotCtrl {
           t,tam_t,d->subtree_com[2],(int)st.size(),cc[0],cc[1],cc[2],cc[3],
           q.foot_point(0)[2],q.foot_point(1)[2],q.foot_point(2)[2],q.foot_point(3)[2],
           x_ref[2]*180/M_PI,yaw_a,d->subtree_com[1]); } }
+      // ★cold-start settle(정적 crawl): 첫 SETTLE_T초 동안 4접촉 홀드하며 CoM을 첫 지지 centroid로 램프 선이동.
+      //   원인=t0 첫 리프트 시 CoM이 (0,0)=지지삼각형 엣지→즉시 tip→단항 불복구. 미리 centroid로 옮겨 리프트 시 이미 삼각형 안.
+      double SETTLE_T=getenv("SETTLE_T")?atof(getenv("SETTLE_T")):0.0;
+      double sett=t-tam_ent;   // ★절대 진입경과(tam_t는 재앵커로 리셋되므로 사용불가)
+      if(SETTLE_T>0 && sett<SETTLE_T){
+        st.clear(); swing.clear(); for(int i=0;i<4;i++) st.push_back(i);           // 전부 stance
+        double cx=0,cy=0; int nc=0; for(int i=0;i<4;i++) if(tam_c[0][i]!=0){ cx+=q.foot_point(i)[0]; cy+=q.foot_point(i)[1]; nc++; }
+        if(nc>0){ cx/=nc; cy/=nc; }
+        if(getenv("SETTLE_Y")) cy=atof(getenv("SETTLE_Y"));   // ★고정 목표(WBC lateral authority 검증용)
+        double fr=tc_clip(sett/std::max(1e-3,SETTLE_T),0.0,1.0);                     // 램프(0→1)
+        q.com_ref[1]=fr*cy; q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;                  // y를 첫 centroid로 램프
+        q.com_ref[0]=d->subtree_com[0]; q.com_vel_ref[0]=0;                          // x 홀드(제자리 settle)
+        q.W_BASE_XY=getenv("SETTLE_WXY")?atof(getenv("SETTLE_WXY")):400.0;           // ★settle 중 lateral CoM 강추종(선이동 확실)
+        double Ms=mj_getTotalmass(m); for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,Ms*9.81/4);
+      }
       if(!q.wbic_track(st,swing,lam_use,wl)) q.wbic_stance();
       armed=false; return;
     }

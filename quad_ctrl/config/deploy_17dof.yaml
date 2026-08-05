@@ -1,0 +1,41 @@
+# quad_ctrl 배포 config — 17-DOF (quad_real_17dof_waist_sphere), MPC+WBIC.
+#   사용: QC_CONFIG=config/deploy_17dof.yaml ./build/sim_bridge   (또는 실기 robot_main)
+#   원칙③(파라미터=config). flat `key: value` → 시작 시 env로 주입(common/config.hpp).
+#   ★precedence: 실제 env-var가 이미 있으면 그게 우선(실험 override), 없을 때만 이 값 적용.
+#   ★게인/물리는 대부분 코드가 17dof 자동감지 → 여기선 "튜닝하려면 주석 해제"로 문서화(활성=코드기본과 동일값만).
+#   ※배포 무관 연구 knob(COM_LEAD·DCM_K·SETTLE_*·RSL_* 등 TAMOLS-crawl)은 여기 없음 — 배포 파라미터만.
+
+# ── 운용(operation) ──
+GAIT:   trot        # trot | walk | run (프리셋)
+TROT_V: 0.3         # 전진속도 명령 [m/s] (walk~0.3-0.6·trot~1.4·run~2.0)
+BODY_H: 0.0         # 서기 높이 [m], 0=모델 기본(base_z0=0.5234). 범위 0.42~0.52
+
+# ── WBIC/MPC 게인 (코드 17dof 자동감지 — 실기 재튜닝 시 주석 해제) ──
+#   sim2real 재튜닝 1순위 = 지연/노이즈/접촉 바뀌면 SW_KP·W_ORI·W_AM·RAIBERT_K. [[sim2real-checklist-17dof]] B절.
+# W_ORI:   200       # 자세 홀드 가중(축소지지 레벨링). 낮으면 첫 swing tilt 발산
+# KD_AM:   24        # 각운동량 감쇠
+# W_AM:    12        # 각운동량 보상(고속 공진밴드 제거 핵심)
+# SW_KP:   2400      # swing 발끝 추종(고속 도달)
+# KD_BASE: 25        # 속도 추종(전진 authority)
+# STEP_H:  0.10      # swing 발 높이 [m] (walk0.05·trot0.10·run0.08)
+
+# ── 액추에이터 물리 (실측 교체 대기 = sim2real #1 갭, [[sim2real-checklist-17dof]] A절) ──
+GEARBOX: 1          # 반사관성(로터관성·기어마찰·감쇠) ON. 발 flail 억제
+# MU:     0.6        # 접촉 마찰. 실노면 측정으로 교체
+# MOTOR_CURVE: 1     # 토크-속도 곡선(선형근사). 데이터시트 들어오면 교체
+
+# ── 상태추정 KF (선형 접촉KF, IMU가속도 융합) ──
+# KF_QV:     0.5     # 속도 프로세스노이즈(↑=가속도 신뢰↓·접촉측정 의존↑, 노이즈/지연 강건)
+# KF_QP:     1e-4    # 위치 프로세스노이즈
+# KF_RV:     1e-2    # 정지속도 측정노이즈
+# KF_ACC_LP: 0.0     # 가속도 저역통과(0=off)
+
+# ── sim2real 센서/버스 에뮬레이션 (sim 전용; real_hal은 실제 노이즈/지연) ──
+#   ★지연 예산 실측 게이트: 총 루프지연 <12ms 유지(초과 시 붕괴, 게인 아닌 예측기 필요). [[sim2real-checklist-17dof]] C절.
+GYRO_N:       0.0   # 자이로 노이즈 [rad/s]  (실기 대표값 ~0.02)
+QUAT_N:       0.0   # 자세 노이즈 [rad]      (~0.01)
+ENCQ_N:       0.0   # 엔코더 위치 노이즈 [rad]   (~0.002)
+ENCDQ_N:      0.0   # 엔코더 속도 노이즈 [rad/s] (~0.02)
+ACC_N:        0.0   # 가속도 노이즈          (~0.2)
+SENSE_LAT_MS: 0.0   # 센서→제어 지연 [ms]   (실측 대기, 예산 6ms/채널)
+ACT_LAT_MS:   0.0   # 제어→구동 지연 [ms]   (실측 대기)

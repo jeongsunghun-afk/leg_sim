@@ -9,10 +9,12 @@
 #include "control/trot_bridge.hpp"
 #include "estimator/ekf_estimator.hpp"
 #include "command/sport_client.hpp"
+#include "common/config.hpp"
 
 using namespace qc;
 
 int main(int argc, char** argv) {
+  load_config_env();                                       // QC_CONFIG=<yaml> 있으면 env로 주입(MujocoHal 전)
   const char* mjcf = argc > 1 ? argv[1]
                      : "/home/jsh/문서/jsh/simulation/quad/mjcf/quad_real_17dof_waist_sphere.mjcf";
   int STEPS = getenv("STEPS") ? atoi(getenv("STEPS")) : 3000;

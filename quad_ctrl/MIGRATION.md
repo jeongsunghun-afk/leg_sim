@@ -62,4 +62,12 @@ trot_sim.cpp의 `EST_CTRL` 루프(센서→KF추정→d_est→제어→토크)�
 
 > ★핵심 달성: **배포급 A 컨트롤러가 재작성 없이 quad_ctrl HAL 경계 뒤에서 동작·sim 초록불**. real_hal은 `read/write`만 실센서/모터로 교체(컨트롤러·나머지 불변)=3단계 직결.
 
+## 원칙③ config (배포 파라미터, 2026-08-05)
+env-var 흩뿌림 → **config→env 브리지**(`common/config.hpp`: flat `key: value` yaml-부분집합을 시작 시 `setenv(overwrite=0)`로 주입 → apply_env_gains·inline getenv가 그대로 읽음). **비침습**(quad/cpp 불변) = wrap 철학 유지.
+- [x] `common/config.hpp`: `load_config(path)`·`load_config_env()`(QC_CONFIG env). 의존성 없음(yaml-cpp 불요, 배포 파라미터=flat scalar).
+- [x] `config/deploy_17dof.yaml`: 배포 파라미터 부분집합(운용·게인·물리·KF·sim2real 에뮬). 연구 knob(COM_LEAD·DCM_K·SETTLE_*·RSL_* 등 105개 중 TAMOLS-crawl)은 제외. 게인은 코드 자동감지라 주석 문서화(활성=코드기본과 동일값만).
+- [x] `app/sim_bridge.cpp`: main 시작에 `load_config_env()`.
+- [x] **검증: ①QC_CONFIG 로드 == 기본(bit-동등, 값이 코드기본과 일치) ②config값 실제 적용(LAT8ms→falls1005) ③env가 config override(setenv overwrite=0)**. 실행 `QC_CONFIG=config/deploy_17dof.yaml ./build/sim_bridge`.
+- ★정직: env-var를 *소거*한 건 아님(config가 env를 채우는 레이어). 완전 소거는 apply_env_gains·inline getenv를 config 구조체 읽기로 재작성해야 함=quad/cpp 침습 → 모듈 분해 시로 defer. 지금은 **배포가 config-driven**(재컴파일 없이 파라미터 조정)이면 충분.
+
 > 현 배포 작동본은 `quad/cpp/`. 이관 완료 전까지 그게 진실. big-bang 재작성 금지.

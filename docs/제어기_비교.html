@@ -38,6 +38,16 @@
 
   <div class="oneliner"><b>개발방향 = 하이브리드(온라인 TO·DTC + RL 추종)</b>. <b>★TAMOLS/TOWR은 컨트롤러가 아니라 TO(계획)층</b> — 반드시 추종기와 짝지어야 함. <b>C++ 실시간 TAMOLS 솔버는 완성</b>(SQP-RTI·Drake 검증·해석Jacobian &lt;20ms·<b>self-contained cold-start</b>). <b>순수 궤적추종(direct)은 오버슛 낙상이나, ★injection(A 연속 gait클럭에 TAMOLS base·발판 주입)이 지형 크로싱 성공</b>(hsteps tilt&lt;1.2°·dsteps2 갭+높이 3.4°·falls=0, <b>base-발판 협조 실증</b>). 단 짜깁기라 <b>마진 얇음</b>. 기존 5종은 모델기반(<b>A만 실시간 배포·본선</b>). 참조논문 = <b>DTC</b>(2309.15462, 온라인 TO+RL 추종) · <b>APT-RL</b>(skillquad, 오프라인 TO 스킬증류→단일정책).<br><br><b style="font-size:1.08em;color:var(--acc)">★핵심 결론(2026-07-29 갱신) — 계획기 완성 · <span style="color:var(--a)">base-발판 협조 실증</span>(injection+TAM_BASE: 지형 tilt 25°→1.2°) · 단 injection=짜깁기라 마진 얇음("불안불안") · <span style="color:var(--b)">강건 = D1 포팅(OCS2 통합 폐루프 NMPC) 또는 RL(DTC)</span></b> <span style="font-size:.92em">→ 상세 <b>pipeline_tamols.html</b></span></div>
 
+  <div class="box" style="border-width:2px;border-color:var(--a)"><b style="font-size:1.08em;color:var(--a)">★★★배포급 인벤토리 (2026-08-05) — 지금 쓸 수 있는 것</b>
+  <ul>
+    <li><b class="yes">★본선 배포급 = A (MPC Di Carlo SRBD + WBIC Kim + Raibert/capture)</b> — <b>17-DOF C++ 실시간(~5×)</b>. walk 0.3~0.6·trot ~1.4~1.75·run ~2.0 m/s (falls=0)·자동차식 허리조향(Ackermann)·경사 15° tilt1.2°·자세(서기/앉기/눕기/기립)·recovery·GUI(teleop_gui_17dof). <b>목표구조=`quad_ctrl`</b>(sim↔real 이식 골격, 이관 진행중)·<b>실기브리지=`biped/emb` 패턴 검증완료</b>(RobotSharedMem Gait/Pi).</li>
+    <li><b class="wa">△조건부 배포급 = D1 (OCS2 perceptive NMPC + WeightedWbc)</b> — 완만지형 전신 계획(발클리어런스·지형적응 base·SDF)·평지 robust·경사 ~8-10°. <b>단 ~0.2~0.3× 실시간(느림)·험지 non-robust</b>. GUI 배선(run_gui_d1.sh).</li>
+    <li><b>별개 로봇 = biped/emb</b> — 모델기반 1점 walk/2점 stand(sim), emb 인터페이스 mock 검증·실모터 배선중.</li>
+    <li><b class="no">연구(배포 아님)</b> = TAMOLS(pure-online Go2 8초 crawl 실증·injection 마진얇음·02_Leg 미완)·B/C(미안정)·CI-MPC(종결)·RL/DTC(학습중).</li>
+    <li><b>★sim2real caveat</b>: A는 <b>시뮬 검증 배포급</b>. 실모터엔 액추에이터 물리 실측(로터관성·기어마찰·감쇠=#1갭)·EKF·접촉/지연 실측 남음(<a href="sim2real_checklist_17dof.html">sim2real 체크리스트</a>). <b>nav/SLAM=별도 스택</b>이 `quad_ctrl` cmd_vel(command)/odom(estimator) 경계에 플러그인.</li>
+  </ul>
+  <b>한 줄: 배포급=A 하나(본선)·D1은 완만지형 perceptive 보조·나머지는 연구.</b></div>
+
   <div class="box acc" style="border-width:2px"><b style="font-size:1.05em">★★최신 확정 (2026-08-04) — 각 컨트롤러를 자기 표준으로 (사용자 원칙)</b>
   <ul>
     <li><b>TAMOLS</b>: <b>pure-online</b>(TAMOLS TO + <b>GIAC</b> 안정성 cone + WBC)이 <b>표준</b>(균형=GIAC, capture 차용 아님). <b class="wa">Go2(15kg)=성공</b>(pure-online 걷기, go2 investigation V≤0.3 falls0·현 assets트리 미재현=config가 strict-hqp-wip 브랜치) · <b class="no">02_Leg(37.9kg)=게이트별 상이(2026-08-04 재검증)</b>: <b>trot(2점)=rank-5 물리벽</b>(대각선축 모멘트 불가·<b>WBC 정식화 아닌 접촉기하</b>·M_null≤134Nm 실증), <b class="wa">walk(3점)=GIAC 계획갭(열림)</b>(rank-5 소멸 M_null=0이나 계획이 CoM을 지지삼각형 밖으로 냄→붕괴; <b>A walk=falls0이라 WBC·게이트 정상</b>=원리적 벽 아닌 계획 결함, 수정여지). ⚠️기존 "heavy-robot WBC 한계/모델 문제"는 <b>전부 trot 기준 과잉일반화</b>였음. <b>injection=개발 보류</b>(비표준).</li>

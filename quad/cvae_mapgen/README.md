@@ -34,8 +34,17 @@ MockTracker와 Algorithm 1을 돌린 검증(cpu):
 
 ## 파일
 - `cvae_mapgen.py` — CVAE map generator + Algorithm 1 경쟁 커리큘럼 + self-test(논문 충실).
-- `psi_to_stones.py` — ★ψ → stepping-stone 월드 포즈(Components-of-ψ 기하). CVAE 출력→실제 지형 브리지. round-trip 검증(오차 0).
+- `psi_to_stones.py` — ★ψ → stepping-stone 월드 포즈(Components-of-ψ 기하) + `stones_to_mjcf`(포즈→MuJoCo MJCF). round-trip 검증(오차 0).
+- `terrain_demo.py` — ★end-to-end: CVAE 학습 → ψ 생성(easy/hard) → 포즈 → **로드 가능 MJCF 지형**(`terrain_{easy,hard}.mjcf`). 검증: easy r∈[0.48,0.75] vs hard r∈[0.48,1.55]·둘 다 MuJoCo 로드OK.
 - `RAIBO2025_SYSTEM.md` — ★전체 시스템 스펙(tracker·planner·학습환경 세팅) + 우리 DTC 갭 분석. "CVAE 외 다른 부분".
+
+## ★프레임워크 (MuJoCo vs Isaac Sim)
+- **CVAE(cvae_mapgen.py)·psi_to_stones = 프레임워크 독립**(순수 PyTorch). 둘 다에서 재사용.
+- **MJCF export = 로컬 MuJoCo 검증용**: 실제 DTC/RL 학습 env는 **Isaac Sim(RobotSW_IsaacLab)**이나 로컬에 없어(GPU 서버=A 도메인), 우리 모델기반 스택(MuJoCo, 로컬)으로 지오메트리 로드를 standalone 검증한 것.
+- **실 통합(Isaac Sim, A 도메인)**: `CVAE.generate(ψ,α)` → `psi_to_stones`(★재사용) → **IsaacLab 지형**(USD box primitives 또는 `_build_gap_terrain`에 포즈 주입). MJCF 꼬리만 IsaacLab 빌더로 교체.
+- ★참고: 벽주행(x_tilt 90°)=수직면은 **heightmap(2.5D) 표현 불가** → 3D primitive/mesh 필요(논문도 voxel map 언급). 그래서 방위 box(MJCF/USD)가 맞는 표현.
+
+**완결 파이프라인**: `CVAE.generate(ψ,α)` → `psi_to_stones` → (MuJoCo: `stones_to_mjcf` / Isaac: USD/IsaacLab 빌더) → 지형.
 
 ## RobotSW_IsaacLab (DTC P3) 통합 (★A 워크스트림 충돌 회피 위해 독립 구현)
 3곳만 연결:

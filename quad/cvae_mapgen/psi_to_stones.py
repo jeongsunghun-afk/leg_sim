@@ -65,6 +65,40 @@ def recover_psi(centers: torch.Tensor, C0: torch.Tensor | None = None, heading0:
     return out
 
 
+def _mat2quat(R: torch.Tensor):
+    """(3,3) 회전행렬 → quaternion wxyz (MuJoCo)."""
+    m = R
+    t = m[0, 0] + m[1, 1] + m[2, 2]
+    if t > 0:
+        s = 0.5 / math.sqrt(float(t) + 1.0)
+        w = 0.25 / s; x = (m[2, 1]-m[1, 2])*s; y = (m[0, 2]-m[2, 0])*s; z = (m[1, 0]-m[0, 1])*s
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        s = 2.0*math.sqrt(1.0+float(m[0, 0]-m[1, 1]-m[2, 2]))
+        w = (m[2, 1]-m[1, 2])/s; x = 0.25*s; y = (m[0, 1]+m[1, 0])/s; z = (m[0, 2]+m[2, 0])/s
+    elif m[1, 1] > m[2, 2]:
+        s = 2.0*math.sqrt(1.0+float(m[1, 1]-m[0, 0]-m[2, 2]))
+        w = (m[0, 2]-m[2, 0])/s; x = (m[0, 1]+m[1, 0])/s; y = 0.25*s; z = (m[1, 2]+m[2, 1])/s
+    else:
+        s = 2.0*math.sqrt(1.0+float(m[2, 2]-m[0, 0]-m[1, 1]))
+        w = (m[1, 0]-m[0, 1])/s; x = (m[0, 2]+m[2, 0])/s; y = (m[1, 2]+m[2, 1])/s; z = 0.25*s
+    return (w, x, y, z)
+
+
+def stones_to_mjcf(centers: torch.Tensor, Rs: torch.Tensor, half=(0.18, 0.18, 0.05),
+                   name="cvae_terrain") -> str:
+    """디딤돌 포즈(centers, Rs) → MuJoCo MJCF 문자열(box geom). 직접 로드 가능(우리 MuJoCo 스택).
+    box 상단이 ψ 중심높이가 되도록 z를 half_h 내림(발이 상단 디딤)."""
+    L = [f'<mujoco model="{name}">', '  <worldbody>',
+         '    <geom name="ground" type="plane" size="30 30 0.1" rgba="0.25 0.25 0.28 1"/>']
+    for k in range(centers.shape[0]):
+        c = centers[k]; w, x, y, z = _mat2quat(Rs[k])
+        L.append(f'    <geom name="stone{k}" type="box" size="{half[0]:.3f} {half[1]:.3f} {half[2]:.3f}" '
+                 f'pos="{float(c[0]):.3f} {float(c[1]):.3f} {float(c[2])-half[2]:.3f}" '
+                 f'quat="{w:.4f} {x:.4f} {y:.4f} {z:.4f}" rgba="0.62 0.52 0.42 1"/>')
+    L += ['  </worldbody>', '</mujoco>']
+    return '\n'.join(L)
+
+
 def _self_test():
     torch.manual_seed(0)
     from cvae_mapgen import PSI_LO, PSI_HI, feasible

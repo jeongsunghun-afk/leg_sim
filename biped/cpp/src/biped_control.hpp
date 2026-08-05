@@ -1,4 +1,5 @@
 // biped 전체 컨트롤러 (C++) — Python biped_mpc_wbic+biped_step+biped_wbic 통합 이식.
+#include <cstdlib>
 // MuJoCo C API로 M·h·jac·com 계산 → event-DCM 게이트 + base-frame 발배치 + MPC(50Hz) + WBIC.
 #pragma once
 #include <mujoco/mujoco.h>
@@ -18,7 +19,15 @@ struct BipedControl {
   int cmode=0;                        // 접촉모드: 0=1점(점발 stepping)·1=2점(평발 정적). 통합모델 기본 평발.
   double Qflat8[8]={0,0.25,-0.50,-1.14626, 0,0.25,-0.50,-1.14626};   // ★평발 home(발목 눕힘, CoM 밑창중심)
   // ── 파라미터 (Python 동일) ──
-  double T_STEP=0.24, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
+  // ★T_STEP 0.24 → 0.32 (2026-08-05). 실측 ROTOR_I(7.4e-4, 구 placeholder 의 7.4배)를
+  //   넣으면 반사관성이 7.4배가 되어 0.24s 스텝의 스윙 가속에 필요한 토크가 tau_peak 을
+  //   넘어 QP 가 포화 → 2.18s 낙상. 필요가속도 ∝ 1/T² 이므로 스텝을 늦추는 것이 해법이다.
+  //   ⚠ 스윙게인을 올리는 것은 역효과였다(SW_KP 800→1600/3200/5920 = 1.16/1.10/0.65s 낙상)
+  //     — 대역 부족이 아니라 토크 포화이기 때문. 실측 스윕:
+  //       ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙상
+  //       7.4e-4 + T_STEP 0.32 = 15s 무낙상 tilt 2.7°(전 설정 중 최량) · 0.40/0.50 = 낙상
+  //   ⚠ vx=0.15 단일 조건의 4점 스윕으로 잡은 값이다. 속도대역 전반 재검증 필요.
+  double T_STEP=0.32, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
   double SW_KP=800, SW_KD=60, K_RETURN=0.45, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
   double SS_NOMINAL=0.16, SS_MIN=0.10, SS_MAX=0.45, TRIG_Y=0.03, GVEC=9.81;
   double FLAT_KCAP=0.6;               // ★평발 전후 capture 게인(발목ZMP가 주 균형, 약한 보조)
@@ -33,7 +42,19 @@ struct BipedControl {
   double tau_peak8[8]={84,84,126,96,84,84,126,96};
   double Qhome8[8]={0,0.05,-0.2,0, 0,0.05,-0.2,0};
   int ankle_idx[2]={3,7};
-  double GEAR[4]={7,7,10.5,8}, ROTOR_I=1e-4, JDAMP=0.1, JFRIC=0.5;
+  // ── 액추에이터 물리 — ★2026-08-05 실기 실측 (emb/pace/RESULTS.md) ──
+  //   HL_hip·HR_hip 을 PACE 처프로 식별. 전 관절이 동일 모터+7:1 이고 관절별 추가
+  //   감속단만 붙으므로 ROTOR_I(모터축 관성)는 **전 관절 공통 상수**다.
+  //     ROTOR_I 7.652e-4(HL) / 7.121e-4(HR) → 7.4e-4 (양축 7% 일치).
+  //             구 placeholder 1e-4 는 7.4배 과소였다.
+  //     JDAMP   0.096~0.102(HL) / 0.071(HR) → 0.09. 등속스윕은 속도가 낮아 점성이
+  //             신호에 안 잡히므로(HR 은 음수까지 나옴) **처프값**을 쓴다.
+  //     JFRIC   처프 0.375(HL) / 0.382(HR) → 0.38. 저속 정지·유지는 0.50~0.52 인데
+  //             Stribeck 때문이며, 보행은 동적 영역이라 처프값이 대표값이다.
+  //   ⚠ 실측은 hip 2축·다리 미장착 상태. thigh/calf/foot 의 JDAMP/JFRIC 은 감속단이
+  //     늘면 마찰도 늘어 달라진다(ROTOR_I 와 달리 공통 상수가 아님) → 장착 후 재측정.
+  //   ⚠ GEAR foot 8 → 8.4 (총 감속비 8.4 = 7×1.2 추가단, 사용자 확인 2026-08-05).
+  double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.4e-4, JDAMP=0.09, JFRIC=0.38;
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표
@@ -58,6 +79,11 @@ struct BipedControl {
     has_heel=(sph2[0]>=0 && sph2[1]>=0);        // ★heel 구 보유=통합모델. 기본 평발(2점) 정적 rest.
     cmode = has_heel ? 1 : 0;
     if(getenv("FLAT_KCAP")) FLAT_KCAP=atof(getenv("FLAT_KCAP"));   // 튜닝용 env
+    // ★스윙 게인·스텝시간 env — 반사관성(ROTOR_I)이 커지면 스윙 추종 대역이 부족해져
+    //   착지가 틀어진다. 실측 armature 하에서 재튜닝하기 위한 노브.
+    if(getenv("SW_KP")) SW_KP=atof(getenv("SW_KP"));
+    if(getenv("SW_KD")) SW_KD=atof(getenv("SW_KD"));
+    if(getenv("T_STEP")) T_STEP=atof(getenv("T_STEP"));
     if(getenv("FLAT_STEPH")) STEP_H=atof(getenv("FLAT_STEPH"));
     if(getenv("FLAT_WLAM")) FLAT_WLAM=atof(getenv("FLAT_WLAM"));
     if(getenv("FLAT_CZ")) czwalk=atof(getenv("FLAT_CZ"));
@@ -66,8 +92,15 @@ struct BipedControl {
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
   }
-  void setup_gearbox(){ for(int j=0;j<nu;j++){ double N=GEAR[j%4]; int dof=6+j;
-    m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP; m->dof_frictionloss[dof]=JFRIC; } }
+  void setup_gearbox(){
+    // ★env 오버라이드(quad_mpc_wbic_17dof.py:259-261 규약과 동일) — 재빌드 없이 스윕/회귀비교용.
+    //   미지정이면 위 실측 기본값을 쓴다.
+    if(const char* e=getenv("ROTOR_I")) ROTOR_I=atof(e);
+    if(const char* e=getenv("JDAMP"))   JDAMP  =atof(e);
+    if(const char* e=getenv("JFRIC"))   JFRIC  =atof(e);
+    if(const char* e=getenv("GEAR_FOOT")) GEAR[3]=atof(e);
+    for(int j=0;j<nu;j++){ double N=GEAR[j%4]; int dof=6+j;
+      m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP; m->dof_frictionloss[dof]=JFRIC; } }
 
   double footz(int leg){ return d->geom_xpos[sph[leg]*3+2]; }
   Vector3d spos(int leg){ return Vector3d(d->geom_xpos[sph[leg]*3],d->geom_xpos[sph[leg]*3+1],d->geom_xpos[sph[leg]*3+2]); }

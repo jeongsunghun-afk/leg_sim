@@ -475,6 +475,15 @@ struct TrotCtrl {
           t,tam_t,d->subtree_com[2],(int)st.size(),cc[0],cc[1],cc[2],cc[3],
           q.foot_point(0)[2],q.foot_point(1)[2],q.foot_point(2)[2],q.foot_point(3)[2],
           x_ref[2]*180/M_PI,yaw_a,d->subtree_com[1]); } }
+      // ★lateral lead(정적 crawl 핵심): plan s[1]은 재anchor로 현재 y서 출발해 lag → 대신 LEAD_CEN초 앞 위상의
+      //   지지발 centroid를 직접 com_ref[1]로 명령. WBC lateral은 빠름(step 0.06→0.3s에 0.051 실측)이라 선행 추종 가능.
+      if(getenv("LEAD_CEN")){ double lead=atof(getenv("LEAD_CEN"));
+        int kl=std::min((int)((tam_t+lead)/tam_dt),tam_N-1); double cyl=0,cxl=0,cx4=0; int ncl=0;
+        for(int i=0;i<4;i++){ cx4+=tam_fh[i][0]; if(tam_c[kl][i]!=0){ cyl+=tam_fh[i][1]; cxl+=tam_fh[i][0]; ncl++; } }
+        double ycap=getenv("LEAD_YCAP")?atof(getenv("LEAD_YCAP")):0.06;   // ★과드리프트 방지 clamp
+        if(ncl>0){ q.com_ref[1]=tam_ay+tc_clip(cyl/ncl,-ycap,ycap); q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;
+          if(getenv("LEAD_CX")) q.com_ref[0]=tgt_x+(cxl/ncl - cx4/4);   // x-centroid 오프셋(전후 pitch 관리): 3발 centroid − 4발 평균
+        } }
       // ★cold-start settle(정적 crawl): 첫 SETTLE_T초 동안 4접촉 홀드하며 CoM을 첫 지지 centroid로 램프 선이동.
       //   원인=t0 첫 리프트 시 CoM이 (0,0)=지지삼각형 엣지→즉시 tip→단항 불복구. 미리 centroid로 옮겨 리프트 시 이미 삼각형 안.
       double SETTLE_T=getenv("SETTLE_T")?atof(getenv("SETTLE_T")):0.0;
@@ -485,9 +494,14 @@ struct TrotCtrl {
         if(nc>0){ cx/=nc; cy/=nc; }
         if(getenv("SETTLE_Y")) cy=atof(getenv("SETTLE_Y"));   // ★고정 목표(WBC lateral authority 검증용)
         double fr=tc_clip(sett/std::max(1e-3,SETTLE_T),0.0,1.0);                     // 램프(0→1)
-        q.com_ref[1]=fr*cy; q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;                  // y를 첫 centroid로 램프
+        double ytgt=getenv("SETTLE_STEP")?cy:fr*cy;                                  // ★STEP=즉시 목표(WBC lateral 최대속도 측정용)
+        double _vtau=getenv("SETTLE_VTAU")?atof(getenv("SETTLE_VTAU")):0.0;          // ★속도 feedforward 시상수(0=off). KD 감쇠 상쇄=빠른 lateral 이동
+        q.com_ref[1]=ytgt; q.com_acc_ref[1]=0;
+        q.com_vel_ref[1]=(_vtau>0)? tc_clip((ytgt-d->subtree_com[1])/_vtau,-0.6,0.6) : 0;   // 남은오차/시상수=필요속도 FF
         q.com_ref[0]=d->subtree_com[0]; q.com_vel_ref[0]=0;                          // x 홀드(제자리 settle)
         q.W_BASE_XY=getenv("SETTLE_WXY")?atof(getenv("SETTLE_WXY")):400.0;           // ★settle 중 lateral CoM 강추종(선이동 확실)
+        if(getenv("SETTLE_KD")) q.KD_BASE=atof(getenv("SETTLE_KD"));                 // ★lateral 감쇠 완화(빠른 이동)
+        if(getenv("SETTLE_WORI")) q.w_ori=atof(getenv("SETTLE_WORI"));               // ★attitude 완화(body-lean 허용=CoM 빠르게 시프트)
         double Ms=mj_getTotalmass(m); for(int i=0;i<4;i++) lam_use[i]=Vector3d(0,0,Ms*9.81/4);
       }
       if(!q.wbic_track(st,swing,lam_use,wl)) q.wbic_stance();

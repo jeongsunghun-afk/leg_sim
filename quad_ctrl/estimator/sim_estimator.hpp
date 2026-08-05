@@ -15,7 +15,7 @@ class SimEstimator : public Estimator {
     s_.q = ls.q; s_.dq = ls.dq;
     s_.base_quat = ls.imu_quat;
     s_.base_ang_vel = ls.imu_gyro;
-    for (int i = 0; i < NLEG; i++) s_.contact[i] = ls.foot_force[i] > 5.0 ? 1.0 : 0.0;
+    for (int i = 0; i < NLEG; i++) s_.contact[i] = ls.foot_force[i] > 0.5 ? 1.0 : 0.0;  // 접촉 지시자(sim 0/1)
     // TODO(sim): base_pos/lin_vel/com은 MuJoCo ground truth를 HAL이 함께 넘기거나(확장 LowState)
     //            여기서 FK로 계산. real에서는 EKF가 채운다.
   }

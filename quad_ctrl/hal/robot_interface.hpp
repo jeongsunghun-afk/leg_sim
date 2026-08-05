@@ -11,8 +11,8 @@ struct LowState {
   VectorXd q, dq, tau_est;          // 관절 위치/속도/추정토크 (nu)
   Vector4d imu_quat  {1, 0, 0, 0};  // 몸통 자세 wxyz
   Vector3d imu_gyro  {0, 0, 0};     // body 각속도
-  Vector3d imu_acc   {0, 0, 0};     // body 선가속
-  Vector4d foot_force{0, 0, 0, 0};  // 발 수직력(접촉 판정용)
+  Vector3d imu_acc   {0, 0, 0};     // world 선가속(KF 예측; sim=qacc, real_hal=R·f_body+g)
+  Vector4d foot_force{0, 0, 0, 0};  // 발 접촉 지시자(sim=0/1 via dist<0.002 · real=수직력). 임계 >0.5
 };
 
 // 액추에이터 명령 — 컨트롤러가 채운다. 실행: tau = kp·(q_des−q) + kd·(dq_des−dq) + tau_ff.

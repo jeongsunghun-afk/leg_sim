@@ -44,8 +44,20 @@ README의 3단계 이관을 **실행 가능한 수준**으로 구체화. 핵심 
 - [x] `control/trot_bridge.hpp`: `TrotBridge`가 `::TrotCtrl` wrap(재작성X). set_command(HighCmd→mode/V/gait)·step(control()→LowCmd.tau_ff).
 - [x] `app/sim_bridge.cpp`: MujocoHal+TrotBridge 루프(MODE/GAIT/TROT_V/BODY_H → HighCmd).
 - [x] **검증: `sim_bridge` == `trot_sim`(NO_JUMP_WARMUP) V=0/0.5/1.0 bit-동등**(x·z·tilt·falls 모두 일치). 실행 `quad_ctrl/build/sim_bridge <mjcf>`.
-- [ ] (다음) estimator 정식화: 현재 컨트롤러가 `q.d` 직접(=GT, d_est=d). `estimator/sim_estimator`(GT)+`ekf_estimator`로 d_est 분리(trot_sim `EST_CTRL`·`estimate_kf` 이식) → 2단계.
+- [x] (2단계 완료) estimator 정식화: 아래 2단계 진행 참조.
 - [ ] (다음) wbic/mpc/gait를 `control/` 순수모듈로 쪼개기(현재는 quad/cpp TrotCtrl을 wrap; 점진 분해).
+
+## 2단계 진행 (★EST 정식화 달성 2026-08-05)
+trot_sim.cpp의 `EST_CTRL` 루프(센서→KF추정→d_est→제어→토크)를 quad_ctrl 모듈 경계로 정식화. **d_phys(HAL이 mj_step)/d_est(컨트롤러가 mj_forward만) 분리** 실현.
+- [x] `hal/mujoco_hal.hpp` read() 확장: `imu_acc`=d->qacc[0:3](world 선가속) · `foot_force`=발 접촉(trot_sim과 동일 `dist<0.002` 0/1 지시자).
+- [x] `estimator/ekf_estimator.hpp`(신규): `EkfEstimator`가 `::StateEstimator`(18-state 접촉KF, IMU가속도 융합) wrap. `mjData* d_est` 소유. `update(LowState)`→estimate_kf→d_est(base=추정 p/v·자세/gyro/관절=측정)+`mj_forward`. KF 튜닝 env 패리티(KF_QV/QP/RV/ACC_LP).
+- [x] `control/trot_bridge.hpp`: `step(cmd, mjData* ctrl_data=nullptr)` — ctrl_data(d_est) 주면 `q_.d`를 임시 교체해 추정상태로 계산 후 **복원**(write의 mj_step이 d_phys 밟도록). nullptr=GT(1단계).
+- [x] `app/sim_bridge.cpp`: `EST_CTRL=1`이면 read→ekf.update→ctrl.step(d_est)→write. 미설정=GT.
+- [x] **검증: sim_bridge EST == trot_sim EST_CTRL(clean, NO_JUMP) V=0/0.5/1.0 bit-동등**(x·z·tilt·falls 모두 일치: V0.5 x=+0.725 z=0.503 tilt=0.5 falls=0). GT 회귀도 유지(x=+0.718). EST≠GT(x0.725 vs 0.718)=KF 추정이 실제 컨트롤러 구동 확인. 실행 `EST_CTRL=1 TROT_V=<v> ./build/sim_bridge`.
+- [ ] (다음 2b) 센서 노이즈+지연 링을 `MujocoHal`로(sim2real-checklist C: GYRO_N/ENCQ_N/SENSE_LAT_MS/ACT_LAT_MS). 현재 clean만. 반복기립 EST 검증.
+- [ ] (다음) `estimate/estimate()` stance-anchored 폴백(EST_ANCHOR) 포팅은 미포함(KF 경로만).
+
+> ★2단계 핵심: **목표 아키텍처 원형(HAL.read→Estimator.update(→d_est)→Controller.step(d_est)→HAL.write)이 sim서 bit-동등 동작**. 컨트롤러는 이제 추정상태(d_est)만 보고 계산 → real_hal은 LowState만 실센서로 바꾸면 됨(estimator·컨트롤러 불변).
 
 > ★핵심 달성: **배포급 A 컨트롤러가 재작성 없이 quad_ctrl HAL 경계 뒤에서 동작·sim 초록불**. real_hal은 `read/write`만 실센서/모터로 교체(컨트롤러·나머지 불변)=3단계 직결.
 

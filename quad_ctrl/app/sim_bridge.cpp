@@ -7,6 +7,7 @@
 #include <cmath>
 #include "hal/mujoco_hal.hpp"
 #include "control/trot_bridge.hpp"
+#include "estimator/ekf_estimator.hpp"
 #include "command/sport_client.hpp"
 
 using namespace qc;
@@ -33,20 +34,26 @@ int main(int argc, char** argv) {
   ctrl.set_command(hc);
 
   mjData* d = hal.core().d;
+  // ★2단계 EST: EST_CTRL=1이면 컨트롤러가 KF 추정상태(d_est)로 계산(GT d_phys 미사용). 미설정=1단계 GT.
+  bool EST = getenv("EST_CTRL") != nullptr;
+  EkfEstimator* ekf = EST ? new EkfEstimator(hal.core()) : nullptr;
   LowState ls; LowCmd cmd;
   int falls = 0; double max_tilt = 0;
   for (int k = 0; k < STEPS; ++k) {
     hal.read(ls);                                          // 센서 → LowState
-    ctrl.step(cmd);                                        // 제어 → LowCmd(tau)
-    hal.write(cmd);                                        // 명령 적용 + 1스텝
+    if (EST) { ekf->update(ls); ctrl.step(cmd, ekf->d_est()); }  // 추정 → d_est → 제어(추정상태로 계산)
+    else       ctrl.step(cmd);                             // GT(d_phys)로 제어(1단계)
+    hal.write(cmd);                                        // 명령 적용 + 1스텝(d_phys)
     // 진단(trot_sim 정합): tilt = body-z 대 world-z 각
     double qx = d->qpos[4], qy = d->qpos[5];
     double td = std::acos(std::max(-1.0, std::min(1.0, 1.0 - 2.0 * (qx*qx + qy*qy)))) * 57.29578;
     max_tilt = std::max(max_tilt, td);
     if (td > 50 || d->qpos[2] < 0.2) falls++;
   }
-  std::printf("[sim_bridge] STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f falls=%d "
-              "| HAL+TrotCtrl 배선 == trot_sim 검증\n",
-              STEPS, STEPS * hal.dt(), d->qpos[0], d->qpos[2], max_tilt, falls);
+  std::printf("[sim_bridge] MODE=%s STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f falls=%d "
+              "| HAL+Estimator+TrotCtrl 배선 == trot_sim 검증\n",
+              EST ? "EST(KF d_est)" : "GT", STEPS, STEPS * hal.dt(),
+              d->qpos[0], d->qpos[2], max_tilt, falls);
+  delete ekf;
   return 0;
 }

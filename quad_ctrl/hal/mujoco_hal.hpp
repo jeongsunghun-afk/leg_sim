@@ -27,6 +27,14 @@ class MujocoHal : public RobotInterface {
     for (int i = 0; i < nu; ++i) { s.q[i] = d->qpos[7 + i]; s.dq[i] = d->qvel[6 + i]; s.tau_est[i] = d->actuator_force[i]; }
     for (int a = 0; a < 4; ++a) s.imu_quat[a] = d->qpos[3 + a];   // wxyz
     for (int a = 0; a < 3; ++a) s.imu_gyro[a] = d->qvel[3 + a];   // body 각속도
+    for (int a = 0; a < 3; ++a) s.imu_acc[a]  = d->qacc[a];       // world 선가속(KF 예측 입력; real_hal=R·f_body+g)
+    // 발 접촉(trot_sim EST와 동일 판정 dist<0.002) → foot_force에 0/1 지시자(KF stance 게이팅)
+    for (int i = 0; i < 4; ++i) {
+      bool con = false;
+      for (int ci = 0; ci < d->ncon; ++ci) { const auto& c = d->contact[ci];
+        if ((c.geom1 == q_.fgid[i] || c.geom2 == q_.fgid[i]) && c.dist < 0.002) { con = true; break; } }
+      s.foot_force[i] = con ? 1.0 : 0.0;
+    }
     return true;
   }
 

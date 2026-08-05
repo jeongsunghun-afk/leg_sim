@@ -28,12 +28,16 @@ class TrotBridge {
     }
   }
 
-  void step(LowCmd& cmd) {
+  // ctrl_data=nullptr: q_.d(=d_phys, GT)로 계산(1단계). ctrl_data=d_est: 추정상태로 계산(2단계 EST) 후 복원.
+  void step(LowCmd& cmd, mjData* ctrl_data = nullptr) {
+    mjData* saved = q_.d;
+    if (ctrl_data) q_.d = ctrl_data;       // 추정상태(d_est)에서 Jacobian/MPC/WBIC 계산
     ctrl_.control();                       // q_.d->ctrl 설정(mj_step은 HAL 몫)
     const int nu = q_.nu;
     cmd.tau_ff.resize(nu); cmd.q_des.setZero(nu); cmd.dq_des.setZero(nu);
     cmd.kp.setZero(nu);    cmd.kd.setZero(nu);
     for (int i = 0; i < nu; ++i) cmd.tau_ff[i] = q_.d->ctrl[i];   // 컨트롤러 tau → LowCmd(kp/kd=0)
+    q_.d = saved;                          // ★HAL의 d_phys로 복원(write의 mj_step이 실물리를 밟도록)
   }
 
   ::TrotCtrl& raw() { return ctrl_; }      // (검증용: tiltdeg 등)

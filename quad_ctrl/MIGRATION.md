@@ -30,7 +30,13 @@ README의 3단계 이관을 **실행 가능한 수준**으로 구체화. 핵심 
 ## 순서 (각 단계 sim 초록불 검증)
 1. **1단계 — HAL+State 정식화(코드 이동 최소)**: `MujocoHal` 구현(trot_sim의 mj 루프+센서 링 이동). `SimEstimator`=GT(d_est=d). `controller`가 기존 `TrotCtrl`을 **얇게 래핑**(d_est 주입). 검증: `sim_main` == `trot_sim`(GT) falls=0. **CMake에 MuJoCo+eiquadprog 링크**(현 TODO).
 2. **2단계 — EKF(sim서)**: `estimate_kf`를 `estimator/ekf_estimator`로. 노이즈·지연 주입(sim2real-checklist C). 검증: `sim_main EST_CTRL` == `trot_sim EST_CTRL` falls=0(반복기립 포함).
-3. **3단계 — real_hal + robot_main**: [[biped-emb-deploy-interface]] 패턴 역이식(RobotSharedMem Gait/Pi 브리지+Mock+관절맵config+축별JOG→stand→walk). 컨트롤러·estimator 불변. 안전·RT 루프.
+3. **3단계 — real_hal + robot_main** (★참조=`~/문서/jsh/RobotTestGait`, RGA 실기 C++ 인터페이스): `#include "/usr/include/RobotSharedMem.h"`(Pi 전용). `hal/real_hal.hpp`가 `RobotInterface` 구현 —
+   - **read()**: SHM Pos/Vel/Tor/Cur/IMU(update flag `UPT_POS/VEL/TOR/CUR/IMU`=0x01~0x10) → `LowState`. **단위 deg→rad**, IMU `m_fIMUStt_Body`→quat/gyro.
+   - **write()**: `LowCmd`(q_des/dq_des/tau_ff/kp/kd) → `MotGeneral_t`(채널별: `ucDevID·ucMode=1·fPosition·fVelocity·fTorque·fGainKp·fGainKd·fGainKi`, **float16**) → `WRITE_SHMMotorCommand`. **rad→deg**, tau_ff→fTorque, kp/kd→fGainKp/Kd.
+   - **관절맵/한계**: `MotGeneral` 채널 ↔ 17-DOF 순서(부호·오프셋·`fPosZero/fPosMin/fPosMax/fVelMax` deg)=config. RobotTestGait `m_fGaitMotorRange` 형식.
+   - **RT 루프**(`app/robot_main.cpp`): `timer_t`+`ftimerEvent`(RobotTestGait 골격), read→est→ctrl.step→write. 안전(한계·통신두절·enable).
+   - **검증 순서**(biped/emb 실증대로): 축별 JOG(부호·오프셋 확정) → stand → walk. Mock(데스크톱)로 먼저.
+   - 컨트롤러·estimator **불변**(read/write만 real). biped/emb([[biped-emb-deploy-interface]])가 같은 SHM을 Python+C브리지로 이미 검증=역이식 직관적.
 
 ## 1단계 진행 (★GT wrap 달성 2026-08-05)
 - [x] CMake: MuJoCo+eiquadprog 링크·`quad/cpp/src` include (`sim_bridge` 타겟, ENV_PREFIX=proxddp).

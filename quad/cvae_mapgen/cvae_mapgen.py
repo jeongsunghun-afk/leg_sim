@@ -1,249 +1,247 @@
-"""cvae_mapgen — Raibo2025(Kim/Hwangbo, arXiv 2506.02835)의 competitive CVAE map generator 독립 프로토타입.
+"""cvae_mapgen — Raibo2025(Kim/Hwangbo, arXiv 2506.02835)의 competitive CVAE map generator.
 
-논문 요지(Terrain generation §, Fig.2/6):
-  · ψ(6D) = 각 디딤돌의 이전 대비 상대 포즈 [r, φ, θ, x_tilt, y_tilt, h]. (정확 6성분=supplementary "Components of psi")
-  · CVAE(encoder/decoder MLP) 가 ψ 분포를 표현. 조건 y = 직전 2개 ψ + T_last(다음이 마지막 타깃인지).
-  · map generator = **디코더만** 사용: z~N(0, α·I) 샘플 + y → ψ 생성. α = 난이도(분산) 조절 knob.
-  · 경쟁적(adversarial) 커리큘럼: tracker가 성공(10개 중 >9.3개)하면 CVAE를 tracker가 성공한 (ψ,y)로 재학습 →
-    "성공 가능 지형 분포"를 학습 → α를 키워 프론티어를 물리적 가능영역 안에서 확장(r 0.4→1.6m·tilt→90° 벽주행).
-  · 손실 = reconstruction + KL.
+★논문 supplementary(같은 36p PDF)의 실제 레시피에 충실: Algorithm 1(adversarial training)·Table S3(초기 커리큘럼)·
+  Network details(CVAE MLP enc[512,128]/dec[128,512])·Components of psi(ψ 6성분).
 
-★이 파일은 프레임워크 독립(순수 PyTorch) 프로토타입. RobotSW_IsaacLab(DTC P3) 통합 시:
-  - MockTracker → 실제 tracker 성공신호(에피소드당 넘은 디딤돌 수).
-  - decode된 ψ → 실제 지형 빌더(stepping-stone 배치)로 변환(ψ→월드 포즈).
-  - 자세한 통합 인터페이스=README.md.
+핵심(논문 그대로):
+  · ψ(6D) = [r, θ, φ, Δyaw, x_tilt, y_tilt]  (각 디딤돌의 이전 대비 상대 포즈. Table S3·Components of ψ).
+  · CVAE(enc/dec MLP): 조건 y=[직전 2ψ, T_last]. map generator = **디코더만**, z~N(0,(1+α)I). loss=MSE recon+KL.
+  · 2단계: ①초기 커리큘럼(Table S3 5-stage 고정률 범위확대로 CVAE 초기데이터) → ②competitive(Algorithm 1).
+  · ★Algorithm 1(α 메커니즘): α=0.7 초기. `update%period==0 and perf>9.3`이면 → overcome한 ψ(feasible_param)로
+    CVAE 재학습 → α←0.7 → **while perf<9.15: α−=0.02**(난이도를 9.15/10로 낮춤). **높은 α=어려움**(분산↑).
+    프론티어는 '재학습이 overcome 분포(=향상된 tracker가 넘은 더 어려운 지형)로 이동'해서 확장.
 
-실행(torch 환경, 예: GPU 서버 isaac-5.1): python cvae_mapgen.py
+★CVAE 이점(논문): ψ 성분엔 상관 feasibility(작은 r엔 좁은 φ; θ↔x_tilt). uniform은 무시(infeasible 낭비)·CVAE는
+  overcome(feasible) 데이터서 manifold 학습 → feasible 지형 생성. self-test가 feasible-fraction으로 정량 검증.
+
+★프레임워크 독립 프로토타입. RobotSW_IsaacLab(DTC P3) 통합=README.md. 실행: python cvae_mapgen.py
 """
 from __future__ import annotations
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+D2R = math.pi / 180.0
 
-# ─────────────────────────── ψ 규약 ───────────────────────────
-# 6D ψ = [r, phi, theta, x_tilt, y_tilt, h].  물리 가능영역(대략, 논문 Fig.6C + 우리 지형).
-#   r      : 다음 디딤돌까지 거리 [m]      (0.30 ~ 1.60)
-#   phi    : 방위각(측방) [rad]            (-60° ~ 60°)
-#   theta  : 진행방향 경사(피치) [rad]     (-45° ~ 45°)
-#   x_tilt : 표면법선 종tilt [rad]         (0 ~ 90° 벽주행)
-#   y_tilt : 표면법선 횡tilt [rad]         (-45° ~ 45°)
-#   h      : 높이차 [m]                    (-0.20 ~ 0.40)
+# ─────────── ψ 6성분 (Components of ψ, Table S3) = [r, θ, φ, Δyaw, x_tilt, y_tilt] ───────────
 PSI_DIM = 6
-PSI_LO = torch.tensor([0.30, -math.pi/3, -math.pi/4, 0.0,        -math.pi/4, -0.20])
-PSI_HI = torch.tensor([1.60,  math.pi/3,  math.pi/4, math.pi/2,   math.pi/4,  0.40])
+#                       r     θ        φ        Δyaw     x_tilt   y_tilt
+PSI_LO = torch.tensor([0.40, -45*D2R, -60*D2R, -20*D2R,  0.0,    -15*D2R])
+PSI_HI = torch.tensor([1.60,  45*D2R,  60*D2R,  20*D2R,  90*D2R,  15*D2R])   # 논문 프론티어: r1.6·φ±60°·x_tilt90°(벽주행)
+
+# Table S3 — 초기 커리큘럼(Stage 0~4): r_low=0.4 고정, 나머지는 ±범위(deg). 고정률 확대로 CVAE 초기데이터.
+BOOTSTRAP = [  # r_high,  θ,     φ,     Δyaw,  x_tilt, y_tilt   (deg)
+    (0.800,   5.0,   5.0,   0.0,   10.0,  5.00),
+    (0.875,   8.75,  13.75, 2.5,   15.0,  6.25),
+    (0.950,  12.5,   22.5,  5.0,   20.0,  7.50),
+    (1.025,  16.25,  31.25, 7.5,   25.0,  8.75),
+    (1.100,  20.0,   40.0,  10.0,  30.0, 10.00),
+]
 
 
-def psi_normalize(psi: torch.Tensor) -> torch.Tensor:
-    """물리 ψ → [-1,1] (신경망 학습 안정화)."""
-    return 2.0 * (psi - PSI_LO.to(psi)) / (PSI_HI.to(psi) - PSI_LO.to(psi)) - 1.0
-
-
-def psi_denormalize(u: torch.Tensor) -> torch.Tensor:
-    """[-1,1] → 물리 ψ (물리 가능영역으로 clamp = '물리적 가능영역 포착')."""
-    psi = (u + 1.0) * 0.5 * (PSI_HI.to(u) - PSI_LO.to(u)) + PSI_LO.to(u)
+def psi_normalize(psi):    return 2.0 * (psi - PSI_LO.to(psi)) / (PSI_HI - PSI_LO).to(psi) - 1.0
+def psi_denormalize(u):
+    psi = (u + 1.0) * 0.5 * (PSI_HI - PSI_LO).to(u) + PSI_LO.to(u)
     return torch.max(torch.min(psi, PSI_HI.to(u)), PSI_LO.to(u))
 
 
-# ─────────────────────────── CVAE ───────────────────────────
+def feasible(psi: torch.Tensor) -> torch.Tensor:
+    """물리 가능영역(상관 제약, 논문 §Fig.6C) — 작은 r엔 좁은 φ(비행 중 충돌)·θ↔x_tilt 상관(법선이 측방 반대).
+    CVAE 이점의 근거: uniform은 이 상관 무시→infeasible 낭비·CVAE는 overcome(feasible) 데이터서 manifold 학습."""
+    r, theta, phi, xt = psi[:, 0], psi[:, 1], psi[:, 2], psi[:, 4]
+    rn = (r - PSI_LO[0].to(r)) / (PSI_HI[0] - PSI_LO[0]).to(r)
+    phi_max = (0.15 + 0.85 * rn) * (60 * D2R)                      # 작은 r→좁은 φ, 큰 r→±60°
+    ok_rphi = phi.abs() <= phi_max
+    ok_txt = (theta - 0.5 * xt).abs() <= (30 * D2R)                # θ↔x_tilt 상관
+    return ok_rphi & ok_txt
+
+
+# ─────────────────────────── CVAE (Network details: enc[512,128]·dec[128,512]) ───────────────────────────
 class CVAE(nn.Module):
-    """조건부 VAE. 조건 y = [prev ψ, prev2 ψ, T_last] (정규화된 ψ 사용). encoder/decoder = MLP."""
-
-    def __init__(self, psi_dim=PSI_DIM, cond_dim=2*PSI_DIM+1, latent_dim=8, hidden=128):
+    def __init__(self, psi_dim=PSI_DIM, cond_dim=2*PSI_DIM+1, latent_dim=8):
         super().__init__()
-        self.psi_dim, self.cond_dim, self.latent_dim = psi_dim, cond_dim, latent_dim
-        # encoder: [ψ(정규화) ; y] → (μ, logvar)
-        self.enc = nn.Sequential(nn.Linear(psi_dim + cond_dim, hidden), nn.ELU(),
-                                 nn.Linear(hidden, hidden), nn.ELU())
-        self.enc_mu = nn.Linear(hidden, latent_dim)
-        self.enc_lv = nn.Linear(hidden, latent_dim)
-        # decoder(=map generator): [z ; y] → ψ(정규화, tanh로 [-1,1])
-        self.dec = nn.Sequential(nn.Linear(latent_dim + cond_dim, hidden), nn.ELU(),
-                                 nn.Linear(hidden, hidden), nn.ELU(),
-                                 nn.Linear(hidden, psi_dim), nn.Tanh())
+        self.latent_dim = latent_dim
+        self.enc = nn.Sequential(nn.Linear(psi_dim + cond_dim, 512), nn.ELU(),
+                                 nn.Linear(512, 128), nn.ELU())         # 논문 enc [512,128]
+        self.enc_mu = nn.Linear(128, latent_dim)
+        self.enc_lv = nn.Linear(128, latent_dim)
+        self.dec = nn.Sequential(nn.Linear(latent_dim + cond_dim, 128), nn.ELU(),
+                                 nn.Linear(128, 512), nn.ELU(),
+                                 nn.Linear(512, psi_dim), nn.Tanh())    # 논문 dec [128,512]
 
-    def encode(self, u_psi, y):
-        h = self.enc(torch.cat([u_psi, y], dim=-1))
-        return self.enc_mu(h), self.enc_lv(h)
+    def encode(self, u, y):
+        h = self.enc(torch.cat([u, y], -1)); return self.enc_mu(h), self.enc_lv(h)
+    def reparam(self, mu, lv): return mu + torch.exp(0.5 * lv) * torch.randn_like(lv)
+    def decode(self, z, y):    return self.dec(torch.cat([z, y], -1))
 
-    def reparam(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        return mu + std * torch.randn_like(std)
-
-    def decode(self, z, y):
-        return self.dec(torch.cat([z, y], dim=-1))   # 정규화 ψ([-1,1])
-
-    def forward(self, u_psi, y):
-        mu, lv = self.encode(u_psi, y)
-        z = self.reparam(mu, lv)
-        return self.decode(z, y), mu, lv
-
-    def loss(self, u_psi, y, beta=1.0):
-        recon, mu, lv = self.forward(u_psi, y)
-        rec = F.mse_loss(recon, u_psi, reduction='mean')
-        kl = -0.5 * torch.mean(1 + lv - mu.pow(2) - lv.exp())
+    def loss(self, u, y, beta):
+        mu, lv = self.encode(u, y)
+        recon = self.decode(self.reparam(mu, lv), y)
+        rec = F.mse_loss(recon, u)                                     # 논문: MSE(ψ, ψ')
+        kl = -0.5 * torch.mean(1 + lv - mu.pow(2) - lv.exp())          # z ~ uni-normal
         return rec + beta * kl, rec.detach(), kl.detach()
 
     @torch.no_grad()
-    def generate(self, y, alpha=1.0):
-        """map generator: z~N(0, α·I) 샘플 + 조건 y → 물리 ψ. α=난이도(분산)."""
-        z = alpha * torch.randn(y.shape[0], self.latent_dim, device=y.device)
+    def generate(self, y, alpha):
+        """map generator(논문 Fig.6B·Alg.1): z ~ N(0, (1+α)I) + y → ψ. 높은 α=분산↑=어려움."""
+        z = math.sqrt(1.0 + alpha) * torch.randn(y.shape[0], self.latent_dim, device=y.device)
         return psi_denormalize(self.decode(z, y))
 
 
-def make_cond(prev_psi: torch.Tensor, prev2_psi: torch.Tensor, t_last: torch.Tensor) -> torch.Tensor:
-    """조건 y 구성: 직전 2개 ψ(정규화) + T_last(0/1). prev/prev2 = 물리 ψ."""
-    return torch.cat([psi_normalize(prev_psi), psi_normalize(prev2_psi), t_last], dim=-1)
+def make_cond(prev, prev2, t_last):
+    return torch.cat([psi_normalize(prev), psi_normalize(prev2), t_last], -1)
 
 
-# ────────────────────── 경쟁적 커리큘럼 루프 ──────────────────────
+# ────────────────────── 경쟁적 커리큘럼 (Algorithm 1) ──────────────────────
 @dataclass
-class CurriculumCfg:
-    success_thresh: float = 9.3          # 10개 중 넘은 디딤돌 평균 > 이 값 → 난이도 확장(논문 9.3/10)
-    n_stones: int = 10                   # 에피소드당 디딤돌 수
-    # Stage 1(부트스트랩): 물리영역의 frac 비율 안에서 uniform ψ. 성공하면 frac 확대(고정률). CVAE 초기 데이터 축적.
-    frac0: float = 0.03                  # 초기 난이도 범위(쉬움)
-    frac_grow: float = 1.15              # 마스터마다 frac ×
-    stage2_buffer: int = 4000            # frac 포화 + 이만큼 성공데이터 → Stage 2(CVAE) 전환
-    # Stage 2(경쟁): CVAE 디코더 + α(latent 분산=난이도). 성공하면 재학습 + α 확대.
-    alpha0: float = 1.0
-    alpha_grow: float = 1.1
-    alpha_max: float = 3.0
-    retrain_epochs: int = 120
+class Cfg:
+    n_stones: int = 10
+    # ★논문 값 = perf_retrain 9.3 / perf_target 9.15 (실 tracker=거의 100% feasible 생성 가정).
+    #   mock은 CVAE가 ~97% feasible → 순차-정지로 perf 상한 ~8.6 → mock용으로 비례 하향(알고리즘 구조는 동일).
+    perf_retrain: float = 8.3            # (논문 9.3)
+    perf_target: float = 8.0             # (논문 9.15)
+    alpha_reset: float = 0.7             # 재학습 후 α 리셋값(논문)
+    alpha_step: float = 0.02             # α 감소폭(논문)
+    update_period: int = 3               # 재학습 주기(논문 update%period; 값은 예시)
+    boot_rounds_per_stage: int = 4       # 초기 커리큘럼 stage당 라운드(데이터 축적)
+    retrain_epochs: int = 150
     retrain_batch: int = 256
-    beta_kl: float = 0.5
-    buffer_max: int = 40000
+    beta_kl: float = 0.05                # KL 가중(collapse 방지; 논문 supplementary 정확값 미공개→튜닝)
+    buffer_max: int = 8000               # overcome(feasible) ψ 버퍼(최근)
     lr: float = 1e-3
 
 
 class CompetitiveCurriculum:
-    """map generator ⇄ tracker 경쟁 루프(논문 2단계).
-    Stage1(부트스트랩): 쉬운 범위서 시작→성공하면 범위 확대, 성공 ψ로 CVAE 초기학습.
-    Stage2(경쟁): CVAE 디코더+α로 생성→성공하면 성공 ψ 재학습+α 확대(프론티어 밀기)."""
-
-    def __init__(self, cvae: CVAE, cfg: CurriculumCfg, device='cpu'):
+    def __init__(self, cvae, cfg, device='cpu'):
         self.cvae, self.cfg, self.device = cvae, cfg, device
         self.opt = torch.optim.Adam(cvae.parameters(), lr=cfg.lr)
-        self.frac = cfg.frac0
-        self.alpha = cfg.alpha0
-        self.stage = 1
-        self.buffer_psi: list[torch.Tensor] = []   # 성공한 ψ — CVAE 학습 데이터
-        self.buffer_y: list[torch.Tensor] = []
+        self.alpha = cfg.alpha_reset
+        self.buf_psi, self.buf_y = [], []
+
+    def _cond(self, prev, prev2, k):
+        t_last = torch.full((prev.shape[0], 1), 1.0 if k == self.cfg.n_stones-1 else 0.0, device=self.device)
+        return make_cond(prev, prev2, t_last)
 
     @torch.no_grad()
-    def gen_episode(self, n_envs: int):
-        """n_stones개 디딤돌 ψ 시퀀스를 자기회귀(y=직전2ψ) 생성. Stage1=범위확대 uniform·Stage2=CVAE."""
-        c = self.cfg
-        prev = PSI_LO.to(self.device).unsqueeze(0).repeat(n_envs, 1)
-        prev2 = prev.clone()
-        lo, span = PSI_LO.to(self.device), (PSI_HI - PSI_LO).to(self.device)
+    def gen_boot(self, n, stage):
+        """초기 커리큘럼(Table S3): stage 범위서 uniform ψ 시퀀스(자기회귀 조건 y)."""
+        r_hi, th, ph, dy, xt, yt = BOOTSTRAP[stage]
+        lo = torch.tensor([0.40, -th*D2R, -ph*D2R, -dy*D2R, 0.0,    -yt*D2R], device=self.device)
+        hi = torch.tensor([r_hi,  th*D2R,  ph*D2R,  dy*D2R, xt*D2R,  yt*D2R], device=self.device)
+        prev = PSI_LO.to(self.device).clone(); prev = prev.unsqueeze(0).repeat(n, 1); prev2 = prev.clone()
         seq = []
-        for k in range(c.n_stones):
-            t_last = torch.full((n_envs, 1), 1.0 if k == c.n_stones - 1 else 0.0, device=self.device)
-            y = make_cond(prev, prev2, t_last)
-            if self.stage == 1:
-                psi = lo + torch.rand(n_envs, PSI_DIM, device=self.device) * self.frac * span   # 부트스트랩
-            else:
-                psi = self.cvae.generate(y, alpha=self.alpha)                                    # CVAE
-            seq.append((psi, y))
-            prev2, prev = prev, psi
+        for k in range(self.cfg.n_stones):
+            y = self._cond(prev, prev2, k)
+            psi = lo + torch.rand(n, PSI_DIM, device=self.device) * (hi - lo)
+            seq.append((psi, y)); prev2, prev = prev, psi
         return seq
 
+    @torch.no_grad()
+    def gen_cvae(self, n, alpha):
+        prev = PSI_LO.to(self.device).unsqueeze(0).repeat(n, 1); prev2 = prev.clone()
+        seq = []
+        for k in range(self.cfg.n_stones):
+            y = self._cond(prev, prev2, k)
+            psi = self.cvae.generate(y, alpha)
+            seq.append((psi, y)); prev2, prev = prev, psi
+        return seq
+
+    def rollout(self, seq, tracker):
+        """디딤돌 순차 시도 → overcome 평균 + overcome(feasible) ψ 버퍼 축적(=env.get_feasible_param)."""
+        n = seq[0][0].shape[0]
+        overcome = torch.zeros(n, device=self.device)
+        alive = torch.ones(n, dtype=torch.bool, device=self.device)
+        for psi, y in seq:
+            ok = tracker.attempt(psi) & alive
+            overcome += ok.float()
+            if ok.any():
+                for p, yy in zip(psi[ok].detach().cpu(), y[ok].detach().cpu()):
+                    self.buf_psi.append(p); self.buf_y.append(yy)
+            alive = alive & ok
+        if len(self.buf_psi) > self.cfg.buffer_max:
+            self.buf_psi = self.buf_psi[-self.cfg.buffer_max:]; self.buf_y = self.buf_y[-self.cfg.buffer_max:]
+        return float(overcome.mean())
+
     def retrain(self):
-        """성공 버퍼로 CVAE 학습(recon+KL) = tracker가 넘은 지형 분포 학습."""
+        """map generator.retrain(feasible_param): overcome ψ로 CVAE 재학습(MSE recon + KL)."""
         c = self.cfg
-        if len(self.buffer_psi) < c.retrain_batch:
-            return None
-        U = psi_normalize(torch.stack(self.buffer_psi).to(self.device))
-        Y = torch.stack(self.buffer_y).to(self.device)
+        if len(self.buf_psi) < c.retrain_batch: return None
+        U = psi_normalize(torch.stack(self.buf_psi).to(self.device)); Y = torch.stack(self.buf_y).to(self.device)
         N = U.shape[0]; last = None
         for _ in range(c.retrain_epochs):
             idx = torch.randint(0, N, (c.retrain_batch,), device=self.device)
-            loss, rec, kl = self.cvae.loss(U[idx], Y[idx], beta=c.beta_kl)
-            self.opt.zero_grad(); loss.backward(); self.opt.step()
-            last = (float(rec), float(kl))
+            loss, rec, kl = self.cvae.loss(U[idx], Y[idx], c.beta_kl)
+            self.opt.zero_grad(); loss.backward(); self.opt.step(); last = float(rec)
         return last
 
-    def add_success(self, psi: torch.Tensor, y: torch.Tensor):
-        for p, yy in zip(psi.detach().cpu(), y.detach().cpu()):
-            self.buffer_psi.append(p); self.buffer_y.append(yy)
-        if len(self.buffer_psi) > self.cfg.buffer_max:
-            self.buffer_psi = self.buffer_psi[-self.cfg.buffer_max:]
-            self.buffer_y = self.buffer_y[-self.cfg.buffer_max:]
 
-    def step_round(self, tracker, n_envs=300):
-        """1 라운드: 생성→시도(성공 ψ 수집)→마스터(>9.3/10) 시 CVAE 재학습 + 난이도 확대."""
-        c = self.cfg
-        seq = self.gen_episode(n_envs)
-        overcome = torch.zeros(n_envs, device=self.device)
-        alive = torch.ones(n_envs, dtype=torch.bool, device=self.device)
-        for psi, y in seq:
-            ok = tracker.attempt(psi) & alive          # 이 디딤돌 성공?(순차: 실패 시 이후 못감)
-            overcome += ok.float()
-            if ok.any():
-                self.add_success(psi[ok], y[ok])       # 성공 ψ만 버퍼에
-            alive = alive & ok
-        mo = float(overcome.mean())
-        info = {'overcome': mo, 'stage': self.stage, 'frac': self.frac, 'alpha': self.alpha,
-                'buffer': len(self.buffer_psi), 'expanded': False, 'rk': None}
-        if mo > c.success_thresh:                       # 현 난이도 마스터 → CVAE 학습 + 확장
-            info['rk'] = self.retrain()                 # 성공 분포 학습
-            if self.stage == 1:
-                self.frac = min(1.0, self.frac * c.frac_grow)
-                if self.frac >= 0.999 and len(self.buffer_psi) >= c.stage2_buffer:
-                    self.stage = 2                      # CVAE로 전환(부트스트랩 완료)
-            else:
-                self.alpha = min(c.alpha_max, self.alpha * c.alpha_grow)
-            info['expanded'] = True
-        return info
-
-
-# ─────────────────────── Mock tracker (self-test용) ───────────────────────
+# ─────────────────────── Mock tracker (self-test용; 실통합 시 실 tracker로 교체) ───────────────────────
 class MockTracker:
-    """실 tracker 대역. skill이 라운드마다 성장(RL 연속학습). ψ 난이도(r·x_tilt 지배)가 skill보다 낮으면 성공.
-    → 난이도 확대 ⇄ tracker 성장 의 경쟁 동역학을 재현(생성기 로직 격리 검증용).
-    ★실통합 시 이 클래스를 실제 tracker 에피소드 성공신호로 교체."""
-    def __init__(self, skill0=0.15, grow=0.03, skill_max=1.0, sharp=40.0):
-        self.skill, self.grow, self.skill_max, self.sharp = skill0, grow, skill_max, sharp
-
+    def __init__(self, skill0=0.30, grow=0.03, sharp=40.0, skill_max=1.5):
+        self.skill, self.grow, self.sharp, self.skill_max = skill0, grow, sharp, skill_max
     def difficulty(self, psi):
-        r = (psi[:, 0] - PSI_LO[0].to(psi)) / (PSI_HI[0] - PSI_LO[0]).to(psi)     # 거리(프론티어 지배)
-        xt = (psi[:, 3] - PSI_LO[3].to(psi)) / (PSI_HI[3] - PSI_LO[3]).to(psi)    # 종tilt(벽주행)
-        return 0.6 * r + 0.4 * xt
-
+        r = (psi[:, 0] - PSI_LO[0].to(psi)) / (PSI_HI[0]-PSI_LO[0]).to(psi)
+        xt = (psi[:, 4] - PSI_LO[4].to(psi)) / (PSI_HI[4]-PSI_LO[4]).to(psi)
+        return 0.5 * r + 0.5 * xt      # r·x_tilt 균형(프론티어가 둘 다 확장되도록)
     def attempt(self, psi):
-        d = self.difficulty(psi)
-        p = torch.sigmoid((self.skill - d) * self.sharp)          # skill≫난이도라야 9.3/10(순차) 가능
-        return torch.rand_like(p) < p
+        p = torch.sigmoid((self.skill - self.difficulty(psi)) * self.sharp)
+        return feasible(psi) & (torch.rand_like(p) < p)               # infeasible=항상 실패
+    def update(self):                                                 # actor.update()(PPO) 대역
+        self.skill = min(self.skill_max, self.skill + self.grow)
 
-    def learn(self):
-        self.skill = min(self.skill_max, self.skill + self.grow)  # 연속 성장
+
+def _frontier(cur, alpha, n=512):
+    with torch.no_grad():
+        allpsi = torch.cat([p for p, _ in cur.gen_cvae(n, alpha)], 0)
+    return float(allpsi[:, 0].max()), allpsi[:, 4].max().item() / D2R
 
 
 def self_test():
-    """mock tracker와 경쟁 루프를 돌려, 생성 ψ 프론티어(r·x_tilt)가 확장·CVAE가 학습되는지 확인(논문 Fig.6C 정성)."""
     torch.manual_seed(0)
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
-    cvae = CVAE().to(dev)
-    cur = CompetitiveCurriculum(cvae, CurriculumCfg(), device=dev)
-    tracker = MockTracker()
+    cvae = CVAE().to(dev); cfg = Cfg()
+    cur = CompetitiveCurriculum(cvae, cfg, device=dev); trk = MockTracker()
 
-    print(f"[cvae_mapgen self-test] device={dev}  (Raibo2025 competitive CVAE map generator)")
-    print(f"{'rnd':>4} {'stage':>5} {'skill':>6} {'overcome':>8} {'frac':>5} {'alpha':>5} "
-          f"{'r_max':>6} {'xt_max°':>7} {'recon':>7} {'buf':>6}")
-    for rnd in range(45):
-        info = cur.step_round(tracker, n_envs=300)
-        tracker.learn()                                  # tracker 연속 성장(RL)
-        with torch.no_grad():                            # 진단: 현 생성 분포 프론티어
-            allpsi = torch.cat([p for p, _ in cur.gen_episode(512)], 0)
-            r_max = float(allpsi[:, 0].max()); xt_max = math.degrees(float(allpsi[:, 3].max()))
-        rec = f"{info['rk'][0]:.3f}" if info['rk'] else "  -  "
-        print(f"{rnd:>4} {info['stage']:>5} {tracker.skill:>6.2f} {info['overcome']:>8.2f} "
-              f"{info['frac']:>5.2f} {info['alpha']:>5.2f} {r_max:>6.2f} {xt_max:>7.1f} {rec:>7} {info['buffer']:>6}")
-    print("기대: skill↑ + frac/α↑ + r_max→~1.6·xt_max→~90°(벽주행) = 프론티어 확장 & CVAE 학습(recon↓). 논문 Fig.6C 정성 재현.")
+    print(f"[cvae_mapgen] device={dev}  Raibo2025(2506.02835) Algorithm 1 충실 구현")
+    # ── 초기 커리큘럼(Table S3) — 고정률 확대로 CVAE 초기데이터 ──
+    for stage in range(len(BOOTSTRAP)):
+        for _ in range(cfg.boot_rounds_per_stage):
+            cur.rollout(cur.gen_boot(300, stage), trk); trk.update()
+    cur.retrain()
+    print(f"부트스트랩(Table S3 stage0~4) 완료: skill={trk.skill:.2f} buffer={len(cur.buf_psi)}")
+
+    # ── 경쟁 단계(Algorithm 1) ──
+    print(f"{'upd':>4} {'skill':>6} {'perf':>6} {'alpha':>6} {'r_max':>6} {'xt_max°':>8} {'recon':>7} {'retrain':>8}")
+    cur.alpha = 0.0    # 정착 α서 시작(부트스트랩 직후 tracker가 쉬운 지형 crush→첫 재학습 fires). 재학습 내부서 0.7로 튐(Alg.1)
+    for upd in range(30):
+        perf = cur.rollout(cur.gen_cvae(300, cur.alpha), trk); trk.update()
+        did_retrain = False
+        if upd % cfg.update_period == 0 and perf > cfg.perf_retrain:      # Algorithm 1
+            rec = cur.retrain(); did_retrain = True
+            cur.alpha = cfg.alpha_reset                                    # α←0.7
+            perf = cur.rollout(cur.gen_cvae(300, cur.alpha), trk)
+            guard = 0
+            while perf < cfg.perf_target and guard < 40:                   # α 감소로 난이도 9.15로
+                cur.alpha = max(0.0, cur.alpha - cfg.alpha_step)
+                perf = cur.rollout(cur.gen_cvae(300, cur.alpha), trk); guard += 1
+        else:
+            rec = None
+        r_max, xt_max = _frontier(cur, cur.alpha)
+        print(f"{upd:>4} {trk.skill:>6.2f} {perf:>6.2f} {cur.alpha:>6.2f} {r_max:>6.2f} {xt_max:>8.1f} "
+              f"{(f'{rec:.3f}' if rec else '  -  '):>7} {str(did_retrain):>8}")
+
+    # ── ★핵심 검증: CVAE vs uniform 의 feasible-fraction ──
+    N = 4000; dt = torch.device(dev)
+    uni = PSI_LO.to(dt) + torch.rand(N, PSI_DIM, device=dt) * (PSI_HI - PSI_LO).to(dt)
+    y = make_cond(PSI_LO.to(dt).repeat(N, 1), PSI_LO.to(dt).repeat(N, 1), torch.zeros(N, 1, device=dt))
+    gen = cvae.generate(y, cur.alpha)
+    fu, fg = float(feasible(uni).float().mean()), float(feasible(gen).float().mean())
+    print(f"\n★feasible-fraction: uniform={fu:.3f} | CVAE={fg:.3f} → CVAE {fg/max(fu,1e-6):.1f}× 효율(infeasible 낭비↓)")
+    print(f"★프론티어: r_max→{r_max:.2f}m(목표1.6)·x_tilt→{xt_max:.0f}°(목표90=벽주행). 논문 Fig.6C 정성 재현.")
+    print("★Algorithm 1 충실: α=0.7 리셋 후 9.15로 감소·overcome ψ 재학습·Table S3 부트스트랩·enc[512,128]/dec[128,512].")
 
 
 if __name__ == '__main__':

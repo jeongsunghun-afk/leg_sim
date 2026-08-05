@@ -435,7 +435,8 @@ struct TrotCtrl {
       double vfx=d->subtree_linvel[0]+d->subtree_angmom[1]/(_M*_H);   // CoM 속도(world)+각운동량 capture 보정
       double vfy=d->subtree_linvel[1]-d->subtree_angmom[0]/(_M*_H);
       double capx=tc_clip(_rai*_tst*V+_kcap*(vfx-V),-_capc,_capc);     // 전진 capture
-      double capy=tc_clip(_kcap*(vfy-0.0),-_capc,_capc);              // ★횡 capture(v_des_y=0)=균형 핵심
+      double _kyp=getenv("YPOS_K")?atof(getenv("YPOS_K")):0.0;        // ★횡 위치 앵커(정적crawl drift 보정): CoM y를 tam_ay(직진선)로 되돌림. capy는 속도만 잡아 위치는 누적드리프트
+      double capy=tc_clip(_kcap*(vfy-0.0)+_kyp*(d->subtree_com[1]-tam_ay),-_capc,_capc);   // ★횡 capture(v_des_y=0)+위치앵커
       for(int i=0;i<4;i++){ bool sched=(cc[i]!=0);
         bool grounded=(!online)||(q.foot_point(i)[2]<0.03);   // ★온라인=실제 접지 확인(phantom stance 방지)
         if(sched && grounded){ st.push_back(i); tam_have_ptgt[i]=false; tam_sw_prev[i]=true; }   // 실제 접지 stance만
@@ -484,6 +485,25 @@ struct TrotCtrl {
         if(ncl>0){ q.com_ref[1]=tam_ay+tc_clip(cyl/ncl,-ycap,ycap); q.com_vel_ref[1]=0; q.com_acc_ref[1]=0;
           if(getenv("LEAD_CX")) q.com_ref[0]=tgt_x+(cxl/ncl - cx4/4);   // x-centroid 오프셋(전후 pitch 관리): 3발 centroid − 4발 평균
         } }
+      // ★★CPLAN(offline 주기 CoM 궤적, 정석 static crawl): 게이트 위상 φ에 동기된 매끈한 주기 CoM ref.
+      //   재anchor 온라인plan의 lag 없이 lead가 위상오프셋으로 내장. 스윙발로 φ 동기(drift 없음). WBC가 추종(빠름 확인됨).
+      if(getenv("CPLAN")){
+        int swf=-1; for(int i=0;i<4;i++) if(tam_c[k][i]==0){ swf=i; break; }
+        static const int ord_old[4]={3,1,2,0};   // cs_old q.legs 스윙순서: FR,HR,FL,HL (sub 0..3)
+        if(swf>=0){
+          int sub=0; for(int j=0;j<4;j++) if(ord_old[j]==swf) sub=j;
+          double pdur=0.2, within=tc_clip((t-tam_sw_start[swf])/pdur,0.0,1.0);
+          double phi=(sub+within)/4.0;                                   // 게이트 위상 [0,1)
+          double Ay=getenv("CP_AY")?atof(getenv("CP_AY")):0.05, dy=getenv("CP_DY")?atof(getenv("CP_DY")):0.12;
+          double Ax=getenv("CP_AX")?atof(getenv("CP_AX")):0.04, dx=getenv("CP_DX")?atof(getenv("CP_DX")):0.0;
+          double w=2*M_PI;
+          double yref=Ay*std::sin(w*(phi+dy));                           // 1×/cycle: +,+,-,-(우발 리프트=+y)
+          double vyref=Ay*w*std::cos(w*(phi+dy))/(4*pdur);               // 속도 ff(위상속도 1/(4·pdur))
+          double xref=Ax*std::sin(2*w*(phi+dx));                         // 2×/cycle: 앞발 리프트=-x, 뒷발=+x
+          q.com_ref[1]=tam_ay+yref; q.com_vel_ref[1]=vyref; q.com_acc_ref[1]=0;
+          q.com_ref[0]=tgt_x+xref; q.com_vel_ref[0]=V;
+        }
+      }
       // ★cold-start settle(정적 crawl): 첫 SETTLE_T초 동안 4접촉 홀드하며 CoM을 첫 지지 centroid로 램프 선이동.
       //   원인=t0 첫 리프트 시 CoM이 (0,0)=지지삼각형 엣지→즉시 tip→단항 불복구. 미리 centroid로 옮겨 리프트 시 이미 삼각형 안.
       double SETTLE_T=getenv("SETTLE_T")?atof(getenv("SETTLE_T")):0.0;

@@ -19,10 +19,16 @@ BODY_H: 0.0         # 서기 높이 [m], 0=모델 기본(base_z0=0.5234). 범위
 # KD_BASE: 25        # 속도 추종(전진 authority)
 # STEP_H:  0.10      # swing 발 높이 [m] (walk0.05·trot0.10·run0.08)
 
-# ── 액추에이터 물리 (실측 교체 대기 = sim2real #1 갭, [[sim2real-checklist-17dof]] A절) ──
+# ── 액추에이터 물리 — ★PACE 실측 반영(2026-08-05, biped/emb/pace/RESULTS.md) ──
+#   측정=HL/HR_hip(N=7)·모터단품(다리 미장착). ⚠낙관적 하한: 다리장착 시 마찰↑·I_link↑, 원위관절(calf/foot)은
+#   기어단↑로 마찰↑. sim 검증: 이 값+지연8.4ms로 walk0.6/trot1.2/run2.0 falls=0·마찰2배 스트레스도 falls=0.
 GEARBOX: 1          # 반사관성(로터관성·기어마찰·감쇠) ON. 발 flail 억제
+ROTOR_I: 7.4e-4     # ★실측(placeholder 1e-4의 7.4배). 같은 모터→전관절 공통, armature=ROTOR_I·N²
+JFRIC:   0.38       # ★실측 동적마찰(처프, 보행용). 저속정지=0.50~0.52(Stribeck). 다리장착/원위관절은 상향 필요
+JDAMP:   0.096      # ★실측 점성감쇠(처프값; 스윕은 저속이라 미식별)
 # MU:     0.6        # 접촉 마찰. 실노면 측정으로 교체
 # MOTOR_CURVE: 1     # 토크-속도 곡선(선형근사). 데이터시트 들어오면 교체
+# ★게인(측정): 저속 스윕 최적 kp=60/kd=3(모터단품 기준, 다리장착 후 재스윕). 왕복지연 T_rt=8.39±0.79ms(아래 참조).
 
 # ── 상태추정 KF (선형 접촉KF, IMU가속도 융합) ──
 # KF_QV:     0.5     # 속도 프로세스노이즈(↑=가속도 신뢰↓·접촉측정 의존↑, 노이즈/지연 강건)
@@ -30,12 +36,13 @@ GEARBOX: 1          # 반사관성(로터관성·기어마찰·감쇠) ON. 발 f
 # KF_RV:     1e-2    # 정지속도 측정노이즈
 # KF_ACC_LP: 0.0     # 가속도 저역통과(0=off)
 
-# ── sim2real 센서/버스 에뮬레이션 (sim 전용; real_hal은 실제 노이즈/지연) ──
-#   ★지연 예산 실측 게이트: 총 루프지연 <12ms 유지(초과 시 붕괴, 게인 아닌 예측기 필요). [[sim2real-checklist-17dof]] C절.
+# ── sim2real 센서/버스 에뮬레이션 (sim 전용; ★실기 real_hal은 실제 노이즈/지연=여기 0 유지, 이중계산 방지) ──
+#   ★지연 예산: 총 루프지연 <12ms면 falls=0(특성화). ★실측 왕복지연 T_rt=8.39±0.79ms(PACE, ACT+SENSE 합)<12ms → 여유.
+#     sim 검증 시엔 SENSE+ACT=8.4로 두고 확인(walk/trot/run falls=0). 실배포 config는 0(실HW가 실제 지연 제공).
 GYRO_N:       0.0   # 자이로 노이즈 [rad/s]  (실기 대표값 ~0.02)
 QUAT_N:       0.0   # 자세 노이즈 [rad]      (~0.01)
 ENCQ_N:       0.0   # 엔코더 위치 노이즈 [rad]   (~0.002)
 ENCDQ_N:      0.0   # 엔코더 속도 노이즈 [rad/s] (~0.02)
 ACC_N:        0.0   # 가속도 노이즈          (~0.2)
-SENSE_LAT_MS: 0.0   # 센서→제어 지연 [ms]   (실측 대기, 예산 6ms/채널)
-ACT_LAT_MS:   0.0   # 제어→구동 지연 [ms]   (실측 대기)
+SENSE_LAT_MS: 0.0   # 센서→제어 지연 [ms]. 실측 T_rt 8.4ms(합)·sim검증용, 실배포=0(실HW)
+ACT_LAT_MS:   0.0   # 제어→구동 지연 [ms]. 상동

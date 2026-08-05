@@ -37,6 +37,9 @@ README의 3단계 이관을 **실행 가능한 수준**으로 구체화. 핵심 
    - **RT 루프**(`app/robot_main.cpp`): `timer_t`+`ftimerEvent`(RobotTestGait 골격), read→est→ctrl.step→write. 안전(한계·통신두절·enable).
    - **검증 순서**(biped/emb 실증대로): 축별 JOG(부호·오프셋 확정) → stand → walk. Mock(데스크톱)로 먼저.
    - 컨트롤러·estimator **불변**(read/write만 real). biped/emb([[biped-emb-deploy-interface]])가 같은 SHM을 Python+C브리지로 이미 검증=역이식 직관적.
+   - **★PACE 실측 확정(2026-08-05, biped/emb/pace/RESULTS.md — 같은 SHM 인터페이스)**: real_hal write() 필드 매핑을 확정값으로 인코딩(hal/real_hal.hpp) — 제어법칙 `τ=fGainKp·(fPos−q)+fGainKd·(fVel−q̇)+fTorque`·**torque_frame=joint(관절축)**·단위 **deg**(fGainKp 1≈1.0027 Nm/rad, biped 실측·quad TBD)·MotGeneral_t(fAccel=1.0 미사용·fCurrent=fTorque중복·float16). write() cmd 버퍼 구성 active, SHM 전송/read 게터만 Pi-TODO.
+   - **★★배포 게이트 = 해결(2026-08-05, ★실기 검증): 순수토크 가능** — 드라이버가 Kp=Kd=0·fTorque 명령 수용(0.45Nm서 ~1% 오차). → **컨트롤러 A(순수토크 tau_ff) real_hal 직결 확정**, 재정식화 불요. write()의 fGainKp=fGainKd=0·fTorque=tau_ff 가 배포경로. ⚠2차 확인 권장: 고토크·동적 토크추종 정확도(0.45Nm은 저토크·마찰floor 근처).
+   - **★남은 quad-특정 하드웨어 TODO**: 17-DOF 관절맵(chan·sign·zero/min/max/vel deg) 축별 JOG 실측 + quad 자체 액추에이터(다리장착) 재측정([[sim2real-checklist-17dof]] A절, PACE는 biped hip 모터단품 하한).
 
 ## 1단계 진행 (★GT wrap 달성 2026-08-05)
 - [x] CMake: MuJoCo+eiquadprog 링크·`quad/cpp/src` include (`sim_bridge` 타겟, ENV_PREFIX=proxddp).
@@ -61,6 +64,14 @@ trot_sim.cpp의 `EST_CTRL` 루프(센서→KF추정→d_est→제어→토크)�
 > ★2단계 핵심: **목표 아키텍처 원형(HAL.read→Estimator.update(→d_est)→Controller.step(d_est)→HAL.write)이 sim서 bit-동등 동작**. 컨트롤러는 이제 추정상태(d_est)만 보고 계산 → real_hal은 LowState만 실센서로 바꾸면 됨(estimator·컨트롤러 불변).
 
 > ★핵심 달성: **배포급 A 컨트롤러가 재작성 없이 quad_ctrl HAL 경계 뒤에서 동작·sim 초록불**. real_hal은 `read/write`만 실센서/모터로 교체(컨트롤러·나머지 불변)=3단계 직결.
+
+## 3단계 진행 (★real_hal firm-up + robot_main 스캐폴드 2026-08-05, Pi 전용)
+sim_bridge와 동일 구조를 RealHal로 — 컨트롤러·estimator 불변. Pi 가드(데스크톱 빌드 무영향, sim_bridge/verify 9/9 유지).
+- [x] `hal/real_hal.hpp`: 확정 SHM API로 read/write 완성 — read=`RobotMemGait_{IsUpdatedMotorStatus16,GetMotorStatus16,IsUpdatedIMU,GetIMU}`(관절축 deg→rad·부호/오프셋·RPY→quat)·write=`RobotMemGait_SetMotorCommand16`(ch별, ★순수토크 Kp=Kd=0·fTorque). 안전 `tx_enabled`(상태 100프레임 후)·통신두절 limp.
+- [x] `app/robot_main.cpp`: RT 루프(CLOCK_MONOTONIC 절대주기 1kHz) — QuadControl(모델)+EkfEstimator+TrotBridge+RealHal. read→est→ctrl→write. SIGINT limp.
+- [x] `config/joint_map_17dof.hpp`: 17-DOF GaitJointCfg 스캐폴드(MJCF 순서 HL·HR·waist·FL·FR, placeholder).
+- [x] CMake `robot_main` 타깃(Pi 가드: RobotSharedMem.h 존재 시만, RobotTestGait와 동일 링크 `RobotSharedMem rt pthread`).
+- [ ] **★Pi 하드웨어 TODO**: ①SHM 링크·빌드(Pi MuJoCo ARM 경로) ②관절맵 축별 JOG 실측(chan·sign·zero·min/max/vel) ③IMU gyro 인덱스·RPY convention·accel 프레임 확정 ④foot_force 접촉 소스 ⑤HighCmd(cmd_vel) teleop/nav 배선 ⑥SCHED_FIFO/mlockall RT ⑦고토크 토크추종 2차확인 ⑧다리장착 액추에이터 재측정.
 
 ## 원칙③ config (배포 파라미터, 2026-08-05)
 env-var 흩뿌림 → **config→env 브리지**(`common/config.hpp`: flat `key: value` yaml-부분집합을 시작 시 `setenv(overwrite=0)`로 주입 → apply_env_gains·inline getenv가 그대로 읽음). **비침습**(quad/cpp 불변) = wrap 철학 유지.

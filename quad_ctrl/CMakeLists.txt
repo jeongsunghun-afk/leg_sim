@@ -38,4 +38,17 @@ else()
   message(STATUS "sim_bridge SKIP (MuJoCo/eiquadprog/quad_cpp 없음) — sim_main 골격만 빌드")
 endif()
 
-# TODO(3단계): app/robot_main.cpp(real RT 루프) + real_hal(모터/IMU) + EKF estimator.
+# ── 이관 3단계: robot_main (RealHal + EkfEstimator + TrotBridge, 실기 RT 루프) ── ★Pi 전용
+#   RobotSharedMem.h(Pi에만)+MuJoCo(ARM)+eiquadprog 존재 시에만 빌드. 데스크톱은 자동 skip.
+#   ※Pi 빌드=ENV_PREFIX(또는 MUJOCO/EIQP 경로)를 Pi의 MuJoCo(ARM)로 지정 필요.
+if(EXISTS "/usr/include/RobotSharedMem.h" AND MUJOCO_LIB AND EIQP_LIB AND EXISTS ${QUAD_CPP_SRC}/quad_control.hpp)
+  find_library(RSHM_LIB RobotSharedMem)
+  add_executable(robot_main app/robot_main.cpp)
+  target_compile_definitions(robot_main PRIVATE QC_HAVE_ROBOT_SHM)
+  target_include_directories(robot_main PRIVATE ${CMAKE_SOURCE_DIR} ${QUAD_CPP_SRC}
+                             ${MUJOCO_INCLUDE} ${EIGEN_INCLUDE} ${EIQP_INCLUDE})
+  target_link_libraries(robot_main PRIVATE ${MUJOCO_LIB} ${EIQP_LIB} ${RSHM_LIB} rt pthread)  # RobotTestGait와 동일 링크
+  message(STATUS "robot_main(Pi): RobotSharedMem=${RSHM_LIB}")
+else()
+  message(STATUS "robot_main SKIP (RobotSharedMem.h 없음=데스크톱) — Pi에서만 빌드")
+endif()

@@ -1,0 +1,9 @@
+# biped 실기 진단용 NOPASSWD — Emb(EtherCAT/SPI 마스터) 기동/종료만 허용.
+# 설치: sudo install -m 0440 -o root -g root <이 파일> /etc/sudoers.d/biped-emb
+# 제거: sudo rm /etc/sudoers.d/biped-emb
+#
+# ★EtherCAT 이 OP 를 잃으면 Emb 는 스스로 복구하지 못하고 재기동이 유일한 복구 수단이라
+#   기동/종료를 반복해야 한다. 그래서 이 두 가지만 무암호로 연다(다른 권한은 열지 않음).
+rpetubt ALL=(root) NOPASSWD: /home/rpetubt/ZSource/RobotEmbedded/build/src/RobotEmbedded
+rpetubt ALL=(root) NOPASSWD: /usr/bin/pkill -x RobotEmbedded
+rpetubt ALL=(root) NOPASSWD: /usr/bin/pkill -9 -x RobotEmbedded

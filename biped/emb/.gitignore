@@ -1,0 +1,18 @@
+# ── 빌드 산출물 (Pi 에서 생성 — 아키텍처 종속이라 커밋하지 않는다) ──
+# hal/build_bridge.sh 로 재생성
+hal/libbipedshm.so
+# g++ -O2 -std=c++17 <src>.cpp -o <src> -lRobotSharedMem -lrt 로 재생성
+diag/mot_test
+diag/raw_peek
+diag/shm_dump
+diag/stt_probe
+
+# ── 시험 산출물 ──
+# 플롯·HTML 리포트는 원시데이터로 재생성 가능하므로 제외.
+# pace/results/*.npz (원시 측정데이터) 는 로봇 없이 재현 불가하므로 커밋한다.
+pace/results/plots/
+pace/results/output.html
+
+# ★주의: git 은 인라인 주석을 지원하지 않는다.
+#   "diag/mot_test   # 설명" 처럼 쓰면 주석까지 패턴의 일부가 되어 무시가 안 된다.
+#   주석은 반드시 줄 맨 앞에서 시작할 것.

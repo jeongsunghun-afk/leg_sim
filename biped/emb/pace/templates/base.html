@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>biped 액추에이터 시험 리포트</title>
+<style>
+  :root { --fg:#1b1f24; --dim:#6b7480; --line:#e3e7ec; --accent:#0b6ab0; --warn:#a8620a; --warnbg:#fff8ec; }
+  body { font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
+         color: var(--fg); max-width: 980px; margin: 32px auto; padding: 0 20px; line-height: 1.6; }
+  h1 { border-bottom: 3px solid var(--accent); padding-bottom: 8px; }
+  h2 { margin-top: 40px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+  h3 { margin-top: 26px; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th { background: #f4f7fa; text-align: left; padding: 7px 10px; border: 1px solid var(--line); }
+  td { padding: 6px 10px; border: 1px solid var(--line); }
+  td.numeric { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  img { max-width: 100%; border: 1px solid var(--line); border-radius: 5px; margin: 6px 0; }
+  pre { background: #f6f8fa; padding: 11px 13px; border-radius: 5px; overflow-x: auto;
+        border-left: 3px solid var(--accent); font-size: 13px; }
+  code { background: #f0f3f6; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+  .dim { color: var(--dim); font-size: 0.9em; font-weight: normal; }
+  .warn { background: var(--warnbg); border-left: 3px solid var(--warn); padding: 10px 14px;
+          margin: 14px 0; border-radius: 4px; font-size: 14px; }
+  .warn ul { margin: 6px 0 0; padding-left: 20px; }
+  .meta { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>biped 액추에이터 시험 리포트</h1>
+<p class="meta">생성 {{ datetime }} · SHM(RobotSharedMem) 경유 실기 측정 ·
+   가진은 전부 위치+게인(임피던스) 모드, 토크는 측정값</p>
+
+{% for t in tests %}{{ t }}{% endfor %}
+
+<h2>부록 — 측정 원리</h2>
+<p><b>양방향 상쇄</b>: 같은 구간을 +/− 방향으로 통과시키면
+<code>τ± = ±f(v) + g(q) + bias</code> 이므로
+<code>f(v) = (τ⁺−τ⁻)/2</code>, <code>g+bias = (τ⁺+τ⁻)/2</code> 로 분리된다.
+이 처리를 빼면 중력토크가 쿨롱마찰로 둔갑한다.</p>
+<p><b>MIT 임피던스 규약</b>(2026-08-05 실측 확정):
+<code>τ = Kp·(q_des−q)[rad] + Kd·(q̇_des−q̇)[rad/s]</code>.
+명령·상태는 deg 인데 게인은 rad 기준이라 <b>Kp 1 당 0.0175 Nm/deg</b> 다.</p>
+<p><b>PACE 적용 경로</b>: 식별된 <code>ROTOR_I / JDAMP / JFRIC</code> →
+<code>apply_gearbox()</code> → MJCF <code>dof_armature(=I_rot·N²) / dof_damping /
+dof_frictionloss</code> → WBIC·MPC 가 그 물리로 동작.</p>
+</body>
+</html>

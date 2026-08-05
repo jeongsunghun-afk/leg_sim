@@ -9,7 +9,7 @@ meta:
 
 # ── SHM(RobotSharedMem) 백엔드 ──────────────────────────────────────────────
 shm:
-  lib: /home/jsh/문서/jsh/RobotTestGait/build/libbipedshm.so  # hal/build_bridge.sh 산출물(Pi)
+  lib: /home/rpetubt/simulation/biped/emb/hal/libbipedshm.so  # hal/build_bridge.sh 산출물(Pi)
   n_channel: 10                  # Gait 채널 수(MAX_GaitMOT_CHAN). 0~7=다리, 8~9=허리
   recv_wait_ms: 2000             # 모터 상태 첫 수신 대기(RobotEmbedded 기동 확인). 초과=에러
   imu_deg: true                  # IMU RPY 단위(true=deg). 컨트롤러용 quat 변환 시 사용
@@ -21,22 +21,34 @@ shm:
 #   offset_deg: 실모터 0점 − 컨트롤러 0점[deg]. ★캘리브레이션
 #   min/max_deg: 소프트웨어 관절한계[deg](MJCF range 변환). 명령·jog 모두 클램프
 #   kp/kd   : jog·hold 시 모터 임피던스 게인(모델기반은 tau_ff, kp/kd=0)
+#
+#   ★★게인 단위 (2026-08-05 실기 실측). 드라이버 MIT 법칙은
+#        tau[Nm] = Kp·(q_des − q)[rad] + Kd·(dq_des − dq)[rad/s]
+#     명령/상태는 deg 지만 게인은 rad 기준 → Kp 1 당 0.0175 Nm/deg 밖에 안 된다.
+#     실측(ch0=HL_hip): err 4.743deg(0.0828rad), vel 0.61deg/s, Kp10/Kd5
+#        → 예측 10·0.0828 − 5·0.0106 = 0.775 Nm, 실측 0.757 Nm (오차 2%).
+#     ⇒ 종전 kp8 은 1° 오차당 0.14 Nm 로 힙 관절 정지마찰조차 못 이긴다
+#       (±5° 명령에 실제 ±0.7° 만 움직여 "모터 무반응" 으로 오인했던 원인).
+#     실측 정합: kp25 → ±4°, kp40/kd2 → 추종지연 1.4°, kp60/kd3 → 1.2°(채터 없음).
+#   ⇒ hip 은 kp40/kd2 로 확정(실측). 나머지 축은 미장착이라 동일비율(×5) 외삽값이므로
+#     장착 후 축별로 mot_test 로 재검증할 것. ⚠Kd 는 속도 노이즈(±15deg/s 관측)를
+#     그대로 토크로 증폭하므로(kd2 → ±0.5Nm) 함부로 올리지 말 것.
 joints:
-  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 8, kd: 0.4}
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 8, kd: 0.4}
-  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 8, kd: 0.4}
-  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 6, kd: 0.3}
-  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 8, kd: 0.4}
-  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 8, kd: 0.4}
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 8, kd: 0.4}
-  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 6, kd: 0.3}
+  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # 실측 검증
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
+  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
+  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)
+  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★미검증: 텔레메트리 정지 상태였음
+  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
+  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:
   channels: [8, 9]
   hold_deg: [0.0, 0.0]           # 홀드 목표각
-  kp: 10
-  kd: 0.5
+  kp: 50                         # 외삽(미장착) — 위 게인 단위 주석 참조
+  kd: 2.5
 
 # ── jog(각축 검증) ──────────────────────────────────────────────────────────
 #   안전 우선: 저속 위치 램프. GUI가 축별 목표각(deg) 발행 → 여기 속도·한계로 제한.

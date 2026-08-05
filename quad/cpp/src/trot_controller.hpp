@@ -411,6 +411,7 @@ struct TrotCtrl {
         tgt_x=tam_vbx; tgt_y=tam_vby; vx_w=V; }
       x_ref[3]=tgt_x; x_ref[4]=tgt_y;   // ★base x,y 위치 참조(오버슛/횡드리프트 방지) — Qdiag[3,4]>0 필요
       x_ref[2]=s[5]; x_ref[5]=s[2]; x_ref[8]=s[11]; x_ref[9]=vx_w; x_ref[10]=vy_w; q.yaw_des=s[5];
+      if(getenv("YAW0")){ q.yaw_des=0; x_ref[2]=0; }   // ★★option1(재anchor 근본): yaw 참조를 plan(재anchor로 드리프트 추종) 대신 world-frame 절대0으로 고정 → yaw ratchet 드리프트 제거(직진 heading hold)
       bool rsl=(getenv("RSL_TRACK")||online) && !getenv("TAM_MPC");   // ★RSL식 직접추종. ★TAM_MPC=1이면 MPC 기반 추종(z침하 해결: RSL gravity-comp가 MPC 우회→침하)
       if(rsl){ auto& sn=tam_s[std::min(k+1,tam_N-1)];
         q.W_BASE_XY=getenv("W_BASE_XY")?atof(getenv("W_BASE_XY")):80.0;

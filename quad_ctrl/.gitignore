@@ -1,1 +1,5 @@
 build/
+# 실기 진단도구 바이너리(tools/*.cpp 는 추적, 산출물은 제외).
+# g++ 로 직접 빌드하면 tools/ 안에 떨어진다 — add -A 에 딸려가지 않도록 막는다.
+tools/chan_probe
+tools/hal_smoke

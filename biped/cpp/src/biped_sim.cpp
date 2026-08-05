@@ -55,7 +55,12 @@ int main(int argc,char**argv){
       if(d->qpos[2]<0.2 || tilt_deg(&d->qpos[3])>45){
         c.reset(); c.vx_cmd=vx; dl.reset(m,d); falls++;
       }
-    } else if(d->qpos[2]<0.15){ fell=i*dt; break; }
+    } else if(d->qpos[2]<0.15 || tilt_deg(&d->qpos[3])>45){ fell=i*dt; break; }
+    // ★tilt 판정 추가(2026-08-05). 기존엔 base 높이만 봐서 **기울어진 채 버티는 것을
+    //   성공으로 셌다** — T_STEP=0.24/vx=0.30 이 tilt 81.9° 인데 "무낙상" 으로 집계됐다
+    //   (0.28@0.25=50.4°, 0.28@0.30=46.2° 도 동일). 위 EST_CTRL 분기는 이미
+    //   `qpos[2]<0.2 || tilt>45` 로 옳게 판정하고 있었으므로 임계를 그쪽에 맞췄다.
+    //   ⚠ 45° 도 관대하다. 보행 품질 분석은 tilt 10° 이하만 진짜 성공으로 볼 것.
   }
 
   if(est_ctrl){

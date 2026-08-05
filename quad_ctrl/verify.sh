@@ -37,12 +37,12 @@ echo "▶ EST 자세 모드"
 cmp_case "EST sit"       EST_CTRL=1 MODE=sit
 cmp_case "EST stand_up"  EST_CTRL=1 MODE=stand_up
 
-echo "▶ config (원칙③)"
+echo "▶ config (원칙③ + PACE 실측 물리)"
 CFG="$QC/config/deploy_17dof.yaml"
-d0=$( cd "$QC" && env EST_CTRL=1 ./build/sim_bridge 2>/dev/null | _key )                       # 기본
-d1=$( cd "$QC" && env EST_CTRL=1 QC_CONFIG="$CFG" ./build/sim_bridge 2>/dev/null | _key )        # config 로드
-if [ -n "$d1" ] && [ "$d0" = "$d1" ]; then printf "  ✅ %-24s %s\n" "config 로드==기본" "$d1"; pass=$((pass+1))
-else printf "  ❌ %-24s 기본:%s config:%s\n" "config 로드==기본" "$d0" "$d1"; fail=$((fail+1)); fi
+# deploy config(실측 ROTOR_I/JFRIC/JDAMP 활성) 로드 → 보행 falls=0 (placeholder와 다름=의도된 현실 주입)
+dc=$( cd "$QC" && env EST_CTRL=1 GAIT=walk TROT_V=0.5 QC_CONFIG="$CFG" ./build/sim_bridge 2>/dev/null | _key )
+if [ -n "$dc" ] && [ "$(echo "$dc" | grep -oE 'falls=[0-9]+')" = "falls=0" ]; then printf "  ✅ %-24s %s\n" "deploy config 보행" "$dc"; pass=$((pass+1))
+else printf "  ❌ %-24s %s\n" "deploy config 보행" "${dc:-<empty>}"; fail=$((fail+1)); fi
 # config 값 적용 + env override: SENSE_LAT 8ms를 config로 → 붕괴(falls>0), env로 0 덮으면 falls=0
 TMP="$(mktemp)"; printf 'GAIT: trot\nTROT_V: 0.5\nSENSE_LAT_MS: 8\nACT_LAT_MS: 8\n' > "$TMP"
 fa=$( cd "$QC" && env EST_CTRL=1 QC_CONFIG="$TMP" ./build/sim_bridge 2>/dev/null | grep -oE 'falls=[0-9]+' )

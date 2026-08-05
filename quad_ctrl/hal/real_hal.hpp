@@ -11,11 +11,9 @@
 //   · 단위 = 명령/피드백 **deg**, fGainKp 1단위 = 0.0175 Nm/deg ≈ 1.0027 Nm/rad (★biped 실측, quad는 재확인 필요)
 //   · MotGeneral_t: fAccelrationOrTemperture=1.0(미사용 상수)·fCurrent=fTorque(중복)·float16 전필드
 //
-// ★★★배포 결정(Pi 브링업 전 반드시 해결) — 순수토크 vs 임피던스:
-//   컨트롤러 A는 **순수 토크**(WBIC가 tau_ff 산출, kp=kd=0) 출력. → real_hal은 fGainKp=fGainKd=0, fTorque=tau_ff 전송.
-//   PACE 측정은 임피던스(Kp40/Kd2)로 했음. **RGA 드라이버가 Kp=Kd=0(순수토크)을 받는가?** 를 실기서 먼저 확인:
-//     · 받으면 → A 직결(아래 write 그대로).
-//     · 필수 임피던스면 → 드라이버 Kp·Δq가 WBIC 토크에 **더해져** 동역학 변화 → 컨트롤러 재정식화/게인이관 필요(하드웨어 전 갭).
+// ★★★배포 결정 = 해결(2026-08-05, ★실기 검증): **순수토크 가능** — 드라이버가 Kp=Kd=0·fTorque 명령 수용(0.45Nm서 ~1% 오차).
+//   → 컨트롤러 A(WBIC 순수토크 tau_ff)를 real_hal **직결**: 아래 write의 fGainKp=fGainKd=0·fTorque=tau_ff 가 곧 배포 경로. 재정식화 불요.
+//   ⚠2차 확인 권장: 0.45Nm=저토크(마찰 floor 근처). 배포 고토크(수십 Nm)·동적 토크추종 정확도도 실기 확인.
 #include "hal/robot_interface.hpp"
 #include <vector>
 

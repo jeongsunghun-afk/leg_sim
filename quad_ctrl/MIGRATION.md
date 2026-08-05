@@ -38,7 +38,7 @@ README의 3단계 이관을 **실행 가능한 수준**으로 구체화. 핵심 
    - **검증 순서**(biped/emb 실증대로): 축별 JOG(부호·오프셋 확정) → stand → walk. Mock(데스크톱)로 먼저.
    - 컨트롤러·estimator **불변**(read/write만 real). biped/emb([[biped-emb-deploy-interface]])가 같은 SHM을 Python+C브리지로 이미 검증=역이식 직관적.
    - **★PACE 실측 확정(2026-08-05, biped/emb/pace/RESULTS.md — 같은 SHM 인터페이스)**: real_hal write() 필드 매핑을 확정값으로 인코딩(hal/real_hal.hpp) — 제어법칙 `τ=fGainKp·(fPos−q)+fGainKd·(fVel−q̇)+fTorque`·**torque_frame=joint(관절축)**·단위 **deg**(fGainKp 1≈1.0027 Nm/rad, biped 실측·quad TBD)·MotGeneral_t(fAccel=1.0 미사용·fCurrent=fTorque중복·float16). write() cmd 버퍼 구성 active, SHM 전송/read 게터만 Pi-TODO.
-   - **★★배포 게이트(하드웨어): 순수토크 vs 임피던스** — A는 순수토크(kp=kd=0·tau_ff) 출력, PACE는 임피던스(Kp40/Kd2) 측정. **드라이버가 Kp=Kd=0 받는지 실기 확인 필요**(받으면 A 직결·필수 임피던스면 재정식화). **★사용자가 실기 테스트 예정**.
+   - **★★배포 게이트 = 해결(2026-08-05, ★실기 검증): 순수토크 가능** — 드라이버가 Kp=Kd=0·fTorque 명령 수용(0.45Nm서 ~1% 오차). → **컨트롤러 A(순수토크 tau_ff) real_hal 직결 확정**, 재정식화 불요. write()의 fGainKp=fGainKd=0·fTorque=tau_ff 가 배포경로. ⚠2차 확인 권장: 고토크·동적 토크추종 정확도(0.45Nm은 저토크·마찰floor 근처).
    - **★남은 quad-특정 하드웨어 TODO**: 17-DOF 관절맵(chan·sign·zero/min/max/vel deg) 축별 JOG 실측 + quad 자체 액추에이터(다리장착) 재측정([[sim2real-checklist-17dof]] A절, PACE는 biped hip 모터단품 하한).
 
 ## 1단계 진행 (★GT wrap 달성 2026-08-05)

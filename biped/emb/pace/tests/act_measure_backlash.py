@@ -95,6 +95,73 @@ def _analyze(q, tau, tau_max, log):
     return lash, k_deg, float(flat.sum()), None
 
 
+def per_cycle_estimates(q, tau, tau_max, seg_bounds, warmup, log):
+    """★주기별 추정 + **워밍업 제외** + 반쪽구간 제외.
+
+    2026-08-05 실측이 드러낸 두 가지:
+      (a) 첫 상승램프·마지막 하강램프는 **반쪽 구간**이라 온전한 루프가 없다
+          → 강성이 3.84 / 2.63 처럼 엉뚱하게 나온다. 경계를 피크로 추측하던 초기
+          구현의 문제였고, 이제 가진 시점에 기록한 seg_bounds 를 쓴다.
+      (b) 강성이 주기마다 **단조 증가**한다(8.53 → 10.56 → 11.27 → 11.48).
+          기계적 안정화(프리로드·물림 자리잡기)라 **첫 주기들은 워밍업으로 버려야** 한다.
+    이 둘을 안 빼면 산포가 44~49% 로 벌어져 좌우 비교 자체가 불가능해진다.
+    """
+    # segs 구조: [0]=상승램프, 그 뒤 (down,up) 쌍 × cycles, 마지막=하강램프
+    cyc = []
+    for i in range(1, len(seg_bounds) - 2, 2):        # (down,up) 쌍 = 온전한 1주기
+        a_, b_ = seg_bounds[i], seg_bounds[i + 2] if i + 2 < len(seg_bounds) else len(q)
+        if b_ - a_ >= 60:
+            cyc.append((a_, b_))
+    used = cyc[warmup:] if len(cyc) > warmup else cyc
+    ks, ls = [], []
+    for a_, b_ in used:
+        lash, k, _, err = _analyze(q[a_:b_], tau[a_:b_], tau_max, log)
+        if k: ks.append(k)
+        if lash is not None: ls.append(lash)
+    return ks, ls, len(cyc), len(used)
+
+
+def _unused_peak_segmentation(q, tau, tau_max, log):
+    """★주기별로 따로 추정해 **산포**를 낸다.
+
+    2026-08-05: 점추정만 내던 초기 구현은 같은 축을 두 번 재면 강성이 8.2 → 11.9 (+44%)
+    로 튀었고, 좌우 대소관계까지 뒤집혔다. 즉 **반복 산포가 좌우 차이보다 컸다.**
+    산포를 함께 내지 않으면 그 사실이 드러나지 않아 실재하지 않는 좌우 차이를
+    보고하게 된다. 주기 경계는 tau 가 +tau_max 를 찍는 지점으로 잡는다.
+    """
+    peaks = [i for i in range(1, len(tau) - 1)
+             if tau[i] > 0.9 * tau_max and tau[i] >= tau[i-1] and tau[i] > tau[i+1]]
+    bounds = [0] + peaks + [len(tau)]
+    ks, ls = [], []
+    for a_, b_ in zip(bounds[:-1], bounds[1:]):
+        if b_ - a_ < 60:
+            continue
+        lash, k, _, err = _analyze(q[a_:b_], tau[a_:b_], tau_max, log)
+        if k: ks.append(k)
+        if lash is not None: ls.append(lash)
+    return ks, ls
+
+
+def stiffness_vs_threshold(q, tau, tau_max, fracs=(0.4, 0.55, 0.7, 0.85)):
+    """★강성 추정이 '물린 구간' 임계에 얼마나 민감한지 — 분석 인공물 판별용.
+
+    유격이 큰 축은 전이구간이 물린 구간에 섞여 기울기를 끌어내릴 수 있다. 그러면
+    '유격 크다 → 강성 낮다' 는 **가짜 상관**이 생긴다. 임계를 올려도 값이 안정적이면
+    실제 차이, 임계에 따라 크게 변하면 인공물이다.
+    """
+    out = {}
+    dtau = np.gradient(tau)
+    for f in fracs:
+        eng = np.abs(tau) > f * tau_max
+        sl = []
+        for m in (eng & (dtau > 0), eng & (dtau < 0)):
+            if m.sum() >= 10:
+                A = np.polyfit(q[m], tau[m], 1)
+                if A[0] > 0: sl.append(A[0])
+        out[f] = float(np.mean(sl)) if sl else float("nan")
+    return out
+
+
 def measure_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     ch = int(joint["ch"])
     name = joint["name"]
@@ -121,7 +188,9 @@ def measure_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     time.sleep(0.3)
     q0 = hw.read(ch)[0]
     qs, ts, tc_all, rotated = [], [], [], False
+    seg_bounds = []                                  # ★경계를 추측하지 말고 가진 시점에 기록
     for a, b in segs:
+        seg_bounds.append(len(qs))
         T = abs(b - a) / ramp
         t0 = time.monotonic()
         while True:
@@ -182,5 +251,30 @@ def measure_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
         stiff_str=(f"{k_deg:.3f} Nm/deg ({k_deg*180/np.pi:.0f} Nm/rad)" if k_deg else "—"),
         loop_w=loop_w, q_span=float(q.ptp()) if q.size else 0.0, rotated=rotated,
         warnings=wh, plot=p.replace(plotdir, "plots"))
+    # ★원시데이터 저장 — 임계 민감도 등 사후분석용(하드웨어 재구동 없이)
+    npz = f"{plotdir}/../backlash_raw_ch{ch:02d}.npz"
+    np.savez(npz, q=q, tau=tau, tau_cmd=tcmd, tau_max=tau_max, ch=ch, name=name)
+    ksens = stiffness_vs_threshold(q, tau, tau_max) if not rotated else {}
+    warmup = int(cfg.get("warmup_cycles", 2))
+    if not rotated:
+        ks_cyc, ls_cyc, n_all, n_used = per_cycle_estimates(q, tau, tau_max, seg_bounds, warmup, log)
+        log(f"    주기 {n_all}개 중 워밍업 {n_all-n_used}개 제외 → {n_used}개 사용")
+    else:
+        ks_cyc, ls_cyc = [], []
+    if len(ks_cyc) >= 2:
+        km, ksd = float(np.mean(ks_cyc)), float(np.std(ks_cyc))
+        log(f"    주기별 강성 {len(ks_cyc)}개: " + " ".join(f"{v:.2f}" for v in ks_cyc)
+            + f"  → {km:.2f} ± {ksd:.2f} Nm/deg (산포 {100*ksd/max(km,1e-9):.0f}%)")
+        if ls_cyc:
+            lm, lsd = float(np.mean(ls_cyc)), float(np.std(ls_cyc))
+            log(f"    주기별 백래시 {len(ls_cyc)}개: " + " ".join(f"{v:.4f}" for v in ls_cyc)
+                + f"  → {lm:.4f} ± {lsd:.4f}°")
+        if ksd > 0.15 * km:
+            warn.append(f"주기간 강성 산포가 {100*ksd/km:.0f}% 다 — 점추정을 좌우 비교에 쓰면 안 된다. "
+                        f"주기를 늘려 평균±산포로 볼 것.")
+    if ksens:
+        log("    임계 민감도(물린구간 |tau|> f·tau_max 일 때 강성 Nm/deg):")
+        log("      " + " · ".join(f"f={f}: {v:.2f}" for f, v in ksens.items()))
     return html, {"backlash_deg": lash, "stiffness_nm_per_deg": k_deg, "loop_width_deg": loop_w,
-                  "rotated": rotated, "ch": ch, "name": name}
+                  "rotated": rotated, "ch": ch, "name": name, "k_vs_threshold": ksens,
+                  "npz": npz}

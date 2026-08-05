@@ -54,7 +54,8 @@ trot_sim.cpp의 `EST_CTRL` 루프(센서→KF추정→d_est→제어→토크)�
 - [x] `control/trot_bridge.hpp`: `step(cmd, mjData* ctrl_data=nullptr)` — ctrl_data(d_est) 주면 `q_.d`를 임시 교체해 추정상태로 계산 후 **복원**(write의 mj_step이 d_phys 밟도록). nullptr=GT(1단계).
 - [x] `app/sim_bridge.cpp`: `EST_CTRL=1`이면 read→ekf.update→ctrl.step(d_est)→write. 미설정=GT.
 - [x] **검증: sim_bridge EST == trot_sim EST_CTRL(clean, NO_JUMP) V=0/0.5/1.0 bit-동등**(x·z·tilt·falls 모두 일치: V0.5 x=+0.725 z=0.503 tilt=0.5 falls=0). GT 회귀도 유지(x=+0.718). EST≠GT(x0.725 vs 0.718)=KF 추정이 실제 컨트롤러 구동 확인. 실행 `EST_CTRL=1 TROT_V=<v> ./build/sim_bridge`.
-- [ ] (다음 2b) 센서 노이즈+지연 링을 `MujocoHal`로(sim2real-checklist C: GYRO_N/ENCQ_N/SENSE_LAT_MS/ACT_LAT_MS). 현재 clean만. 반복기립 EST 검증.
+- [x] (2b 완료) 센서 노이즈+지연 링을 `MujocoHal`로: `GYRO_N/QUAT_N/ENCQ_N/ENCDQ_N/ACC_N`(가우시안 seed2024) + `SENSE_LAT_MS/ACT_LAT_MS`(센서·구동 지연 링). trot_sim와 동일 모델·draw순서 → **노이즈+지연 하에서도 sim_bridge EST == trot_sim EST bit-동등**(중간 5ms: x=+0.757 tilt=1.3 falls=0 일치 / 강한 10ms: tilt=142.5 falls=1068 일치=둘 다 동일 붕괴). 모든 param 0 = clean 회귀 유지. **정직한 sim2real 발견: 컨트롤러는 ~5ms 지연 견딤·~10ms선 붕괴(게인 재튜닝 필요, [[sim2real-checklist-17dof]] 지연=재튜닝 최대원인)**.
+- [x] (검증 추가) 자세 모드 EST bit-동등: MODE=sit(z=0.252 tilt=26.6 falls=0)·stand_up(z=0.499 falls=0) 모두 trot_sim과 일치 → KF가 자세 base 추정 처리(반복기립 버그 수정 계승). 반복기립 *시퀀스*(MODE2/switchT)는 sim_bridge 미탑재이나 EST bit-동등이 일반화됨.
 - [ ] (다음) `estimate/estimate()` stance-anchored 폴백(EST_ANCHOR) 포팅은 미포함(KF 경로만).
 
 > ★2단계 핵심: **목표 아키텍처 원형(HAL.read→Estimator.update(→d_est)→Controller.step(d_est)→HAL.write)이 sim서 bit-동등 동작**. 컨트롤러는 이제 추정상태(d_est)만 보고 계산 → real_hal은 LowState만 실센서로 바꾸면 됨(estimator·컨트롤러 불변).

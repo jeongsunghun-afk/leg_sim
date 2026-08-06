@@ -39,7 +39,7 @@ for k in range(Kc): P(f"lam{k}", row(c.lam[stance[k]]))
 P("swing_leg", swing_leg)
 P("Jsw", row(Jsw)); P("sw_pos", row(d.geom_xpos[c.sph[swing_leg]]))
 P("sw_ptgt", row(p)); P("sw_vtgt", row(v))
-P("Qhome", row(Q_HOME)); P("tau_peak", row(TAU_PEAK))
+P("Qhome", row(Q_HOME)); P("tau_peak", row(c.tau_peak))   # ★MJCF 파생값(모듈상수 아님)
 P("ankle", ' '.join(str(x) for x in ANKLE_IDX))
 P("gains", f"{SW_KP} {SW_KD} {W_ORI} {W_ANKLE} {W_POST} {W_LAM} {STANCE_KD} {MU*MU_MARGIN} {LAMZ_MIN}")
 

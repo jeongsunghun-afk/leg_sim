@@ -219,8 +219,8 @@ class BipedMPCWBIC(BS.BipedStep):
         Tm=np.zeros((nu,nz)); Tm[:,:nv]=M[6:,:]
         for k in range(Kc): Tm[:,sl(k):sl(k)+3]=-cjac[k][:,6:].T
         for i in range(nu):
-            rows.append(Tm[i]); hh.append(TAU_PEAK[i]-h[6+i])
-            rows.append(-Tm[i]); hh.append(TAU_PEAK[i]+h[6+i])
+            rows.append(Tm[i]); hh.append(self.tau_peak[i]-h[6+i])
+            rows.append(-Tm[i]); hh.append(self.tau_peak[i]+h[6+i])
         G=np.array(rows); hh=np.array(hh)
         P=0.5*(P+P.T)+1e-8*np.eye(nz)
         _multi = any(n > 1 for n in foot_npts.values())        # ★실제 발당 2점 접지 시만 rank-deficient
@@ -229,7 +229,7 @@ class BipedMPCWBIC(BS.BipedStep):
         if x is None: return self.wbic_stance()
         qdd=x[:nv]; tau=M[6:,:]@qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:,6:].T @ x[sl(k):sl(k)+3]
-        d.ctrl[:]=np.clip(tau,-TAU_PEAK,TAU_PEAK); return True
+        d.ctrl[:]=np.clip(tau,-self.tau_peak,self.tau_peak); return True
 
     def reset(self):
         super().reset()

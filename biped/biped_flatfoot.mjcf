@@ -47,7 +47,7 @@
             <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_calf_link" />
             <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
               <inertial pos="0.0105929 -7.89238e-12 -0.0600756" quat="0.704415 -0.0616285 -0.0616283 0.704417" mass="0.202619" diaginertia="0.000300644 0.000274237 3.03295e-05" />
-              <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-168 168" />
+              <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-100.8 100.8" />
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_foot_link" />
               <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HL_foot_link" />
               <!-- ★평발 heel 접촉구: foot_joint(발목 관절) 위치. toe(HL_sphere)와 함께 밑창 2점 -->
@@ -79,7 +79,7 @@
             <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_calf_link" />
             <body name="HR_foot_link" pos="-0.187681 0 -0.157483">
               <inertial pos="0.0105929 -7.89188e-12 -0.0600756" quat="0.704415 -0.0616285 -0.0616283 0.704417" mass="0.202619" diaginertia="0.000300644 0.000274237 3.03295e-05" />
-              <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-168 168" />
+              <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.396 0.698" actuatorfrcrange="-100.8 100.8" />
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_foot_link" />
               <geom type="mesh" contype="0" conaffinity="0" rgba="0.752941 0.752941 0.752941 1" mesh="HR_foot_link" />
               <!-- ★평발 heel 접촉구: foot_joint(발목 관절) 위치. toe(HR_sphere)와 함께 밑창 2점 -->

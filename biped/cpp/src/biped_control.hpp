@@ -43,7 +43,12 @@ struct BipedControl {
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
-  double tau_peak8[8]={84,84,126,96,84,84,126,96};
+  // ★2026-08-06: 하드코딩 폐기 → init() 에서 **MJCF jnt_actfrcrange 에서 읽는다**
+  //   (quad 와 동일 패턴: quad/cpp/src/quad_control.hpp:81, quad_mpc_wbic_17dof.py:209)
+  //   종전 {84,84,126,96,...} 은 foot 이 96 = 12Nm×8 로, GEAR 를 8→8.4 로 고칠 때
+  //   따라가지 않아 tau_peak÷gear 가 11.43(≠모터 피크 12.0)이 돼 있었다.
+  //   ⇒ 감속비를 바꾸면 토크한계도 따라가야 한다. MJCF 를 단일 출처로 삼아 그걸 강제한다.
+  double tau_peak8[8]={84,84,126,100.8,84,84,126,100.8};   // init() 이 MJCF 값으로 덮어씀
   double Qhome8[8]={0,0.05,-0.2,0, 0,0.05,-0.2,0};
   int ankle_idx[2]={3,7};
   // ── 액추에이터 물리 — ★2026-08-05 실기 실측 (emb/pace/RESULTS.md) ──
@@ -77,6 +82,15 @@ struct BipedControl {
 
   BipedControl(mjModel* m_, mjData* d_):m(m_),d(d_){
     nv=m->nv; nu=m->nu;
+    // ★tau_peak 을 MJCF 에서 읽는다(quad_control.hpp:81 과 동일 패턴).
+    //   hinge 관절만 골라 dof 순서(=actuator 순서)로 채운다. 값이 없으면(≤0) 무한대.
+    { int k=0;
+      for(int j=0;j<m->njnt && k<8;j++){
+        if(m->jnt_type[j]!=mjJNT_HINGE) continue;
+        double frc=m->jnt_actfrcrange[j*2+1];
+        tau_peak8[k++] = (frc>0) ? frc : 1e8;
+      }
+    }
     sph[0]=mj_name2id(m,mjOBJ_GEOM,"HL_sphere"); sph[1]=mj_name2id(m,mjOBJ_GEOM,"HR_sphere");
     fbody[0]=mj_name2id(m,mjOBJ_BODY,"HL_foot_contact_link"); fbody[1]=mj_name2id(m,mjOBJ_BODY,"HR_foot_contact_link");
     sph2[0]=mj_name2id(m,mjOBJ_GEOM,"HL_sphere2"); sph2[1]=mj_name2id(m,mjOBJ_GEOM,"HR_sphere2");

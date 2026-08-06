@@ -258,30 +258,40 @@ cd cpp && LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_sim ../biped_from_quad.
 ### 8-c. 남은 일
 
 - [ ] `quad/PARAMS.md:147` 의 표(`Irot 1e-4` / `jdmp·jfrc 0.1/0.5`)가 여전히 구값이다 → 갱신.
-- [ ] ★foot `tau_peak` 불일치 — 아래 8-d.
+- [x] ★foot `tau_peak` 불일치 — 8-d 에서 해소.
 
-### 8-d. ⚠ 미해결: foot `tau_peak` 이 감속비와 안 맞는다
+### 8-d. ✅ foot `tau_peak` 정합 + MJCF 단일출처화 (2026-08-06 완료)
 
-`tau_peak ÷ gear` 는 모터 피크토크(12.0 Nm)여야 하는데 foot 만 어긋난다:
+`tau_peak ÷ gear` 는 모터 피크토크(12.0 Nm)여야 하는데 foot 만 어긋나 있었다.
+`GEAR` foot 을 8→8.4 로 고칠 때 `tau_peak` 96(=12×8)이 따라가지 않아 11.43 이 됐던 것.
 
-| 축 | gear | tau_peak | ÷gear |
-|---|---|---|---|
-| hip · thigh | 7.0 | 84 | 12.00 ✅ |
-| calf | 10.5 | 126 | 12.00 ✅ |
-| **foot** | **8.4** | **96** | **11.43** ❌ (12×8.4 = **100.8** 이어야) |
+**근본 원인은 하드코딩이었다.** quad 는 이미 올바른 패턴을 쓰고 있었다 —
+`tau_peak` 을 **MJCF `jnt_actfrcrange` 에서 읽는다**:
+`quad/cpp/src/quad_control.hpp:81` · `quad/quad_mpc_wbic_17dof.py:209`.
+biped 만 C++·Python 양쪽에서 하드코딩하고 있었다.
 
-`GEAR` foot 을 8→8.4 로 고칠 때 `tau_peak` 이 따라가지 않았다. 네 군데가 전부 다르다:
+- [x] **MJCF 를 단일 출처로 확정** — `biped_flatfoot.mjcf` · `biped_from_quad.mjcf` 의
+      foot `actuatorfrcrange` −168→**−100.8** (168 은 최초 14:1 시절 값 12×14 였다)
+- [x] **C++** `biped_control.hpp` — 하드코딩 폐기, 생성자에서 `m->jnt_actfrcrange[j*2+1]` 로 읽음
+- [x] **Python** `biped_wbic.py` — `self.tau_peak` 을 `m.jnt_actfrcrange[j,1]` 에서 파생.
+      `TAU_PEAK` 모듈상수는 하위호환 폴백으로만 남김(값도 100.8 로 정정)
+- [x] 사용처 전환: `biped_wbic.py:210` · `biped_mpc_wbic.py:222/223/232` · `dump_biped_wbic.py`
 
-| 위치 | foot 값 | 유래 |
+⇒ 이제 **감속비를 바꾸면 MJCF 만 고치면 되고**, 토크한계가 구조적으로 따라간다.
+
+| 위치 | foot | |
 |---|---|---|
-| `cpp/biped_control.hpp:46` `tau_peak8` | 96 | 12 × 8 (재기어 이전) |
-| `biped_wbic.py` `TAU_PEAK` | 96 | 위와 동일 (통일 유지) |
-| `pace/spec.yaml` | **100.8** | 12 × 8.4 — **물리적으로 맞는 값** |
-| MJCF `actuatorfrcrange` | **168** | 12 × 14 — **최초 14:1 시절 값** |
+| MJCF `actuatorfrcrange` | **100.8** | ★단일 출처 |
+| `cpp` `tau_peak8` | 100.8 | 폴백(생성자가 MJCF 로 덮어씀) |
+| `biped_wbic.py` `TAU_PEAK` | 100.8 | 폴백(`self.tau_peak` 이 MJCF 파생) |
+| `pace/spec.yaml` | 100.8 | 원래 맞았던 값 |
 
-- [ ] 실물 감속비 확정 후 통일. **96 은 4.8% 보수적(안전 방향)** 이라 급하진 않다.
-- [ ] ⚠ 96 → 100.8 은 **토크 포화 한계를 바꾼다.** T_STEP 튜닝이 바로 그 포화에서 나온
-      값이므로, 고치면 안정성 스윕을 **다시 돌려야 한다.** 통일과 같은 커밋에서 하지 말 것.
+**재검증 — 결과가 변경 전과 완전히 동일했다:**
+C++ 15.00s 무낙상 x=2.185 tilt 2.8° · Python 속도스윕 8/8 · 파리티 2.5e-11 / 3.2e-12
+(수치가 비트 단위로 같다 = **foot 96 한계는 시험한 시나리오에서 한 번도 안 걸렸다**.)
+
+> ⚠ 다만 "안 걸렸다" 는 **시험한 범위 안에서**다. 더 공격적인 기동(빠른 스윙·큰 외란·
+> 착지 충격)에서는 걸릴 수 있고, 그때는 4.8% 더 넓어진 한계가 유리하게 작용한다.
 
 ---
 
@@ -356,7 +366,7 @@ cd cpp && LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_sim ../biped_from_quad.
 | 나머지 6축 | 기구 조립됨, 배선·검증 미확인 |
 | C++ 컨트롤러 (sim) | ✅ **튜닝 기준** — 실측 물리 + 재스윕 완료 (ROTOR_I 7.4e-4 · T_STEP 0.38) |
 | Python 컨트롤러 (탐색용) | ✅ **C++ 로 통일 완료**(2026-08-06) — 속도대역 8/8 · 파리티 OK (§8) |
-| foot `tau_peak` | ⚠ 96 vs 100.8 vs 168 세 값 공존, 감속비와 불일치 (§8-d) |
+| foot `tau_peak` | ✅ **100.8 로 정합 + MJCF 단일출처화**(quad 패턴) (§8-d) |
 | **C++ → SHM 실기배포** | ❌ **미착수** — `cpp/src` 에 SHM 배선 0 건. 핸드오프 #4 (§9) |
 
 관련 문서: [pace/RESULTS.md](pace/RESULTS.md) (§10 데이터시트, §11 다리 조립 후) ·

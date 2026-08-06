@@ -24,9 +24,9 @@ W_POST    = 1.0          # 관절 posture 가중(기본)
 W_ANKLE   = 20.0         # 발목(foot) posture 가중 ↑ (whip 억제)
 MU, MU_MARGIN = 0.8, 0.707     # μ_eff = 0.566 (덜 보수적, 뷰어 피드백. MJCF 물리 1.6)
 LAMZ_MIN  = 1.0
-# ★mature 동일 환경(params.html): peak hip/thigh 84·calf 126·foot 96(8:1 재기어)
-TAU_PEAK  = np.array([84, 84, 126, 96, 84, 84, 126, 96.0])     # HL/HR × (hip,thigh,calf,foot)
-# GEARBOX(반사관성) — quad_control.hpp:92-103 동일. armature=Irot·N² + damping + frictionloss
+# ⚠ 하위호환 폴백일 뿐이다. **실제로 쓰이는 값은 self.tau_peak(MJCF 에서 파생)** 이다.
+#   MJCF 를 고치면 자동으로 따라가므로 여기를 손댈 일은 없다. (foot 100.8 = 12Nm × 8.4)
+TAU_PEAK  = np.array([84, 84, 126, 100.8, 84, 84, 126, 100.8])   # HL/HR × (hip,thigh,calf,foot)
 # ── 액추에이터 물리 — ★2026-08-06 C++ 기준으로 통일 (cpp/src/biped_control.hpp:51-61) ──
 #   출처: emb/pace/RESULTS.md — HL_hip·HR_hip 을 PACE 처프로 실측 식별.
 #   ⚠ 이 값들은 **C++ 가 기준**이다. 여기서 재유도하거나 되돌리지 말 것.
@@ -61,6 +61,15 @@ class BipedWBIC:
         self.d = mujoco.MjData(self.m)
         self.nv, self.nu = self.m.nv, self.m.nu          # 14, 8
         self.K = 2
+        # ★per-joint peak 토크를 **MJCF jnt_actfrcrange 에서 읽는다**(quad 와 동일 패턴:
+        #   quad/quad_mpc_wbic_17dof.py:209, quad/cpp/src/quad_control.hpp:81).
+        #   하드코딩하면 감속비를 바꿀 때 따라가지 않는다 — 실제로 GEAR foot 8→8.4 로
+        #   고쳤을 때 tau_peak 96(=12Nm×8)이 그대로 남아 tau_peak÷gear 가 11.43 이 됐었다.
+        #   MJCF 를 단일 출처로 삼아 그 어긋남을 구조적으로 막는다.
+        self.tau_peak = np.array([self.m.jnt_actfrcrange[j, 1]
+                                  if self.m.jnt_actfrcrange[j, 1] > 0 else 1e8
+                                  for j in range(self.m.njnt)
+                                  if self.m.jnt_type[j] == mujoco.mjtJoint.mjJNT_HINGE])[:self.nu]
         self.sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in ['HL_sphere', 'HR_sphere']]
         self.fbody = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]
@@ -207,7 +216,7 @@ class BipedWBIC:
         tau = M[6:, :] @ qdd + h[6:]
         for k in range(K):
             tau -= Js[k][:, 6:].T @ x[nv + 3*k:nv + 3*k + 3]
-        d.ctrl[:] = np.clip(tau, -TAU_PEAK, TAU_PEAK)
+        d.ctrl[:] = np.clip(tau, -self.tau_peak, self.tau_peak)
         return True
 
 

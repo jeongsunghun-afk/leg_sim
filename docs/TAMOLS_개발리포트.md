@@ -121,7 +121,7 @@ tamols-rl(ianpedroza, Drake)에 02_Leg 파라미터(m=37.9·nominal 0.52·μ0.6�
 자산: `quad/cpp/tamols/`(C++ 솔버)·`quad/cpp/src/terrain_map.hpp`(footScore/edgeSDF/slope)·`quad/tamols/tamols_02leg.py`(Drake 레퍼런스)·`quad/mjcf/quad_tamols_gap.mjcf`(갭 검증 씬). TOWR(오프라인 발판최적화)는 우리 로봇 ROM서 미수렴(상세=`TOWR_개발리포트.md`).
 **결론**: C++ TAMOLS 솔버는 완성(실시간+cold-start)이나 폐루프 크로싱은 A 추종기서 실패 = §1과 동일하게 **병목=추종기** → TAMOLS/TOWR 계획 재사용 + **RL 추종(DTC)** 이 남은 길.
 
-## 8. Go2 이식 교차검증 (2026-08-03) — 종합 리포트: `go2_portability.html`
+## 8. Go2 이식 교차검증 (2026-08-03) — 종합: `pipeline_tamols.html` §6
 
 "우리 로봇(02_Leg)이 문제냐, 접근법이 문제냐"를 가리려 제어기를 **Unitree Go2**(12-DOF·점발·15kg)에 이식. 핵심만:
 
@@ -133,4 +133,4 @@ tamols-rl(ianpedroza, Drake)에 02_Leg 파라미터(m=37.9·nominal 0.52·μ0.6�
 - **★발판 = solve_fast 버리고 Raibert+footScore(selectFoot)**: solve_fast가 발판 통째 최적화하면 뭉침·충돌 → **Raibert 기본 + 지형 nudge만**(FOOT_NUDGE)로 02_Leg 스테핑 **완주 falls=0**. (사용자 통찰)
 - **험지 = 직교 2축**: **배치**(스테핑·갭 = selectFoot 해결) / **등반**(경사·오르막 = 추진 필요, 미해결). Go2 10°램프·계단 전복은 배치 아닌 **등반**(base-pitch 협조·추진) 문제 = 모델기반의 진짜 벽 → RL.
 
-**커밋**: cea6632·c4c1722·ea3d9d0·e5e80e7·ed90307. 모두 env-gated, 02_Leg 배포경로 무영향. 상세=`go2_portability.html`.
+**커밋**: cea6632·c4c1722·ea3d9d0·e5e80e7·ed90307. 모두 env-gated, 02_Leg 배포경로 무영향. 상세=`pipeline_tamols.html` §6.

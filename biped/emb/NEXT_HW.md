@@ -6,10 +6,9 @@
 **순서가 있다.** 3(JOG 각축 검증)이 안 끝나면 5~7 은 의미가 없거나 위험하다.
 숫자를 건너뛰지 말 것.
 
-> ⚠⚠ **stand/walk 는 9 번을 끝내기 전까지 금지.**
-> **실기배포는 C++ 기준**인데 **C++→SHM 구간이 아직 없다**(§9).
-> (§8 Python 통일은 2026-08-06 완료 — sim 8/8 통과.)
-> jog/home/hold 는 이와 무관하니 3~7 은 그대로 진행해도 된다.
+> ⚠⚠ **stand/walk 는 §3 JOG 캘리브레이션 전까지 금지.** sign 이 틀리면 반대로 간다.
+> §8(Python↔C++ 통일)·§9(C++→SHM 배포)는 2026-08-06 **구현 완료**이고 mock 검증까지 됐다.
+> 남은 건 실기 검증뿐 — 3~7 을 순서대로 끝낸 뒤 §9 의 실기 체크리스트로 갈 것.
 
 ---
 
@@ -351,79 +350,81 @@ C++ 15.00s 무낙상 x=2.185 tilt 2.8° · Python 속도스윕 8/8 · 파리티 
 즉 **코드는 원래 점발을 쓰고 있었고 선언만 틀렸던 것** — 동작 변경이 아니다.
 - [ ] §9 C++ 포팅 시 **어느 MJCF 를 실을지 명시**할 것(점발). 지금은 기본값에 의존한다.
 
-## 9. ★★실기배포는 C++ 기준 — 그런데 SHM 구간이 아직 없다 (핸드오프 미완료 #4)
+## 9. ✅ C++ → SHM 실기배포 구현 완료 (2026-08-06) — **실기 검증만 남음**
 
-**실기에 나가는 것은 C++ 다.** Python 은 탐색·프로토타이핑 전용이고 실기에 붙지 않는다.
-그런데 **`cpp/src` 에 SHM 배선이 한 줄도 없다.**
-(`grep -rn "SHM\|bridge_\|RobotSharedMem" cpp/src cpp/CMakeLists.txt` → **0 건**)
+`cpp/src/biped_deploy.cpp` + `cpp/src/deploy_hw.hpp` 신규. `biped_sim.cpp` 의 `mj_step`
+자리에 **실모터 read/write** 를 넣은 것이다.
 
-현재 C++ 타깃은 전부 시뮬/검증용이다:
+```
+HW.read → 관절매핑(deg→rad) → 추정(leg-odom) → 모델 주입 → mj_forward
+       → BipedControl.control → d->ctrl(토크) → 관절매핑(rad→deg) → HW.write_mit
+```
 
-| 타깃 | 용도 | 상태 |
-|---|---|---|
-| `biped_sim` | MJCF 로드 → BipedControl → `mj_step` 헤드리스 | ✅ 로봇에서 빌드·실행 OK (vx0.15) |
-| `biped_view` | 뷰어 | ✅ |
-| `biped_mpc_parity` / `biped_wbic_parity` | Python 대조 | ✅ (단 §8 때문에 현재 불일치) |
-| **실기 배포 타깃** | — | ❌ **없음** |
+빌드·실행:
+```bash
+cd ~/simulation/biped/cpp/build && cmake --build . --target biped_deploy -j4
+cd ~/simulation/biped/cpp
+LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_deploy          # 실기(SHM)
+LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_deploy --mock   # 하드웨어 없이 로직 검증
+```
 
-`deploy_loop.hpp` 는 이름과 달리 **sim 전용**이다 — 지연·추정·보상을 모사하지만 물리는
-`mj_step`(호출자)이다(`deploy_loop.hpp:4,103`).
+### 설계 결정
 
-### 할 일
+- **설정을 Python 앱과 같은 파일에서 읽는다** (`emb/config/biped_emb.yaml`).
+  다음 주 JOG 캘리브레이션이 `sign`/`offset_deg` 를 고칠 텐데 C++ 가 따로 하드코딩하면
+  그때부터 두 실행체가 **다른 로봇을 제어**하게 된다. 의존성 없이 flow-mapping 서브셋만 파싱.
+- **libbipedshm 은 dlopen**(링크 아님). Pi 전용 라이브러리라 링크 의존을 만들면 노트북
+  빌드가 통째로 깨진다. 실행 시점에만 필요하게 뒀다(`-ldl` 만).
+- **MJCF 는 점발 `biped_from_quad.mjcf` 로 명시**(§8-g). 기본값 의존 제거.
+- **모드는 off/hold/stand/walk.** jog·home 은 Python 앱 담당.
+  ⚠ **writer 는 한 번에 하나만** — 둘을 동시에 띄우지 말 것.
+- **접촉**: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
+  힘센서 없는 운동학 오도메트리의 표준 관행이나, 힘센서가 생기면 교체할 것.
 
-- [ ] `mj_step` 자리에 **실모터 read/write** 를 넣는 HardwareInterface 작성.
-      기존 `hal/shm_bridge.cpp`(C ABI)를 그대로 링크하면 된다 —
-      `bridge_init/read/write_mit/enable` 이 이미 있고 Python 쪽에서 검증된 경로다.
-- [ ] **변환 계약** (핸드오프 #4 명시):
-      SHM(deg) ↔ 컨트롤러(rad) · **Kp/Kd 는 Nm/rad 그대로 전달** · `tau_ff` 는 `fTorque`
-- [ ] 안전장치를 Python 앱(`app/biped_emb.py`)에서 이식 — 이미 실측으로 다듬어진 것들이다:
-      워치독 · tilt/토크/속도 E-stop(래치 포함) · **종료 시 limp 반복기록**
-      (⚠ `bridge_enable(0)` 만으로는 정지가 아니다. Kp=Kd=0 을 실제로 써야 한다)
-- [ ] 실기 배포 타깃을 `CMakeLists.txt` 에 추가
-- [ ] **`app/biped_emb.py` 의 Python stand/walk 분기 제거** — 배포가 C++ 기준으로 확정된
-      이상 이 분기는 실기에서 돌아선 안 되는 경로다. 지금은 Pi 에 mujoco·qpsolvers 가
-      없어서 import 실패로 hold 폴백되는데(`biped_emb.py:287`), 그건 **설계가 아니라 우연**이다.
-      코드에서 명시적으로 막을 것.
-      → 정리 후 Python 앱의 역할은 **off/jog/home/hold(각축 검증·복귀)** 로 한정된다.
+### 안전장치 — 전부 `biped_emb.py` 에서 이식(재발명 금지)
 
-### 역할 정리 (혼동 방지)
-
-| | 역할 | 실기에 나가나 |
-|---|---|---|
-| Python `biped_*.py` | 알고리즘 탐색·프로토타이핑 (sim) | ❌ |
-| Python `emb/app/biped_emb.py` | **off/jog/home/hold** — 각축 검증·홈복귀 | ✅ (모델기반 제외) |
-| C++ `cpp/src` | 튜닝 기준 + **stand/walk 실기배포** | ✅ (§9 포팅 후) |
-
-### 해소된 항목
-
-- ~~foot 감속비 불일치~~ → **8.4 로 확정**. `biped_control.hpp:60` 에
-  *"GEAR foot 8 → 8.4 (총 감속비 8.4 = 7×1.2 추가단, 사용자 확인 2026-08-05)"*.
-  `pace/spec.yaml`(8.4)도 일치. **`biped_wbic.py` 의 8.0 과 `quad/PARAMS.md` 의 14.0 이 stale.**
-
-### 남은 확인 (5초)
-
-- [ ] **calf/foot 모터 라벨 육안 확인** — "8축 전부 RO100 동일 모터" 가설의 마지막 고리.
-      `tau_peak ÷ gear` 가 8축 모두 12.0 Nm 로 일치하지만, 그 수치 자체가 `12 × N` 으로
-      계산된 값일 수 있어 순환일 여지가 있다. 라벨 한 번 보면 끝난다.
-
----
-
-## 참고 — 상태 요약 (2026-08-06 기준)
-
-| 항목 | 상태 |
+| | 동작 |
 |---|---|
-| 액추에이터 식별(다리 미장착) | ✅ 완료 — ROTOR_I 7.4e-4 · JFRIC · JDAMP · 백래시 · FRF · 데이터시트 대조 |
-| `I_link` | ✅ 8축 추출 완료(`extract_ilink.py`), spec.yaml 반영 |
-| spec.yaml TODO | ✅ 0 개 |
-| home 모드 | 코드 완료, **실기 미검증** |
-| `hold_others` | 코드 완료, **실기 미검증** |
-| `installed_channels` | 코드 완료, 값은 `[0,4]` (배선 확인 후 갱신) |
-| sign / offset | hip 2축 sign 만 확정. offset 전축 미확정 |
-| 나머지 6축 | 기구 조립됨, 배선·검증 미확인 |
-| C++ 컨트롤러 (sim) | ✅ **튜닝 기준** — 실측 물리 + 재스윕 완료 (ROTOR_I 7.4e-4 · T_STEP 0.38) |
-| Python 컨트롤러 (탐색용) | ✅ **C++ 로 통일 완료**(2026-08-06) — 속도대역 8/8 · 파리티 OK (§8) |
-| foot `tau_peak` | ✅ **100.8 로 정합 + MJCF 단일출처화**(quad 패턴) (§8-d) |
-| **C++ → SHM 실기배포** | ❌ **미착수** — `cpp/src` 에 SHM 배선 0 건. 핸드오프 #4 (§9) |
+| 워치독 | 명령 **내용 변화**로 생존 판정(파일이 읽히는지가 아니라). 두절 시 limp, 전이 로그 출력 |
+| tilt E-stop | `tilt_estop_deg` 초과 → limp·**래치** |
+| 토크 E-stop | `tau_trip_nm` 을 `tau_trip_ms` **연속** 초과 → limp·래치 (착지 충격 스파이크는 살림) |
+| 속도 E-stop | `vel_trip_dps` 초과 → **즉시** limp·래치 |
+| 래치 해제 | **명시적 off 명령으로만** |
+| 종료 limp | `enable(0)` + Kp=Kd=0 **25회 반복 기록**. 실패 시 "모터 전원 차단" 경고 |
+| 토크 클램프 | MJCF `actuatorfrcrange × tau_max_frac` — 컨트롤러 내부 클립과 별개의 상위 안전망 |
 
-관련 문서: [pace/RESULTS.md](pace/RESULTS.md) (§10 데이터시트, §11 다리 조립 후) ·
-[README.md](README.md) (각축 검증 절차) · `~/BIPED_EMB_HANDOFF.md` (Emb 결함·운용절차, git 밖)
+### 검증 (mock, 2026-08-06)
+
+| 검사 | 결과 |
+|---|---|
+| 설정 파싱 | 8관절 sign/offset/한계/게인 · `installed_channels` · safety 전부 |
+| 모드 FSM | off→hold→stand→walk→off **5/5** 전이 정상 |
+| 워치독 | 0.50s 두절에 트립 → `motors_on=false`, 복귀 시 해제 |
+| **E-stop 3종** | tilt 60° · 토크 20Nm · 속도 900dps **전부 발화 + 래치 + off 로 해제** |
+| **관절매핑 파리티** | 비자명 sign(±1 혼합)·offset 으로 C++ ↔ `joint_map.py` **50개 값 비트 단위 동일** |
+| 종료 limp | 25/25 기록 |
+| GUI 호환 | 기존 `teleop_gui_biped.py` 가 **수정 없이** C++ 상태를 읽어 렌더 |
+
+> ★E-stop 검증을 위해 `MockHw` 에 고장 주입을 넣었다(`FAULT_AT_S`/`FAULT_TILT_DEG`/
+> `FAULT_TAU_NM`/`FAULT_VEL_DPS`). **검증 안 된 안전장치는 없느니만 못하다** — 있다고
+> 착각하게 만들기 때문이다.
+
+### Python 앱에서 stand/walk 제거
+
+`app/biped_emb.py` 가 stand/walk 를 받으면 **FSM 진입 전에** hold 로 치환하고 안내를 낸다.
+- 종전엔 `model_ctrl`(Python) 분기가 살아 있었고 Pi 에 mujoco·qpsolvers 가 없어 import
+  실패로 hold 에 떨어졌다 — **설계된 차단이 아니라 우연**이라 그 둘을 설치하면 열렸다.
+- ⚠진입 **후**에 되돌리면 GUI 가 20ms 마다 stand 를 재전송할 때 hold→stand→hold 재전이가
+  무한 반복돼 로그가 폭주한다(실측 32KB/12s). 진입 전 치환 + 1회 안내로 865B.
+
+### ⚠ 남은 일 — 실기 검증
+
+- [ ] **첫 실행은 거치 상태에서, 사람이 보는 앞에서.** §0~3 을 먼저 끝낼 것
+      (특히 §3 JOG 캘리브레이션 — sign 이 틀리면 반대로 간다)
+- [ ] `./build/biped_deploy` 실기 기동 → off 에서 시작 → hold 로 자세 유지 확인
+- [ ] stand 진입 전에 **E-stop 이 실제로 도는지** 확인(손으로 기울여 tilt 트립)
+- [ ] leg-odom 추정이 실기에서 발산하지 않는지 (`est_x`/`est_z` 관찰)
+- [ ] ⚠ 접촉 추정이 게이트 위상 기반이라 **미끄러짐·헛디딤을 모른다.** 실기에서
+      추정 발산이 보이면 여기부터 의심할 것
+- [ ] 루프 주기 500Hz 유지되는지(Pi 부하). mock 은 500Hz 나왔으나 실기는 SHM I/O 가 붙는다
+

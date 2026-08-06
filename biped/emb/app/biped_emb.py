@@ -5,8 +5,9 @@
   jog   : per-axis 저속 위치 검증  ← 첫 딜리버러블(각축 확인)
   home  : 정해진 홈 자세로 S-curve 복귀(control/home.py) → 도달 후 그 자세 유지
   hold  : 현재자세 임피던스 홀드
-  stand : 모델기반 균형 서기(MPC+WBIC)   ← jog 검증 후
-  walk  : 모델기반 보행                    ← jog 검증 후
+  ★stand/walk 는 **이 앱이 처리하지 않는다** — 실기 배포는 C++ 기준이다.
+    cpp/build/biped_deploy 가 담당한다(emb/NEXT_HW.md §9). 여기서 받으면 hold 로 되돌린다.
+    ⚠모터 명령 writer 는 한 번에 하나만 — 둘을 동시에 띄우지 말 것.
 GUI(gui/teleop_emb.py)와 JSON 채널(/tmp/biped_cmd.json)로 디커플. 상태는 /tmp/biped_state.json 발행.
 
 실행:
@@ -198,7 +199,8 @@ def main():
     jog_goal = np.zeros(jm.n_leg)            # GUI 축별 목표각[deg]
     hold_ch  = np.zeros(jm.n_channel)        # hold 목표(채널)
     walk_cmd = {"v": 0.0, "vy": 0.0, "w": 0.0, "body_h": 0.38}
-    model = None                             # 모델기반 래퍼(lazy)
+    # ★model_ctrl(Python 모델기반)은 더 이상 쓰지 않는다 — 배포는 C++ 기준(§9).
+    model_warned = False                     # stand/walk 거부 안내를 한 번만 출력
 
     print(f"[biped_emb] backend={be_name} · ctrl_hz={cfg['meta']['ctrl_hz']} · CMD={CMD_PATH}")
     print("            모드: off/jog/hold(=지금) · stand/walk(=jog 검증 후). GUI로 조종.")
@@ -242,9 +244,25 @@ def main():
                       last_cmd_t = loop_t          # ★내용이 바뀐 경우에만 갱신(위 주석 참조)
                   new_mode = cmd.get("mode", fsm.mode)
                   if new_mode == "reset":
-                      if fsm.mode in FSM.MODEL_BASED and model is not None:
-                          model.reset(walk_cmd["body_h"])
                       jogger.reset(q_leg); new_mode = FSM.HOLD
+                  # ★stand/walk 는 이 앱의 역할이 아니다 — **실기 배포는 C++ 기준**(NEXT_HW.md §9).
+                  #   ⚠종전엔 model_ctrl(Python) 분기가 살아 있었고, Pi 에 mujoco·qpsolvers 가
+                  #     없어 import 실패로 hold 에 떨어졌다. 그건 **설계된 차단이 아니라 우연**이라
+                  #     그 둘을 설치하는 순간 열린다. 의존성에 안전을 맡기지 않고 여기서 막는다.
+                  #   ★FSM 진입 **이전**에 치환한다. 진입 후에 되돌리면 GUI 가 20ms 마다
+                  #     stand 를 재전송할 때 hold→stand→hold 재전이가 무한 반복돼 로그가 폭주한다.
+                  if new_mode in FSM.MODEL_BASED:
+                      if not model_warned:
+                          model_warned = True
+                          print(f"[biped_emb] ⛔ '{new_mode}' 는 이 앱이 처리하지 않는다 → hold 유지.\n"
+                                f"    실기 stand/walk 는 C++ 배포 바이너리가 담당한다:\n"
+                                f"      cd {os.path.join(BIPED, 'cpp')} && "
+                                f"LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_deploy\n"
+                                f"    ⚠ 모터 명령 writer 는 한 번에 하나만 — 이 앱을 먼저 종료할 것.",
+                                flush=True)
+                      new_mode = FSM.HOLD
+                  elif new_mode != FSM.HOLD:
+                      model_warned = False        # 다른 모드로 갔다 오면 다시 한 번 알린다
                   # ★E-stop 래치 해제는 명시적 off 명령으로만. 그 전까지 모드변경 무시.
                   if estop_latched:
                       if new_mode == FSM.OFF:
@@ -276,18 +294,6 @@ def main():
                                             for i in range(jm.n_leg)), flush=True)
                       if fsm.entered(FSM.HOLD):
                           hold_ch = raw.q_deg.copy()
-                      if fsm.is_model_based():
-                          if model is None:
-                              try:
-                                  sys.path.insert(0, os.path.join(EMB, "control"))
-                                  from model_ctrl import ModelController
-                                  print("[biped_emb] 모델기반 컨트롤러 로드 중(mujoco+qpsolvers)…")
-                                  model = ModelController(BIPED, os.path.join(BIPED, "deploy"), tau_frac)
-                              except Exception as e:
-                                  print(f"[biped_emb] ❌ 모델 로드 실패 ({e}) → hold 폴백")
-                                  fsm.set(FSM.HOLD); hold_ch = raw.q_deg.copy()
-                          if model is not None and fsm.is_model_based():
-                              model.reset(walk_cmd["body_h"])
 
           # ── 워치독: 명령 끊기면 안전(limp) ──
           #   ★전이를 출력한다. 조용히 enable(False) 만 하면 워치독이 도는지 운용 중에도
@@ -377,14 +383,8 @@ def main():
               extra["home_at_goal"] = homer.at_goal(q_leg, home_settle)
           elif fsm.mode == FSM.HOLD:
               hw.write_hold(hold_ch)
-          elif fsm.mode in FSM.MODEL_BASED and model is not None:
-              q, dq, quat, gyro, acc, contact = hw.ctrl_state()
-              model.set_cmd(walk_cmd["v"], walk_cmd["vy"], walk_cmd["w"],
-                            walk_cmd["body_h"], walking=(fsm.mode == FSM.WALK))
-              tau = model.step(q, dq, quat, gyro, acc, contact)
-              hw.write_torque(q, dq, tau)
-              ep, ev = model.est_state
-              extra["est_x"] = round(float(ep[0]), 3); extra["est_z"] = round(float(ep[2]), 3)
+          # ★stand/walk 디스패치는 없다 — 진입에서 hold 로 되돌린다(위 참조).
+          #   실기 모델기반 제어는 cpp/build/biped_deploy 담당(NEXT_HW.md §9).
 
           # ── 상태 발행(~20Hz) + HUD hz (실제 루프 주기) ──
           period = loop_t - prev_loop_t; prev_loop_t = loop_t

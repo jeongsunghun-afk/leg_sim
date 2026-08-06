@@ -28,6 +28,13 @@ find_library(MUJOCO_LIB  mujoco PATHS ${ENV_PREFIX}/lib REQUIRED)
 add_executable(biped_sim src/biped_sim.cpp)
 target_include_directories(biped_sim PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${MUJOCO_INCLUDE})
 target_link_libraries(biped_sim PRIVATE ${EIQP_LIB} ${MUJOCO_LIB})
+
+# ── ★실기 배포 (§9) — mj_step 자리에 실모터 read/write ────────────────────────
+#   libbipedshm 은 **링크하지 않는다**(dlopen). Pi 전용 라이브러리라 링크 의존을 만들면
+#   노트북 빌드가 통째로 깨진다. 실행 시점에만 필요하게 둔다 → -ldl 만 건다.
+add_executable(biped_deploy src/biped_deploy.cpp)
+target_include_directories(biped_deploy PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${MUJOCO_INCLUDE})
+target_link_libraries(biped_deploy PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} dl)
 target_link_directories(biped_sim PRIVATE ${ENV_PREFIX}/lib)
 set_target_properties(biped_sim PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
 

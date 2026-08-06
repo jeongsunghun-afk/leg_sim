@@ -27,9 +27,24 @@ LAMZ_MIN  = 1.0
 # ★mature 동일 환경(params.html): peak hip/thigh 84·calf 126·foot 96(8:1 재기어)
 TAU_PEAK  = np.array([84, 84, 126, 96, 84, 84, 126, 96.0])     # HL/HR × (hip,thigh,calf,foot)
 # GEARBOX(반사관성) — quad_control.hpp:92-103 동일. armature=Irot·N² + damping + frictionloss
-GEAR    = np.array([7.0, 7.0, 10.5, 8.0])   # hip,thigh,calf,foot (배포=foot 14→8:1 재기어)
-ROTOR_I = 1e-4
-JDAMP, JFRIC = 0.1, 0.5
+# ── 액추에이터 물리 — ★2026-08-06 C++ 기준으로 통일 (cpp/src/biped_control.hpp:51-61) ──
+#   출처: emb/pace/RESULTS.md — HL_hip·HR_hip 을 PACE 처프로 실측 식별.
+#   ⚠ 이 값들은 **C++ 가 기준**이다. 여기서 재유도하거나 되돌리지 말 것.
+#     동기화 방향은 C++ → Python (emb/NEXT_HW.md §8). 종전 Python 값
+#     (ROTOR_I 1e-4 / JDAMP 0.1 / JFRIC 0.5 / foot 8.0)은 **실측·안정성 스윕 이전** 값이다.
+#
+#   ROTOR_I : 7.652e-4(HL) / 7.121e-4(HR) → 7.4e-4. 구 placeholder 1e-4 는 7.4배 과소였다.
+#             전 관절이 동일 모터(RO100)+공통 7:1 이고 관절별 추가 감속단만 붙으므로
+#             ROTOR_I(모터축 관성)는 **전 관절 공통 상수**다. armature = ROTOR_I·N².
+#   JDAMP   : 0.09 — 처프값. 등속스윕은 속도가 낮아 점성이 신호에 안 잡힌다(HR 은 음수).
+#   JFRIC   : 0.38 — 처프값(동적). 저속 정지·유지는 0.50~0.52 지만 Stribeck 때문이고
+#             보행은 동적 영역이라 처프값이 대표값이다.
+#   ⚠ 실측은 hip 2축·**다리 미장착** 상태다. thigh/calf/foot 의 JDAMP/JFRIC 은 감속단이
+#     늘면 마찰도 늘어 달라진다(ROTOR_I 와 달리 공통 상수가 아님) → 장착 후 재측정.
+GEAR    = np.array([7.0, 7.0, 10.5, 8.4])   # hip,thigh,calf,foot
+                                            # ★foot 8.0→8.4 (총 8.4 = 7×1.2 추가단, 2026-08-05 확인)
+ROTOR_I = 7.4e-4
+JDAMP, JFRIC = 0.09, 0.38
 
 # home posture — ★body 낮춤(mild crouch, 뷰어 피드백): 무릎 굽혀 IK 특이점 회피(legh~0.5, base 0.48).
 # ★얕은 crouch가 sweet spot(12.8s): deep crouch(legh0.44)=과함4.6s·taller(0.58)=4.8s. hip=0.

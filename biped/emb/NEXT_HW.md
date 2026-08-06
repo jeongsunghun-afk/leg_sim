@@ -6,9 +6,10 @@
 **순서가 있다.** 3(JOG 각축 검증)이 안 끝나면 5~7 은 의미가 없거나 위험하다.
 숫자를 건너뛰지 말 것.
 
-> ⚠⚠ **stand/walk 는 8~9 번을 끝내기 전까지 금지.**
-> **실기배포는 C++ 기준**인데 C++→SHM 구간이 아직 없고(§9), Python 은 C++ 튜닝값을
-> 아직 못 받았다(§8). jog/home/hold 는 이와 무관하니 3~7 은 그대로 진행해도 된다.
+> ⚠⚠ **stand/walk 는 9 번을 끝내기 전까지 금지.**
+> **실기배포는 C++ 기준**인데 **C++→SHM 구간이 아직 없다**(§9).
+> (§8 Python 통일은 2026-08-06 완료 — sim 8/8 통과.)
+> jog/home/hold 는 이와 무관하니 3~7 은 그대로 진행해도 된다.
 
 ---
 
@@ -171,24 +172,38 @@ Kp=Kd=0 이라 토크가 자기제한되지 않는다. `torque_mode.tau_max_nm`(
 > ROTOR_I 7.4e-4 는 낙상 스윕으로 얻은 값이고, Python 의 0.24 / 1e-4 는 그 스윕
 > **이전** 값이다.
 
-| 파라미터 | **C++ = 기준** | Python (맞춰야 함) | armature |
+갈렸던 6개 (2026-08-06 **통일 완료**, §8-a):
+
+| 파라미터 | **C++ = 기준** | Python (구값) | armature 영향 |
 |---|---|---|---|
 | `ROTOR_I` | **7.4e-4** | 1e-4 | hip 0.0363 vs **0.0049** |
 | `JDAMP` / `JFRIC` | **0.09 / 0.38** | 0.1 / 0.5 | 작음 |
 | `GEAR` foot | **8.4** | 8.0 | foot 0.0522 vs 0.0064 |
-| `TAU_PEAK` foot | **100.8** | 96 | |
 | `T_STEP` | **0.38** | 0.24 | ★결정적 |
 | `K_RETURN` | **0.15** | 0.45 | |
 
-**왜 Python 도 맞춰야 하나** — 배포가 C++ 기준이어도 Python 을 방치하면 두 가지가 깨진다:
+> `TAU_PEAK` foot 은 **C++·Python 둘 다 96** 이라 갈린 항목이 아니다.
+> 다만 그 96 자체가 감속비와 안 맞는다 → §8-d.
 
-1. **파리티 검증이 지금 불능이다.** `dump_biped_wbic.py` → `biped_wbic_parity`,
-   `dump_biped_mpc.py` → `biped_mpc_parity` 로 Python↔C++ 수치를 대조하는 도구가 이미
-   있는데, 물리 상수가 서로 달라 **지금 돌리면 무조건 불일치**가 난다. 즉 **앞으로의
-   이식(Python→C++)을 검증할 수단 자체가 죽어 있다.** 이게 주된 이유다.
-2. **Python 에서 하는 탐색이 헛돈다.** 다음 알고리즘 개선을 Python 에서 실험할 때
-   armature 가 7.4배 과소한 모델 위에서 튜닝하면, 그 결과는 C++ 로 이식하는 순간
-   성립하지 않는다(C++ 가 이미 겪은 2.18s 낙상이 그 사례다).
+**왜 Python 도 맞춰야 하나** — **Python 에서 하는 탐색이 통째로 헛돌기 때문**이다.
+armature 가 7.4배 과소한 모델 위에서 튜닝하면 그 결과는 C++/실기로 넘어가는 순간
+성립하지 않는다. 2026-08-06 실측(§8-b)으로 증명됐다:
+
+| 물리 | 보행 | 결과 |
+|---|---|---|
+| ROTOR_I 1e-4 (구) | T_STEP 0.24 (구) | 15s 무낙상 tilt 8.8° — **"잘 되는 것처럼 보인다"** |
+| ROTOR_I 7.4e-4 (실측) | T_STEP 0.24 (구) | **2.12s 낙상** tilt 66° |
+| ROTOR_I 7.4e-4 (실측) | T_STEP 0.38 (C++) | 15s 무낙상 tilt 5.4° ✅ |
+
+즉 구 Python 에서 "안정적"이라고 결론 낸 것들은 **실기에서 성립한다는 보장이 전혀 없다.**
+
+> ⚠ **오해 정정 (2026-08-06)**: 이 문서 초판은 "물리 상수가 갈려서 파리티 검증이
+> 불능이다" 를 주된 이유로 적었는데 **틀렸다.** `dump_biped_*.py` 는 `M`·`h`·`Jc`·
+> `tau_peak`·`gains` 를 **Python 이 계산해서 C++ 에 먹이는** 구조라, C++ 는 Python 의
+> M(=armature 가 이미 반영된)을 그대로 쓴다. 그래서 파리티 도구는 **알고리즘 일치만**
+> 검증하고 물리 상수 차이는 원리적으로 못 잡는다.
+> 실측으로 확인: 구 상수(1e-4/0.24)로 덤프해도 파리티 통과(오차 5.8e-12).
+> ⇒ **파리티 OK 는 "상수가 같다" 를 뜻하지 않는다.** 상수 일치는 별도로 눈으로 볼 것.
 
 > ℹ️ **오해 정정**: `app/biped_emb.py` 의 stand/walk 는 Python `model_ctrl` 에 물려 있지만,
 > Pi 에 `mujoco`·`qpsolvers` 가 **미설치**라 import 가 실패하고 **hold 폴백**된다
@@ -207,22 +222,66 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
 이후 leg-odom 야코비안 편향을 제거하며 T_STEP 0.32→**0.38**, K_RETURN 0.45→**0.15** 로 재스윕
 (상세: `cpp/STABILITY_MAP.md`).
 
-### 할 일 — C++ 값을 Python 으로 복사 (탐색이 아니라 받아쓰기다)
+### 8-a. ✅ 통일 완료 (2026-08-06)
 
-- [ ] `biped_wbic.py:31-32` — `ROTOR_I` 1e-4 → **7.4e-4**, `JDAMP/JFRIC` 0.1/0.5 → **0.09/0.38**
-- [ ] `biped_wbic.py` `GEAR` foot 8.0 → **8.4**, `TAU_PEAK` foot 96 → **100.8**
-- [ ] `biped_step.py:20,26` — `T_STEP` 0.24 → **0.38**, `K_RETURN` 0.45 → **0.15**
-      (출처는 전부 `cpp/src/biped_control.hpp:22-61`. 값을 재유도하지 말고 그대로 가져올 것)
-- [ ] **파리티 회복 확인** (이게 성공 판정이다):
-      `python dump_biped_wbic.py > /tmp/biped_wbic_dump.txt && ./build/biped_wbic_parity`
-      `python dump_biped_mpc.py  > /tmp/biped_mpc_dump.txt  && ./build/biped_mpc_parity`
-- [ ] **게이트 회귀** — Pi 엔 `qpsolvers`·`mujoco` 가 없다(scipy 만 있음). 노트북에서.
-      C++ 와 같은 조건(vx=0.15, 15s 무낙상, tilt 2.7°)이 Python 에서도 재현되는지.
-- [ ] ⚠ **속도대역 전반 재검증** — C++ 주석이 직접 경고한다:
-      *"vx=0.15 단일 조건의 4점 스윕으로 잡은 값이다."* 이식 후 속도 스윕할 것.
-      (`cpp/sweep_stability.sh` · `cpp/STABILITY_MAP.md` 참조)
-- [ ] `quad/PARAMS.md:147` 갱신 — *"기어박스(gear·ROTOR_I·JDAMP·JFRIC) 동일 (검증됨)"* 이
-      **지금은 거짓**이다. 파리티 회복 후 다시 참이 된다.
+- [x] `biped_wbic.py` — `ROTOR_I` 1e-4 → **7.4e-4** · `JDAMP/JFRIC` 0.1/0.5 → **0.09/0.38**
+      · `GEAR` foot 8.0 → **8.4**
+- [x] `biped_step.py` — `T_STEP` 0.24 → **0.38** · `K_RETURN` 0.45 → **0.15**
+- [x] 전수 대조 결과 **나머지 22개 상수는 원래 일치**했다 (DS_FRAC · STEP_H · K_CAP ·
+      CAP_CLAMP · SW_KP/KD · K_RET_LAT · K_LAT · SPREAD · GAP_MIN/MAX · SS_* · TRIG_Y ·
+      GVEC · STANCE_KD · W_ORI/POST/ANKLE · MU_EFF · LAMZ_MIN · MPC_N/DT · head_lead · Q_HOME).
+      갈린 건 위 6개뿐이었다.
+
+### 8-b. ✅ 검증 결과 (2026-08-06, MuJoCo 3.9.0)
+
+| 검사 | 결과 |
+|---|---|
+| C++ 기준 재현 (`biped_sim` vx0.15 15s) | 15.00s 무낙상 · x=2.185 · tilt 2.8° |
+| **Python 통일 후** (동일 조건) | **15.00s 무낙상 · x=2.197 · tilt 3.5°** (전진거리 0.5% 차) |
+| **속도대역 스윕** (12s × 8조건) | **8/8 통과** — 정지 · 전진 0.05/0.10/0.15/0.20 · 후진 −0.10 · 측방 0.05 · 선회 0.2 (tilt 전부 5~6°) |
+| **반증**: 실측물리 + 구 T_STEP 0.24 | **2.12s 낙상** — C++ 기록 2.18s 를 3% 오차로 재현 ✅ |
+| WBIC 파리티 | 오차 2.5e-11 ✅ |
+| MPC 파리티 | 오차 3.2e-12 ✅ |
+
+⇒ **실측 하드웨어 값에서 제어가 정상 동작한다.** C++ 이 경고했던
+*"vx=0.15 단일 조건으로 잡은 값"* 리스크도 속도대역 스윕으로 해소됐다(단 sim 기준).
+
+재현 (Pi):
+```bash
+~/.venvs/mj/bin/python -c "import mujoco; print(mujoco.mj_versionString())"   # 3.9.0 이어야 함
+cd ~/simulation/biped && VX=0.15 T=15 ~/.venvs/mj/bin/python biped_mpc_wbic.py
+cd cpp && LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_sim ../biped_from_quad.mjcf 0.15 15
+```
+⚠ **MuJoCo 3.9.0 을 쓸 것.** 3.11 은 `d.qM` → `d.M` 으로 API 가 바뀌어 Python 컨트롤러가
+`AttributeError` 로 죽는다(`mj_fullM` 시그니처도 바뀜).
+
+### 8-c. 남은 일
+
+- [ ] `quad/PARAMS.md:147` 의 표(`Irot 1e-4` / `jdmp·jfrc 0.1/0.5`)가 여전히 구값이다 → 갱신.
+- [ ] ★foot `tau_peak` 불일치 — 아래 8-d.
+
+### 8-d. ⚠ 미해결: foot `tau_peak` 이 감속비와 안 맞는다
+
+`tau_peak ÷ gear` 는 모터 피크토크(12.0 Nm)여야 하는데 foot 만 어긋난다:
+
+| 축 | gear | tau_peak | ÷gear |
+|---|---|---|---|
+| hip · thigh | 7.0 | 84 | 12.00 ✅ |
+| calf | 10.5 | 126 | 12.00 ✅ |
+| **foot** | **8.4** | **96** | **11.43** ❌ (12×8.4 = **100.8** 이어야) |
+
+`GEAR` foot 을 8→8.4 로 고칠 때 `tau_peak` 이 따라가지 않았다. 네 군데가 전부 다르다:
+
+| 위치 | foot 값 | 유래 |
+|---|---|---|
+| `cpp/biped_control.hpp:46` `tau_peak8` | 96 | 12 × 8 (재기어 이전) |
+| `biped_wbic.py` `TAU_PEAK` | 96 | 위와 동일 (통일 유지) |
+| `pace/spec.yaml` | **100.8** | 12 × 8.4 — **물리적으로 맞는 값** |
+| MJCF `actuatorfrcrange` | **168** | 12 × 14 — **최초 14:1 시절 값** |
+
+- [ ] 실물 감속비 확정 후 통일. **96 은 4.8% 보수적(안전 방향)** 이라 급하진 않다.
+- [ ] ⚠ 96 → 100.8 은 **토크 포화 한계를 바꾼다.** T_STEP 튜닝이 바로 그 포화에서 나온
+      값이므로, 고치면 안정성 스윕을 **다시 돌려야 한다.** 통일과 같은 커밋에서 하지 말 것.
 
 ---
 
@@ -296,7 +355,8 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
 | sign / offset | hip 2축 sign 만 확정. offset 전축 미확정 |
 | 나머지 6축 | 기구 조립됨, 배선·검증 미확인 |
 | C++ 컨트롤러 (sim) | ✅ **튜닝 기준** — 실측 물리 + 재스윕 완료 (ROTOR_I 7.4e-4 · T_STEP 0.38) |
-| Python 컨트롤러 (탐색용) | ❌ C++ 튜닝값 미반영 → 파리티 검증 불능 (§8) |
+| Python 컨트롤러 (탐색용) | ✅ **C++ 로 통일 완료**(2026-08-06) — 속도대역 8/8 · 파리티 OK (§8) |
+| foot `tau_peak` | ⚠ 96 vs 100.8 vs 168 세 값 공존, 감속비와 불일치 (§8-d) |
 | **C++ → SHM 실기배포** | ❌ **미착수** — `cpp/src` 에 SHM 배선 0 건. 핸드오프 #4 (§9) |
 
 관련 문서: [pace/RESULTS.md](pace/RESULTS.md) (§10 데이터시트, §11 다리 조립 후) ·

@@ -144,7 +144,7 @@ P2.5가 "파이프라인 작동"(커리큘럼+캐시로 걷기+gap크로싱)을 
 
 ### P2.8 — TO 정식화 선택: walk-TO 레퍼런스 (★2026-08-04, Go2 이식 세션서 도출)
 
-Go2 이식 조사(`go2_portability.html`)서 solve_fast 정식화 버그 4건(base-z·y_min·HQP·walk-CoM)을 규명하며 **DTC용 TO 정식화 방향이 정해짐**:
+Go2 이식 조사(`pipeline_tamols.html` §6)서 solve_fast 정식화 버그 4건(base-z·y_min·HQP·walk-CoM)을 규명하며 **DTC용 TO 정식화 방향이 정해짐**:
 
 - **base-z·실행은 RL/WBC 담당, TO는 참조만.** 순수-TAMOLS(TO→WBC직접)는 base 궤적이 실행가능해야 했지만, **DTC는 RL이 실행·robustify**하므로 TO는 실행가능성 부담이 없다. 발견한 base-z 버그(계획이 불가능한 0.52 명령)는 TO config 버그였고, base 높이 추종·안정화 자체는 실행층 몫. → **DTC TO는 base z 레퍼런스(명목+지형)만 내면 됨.**
 - **정밀 험지(계단)엔 walk 정식화 > trot.** walk(정적안정·한 발씩)가 발판을 정밀하게 놓는 깔끔한 레퍼런스를 줌(A가 계단 오른 게 walk). trot 레퍼런스는 동적이라 RL이 정밀 발배치 배우기 어려움. **P2.7 결론(계단=정밀배치서 DTC 가치)과 정합.**

@@ -3,6 +3,7 @@
 데이터흐름:  Backend.read → HwInterface(매핑·IMU변환) → [모드 디스패치] → Backend.write
   off   : 모터 limp
   jog   : per-axis 저속 위치 검증  ← 첫 딜리버러블(각축 확인)
+  home  : 정해진 홈 자세로 S-curve 복귀(control/home.py) → 도달 후 그 자세 유지
   hold  : 현재자세 임피던스 홀드
   stand : 모델기반 균형 서기(MPC+WBIC)   ← jog 검증 후
   walk  : 모델기반 보행                    ← jog 검증 후
@@ -28,6 +29,7 @@ from mock_backend import MockBackend
 from joint_map import JointMap, R2D, D2R
 from hw_interface import HwInterface
 from jog import Jogger
+from home import HomeTrajectory
 import mode_fsm as FSM
 
 CMD_PATH   = os.environ.get("QUAD_CMD",   "/tmp/biped_cmd.json")
@@ -163,6 +165,18 @@ def main():
     cfg_dt = 1.0 / float(cfg["meta"]["ctrl_hz"])
     jogger = Jogger(jm, cfg_dt, float(cfg["jog"]["max_speed_dps"]))
     fsm = FSM.ModeFSM(FSM.OFF)
+    hcfg = cfg.get("home", {})
+    homer = HomeTrajectory(jm, cfg_dt,
+                           hcfg.get("q_deg", [0.0] * jm.n_leg),
+                           float(hcfg.get("max_speed_dps", 15.0)),
+                           float(hcfg.get("max_acc_dps2", 30.0)),
+                           float(hcfg.get("min_time_s", 0.6)))
+    home_settle = float(hcfg.get("settle_deg", 0.5))
+    # ★홈 목표가 jog 안전한계에 잘렸으면 조용히 넘어가지 않는다 — "홈에 갔다" 는 보고와
+    #   실제 자세가 어긋나게 되고, 그 어긋남은 다음 모드의 시작자세가 된다.
+    for nm, want, got in homer.clamped:
+        print(f"[biped_emb] ⚠ home.q_deg[{nm}] {want:+.1f}° → {got:+.1f}° 로 클램프 "
+              f"(jog 안전한계 = 관절한계×{jm.jog_frac}). 이 자세로는 홈에 도달하지 못한다.")
     settle = float(cfg["jog"]["settle_deg"])
     tilt_estop = float(cfg["safety"]["tilt_estop_deg"])
     watchdog_s = float(cfg["safety"]["watchdog_ms"]) / 1000.0
@@ -243,6 +257,15 @@ def main():
                           hw.enable(True)
                       if fsm.entered(FSM.JOG):
                           jogger.reset(q_leg)
+                      if fsm.entered(FSM.HOME):
+                          # ★측정각에서 궤적을 만든다(명령각이 아니라). 부하로 처진 상태에서
+                          #   명령각을 기점으로 잡으면 첫 틱에 그 편차만큼 계단이 나간다.
+                          T = homer.start(q_leg)
+                          print(f"[biped_emb] home 복귀 시작 — {T:.2f}s "
+                                f"(v≤{hcfg.get('max_speed_dps', 15.0)}dps, "
+                                f"a≤{hcfg.get('max_acc_dps2', 30.0)}dps²)  "
+                                + "  ".join(f"{jm.names[i]}{q_leg[i]:+.1f}→{homer.q_home[i]:+.1f}"
+                                            for i in range(jm.n_leg)), flush=True)
                       if fsm.entered(FSM.HOLD):
                           hold_ch = raw.q_deg.copy()
                       if fsm.is_model_based():
@@ -329,6 +352,18 @@ def main():
           elif fsm.mode == FSM.JOG:
               hw.write_jog(jogger.step(jog_goal))
               extra["jog_at_goal"] = jogger.at_goal(jog_goal, settle)
+          elif fsm.mode == FSM.HOME:
+              # ★워치독 트립 중에는 궤적을 현재 측정각으로 계속 재기준한다.
+              #   트립 = 무여자(limp) 라 다리가 중력으로 처지는데, 그동안 궤적 시간만
+              #   흘려보내면 명령 복귀 순간 "처진 실제 위치" 와 "그새 진행된 목표" 사이의
+              #   편차가 통째로 계단 입력이 된다(kp40 → 1° 당 0.7Nm). 재기준해 두면
+              #   복귀 시 처진 자리에서 홈까지 궤적을 처음부터 다시 그린다.
+              if wd_trip:
+                  homer.start(q_leg)
+              hw.write_jog(homer.step())
+              extra["home_progress"] = round(homer.progress, 3)
+              extra["home_done"] = homer.done
+              extra["home_at_goal"] = homer.at_goal(q_leg, home_settle)
           elif fsm.mode == FSM.HOLD:
               hw.write_hold(hold_ch)
           elif fsm.mode in FSM.MODEL_BASED and model is not None:

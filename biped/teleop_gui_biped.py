@@ -222,6 +222,10 @@ with dpg.theme() as _walk:                  # Walk 이동 = 초록
     with dpg.theme_component(dpg.mvButton):
         dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 120, 70))
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 160, 95))
+with dpg.theme() as _home:                  # Home 복귀 = 파랑(이동은 하지만 자율보행은 아님)
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 85, 140))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 115, 185))
 
 with dpg.window(tag='main'):
     dpg.add_text('biped teleop  —  MPC + WBIC (event-DCM)', color=(150, 200, 255))
@@ -250,6 +254,10 @@ with dpg.window(tag='main'):
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
         dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
+        with dpg.group():              # ★Home=정해진 홈 자세로 S-curve 복귀(emb/control/home.py)
+            _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
+            dpg.add_text('(S-curve)', color=(120, 130, 150))
+        dpg.bind_item_theme(_hb, _home)
         dpg.add_button(label='Hold', width=70, callback=lambda: set_mode('hold'))
         with dpg.group():              # ★Stand=2점접촉 서기(자동 전환)
             dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
@@ -258,13 +266,18 @@ with dpg.window(tag='main'):
             _wb = dpg.add_button(label='Walk 이동', width=110, callback=lambda: set_mode('walk'))
             dpg.add_text('(1점접촉)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
-    dpg.add_text('복구 순서: 전원(Off) → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
+    dpg.add_text('복구 순서: 전원(Off) → [Home 복귀] → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
+                 color=(150, 155, 175))
+    dpg.add_text('Home=정해진 홈 자세(emb/config/biped_emb.yaml: home.q_deg)로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기',
                  color=(150, 155, 175))
     dpg.add_separator()
     # ── ★각축(JOG) 패널: 8관절 슬라이더(모터 1:1) + 실측 + 통신 상태 LED ──
     dpg.add_text('● 각축 JOG 검증 (슬라이더=목표각° · 실측° · ●=상태LED)', color=(255, 205, 120))
     with dpg.group(horizontal=True):
-        dpg.add_button(label='모두 0 (home)', width=110, callback=jog_zero)
+        # ★라벨에서 'home' 을 뺐다 — 위 [Home 복귀] 버튼과 전혀 다른 동작이다.
+        #   이건 JOG 슬라이더를 0 으로 놓는 것(등속 램프, 축마다 도착시각 제각각)이고,
+        #   [Home 복귀] 는 home 모드의 S-curve 동시도착 궤적이다.
+        dpg.add_button(label='슬라이더 모두 0', width=130, callback=jog_zero)
         dpg.add_text('LED 초록=정상·노랑=에러·회색=무통신 · 실기(app/biped_emb.py)서 각 모터 확인',
                      color=(120, 130, 150))
     _LED_R = 7
@@ -311,6 +324,13 @@ while dpg.is_dearpygui_running():
                     % (st.get('mode', '-'), st.get('backend', '-'), st.get('n_ok', 0),
                        st.get('n_fault', 0), st.get('n_dead', NJ), NJ,
                        st.get('tilt_deg', 0), st.get('loop_hz', 0)))
+            if 'home_progress' in st:            # home 모드 진행률 + 실제 도달 여부
+                # ★진행률(명령 기준)과 도달(측정 기준)을 따로 보여준다 — 궤적이 끝나도
+                #   부하·마찰로 실제로는 안 들어와 있을 수 있고, 그게 중요한 정보다.
+                line += '\nHome 궤적 %3.0f%%%s  %s' % (
+                    st['home_progress'] * 100,
+                    ' (완료)' if st.get('home_done') else '',
+                    '✓ 홈 도달' if st.get('home_at_goal') else '… 미도달')
         else:                                            # ── sim(biped_run/view) 상태 ──
             line = ('mode=%s  높이%.2f  vx%+.2f vy%+.2f wz%+.2f  yaw%+.0f°  tilt%.1f°  (%+.1f,%+.1f)'
                     % (st.get('mode', '-'), st.get('base_z', 0), st.get('vx_cmd', 0), pub.cmd['vy'],

@@ -12,6 +12,7 @@ list
   [9] lindyhop
   [10] skipping
   [11] pawup
+  [12] bound
 }
 
 stance
@@ -252,4 +253,19 @@ pawup
      [0]     0.0
      [1]     2.0
    }
+}
+
+bound
+{
+  modeSequence
+  {
+    [0]     LF_RF     ; 앞쌍 지지
+    [1]     LH_RH     ; 뒷쌍 지지
+  }
+  switchingTimes
+  {
+    [0]     0.0
+    [1]     0.2
+    [2]     0.4
+  }
 }

@@ -81,6 +81,9 @@ static void quat2zyx(const double q[4], double& z, double& y, double& x) {
 }
 
 int main(int argc, char** argv) {
+  // ★결정론: 라이브러리 OpenMP 병렬(pinocchio/Eigen 리덕션 순서)이 run-to-run 편차의 주 원인 —
+  //   OMP_NUM_THREADS=1로 제거(검증: default falls 편차 대폭↓, 마진 튜닝 신뢰 회복). 벤치용 override 가능.
+  if (!getenv("OMP_NUM_THREADS")) setenv("OMP_NUM_THREADS", "1", 1);
   if (argc < 5) {
     std::cerr << "usage: test02legMujoco <task.info> <urdf> <reference.info> <mjcf> [gait] [simTime]\n";
     return 1;
@@ -198,6 +201,9 @@ int main(int argc, char** argv) {
   if (getenv("POST")) wbcL.wPosture_ = atof(getenv("POST"));      // ★널스페이스 posture 가중
   if (getenv("KP_POST")) wbcL.kpPost_ = atof(getenv("KP_POST"));
   if (getenv("KD_POST")) wbcL.kdPost_ = atof(getenv("KD_POST"));
+  if (getenv("ANKLE_HARD")) wbcL.ankleHard_ = true;              // ★발목 hard-constraint(poor-man's HQP): weighted posture 대신 발목 strict eq
+  if (getenv("KP_ANK")) wbcL.kpAnkle_ = atof(getenv("KP_ANK"));
+  if (getenv("KD_ANK")) wbcL.kdAnkle_ = atof(getenv("KD_ANK"));
   wbcL.basePd_ = !getenv("NO_BASE_PD");   // ★표준=FF+PD (Bellicoso2016 식17/18): aBaseFF + Kp·posErr + Kd·velErr
   if (getenv("BASE_NOFF")) wbcL.baseNoFF_ = true;   // 순수PD(진단용)
   if (getenv("KP_B")) wbcL.kpBase_ = atof(getenv("KP_B"));

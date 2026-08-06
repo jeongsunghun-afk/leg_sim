@@ -72,6 +72,7 @@ class WbcLegged {
     std::vector<matrix_t> ineqD; std::vector<vector_t> ineqf;
     { auto t = eomTask(); eqA.push_back(t.first); eqb.push_back(t.second); }
     { auto t = noContactMotionTask(); if (t.first.rows()) { eqA.push_back(t.first); eqb.push_back(t.second); } }
+    if (ankleHard_ && perLeg_ == 4) { auto t = ankleTask(); eqA.push_back(t.first); eqb.push_back(t.second); }  // ★발목 hard PD
     { auto t = frictionEqTask(); if (t.first.rows()) { eqA.push_back(t.first); eqb.push_back(t.second); } }  // swing f=0
     { auto t = torqueLimitTask(); ineqD.push_back(t.first); ineqf.push_back(t.second); }
     { auto t = frictionIneqTask(); if (t.first.rows()) { ineqD.push_back(t.first); ineqf.push_back(t.second); } }
@@ -155,7 +156,8 @@ class WbcLegged {
   double swingKp_ = 350, swingKd_ = 30;
   bool swingFF_ = false;  // ★스윙 가속도 ff(eq19). SWING_FF=1로 켬(accD=J·u̇_des, jAccel 노이즈로 12-DOF선 버징 미개선)
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
-  double wPosture_ = 0.5, kpPost_ = 20, kdPost_ = 2;  // ★널스페이스 posture task(기본ON, 16-DOF 발목표류 제어=A swing_w_r/f). POST=0으로 끔
+  double wPosture_ = 0.5, kpPost_ = 20, kdPost_ = 2;  // ★널스페이스 posture task(weighted, 16-DOF 발목표류 제어). ★튜닝결론(2026-08, OMP=1 결정론하): 발목 게인으로 고속을 못 잡음 — POST=0.5는 VX≤0.4 강건(3/3)이나 VX=0.5 0/6, POST=8은 VX=0.5 6/6이나 VX=0.4 0/3(강건엔벨로프 깸). 어떤 값도 0.4·0.5 동시 불가=VX0.4~0.5는 본질적 marginal(발목 아닌 base 동역학). ∴ 기본=0.5 유지(VX≤0.4 강건). 고속 실험은 POST env로. weighted>발목hard(ANKLE_HARD 4/6<6/6)·>strict. POST=0으로 끔
+  bool ankleHard_ = false; double kpAnkle_ = 150, kdAnkle_ = 12;  // ★발목 hard-constraint(ANKLE_HARD, 기본off). 발목4 q̈=PD를 hard eq로=TSID 내 발목만 strict("poor-man's HQP", 진짜 HQP계층 아님). ⚠검증(2026-08): weighted posture보다 나쁨(VX=0.5 4/6 vs weighted 6/6)+강성 낮춰야만 안정(kpAnk30 OK·80+ 붕괴) — 강체 발목이 터치다운 컴플라이언스·QP trade-off 자유를 뺏음. 기록용 유지
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
@@ -230,6 +232,15 @@ class WbcLegged {
   std::pair<matrix_t, vector_t> noContactMotionTask() {  // planted(스케줄stance∧실접촉): J q̈ = -dJ v
     matrix_t a = matrix_t::Zero(3 * nMotion_, nx_); vector_t b(3 * nMotion_);
     int jc = 0; for (int i = 0; i < nc_; ++i) if (motionC_[i]) { a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3); b.segment(3 * jc, 3) = -dj_.middleRows(3 * i, 3) * vM_; jc++; }
+    return {a, b};
+  }
+  std::pair<matrix_t, vector_t> ankleTask() {  // ★발목 hard eq: 각 다리 마지막 관절(발목) q̈ = kp(qD-qM)+kd(vD-vM)
+    matrix_t a = matrix_t::Zero(nc_, nx_); vector_t b(nc_);
+    for (int leg = 0; leg < nc_; ++leg) {
+      int jIdx = leg * perLeg_ + (perLeg_ - 1);   // 관절공간 발목 인덱스 (perLeg_==4 → 3,7,11,15)
+      a(leg, 6 + jIdx) = 1.0;                       // 결정변수 q̈ 관절부 = base6 + jIdx
+      b(leg) = kpAnkle_ * (qD_(6 + jIdx) - qM_(6 + jIdx)) + kdAnkle_ * (vD_(6 + jIdx) - vM_(6 + jIdx));
+    }
     return {a, b};
   }
   std::pair<matrix_t, vector_t> frictionEqTask() {  // 비접촉발: f=0

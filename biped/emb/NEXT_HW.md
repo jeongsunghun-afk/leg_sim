@@ -6,9 +6,9 @@
 **순서가 있다.** 3(JOG 각축 검증)이 안 끝나면 5~7 은 의미가 없거나 위험하다.
 숫자를 건너뛰지 말 것.
 
-> ⚠⚠ **stand/walk 는 8~9 번을 끝내기 전까지 금지.** 배포 파이프라인이 두 군데 깨져 있다
-> (§8 Python↔C++ 파리티 역전, §9 C++→SHM 구간 부재). jog/home/hold 는 무관하니 3~7 은
-> 그대로 진행해도 된다.
+> ⚠⚠ **stand/walk 는 8~9 번을 끝내기 전까지 금지.**
+> **실기배포는 C++ 기준**인데 C++→SHM 구간이 아직 없고(§9), Python 은 C++ 튜닝값을
+> 아직 못 받았다(§8). jog/home/hold 는 이와 무관하니 3~7 은 그대로 진행해도 된다.
 
 ---
 
@@ -160,13 +160,18 @@ Kp=Kd=0 이라 토크가 자기제한되지 않는다. `torque_mode.tau_max_nm`(
 
 ---
 
-## 8. ★★Python↔C++ 파리티가 역전됐다 — 원본이 이식본보다 뒤쳐져 있다
+## 8. ★★Python 을 C++ 튜닝값에 맞춘다 (동기화 방향: **C++ → Python**)
 
-**의도한 파이프라인**: `Python(원본·튜닝) → C++(이식·파리티 검증) → 실기배포(SHM)`
+**개발 파이프라인**: `Python(탐색·프로토타이핑) → C++(이식) → 실기배포(SHM)`
+**단, 현재 튜닝값의 기준은 C++ 다.** 실측 물리 반영과 안정성 재스윕이 C++ 에서 이뤄졌고
+(`cpp/STABILITY_MAP.md`), **실기배포도 C++ 기준**이다(§9).
 
-**현재**: C++ 가 실측 물리값과 재튜닝을 **먼저** 받았고 Python 은 안 받았다. 흐름이 거꾸로다.
+> ⚠⚠ **이번 동기화 방향은 C++ → Python 이다.** 평소 흐름(Python→C++)과 반대이므로
+> 헷갈리지 말 것. **C++ 값을 Python 으로 되돌리는 일은 절대 없다** — T_STEP 0.38 ·
+> ROTOR_I 7.4e-4 는 낙상 스윕으로 얻은 값이고, Python 의 0.24 / 1e-4 는 그 스윕
+> **이전** 값이다.
 
-| 파라미터 | C++ (실측·재튜닝 완료) | Python **(원본인데 stale)** | armature |
+| 파라미터 | **C++ = 기준** | Python (맞춰야 함) | armature |
 |---|---|---|---|
 | `ROTOR_I` | **7.4e-4** | 1e-4 | hip 0.0363 vs **0.0049** |
 | `JDAMP` / `JFRIC` | **0.09 / 0.38** | 0.1 / 0.5 | 작음 |
@@ -175,14 +180,15 @@ Kp=Kd=0 이라 토크가 자기제한되지 않는다. `torque_mode.tau_max_nm`(
 | `T_STEP` | **0.38** | 0.24 | ★결정적 |
 | `K_RETURN` | **0.15** | 0.45 | |
 
-**왜 지금 고쳐야 하나** — 이 상태를 두면 두 가지가 깨진다:
+**왜 Python 도 맞춰야 하나** — 배포가 C++ 기준이어도 Python 을 방치하면 두 가지가 깨진다:
 
-1. **다음 Python 변경이 C++ 재튜닝을 덮어쓴다.** 파이프라인이 Python→C++ 인데 원본이
-   뒤쳐져 있으면, 다음 이식 때 C++ 의 T_STEP 0.38·ROTOR_I 7.4e-4 가 되돌려진다.
-2. **파리티 검증이 지금 불능이다.** `dump_biped_wbic.py` → `biped_wbic_parity`,
+1. **파리티 검증이 지금 불능이다.** `dump_biped_wbic.py` → `biped_wbic_parity`,
    `dump_biped_mpc.py` → `biped_mpc_parity` 로 Python↔C++ 수치를 대조하는 도구가 이미
-   있는데, 물리 상수가 서로 달라 **지금 돌리면 무조건 불일치**가 난다. 즉 이식 검증
-   수단 자체가 죽어 있다.
+   있는데, 물리 상수가 서로 달라 **지금 돌리면 무조건 불일치**가 난다. 즉 **앞으로의
+   이식(Python→C++)을 검증할 수단 자체가 죽어 있다.** 이게 주된 이유다.
+2. **Python 에서 하는 탐색이 헛돈다.** 다음 알고리즘 개선을 Python 에서 실험할 때
+   armature 가 7.4배 과소한 모델 위에서 튜닝하면, 그 결과는 C++ 로 이식하는 순간
+   성립하지 않는다(C++ 가 이미 겪은 2.18s 낙상이 그 사례다).
 
 > ℹ️ **오해 정정**: `app/biped_emb.py` 의 stand/walk 는 Python `model_ctrl` 에 물려 있지만,
 > Pi 에 `mujoco`·`qpsolvers` 가 **미설치**라 import 가 실패하고 **hold 폴백**된다
@@ -201,11 +207,12 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
 이후 leg-odom 야코비안 편향을 제거하며 T_STEP 0.32→**0.38**, K_RETURN 0.45→**0.15** 로 재스윕
 (상세: `cpp/STABILITY_MAP.md`).
 
-### 할 일 — Python 을 C++ 수준으로 back-port (탐색이 아니라 이식이다)
+### 할 일 — C++ 값을 Python 으로 복사 (탐색이 아니라 받아쓰기다)
 
 - [ ] `biped_wbic.py:31-32` — `ROTOR_I` 1e-4 → **7.4e-4**, `JDAMP/JFRIC` 0.1/0.5 → **0.09/0.38**
 - [ ] `biped_wbic.py` `GEAR` foot 8.0 → **8.4**, `TAU_PEAK` foot 96 → **100.8**
 - [ ] `biped_step.py:20,26` — `T_STEP` 0.24 → **0.38**, `K_RETURN` 0.45 → **0.15**
+      (출처는 전부 `cpp/src/biped_control.hpp:22-61`. 값을 재유도하지 말고 그대로 가져올 것)
 - [ ] **파리티 회복 확인** (이게 성공 판정이다):
       `python dump_biped_wbic.py > /tmp/biped_wbic_dump.txt && ./build/biped_wbic_parity`
       `python dump_biped_mpc.py  > /tmp/biped_mpc_dump.txt  && ./build/biped_mpc_parity`
@@ -219,9 +226,10 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
 
 ---
 
-## 9. ★★C++ → 실기배포(SHM) 구간이 아직 없다 — 핸드오프 미완료 #4
+## 9. ★★실기배포는 C++ 기준 — 그런데 SHM 구간이 아직 없다 (핸드오프 미완료 #4)
 
-배포 경로는 C++ 인데, **`cpp/src` 에 SHM 배선이 한 줄도 없다.**
+**실기에 나가는 것은 C++ 다.** Python 은 탐색·프로토타이핑 전용이고 실기에 붙지 않는다.
+그런데 **`cpp/src` 에 SHM 배선이 한 줄도 없다.**
 (`grep -rn "SHM\|bridge_\|RobotSharedMem" cpp/src cpp/CMakeLists.txt` → **0 건**)
 
 현재 C++ 타깃은 전부 시뮬/검증용이다:
@@ -247,9 +255,19 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
       워치독 · tilt/토크/속도 E-stop(래치 포함) · **종료 시 limp 반복기록**
       (⚠ `bridge_enable(0)` 만으로는 정지가 아니다. Kp=Kd=0 을 실제로 써야 한다)
 - [ ] 실기 배포 타깃을 `CMakeLists.txt` 에 추가
-- [ ] **`app/biped_emb.py` 의 stand/walk 경로 정리** — 배포 경로가 C++ 로 확정되면
-      Python `model_ctrl` 분기는 의도된 경로가 아니다. 제거하든지, "sim 전용·실기 금지" 를
-      코드에서 강제하든지 택일할 것. 지금은 import 실패에 우연히 기대고 있다(§8 정정 참조).
+- [ ] **`app/biped_emb.py` 의 Python stand/walk 분기 제거** — 배포가 C++ 기준으로 확정된
+      이상 이 분기는 실기에서 돌아선 안 되는 경로다. 지금은 Pi 에 mujoco·qpsolvers 가
+      없어서 import 실패로 hold 폴백되는데(`biped_emb.py:287`), 그건 **설계가 아니라 우연**이다.
+      코드에서 명시적으로 막을 것.
+      → 정리 후 Python 앱의 역할은 **off/jog/home/hold(각축 검증·복귀)** 로 한정된다.
+
+### 역할 정리 (혼동 방지)
+
+| | 역할 | 실기에 나가나 |
+|---|---|---|
+| Python `biped_*.py` | 알고리즘 탐색·프로토타이핑 (sim) | ❌ |
+| Python `emb/app/biped_emb.py` | **off/jog/home/hold** — 각축 검증·홈복귀 | ✅ (모델기반 제외) |
+| C++ `cpp/src` | 튜닝 기준 + **stand/walk 실기배포** | ✅ (§9 포팅 후) |
 
 ### 해소된 항목
 
@@ -277,9 +295,9 @@ ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙
 | `installed_channels` | 코드 완료, 값은 `[0,4]` (배선 확인 후 갱신) |
 | sign / offset | hip 2축 sign 만 확정. offset 전축 미확정 |
 | 나머지 6축 | 기구 조립됨, 배선·검증 미확인 |
-| C++ 컨트롤러 (sim) | ✅ 실측 물리 + 재튜닝 완료 (ROTOR_I 7.4e-4 · T_STEP 0.38) |
-| **Python 컨트롤러** | ❌ **stale** — 파이프라인 원본인데 이식본보다 뒤쳐짐 (§8) |
-| **C++ → SHM 배포** | ❌ **미착수** — `cpp/src` 에 SHM 배선 0 건. 핸드오프 #4 (§9) |
+| C++ 컨트롤러 (sim) | ✅ **튜닝 기준** — 실측 물리 + 재스윕 완료 (ROTOR_I 7.4e-4 · T_STEP 0.38) |
+| Python 컨트롤러 (탐색용) | ❌ C++ 튜닝값 미반영 → 파리티 검증 불능 (§8) |
+| **C++ → SHM 실기배포** | ❌ **미착수** — `cpp/src` 에 SHM 배선 0 건. 핸드오프 #4 (§9) |
 
 관련 문서: [pace/RESULTS.md](pace/RESULTS.md) (§10 데이터시트, §11 다리 조립 후) ·
 [README.md](README.md) (각축 검증 절차) · `~/BIPED_EMB_HANDOFF.md` (Emb 결함·운용절차, git 밖)

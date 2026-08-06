@@ -84,6 +84,7 @@
   <span class="dim">아래 §1 "우회책 injection" 서술은 기록 보존용(개발 중단됨). 상세 <a href="제어기_비교.html">제어기_비교</a>·<a href="D1_OCS2_개발리포트.md">D1 리포트 §4.5</a>.</span></div>
 
   <h2>1 · 두 파이프라인 — <span style="color:var(--tam)">full TAMOLS</span>(pure-online) vs <span style="color:var(--tam)">injection</span>(TAMOLS+A)</h2>
+  <div class="note" style="border-left:4px solid var(--tam)"><b>★<a href="#go2">§6 Go2 이식 검증</a>이 아래 "붕괴" 서사를 대부분 해소</b> — 붕괴는 상당부분 <b>버그</b>(base-z 등)였고 Go2선 pure TAMOLS가 걷는다(02_Leg는 붕괴). 아래 노트는 그 진단 이력.</div>
   <p>TAMOLS를 쓰는 방식이 둘이다. <b>A = full TAMOLS(pure-online)</b>: TAMOLS가 base·발판·자세 <b>전부 계획</b>하고 WBC가 직접 추종 — <b class="nn">현재 붕괴</b>이나 <b>우리 목표</b>(진짜 지형인지 계획). <b>B = injection</b>: A의 실행스택 위에 TAMOLS 계획만 주입 — <b class="yes">작동(마진 얇음)</b>, 현재 우회책.</p>
 
   <h3 style="color:var(--tam);text-transform:none;font-size:15px">A · full TAMOLS (pure-online) &nbsp;<span class="nn">❌ 현재 붕괴 · ★목표</span></h3>
@@ -232,6 +233,48 @@
     </tbody>
   </table></div>
   <div class="note"><b>★결정(2026-07-29)</b>: 강건 <b>모델기반 제어기 배포 원함 → D1 포팅</b>(legged_control OCS2에 02_Leg URDF 포팅). B승격 아님(B aligator=20Hz 실시간 열세). <b>DTC와 별개</b>(DTC=TAMOLS TO+RL, 폐루프 NMPC 불요). ROS2 Humble 설치됨 · legged_control 미클론. <b>다음</b>=클론·빌드 → 02_Leg URDF 포팅 → MuJoCo 브리지.</div>
+</section>
+
+<section id="go2">
+  <h2>6 · Go2 이식 검증 — 접근법 한계인가 버그인가 <span class="dim">2026-08-03~04</span></h2>
+  <div class="note win"><b>"우리 로봇이 문제인가 접근법이 문제인가"</b>를 가리려 제어기를 Unitree Go2(12-DOF·점발·15kg=이상 SRBD)에 이식. <b>결과: 로봇은 병목 아님</b> — A는 Go2 전속도 완주, <b>full TAMOLS도 버그 4개(base-z·y_min·HQP·walk-CoM) 고치니 걷는다</b>(진단 매번 적중). <b class="nn">그러나 계단이 최종 판정</b>: A(Raibert+footScore)=02_Leg 16계단(0.48m) 완주 · solve_fast=<b class="nn">0계단</b> → <b>solve_fast 폐기, A+footScore가 배포 험지, TAMOLS TO는 DTC(RL 레퍼런스)로 이사.</b></div>
+
+  <div style="font-weight:600;font-size:9pt;margin:3mm 0 1mm;color:var(--tam)">무엇이 되나 (버그 수정 후)</div>
+  <div class="scroll"><table>
+    <thead><tr><th>아키텍처</th><th>평지</th><th>험지(경사·계단·갭)</th></tr></thead>
+    <tbody>
+      <tr><td>① full TAMOLS + WBC (MPC 없음)</td><td class="yes">✓ Go2 TSID V≤0.6·HQP V≤0.2 · <b class="nn">02_Leg 붕괴</b></td><td class="no">✗</td></tr>
+      <tr><td>③ SRBD-MPC + WBIC (=A)</td><td class="yes">✓ Go2 전속도 V≤2.5</td><td class="no">✗ (모델기반 한계)</td></tr>
+    </tbody>
+  </table></div>
+
+  <div style="font-weight:600;font-size:9pt;margin:3mm 0 1mm;color:var(--tam)">찾아 고친 버그 (진단으로 규명)</div>
+  <div class="scroll"><table>
+    <thead><tr><th>버그</th><th>정체</th><th>수정·효과</th></tr></thead>
+    <tbody>
+      <tr><td class="nn">① 계획 base-z</td><td>tam_z0=0.52(02_Leg) 하드코딩 → Go2 다리한계 0.42 초과=물리불가</td><td><b class="win">tam_z0=base_z0 → pure TAMOLS Go2 걷기 시작</b>(V≤0.3, TAM_DUMP로 규명)</td></tr>
+      <tr><td class="nn">② HQP heap 크래시</td><td>저-DOF(nv=18) swing≥3서 strict 등식>변수=버퍼 오버런(SIGABRT)</td><td>over-det 가드 → HQP Go2 V≤0.2 (02_Leg nv=23은 여유)</td></tr>
+      <tr><td class="nn">③ 발판 좌우폭</td><td>y_min=0.10(02_Leg) → Go2 과폭 → 앞뒤까지 뭉침(wheelbase 0.036)</td><td>hip폭서 계산 → wheelbase 0.244·tilt 7.4→1.7°(V0.3)</td></tr>
+      <tr><td class="dim">↩ leg-order(revert)</td><td>순열로 맞추려다 02_Leg 깨짐 — 원코드 자기정합</td><td>되돌림 (뭉침 원인=③였음)</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note"><b class="nn">★HQP vs TSID 반전</b>: 논문 표준은 TAMOLS+<b>HQP</b>(strict null-space)지만 Go2를 실제로 걷게 한 건 <b>TSID</b>(weighted). <b>저-DOF엔 strict cascade 여유 부족</b>(HQP V≤0.2·크래시 vs TSID V≤0.6). 논문 표준이 항상 우리 로봇에 최적은 아니다.</div>
+
+  <div class="note" style="border-left:4px solid var(--no)"><b class="nn">험지 = 안 된다 (로봇 무관)</b>: Go2(이상 SRBD)도 3cm 계단·10° 경사서 전복. 발판폭 스윕 = 넓힘이 <b>안정 레버지 추진 레버 아님</b>(붕괴→안정한 정체로 바뀔 뿐 못 오름). 진짜 병목(TAM_TRK): 경사서 발이 접촉 잃음(nst 4→1→0)→GRF 못 냄→base pitch 폭주, 계획도 base를 경사에 안 맞춤(15°에 계획 pitch~4°).</div>
+
+  <div class="note win"><b>★돌파 — solve_fast 버리고 Raibert+footScore</b>: 발판 뭉침 근본 = solve_fast 발판 품질 나쁨. 발상전환 = 발판 기본값 <b>Raibert(hip기준·자연히 벌어짐, A가 이미 검증)</b> + 지형은 안전셀로 <b>nudge만</b>(FOOT_NUDGE=selectFoot). solve_fast 발판 안 쓰니 뭉침·충돌 소멸.
+    <div class="scroll"><table style="margin-top:1.5mm">
+      <thead><tr><th>테스트</th><th>발판 소스</th><th>결과</th></tr></thead>
+      <tbody>
+        <tr><td>02_Leg 스테핑</td><td>Raibert+footScore(walk)</td><td class="yes">✓ 완주 falls=0 (x7.0)</td></tr>
+        <tr><td>02_Leg 스테핑</td><td>solve_fast(MODE=tamols)</td><td class="no">✗ 뭉침·불안정</td></tr>
+        <tr><td>계단</td><td>A vs solve_fast</td><td class="yes">A 16계단 0.48m · <b class="nn">TAMOLS 0계단</b></td></tr>
+      </tbody>
+    </table></div>
+    <span class="dim">★배치(placement=스테핑·갭, selectFoot 해결) vs 등반(climbing=경사·계단높이 ~0.06m벽, 추진·base-pitch=미해결) = 직교 2축. Go2 경사/계단 실패는 등반 문제.</span></div>
+
+  <div class="note"><b>결론</b>: 로봇 병목 아님(A Go2 완주). "TAMOLS 서기만"=오판(버그 4개, 진단 적중). 그래도 A 못 이김 → <b>solve_fast 폐기·A+footScore 배포·TAMOLS TO는 DTC로 이사</b>(base-z·실행=RL/WBC, TO=발판+접촉스케줄 참조·오프라인 캐시로 iteration 넉넉). 커밋 cea6632·c4c1722·ea3d9d0·11ad476.</div>
 </section>
 
 <footer>

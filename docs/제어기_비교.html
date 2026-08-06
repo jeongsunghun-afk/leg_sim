@@ -215,7 +215,7 @@
   </table></div>
   <div class="box acc"><b>실측 결론(2026-08-04) — TAMOLS 성능은 A에 전면 열등</b>
     <ul>
-      <li><b>TAMOLS는 A보다 평지·험지 모두 못함</b>(fresh 02_Leg): ①<b>평지</b>=injection erratic(V0.4 낙상·tilt 22~33°), pure-online 붕괴 vs A 1.4 m/s tilt1.9°. ②<b>연속(경사·계단)</b>=injection이 명목발판 fwd0=0로 <b>지형 앞 x0.55 stall</b>(전혀 못 오름) vs A가 경사 z0.93·계단 z0.79로 <b>깔끔히 등반</b>(tilt&lt;2°). ③injection이 넘는 계단코스(hsteps/dsteps2)도 <b>tilt 11~16°</b>(A의 4~6배)=짜깁기 마진. ⇒ <b>배포가치 없음</b>(<a href="go2_portability.html">go2_portability</a>: Go2도 동일).</li>
+      <li><b>TAMOLS는 A보다 평지·험지 모두 못함</b>(fresh 02_Leg): ①<b>평지</b>=injection erratic(V0.4 낙상·tilt 22~33°), pure-online 붕괴 vs A 1.4 m/s tilt1.9°. ②<b>연속(경사·계단)</b>=injection이 명목발판 fwd0=0로 <b>지형 앞 x0.55 stall</b>(전혀 못 오름) vs A가 경사 z0.93·계단 z0.79로 <b>깔끔히 등반</b>(tilt&lt;2°). ③injection이 넘는 계단코스(hsteps/dsteps2)도 <b>tilt 11~16°</b>(A의 4~6배)=짜깁기 마진. ⇒ <b>배포가치 없음</b>(<a href="pipeline_tamols.html#go2">pipeline_tamols §6</a>: Go2도 동일).</li>
       <li><b>연속지형 = 모델기반(A·D1) 강함</b>: A는 경사·균일계단(H≤~0.06)을 반응형으로 등반, D1(perceptive NMPC)은 지형적응 base높이로 <b>blind를 낙상 5~7× 압도</b>(15°램프 z→0.84). = A·D1의 배포가치.</li>
       <li><b>이산 험지(급단차 H≥0.10·갭·stepping) = RL(DTC)</b>: A도 속도공명 취약, D1은 0.16m 급단차 동적불안정, TAMOLS는 stall. 어느 모델기반도 강건 못함 → <b>DTC(TAMOLS TO를 RL 레퍼런스로)</b> 이관. TAMOLS solve_fast는 배포 아닌 <b>DTC용 계획층 자산</b>으로 잔존(walk 정식화·base-z는 WBC).</li>
     </ul>

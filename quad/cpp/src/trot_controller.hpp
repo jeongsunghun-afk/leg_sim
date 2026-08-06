@@ -333,6 +333,7 @@ struct TrotCtrl {
     else if(g=="run"){ gp_T=0.40; gp_SWF=0.5; gp_off[0]=0.0; gp_off[1]=0.5; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.08; gait_base_z=0.48; PCV_CLR=0.04; }  // ★고속 trot(빠른 cadence T0.4·낮은 발높이0.08): 최고속 1.8→~2.0m/s, 발목ω↓. ★base_z 0.48(발목ω 여유)
     else if(g=="stairs"){ gp_T=0.7; gp_SWF=0.25; gp_off[0]=0.25; gp_off[1]=0.75; gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.4; step_h=0.18; gait_base_z=0.50; PCV_CLR=0.08; }  // ★계단 등반: walk 시퀀셜(정적안정)+높은 발높이0.18(라이저 클리어)+낮은 reach0.4(정밀 발배치)+2배 up-step 클리어런스. 느린속도(GUI 0.3)와 조합. 완만한 계단(≤0.10) 확실·가파른(0.15+)은 marginal
     else if(g=="gallop"){ gp_T=0.35; gp_SWF=0.55; gp_off[0]=0.0; gp_off[1]=0.05; gp_off[2]=0.55; gp_off[3]=0.5; raibert_k=0.8; step_h=0.10; PCV_CLR=0.04; } // 회전형 갤럽(비행상 有)
+    else if(g=="bound"){ gp_T=0.45; gp_SWF=0.5; gp_off[0]=0.5; gp_off[1]=0.5; gp_off[2]=0.0; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.48; PCV_CLR=0.04; } // ★bound(실험적·불안정): 앞쌍(FL,FR)·뒷쌍(HL,HR) 동위상 교대. ⚠검증(2026-08): 2점 측방축 지지가 [레벨홀드+추진+높이유지] 동시불가→z 0.48→0.25침하·피치8~42°·V≥1.0 붕괴. 반응형 MPC+WBIC 한계(bound=본질적 피치진동=RL/궤적최적화 몫, Raibo2025도 RL). 안정화=MPC 피치-레퍼런스 진동 필요(별도 개발)
     else         { gp_T=0.5; gp_SWF=0.5;  gp_off[0]=0.0;  gp_off[1]=0.5;  gp_off[2]=0.5; gp_off[3]=0.0; raibert_k=0.5; step_h=0.10; gait_base_z=0.50; PCV_CLR=0.04; }  // ★trot 표준 중립(GRF균형·뒤thigh절반·falls=0·push복구↑)
     gp_Tsw=gp_T*gp_SWF; gp_Tst=gp_T*(1.0-gp_SWF); armed=false;   // 재arm=위상 재앵커(불연속 방지)
   }

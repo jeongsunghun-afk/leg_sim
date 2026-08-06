@@ -149,11 +149,27 @@
       <tr><td><span class="chip cC">C</span></td><td>FullDyn OCP</td><td class="no">❌(평지 전용)</td><td class="no">❌</td><td>지형 플래너 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span></td><td>통합 Perceptive NMPC<br>(OCS2 포팅)</td><td class="yes">✅ <b>연속지형 등반 실증</b><br>(15°ramp base0.53→0.84·blind 5×↓)</td><td class="no">❌ 급단차(0.16m 이산)=동적 불안정=RL</td><td><b>Phase3b 완료</b>(발판배치+지형적응 base). 동적TROT 0.3~0.7 falls=0·perceptive 지형적응 작동. 이산험지=RL(DTC)</td></tr>
       <tr><td><span class="chip cCI">CI</span></td><td>Contact-Implicit</td><td class="wa">△ 평지 falls=0(저속)·준정적 자세</td><td class="wa">△ gap 부분크로싱→낙상</td><td>완성분(해석그래디언트·서기/눕기/앉기) 있으나 <b>균형 프론티어(gap·walk·외란·두발) 붕괴</b>→종결·offline</td></tr>
-      <tr><td><span class="chip" style="background:var(--acc)">T</span> <span class="mono" style="font-size:.72em">full</span></td><td><b>full TAMOLS</b>(pure-online)<br>TAMOLS 전계획+RSL-WBC 직접추종</td><td class="no">❌ 붕괴</td><td class="no">❌ 붕괴</td><td>★<b>표준 실행방식(GIAC 균형+WBC)</b>. <b class="wa">Go2(15kg)=성공</b>(pure-online 걷기 V≤0.3 falls0, go2 investigation) · <b class="no">02_Leg(37.9kg)=게이트별 상이(2026-08-04 재검증)</b>: <b>trot=rank-5 물리벽</b>(2점은 대각선축 모멘트 불가, WBC 정식화 아님·<b>floating-base WBC 자체는 정상</b>=A trot falls0), <b class="wa">walk=GIAC 계획갭(열림)</b>(3점이라 rank-5 없음·A walk falls0인데 pure-online은 계획이 CoM 지지삼각형 이탈→붕괴). ⚠️"heavy-robot WBC 한계/모델 문제"는 trot 과잉일반화 정정. 다음=GIAC CoM-sway 계획층 수정</td></tr>
-      <tr style="opacity:.6"><td><span class="chip" style="background:var(--acc)">T</span>+<span class="chip cA" style="font-size:.72em">A</span></td><td><b>injection</b>(TAMOLS+A)<br><b class="no">개발 중단</b>(비표준 하이브리드)</td><td class="wa">walk 저속</td><td class="wa">⚠️ 크로싱 되나 마진 얇음</td><td><b>★개발 중단(2026-08-04, 사용자 결정)</b> — A의 gait클럭+Raibert/capture를 빌린 <b>비표준 하이브리드</b>. "각 컨트롤러 자기 표준" 원칙에 따라 TAMOLS는 pure-online(GIAC)만 진행. (기록: A클럭+TAMOLS 주입이 지형 크로싱하나 짜깁기라 마진 얇음)</td></tr>
+      <tr><td><span class="chip" style="background:var(--acc)">T</span> <span class="mono" style="font-size:.72em">full</span></td><td><b>full TAMOLS</b>(pure-online)<br>전계획+WBC 직접추종</td><td class="no">❌ 붕괴</td><td class="no">❌ 붕괴</td><td><b class="wa">Go2=평지 성공</b>·<b class="no">02_Leg=붕괴</b> (로봇·솔버별=아래 매트릭스). 험지=둘 다 ❌→RL</td></tr>
+      <tr style="opacity:.6"><td><span class="chip" style="background:var(--acc)">T</span>+<span class="chip cA" style="font-size:.72em">A</span></td><td><b>injection</b>(TAMOLS+A)<br><b class="no">개발 중단</b></td><td class="wa">walk 저속</td><td class="wa">⚠️ 마진 얇음</td><td>비표준 하이브리드(A클럭+TAMOLS)→중단(2026-08-04, "각 컨트롤러 자기표준")</td></tr>
     </tbody>
   </table></div>
-  <div class="box"><b>공통 결론(2026-07-31 정정)</b> — <b>TAMOLS 솔버(계획층)는 완성</b>: 583× 느림을 C++ SQP-RTI로 극복(해석Jacobian &lt;20ms)·self-contained cold-start. <b>두 실행방식</b>: ①<b class="no">full TAMOLS(pure-online)=붕괴</b>(TAMOLS 전계획+RSL-WBC 직접추종 standalone → 재anchor death spiral+base z 침하, 평지도 falls≈4600). ★이걸 성공시키는 게 목표. ②<b class="wa">injection(TAMOLS+A)=작동·마진 얇음</b>(A gait클럭 위 TAMOLS 주입, 재anchor 우회). <b>full TAMOLS 성공 후보</b>: WBC base-가속 task 강화(z침하, 논문=힘FF불요·WBC가 GRF계산)·월드프레임 계획(재anchor 제거)·WBC가 계획 자세 추종. <b class="no">★★재검증(2026-08-04, 사용자 지적)</b>: 위 붕괴 진단은 <b>전부 trot(2점) 기준</b> — rank-5 대각선축 모멘트는 <b>trot 전용 물리벽</b>(floating-base WBC 정식화 문제 아님, A trot falls0). GIAC는 폴리곤(3/4점) 필요→자연게이트=<b>walk</b>. walk 재검증: <b>M_null=0(rank-5 소멸)</b>이나 pure-online walk도 붕괴 — <b>3점 유지(ng=3)인데 계획이 CoM을 지지삼각형 밖으로 냄</b>(GIAC 실효 미강제), <b>A walk=falls0</b>(WBC·게이트 정상)이라 <b class="wa">원리적 벽 아닌 계획 결함(수정여지)</b>. <b>다음=GIAC가 base spline을 폴리곤 위로 실제 sway(계획층 수정)</b>. 상세 <a href="pipeline_tamols.html">pipeline_tamols</a>·<a href="TAMOLS_개발리포트.md">리포트</a>.</div>
+  <div class="box"><b>full-TAMOLS 실행 매트릭스</b> <span class="sub" style="font-weight:400">평지 · 2026-08-03~04</span>
+    <div class="scroll"><table style="margin-top:1.5mm">
+      <thead><tr><th>로봇</th>
+        <th>pure TSID <span class="mono" style="font-weight:400;color:var(--muted)">weighted</span></th>
+        <th>pure HQP <span class="mono" style="font-weight:400;color:var(--muted)">strict·논문표준</span></th>
+        <th>injection(+MPC)</th><th>험지</th></tr></thead>
+      <tbody>
+        <tr><td><b>Go2</b> <span class="mono" style="color:var(--muted)">15kg·이상SRBD</span></td>
+          <td class="yes">✅ V≤0.3 <span class="mono">(KCAP 0.6)</span></td>
+          <td class="wa">✅ V≤0.2 <span class="mono">저-DOF over-det→V≥0.25 크래시(가드)</span></td>
+          <td class="yes">✅ V≤0.4</td><td class="no">❌</td></tr>
+        <tr><td><b>02_Leg</b> <span class="mono" style="color:var(--muted)">37.9kg</span></td>
+          <td class="no">❌ 붕괴 <span class="mono">falls826</span></td>
+          <td class="no">❌ 붕괴</td>
+          <td class="wa">⚠️ V≤0.4 erratic</td><td class="no">❌</td></tr>
+      </tbody></table></div>
+    <span style="font-size:8pt;color:var(--muted)">★<b>Go2 pure=성공</b>(base-z 버그 수정 후, TSID·HQP 평지 falls0) · <b>02_Leg pure=붕괴</b>(재anchor death spiral+base sink=capture 부재, 솔버 무관) · <b>저-DOF엔 TSID&gt;HQP</b>(strict cascade 여유부족) · 험지=로봇무관 막다른길→RL. 솔버 자체는 완성(SQP-RTI &lt;20ms). 상세 <a href="pipeline_tamols.html">pipeline_tamols</a>·<a href="TAMOLS_개발리포트.md">리포트</a>.</span></div>
 
   <h2><span class="n">2.1</span>지형 등반 실측 벤치 <span class="sub" style="font-weight:400">02_Leg 직접측정 · trot_sim · 2026-08-04</span></h2>
   <p style="font-size:8.6pt;color:var(--muted);margin:1mm 0 2mm">Go2→<b>02_Leg</b>로 로봇 변경 후 <b>TAMOLS 제어기 성능 실측</b>(injection·pure-online 두 실행모드) + 동일 지형에서 A(배포 본선)·D1(리포트값) 대조. 수치=<span class="mono">falls</span>(0=완주)·<span class="mono">z</span>(base높이=등반량)·<span class="mono">tilt</span>(마진). 지형 8s·평지 3s.</p>

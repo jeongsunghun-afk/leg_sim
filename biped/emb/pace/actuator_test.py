@@ -209,9 +209,18 @@ def main() -> int:
         print(f"\n{'='*70}\n{j['name']} (ch{ch})  한계 q∈[{j['q_min']},{j['q_max']}]deg "
               f"τ_trip={sf['tau_trip_nm']}Nm\n{'='*70}")
 
+        # ★시험축 외 홀드 대상 = 실장된 채널 − 시험축. 다리 조립 후 필수(spec.safety 주석 참조).
+        hold = sorted(installed - {ch}) if bool(sf.get("hold_others", False)) else []
+        if hold:
+            print(f"  [{j['name']}] 홀드축 {hold} 를 측정위치에 고정 "
+                  f"(kp={sf.get('hold_kp', 40.0)}/kd={sf.get('hold_kd', 2.0)}) — "
+                  f"I_link 강체가정 성립 + 하위관절 붕괴 방지")
         with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], spec["shm"]["rate_hz"],
                       lim, int(spec["shm"]["recv_wait_ms"]),
-                      float(g["enable_ramp_s"])) as hw:
+                      float(g["enable_ramp_s"]),
+                      hold_channels=hold,
+                      hold_kp=float(sf.get("hold_kp", 40.0)),
+                      hold_kd=float(sf.get("hold_kd", 2.0))) as hw:
             try:
                 # ★모든 시험 앞에서 파워단 생존을 확인한다. 텔레메트리 신선도(stale 검사)
                 #   만으로는 부족하다 — EtherCAT·Emb·값갱신이 전부 정상인데 드라이버

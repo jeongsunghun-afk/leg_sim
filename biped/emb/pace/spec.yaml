@@ -52,27 +52,44 @@ units:
 #     ("구 ±0.6109/±35° 폐기")했는데 emb/config/biped_emb.yaml 은 아직 ±35 다.
 #     시험은 보수적으로 ±20°를 따르고, 그 안에서도 test_range 로 더 좁힌다.
 joints:
-  # ★I_link=0.0 : 2026-08-05 현재 **다리 미장착**(모터 단품 상태)이라 출력축에 링크가 없다.
-  #   이 상태가 액추에이터 고유물성 식별에는 오히려 유리하다(I_link 를 빼는 오차가 없음).
-  #   ⚠다리 장착 후 재측정할 때는 MJCF 의 해당 관절 링크관성으로 교체할 것.
-  #   (출력 플랜지·커플링의 미소 관성은 0 으로 두었으므로 ROTOR_I 는 약간의 상한이다.)
+  # ★★I_link — 2026-08-06 **다리 조립 완료**로 전면 갱신. 종전 0.0 은 폐기.
+  #   종전 주석: "다리 미장착이라 출력축에 링크가 없다 → I_link=0". 그 전제가 끝났다.
+  #   0 을 그대로 두고 돌리면 **다리 관성이 통째로 로터관성으로 둔갑**한다.
+  #   출처: `extract_ilink.py` (MJCF biped_flatfoot.mjcf, **홈자세 q=0**).
+  #         mj_fullM 대각성분 ↔ 복합강체 직접합산 두 경로가 1e-16 이내 일치(교차검증됨).
+  #
+  #   ⚠자세 의존값이다. hip 은 무릎을 −40° 접으면 0.1589 → 0.1822 (+15%) 로 변한다.
+  #     **시험 자세를 홈(q=0)으로 고정**하고 재라. 다른 자세로 재면 이 값을 다시 뽑을 것.
+  #
+  #   ⚠⚠hip/thigh 에서 ROTOR_I 를 빼내지 말 것 — I_link 가 신호의 81%/77% 를 차지한다
+  #     (ROTOR_I = (I_total − I_link)/N² 에서 남는 게 19%/23% 뿐).
+  #     I_link 5% 오차 → ROTOR_I 22% 오차로 증폭된다. **다리 없이 잰 7.4e-4 가 더 정확하다.**
+  #     다리 장착 상태에서 ROTOR_I 를 교차검증하고 싶으면 **foot(링크비중 3.7%)·calf(26%)**
+  #     로 재라 — 거기선 로터 반사관성이 지배적이라 분리가 잘 된다.
+  #
+  #   kt_nm_per_a — §10 데이터시트(RO100 kt=0.2 Nm/A) × N × η(0.9 가정). 전축 동일 모터
+  #     (tau_peak÷gear 가 8축 모두 12.0 Nm = 데이터시트 피크토크와 일치).
+  #     ⚠η=0.9 는 가정이다. hip 은 피크토크 교차검증에서 η≈0.97 이 나왔다(§10) → 실측하면
+  #       1.26 이 아니라 1.36 쪽일 수 있다. 정밀히 쓰려면 전류 실측으로 kt/η 를 분리할 것.
   - {ch: 0, name: HL_hip,   gear: 7.0,  tau_peak_nm: 84.0,  w_noload: 29.6,
-     kt_nm_per_a: TODO, I_link: 0.0, q_min: -20.0, q_max: 20.0}
+     kt_nm_per_a: 1.26, I_link: 1.588675e-01, q_min: -20.0, q_max: 20.0}
   - {ch: 4, name: HR_hip,   gear: 7.0,  tau_peak_nm: 84.0,  w_noload: 29.6,
-     kt_nm_per_a: TODO, I_link: 0.0, q_min: -20.0, q_max: 20.0}
-  # ── 미장착(연결 후 installed_channels 에 추가) ──
+     kt_nm_per_a: 1.26, I_link: 1.593047e-01, q_min: -20.0, q_max: 20.0}
+  # ── 기구는 조립됐으나 배선/통신 미확인 → installed_channels 에 아직 없음 ──
+  #   ⚠아래 6축은 sign·offset·게인이 전부 **미검증 외삽값**이다(config/biped_emb.yaml 참조).
+  #     q_min/q_max 도 실측이 아니라 보수적 추정이다. 시험 전 JOG 로 각축 검증부터 할 것.
   - {ch: 1, name: HL_thigh, gear: 7.0,  tau_peak_nm: 84.0,  w_noload: 29.6,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -60.0, q_max: 40.0}
+     kt_nm_per_a: 1.26, I_link: 1.194055e-01, q_min: -60.0, q_max: 40.0}
   - {ch: 2, name: HL_calf,  gear: 10.5, tau_peak_nm: 126.0, w_noload: 19.7,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 40.0}
+     kt_nm_per_a: 1.89, I_link: 2.879786e-02, q_min: -40.0, q_max: 40.0}
   - {ch: 3, name: HL_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 24.6,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 30.0}
+     kt_nm_per_a: 1.512, I_link: 2.017471e-03, q_min: -40.0, q_max: 30.0}
   - {ch: 5, name: HR_thigh, gear: 7.0,  tau_peak_nm: 84.0,  w_noload: 29.6,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -60.0, q_max: 40.0}
+     kt_nm_per_a: 1.26, I_link: 1.194061e-01, q_min: -60.0, q_max: 40.0}
   - {ch: 6, name: HR_calf,  gear: 10.5, tau_peak_nm: 126.0, w_noload: 19.7,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 40.0}
+     kt_nm_per_a: 1.89, I_link: 2.879828e-02, q_min: -40.0, q_max: 40.0}
   - {ch: 7, name: HR_foot,  gear: 8.4,  tau_peak_nm: 100.8, w_noload: 24.6,
-     kt_nm_per_a: TODO, I_link: TODO, q_min: -40.0, q_max: 30.0}
+     kt_nm_per_a: 1.512, I_link: 2.017471e-03, q_min: -40.0, q_max: 30.0}
 
 # ── 시험 게인 (2026-08-05 실측 확정) ─────────────────────────────────────────
 #   tau = Kp·err[rad] + Kd·derr[rad/s]  → Kp 1 당 0.0175 Nm/deg.
@@ -92,6 +109,22 @@ safety:
   err_max_deg: 12.0                   # |명령−측정| 초과 → limp+중단 (kp40 → 8.4Nm)
   stale_ms: 150                       # 상태값 무변화 지속 → limp+중단 (EtherCAT OP 이탈 감지)
   settle_s: 0.5                       # 구간 전환 후 정착 대기
+
+  # ── 시험축 외 홀드 (2026-08-06, 다리 조립 후 추가) ─────────────────────────
+  #   ★다리 미장착 시절엔 시험축 외 전 채널이 limp 였고 그게 옳았다(잡을 게 없었다).
+  #     다리를 단 뒤로는 두 가지 이유로 깨진다:
+  #       (a) PACE 가 쓰는 I_link 는 질량행렬 대각성분 M[i][i] 이고 그 정의가
+  #           **"다른 DOF 가속도 0"** 이다. 무릎이 limp 면 다리가 접혀 강체 가정이 깨지고
+  #           측정된 I_total 은 I_link + ROTOR_I·N² 과 아예 다른 값이 된다.
+  #       (b) 하위 관절이 무여자면 중력으로 접힌다(안전).
+  #   ⇒ true 면 installed_channels 중 시험축을 뺀 나머지를 측정위치에 잡아둔다.
+  #   ⚠홀드가 밀리면(|명령−측정| > err_max) hwio.check_hold 가 limp + 중단시킨다.
+  #     조용히 밀린 채로 계속 재면 그 데이터는 통째로 쓰레기다.
+  #   ⚠⚠**실기 미검증**(2026-08-06 현재 Emb 미기동). 첫 실행은 반드시 사람이 보는 앞에서,
+  #     로봇을 거치한 상태로 할 것.
+  hold_others: true
+  hold_kp: 40.0                       # 홀드 게인. 시험축과 같은 실측 확정값(kp40/kd2)
+  hold_kd: 2.0
 
 # ── 시험 파라미터 ────────────────────────────────────────────────────────────
 friction:

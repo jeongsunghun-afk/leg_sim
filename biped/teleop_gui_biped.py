@@ -278,7 +278,7 @@ with dpg.window(tag='main'):
         #   이건 JOG 슬라이더를 0 으로 놓는 것(등속 램프, 축마다 도착시각 제각각)이고,
         #   [Home 복귀] 는 home 모드의 S-curve 동시도착 궤적이다.
         dpg.add_button(label='슬라이더 모두 0', width=130, callback=jog_zero)
-        dpg.add_text('LED 초록=정상·노랑=에러·회색=무통신 · 실기(app/biped_emb.py)서 각 모터 확인',
+        dpg.add_text('LED 초록=정상·노랑=에러·빨강=두절(배선O)·어두움=미장착 · 실기(app/biped_emb.py)서 각 모터 확인',
                      color=(120, 130, 150))
     _LED_R = 7
     for i, nm in enumerate(JOG_NAMES):
@@ -307,7 +307,10 @@ if _kf is not None:
 dpg.create_viewport(title='biped teleop', width=700, height=800)
 dpg.setup_dearpygui(); dpg.show_viewport(); dpg.set_primary_window('main', True)
 
-_LED = {'ok': (60, 210, 90), 'fault': (235, 200, 60), 'dead': (70, 70, 78)}
+# ★absent(미장착)를 dead(배선됐는데 두절)와 다른 색으로 둔다 — 전자는 정상, 후자는 고장이다.
+#   같은 회색으로 뭉뚱그리면 "원래 없는 축" 과 "죽은 축" 이 구분되지 않는다.
+_LED = {'ok': (60, 210, 90), 'fault': (235, 200, 60),
+        'dead': (150, 90, 90), 'absent': (48, 50, 58)}
 _last_file_hb = [0.0]          # ★파일 하트비트 타이머(리스트=클로저 없이 가변)
 while dpg.is_dearpygui_running():
     try:
@@ -320,10 +323,14 @@ while dpg.is_dearpygui_running():
                 dpg.set_value(f'meas_{i}', f'{q[i]:+6.1f}')
             for i in range(min(NJ, len(health))):
                 dpg.configure_item(f'led_{i}', fill=_LED.get(health[i], (70, 70, 78)))
+            # ★분모는 **실장축 수**. 미장착을 분모에 넣으면 정상인데도 "8중 2" 로 보인다.
+            n_inst = st.get('n_installed', NJ)
             line = ('[emb] mode=%s  backend=%s  정상%d/에러%d/두절%d/%d  tilt%.1f°  loop%.0fHz'
                     % (st.get('mode', '-'), st.get('backend', '-'), st.get('n_ok', 0),
-                       st.get('n_fault', 0), st.get('n_dead', NJ), NJ,
+                       st.get('n_fault', 0), st.get('n_dead', n_inst), n_inst,
                        st.get('tilt_deg', 0), st.get('loop_hz', 0)))
+            if st.get('n_absent'):
+                line += '  · 미장착%d' % st['n_absent']
             if 'home_progress' in st:            # home 모드 진행률 + 실제 도달 여부
                 # ★진행률(명령 기준)과 도달(측정 기준)을 따로 보여준다 — 궤적이 끝나도
                 #   부하·마찰로 실제로는 안 들어와 있을 수 있고, 그게 중요한 정보다.

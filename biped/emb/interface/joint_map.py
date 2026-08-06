@@ -38,6 +38,18 @@ class JointMap:
         self.jog_min = self.min_deg * self.jog_frac
         self.jog_max = self.max_deg * self.jog_frac
 
+        # ── 실장 여부 (meta.installed_channels) ────────────────────────────
+        #   ★Emb 는 모터가 물리적으로 없어도 8채널 전부 connected=1·ucStatus=0 으로
+        #     보고한다. 그래서 통신 보고만으로는 장착 여부를 알 수 없고, 미장착 축이
+        #     `ok` 로 판정돼 왔다(GUI LED 초록). 여기서 사람이 선언한 값으로 가른다.
+        #   미선언이면 전부 실장으로 간주 = 종전 동작 유지.
+        inst = cfg.get("meta", {}).get("installed_channels")
+        if inst is None:
+            self.installed = np.ones(self.n_leg, bool)
+        else:
+            s = {int(c) for c in inst}
+            self.installed = np.array([int(c) in s for c in self.ch], bool)
+
     # ── 컨트롤러(rad) → 채널(deg) ──────────────────────────────────────────
     def q_ctrl_to_ch(self, q_rad) -> np.ndarray:
         out = np.zeros(self.n_channel)

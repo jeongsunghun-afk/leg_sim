@@ -117,12 +117,20 @@ def read_cmd_fresh():
 
 
 def axis_health(raw, jm):
-    """축별 상태(임베디드 보고): dead(무통신) / fault(통신 O·ucStatus≠0) / ok(통신 O·정상).
-       ★ucStatus 의미는 모터/펌웨어 정의 → 지금은 ≠0 을 에러로 간주(실기 확정 후 세분화)."""
+    """축별 상태: absent(미장착) / dead(무통신) / fault(통신 O·ucStatus≠0) / ok(통신 O·정상).
+       ★ucStatus 의미는 모터/펌웨어 정의 → 지금은 ≠0 을 에러로 간주(실기 확정 후 세분화).
+
+    ★absent 를 왜 따로 두나: **Emb 는 모터가 없어도 8채널 전부 connected=1·ucStatus=0 을
+      보고한다.** 그래서 미장착 6축이 전부 `ok` 로 잡혀 GUI 에 초록 LED 로 떴다 —
+      **없는 모터가 "정상"으로 보이는 것**이라, 진짜 축이 죽었을 때 "8개 중 8개 정상"
+      이라는 거짓 안심을 준다. 통신으로는 구분이 불가능하므로 config 선언으로 가른다.
+    """
     conn, stat = raw.connected, raw.status
     out = []
-    for ch in jm.ch:
-        if conn.size <= ch or not conn[ch]:
+    for i, ch in enumerate(jm.ch):
+        if not bool(jm.installed[i]):
+            out.append("absent")
+        elif conn.size <= ch or not conn[ch]:
             out.append("dead")
         elif stat.size > ch and int(stat[ch]) != 0:
             out.append("fault")
@@ -342,9 +350,12 @@ def main():
 
           # ── 축별 health = 임베디드 보고 반영(통신+ucStatus). ok/fault/dead. (제어 아님, 모니터) ──
           health = axis_health(raw, jm)
-          extra = {"health": health,
+          # ★n_ok/n_fault/n_dead 의 분모는 **실장축**이다. 미장착을 분모에 넣으면
+          #   "8개 중 2개 정상" 처럼 보여서 정상 상태가 고장으로 읽힌다.
+          extra = {"health": health, "installed": [bool(x) for x in jm.installed],
                    "n_ok": health.count("ok"), "n_fault": health.count("fault"),
-                   "n_dead": health.count("dead")}
+                   "n_dead": health.count("dead"), "n_absent": health.count("absent"),
+                   "n_installed": int(jm.installed.sum())}
 
           # ── 모드 디스패치 (전 채널 명령; 미배선/죽은 축은 임베디드가 흡수) ──
           if fsm.mode == FSM.OFF:

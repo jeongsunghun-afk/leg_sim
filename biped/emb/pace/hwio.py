@@ -74,11 +74,26 @@ class Hardware:
     """libbipedshm(=hal/shm_bridge.cpp) 위의 안전 래퍼. 한 번에 한 축만 가진한다."""
 
     def __init__(self, lib_path: str, n_channel: int, rate_hz: float,
-                 limits: Limits, recv_wait_ms: int = 3000, enable_ramp_s: float = 0.3):
+                 limits: Limits, recv_wait_ms: int = 3000, enable_ramp_s: float = 0.3,
+                 hold_channels=(), hold_kp: float = 0.0, hold_kd: float = 0.0):
         self.n = int(n_channel)
         self.dt = 1.0 / float(rate_hz)
         self.lim = limits
         self.enable_ramp_s = float(enable_ramp_s)
+        # ── 시험축 외 홀드 (2026-08-06, 다리 조립 후 추가) ──────────────────
+        #   ★왜 필요한가: 이 클래스는 원래 "한 번에 한 축만 가진" 이었고, 나머지 채널엔
+        #     kp=kd=0(=limp)을 썼다. **다리가 없을 땐 그게 옳았다** — 출력축에 아무것도
+        #     안 달려 있으니 홀드할 대상 자체가 없었다.
+        #     다리를 조립한 뒤로는 그 전제가 깨진다:
+        #       (a) PACE 가 빼내는 I_link 는 관절공간 질량행렬의 대각성분 M[i][i] 이고,
+        #           그 정의가 **"다른 DOF 의 가속도가 0"** 이다. 무릎이 limp 인 채로
+        #           thigh 를 흔들면 다리가 접히면서 강체 가정이 깨져 전혀 다른 값이 나온다.
+        #       (b) 안전 — 하위 관절이 무여자면 중력으로 접힌다.
+        #   ⇒ 시험축을 가진할 때 hold_channels 를 측정위치에 함께 잡아둔다.
+        #   ⚠기본값은 빈 튜플 = 종전 동작 그대로. spec.yaml 의 safety.hold_others 로 켠다.
+        self.hold_ch = tuple(int(c) for c in hold_channels)
+        self.hold_kp = float(hold_kp)
+        self.hold_kd = float(hold_kd)
 
         lib = C.CDLL(lib_path)
         lib.bridge_init.restype = C.c_int
@@ -228,11 +243,20 @@ class Hardware:
 
     # ── 쓰기 ────────────────────────────────────────────────────────────────
     def arm(self, ch: int, kp: float, kd: float) -> float:
-        """측정각을 래치하고 게인을 0→목표로 램프해 인가. 래치된 각을 반환."""
+        """측정각을 래치하고 게인을 0→목표로 램프해 인가. 래치된 각을 반환.
+
+        hold_channels 가 있으면 그 축들도 **각자의 측정각**에 함께 래치·램프한다
+        (I_link 의 강체 가정 성립 + 하위 관절 중력 붕괴 방지).
+        """
         self.wait_fresh(ch=ch)
         q0 = self.read(ch)[0]
         self._q_cmd[:] = 0.0
         self._q_cmd[ch] = q0
+        # ★홀드축은 "0" 이 아니라 **지금 있는 자리**에 잡는다. 0 으로 잡으면 인가 순간
+        #   현재각만큼의 오차가 그대로 토크가 되어 다리가 홱 움직인다.
+        for hc in self.hold_ch:
+            if hc != ch and hc < self.n:
+                self._q_cmd[hc] = float(self._q[hc])
         # ★enable 이전에 kp=kd=0 을 먼저 기록한다. bridge_enable 은 g_enabled 플래그만
         #   건드리고 SHM 버퍼는 안 쓰므로(shm_bridge.cpp:115), 이 전에 enable 하면
         #   죽은 writer 가 남긴 임의 게인·setpoint 가 순간 authoritative 가 된다.
@@ -243,20 +267,53 @@ class Hardware:
         n = max(1, int(self.enable_ramp_s / self.dt))
         for k in range(n):
             s = (k + 1) / n
-            self._raw_write(ch, q0, kp * s, kd * s)
+            self._raw_write(ch, q0, kp * s, kd * s, hold_scale=s)   # 홀드축도 같이 램프
             q, dq, tau, _ = self.read(ch)
             self._check(ch, q, dq, tau, q0)
             time.sleep(self.dt)
         return q0
 
-    def _raw_write(self, ch: int, q_cmd_deg: float, kp: float, kd: float) -> None:
+    def _hold_gains(self, ch: int, scale: float = 1.0):
+        """홀드축 kp/kd 벡터. 시험축 자리는 호출측이 덮어쓴다."""
+        kp_v = np.zeros(self.n, np.float32)
+        kd_v = np.zeros(self.n, np.float32)
+        for hc in self.hold_ch:
+            if hc != ch and hc < self.n:
+                kp_v[hc] = min(self.hold_kp * scale, self.lim.kp_max)
+                kd_v[hc] = min(self.hold_kd * scale, self.lim.kd_max)
+        return kp_v, kd_v
+
+    def _raw_write(self, ch: int, q_cmd_deg: float, kp: float, kd: float,
+                   hold_scale: float = 1.0) -> None:
         kp = min(max(kp, 0.0), self.lim.kp_max)      # 스케일 오류가 그대로 드라이버로 가지 않게
         kd = min(max(kd, 0.0), self.lim.kd_max)
         q_cmd_deg = min(max(q_cmd_deg, self.lim.q_min), self.lim.q_max)
         self._q_cmd[ch] = q_cmd_deg
-        kp_v = np.zeros(self.n, np.float32); kp_v[ch] = kp
-        kd_v = np.zeros(self.n, np.float32); kd_v[ch] = kd
+        kp_v, kd_v = self._hold_gains(ch, hold_scale)
+        kp_v[ch] = kp; kd_v[ch] = kd
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
+
+    def check_hold(self) -> None:
+        """홀드축이 실제로 잡혀 있는지 확인. 밀려나면 측정이 무효이므로 중단.
+
+        ★홀드가 조용히 실패하는 경로가 있다: 게인이 부족하거나 파워단이 죽은 축은
+          중력으로 접히는데, 시험축 기준 검사(_check)는 그걸 절대 못 본다.
+          그 상태의 I_total 은 강체 가정이 깨진 값이라 **측정 자체가 무의미**하다.
+        """
+        for hc in self.hold_ch:
+            if hc >= self.n:
+                continue
+            err = abs(float(self._q_cmd[hc]) - float(self._q[hc]))
+            if err > self.lim.err_max:
+                self.limp()
+                raise SafetyAbort(
+                    f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {self.lim.err_max}°.\n"
+                    f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
+                    f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
+            if abs(float(self._dq[hc])) > self.lim.vel_trip:
+                self.limp()
+                raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "
+                                  f"{self.lim.vel_trip} — 잡혀 있지 않다")
 
     def verify_driver_live(self, ch: int, kp: float = 40.0, kd: float = 2.0,
                            step_deg: float = 2.0, tau_floor: float = 0.15,
@@ -304,10 +361,14 @@ class Hardware:
         z = np.zeros(self.n, np.float32)
         tv = np.zeros(self.n, np.float32); tv[ch] = t
         self._q_cmd[ch] = self._q[ch]          # 위치명령은 무의미하나 limp 복귀용으로 현재값 유지
+        # ★순수토크는 **시험축만** 이다. 홀드축은 계속 잡아둔다 — 여기서 전 채널을 0 으로
+        #   두면 다리 전체가 무여자가 되어 중력으로 접힌다(다리 조립 후 특히 위험).
+        kp_v, kd_v = self._hold_gains(ch)
         try:
-            self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(z), _p(z), self.n)
+            self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(kp_v), _p(kd_v), self.n)
             q, dq, tau, cur = self.read(ch)
             self._check(ch, q, dq, tau, q)     # 추종오차 검사는 무의미 → q_cmd=q 로 무력화
+            self.check_hold()
         except SafetyAbort:
             raise                              # _check 내부에서 이미 limp 함
         return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), 0.0, 0.0)
@@ -319,6 +380,7 @@ class Hardware:
         self._raw_write(ch, q_cmd_deg, kp, kd)
         q, dq, tau, cur = self.read(ch)
         self._check(ch, q, dq, tau, self._q_cmd[ch])      # 위반 시 내부에서 limp 후 raise
+        self.check_hold()                                 # 홀드축이 밀리면 측정 무효
         return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), kp, kd)
 
     # ── 궤적 실행 ───────────────────────────────────────────────────────────

@@ -4,7 +4,14 @@
 
 meta:
   robot: biped_8dof              # HL/HR × (hip·thigh·calf·foot)
-  model: ../biped_flatfoot.mjcf  # 동역학 모델(상태추정 FK·WBIC 재사용). emb/ 기준 상대경로
+  # ★2026-08-06 정정: biped_flatfoot(평발) → biped_from_quad(**점발**). 배포는 점발이다.
+  #   ⚠이 필드는 **현재 코드가 읽지 않는다**(전수 grep 확인). 실제 로드는
+  #     biped_wbic.MJCF 기본값 = biped_from_quad.mjcf 이고, model_ctrl 은
+  #     BipedMPCWBIC() 를 인자 없이 부른다. 여기 값을 바꿔도 아무 효과가 없다.
+  #     → 선언과 실제가 어긋나 있던 것을 실제(점발)에 맞춘 것이지, 동작 변경이 아니다.
+  #   두 모델의 차이는 **접촉 geom 뿐**이다(평발은 heel 구 sphere2 추가). 무질량이라
+  #   링크 관성·총질량(13.571kg)은 동일 — pace 의 I_link 값은 양쪽에 그대로 유효하다.
+  model: ../biped_from_quad.mjcf # 동역학 모델(점발 1pt = 배포). emb/ 기준 상대경로
   ctrl_hz: 500                   # 제어 루프 주기[Hz]. jog=충분, 모델기반 고속보행만 1kHz(→C++ 이관)
 
   # ── 실장된 채널 ────────────────────────────────────────────────────────────

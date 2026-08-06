@@ -44,7 +44,12 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIPED = os.path.dirname(os.path.dirname(HERE))          # simulation/biped
-MJCF_DEFAULT = os.path.join(BIPED, "biped_flatfoot.mjcf")
+# ★배포 모델 = **점발(1pt)** biped_from_quad.mjcf (2026-08-06 확인).
+#   ⚠biped_flatfoot.mjcf(평발 2pt)로 뽑아도 **I_link 는 완전히 동일**하다 —
+#     두 모델의 차이는 heel 접촉구(sphere2) 뿐이고 그건 무질량 geom 이라
+#     링크 관성·총질량(13.571 kg)에 기여하지 않는다. 검증 완료(전 축 유효숫자 7자리 일치).
+#     그래도 기본값은 배포 모델로 둔다 — 나중에 두 모델이 갈릴 때 조용히 틀리지 않도록.
+MJCF_DEFAULT = os.path.join(BIPED, "biped_from_quad.mjcf")
 
 # spec.yaml 의 ch 순서 ↔ MJCF 관절명
 CH2JOINT = [

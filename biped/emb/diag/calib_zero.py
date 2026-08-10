@@ -87,6 +87,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ref", help="기준자세 모델각[deg], 콤마구분 8개. 생략시 config calib.ref_joint_deg")
     ap.add_argument("--apply", action="store_true", help="config/biped_emb.yaml 의 offset_deg 를 실제로 갱신")
+    ap.add_argument("--settle-s", type=float, default=8.0,
+                    help="이 시간 동안 자세가 멈춰 있어야 채취한다[s]. 0 이면 검사 생략")
+    ap.add_argument("--settle-tol", type=float, default=0.2,
+                    help="정지 판정 허용 변동폭[deg]")
     a = ap.parse_args()
 
     cfg = load_cfg()
@@ -105,6 +109,36 @@ def main() -> int:
         ref = [float(x) for x in ref]
     if len(ref) != n:
         sys.exit(f"✗ 기준자세 길이 {len(ref)} ≠ 관절수 {n}")
+
+    # ── ★정지 게이트 (2026-08-10 추가) ──────────────────────────────────────
+    #   왜 필요한가 — 실제로 당한 실수다: 로봇이 공중에 매달린 채 limp 이면 hip·thigh·foot
+    #   은 **자유롭게 흔들리는 진자**다. 짧은 창(4.8초)을 우연히 잔잔한 순간에 잡으면
+    #   변동폭 0.02° 로 "안정" 처럼 보이고, 그 순간의 임의 자세로 영점이 박힌다.
+    #   그렇게 잡은 offset 은 재시작 직후 이미 5~13° 어긋나 있었다.
+    #   반대로 calf 는 구조적 한계에 닿아 있어 0.01° 로 반복된다 — 그 차이를 여기서 가른다.
+    #   ⇒ 기계적으로 구속되지 않은 축은 **지그로 잡거나 사람이 붙들고** 채취해야 한다.
+    if a.settle_s > 0:
+        print(f"  정지 확인 중… {a.settle_s:.0f}초 (허용 {a.settle_tol:.2f}°)", flush=True)
+        buf, t_end = [], time.time() + a.settle_s
+        while time.time() < t_end:
+            buf.append(read_state().get("q_leg_deg") or [])
+            time.sleep(0.2)
+        buf = [b for b in buf if len(b) == n]
+        if len(buf) < 5:
+            sys.exit("✗ 상태 샘플이 부족하다 — 제어기가 살아있는지 확인할 것.")
+        span = [max(s[i] for s in buf) - min(s[i] for s in buf) for i in range(n)]
+        moving = [(names[i], span[i]) for i in range(n) if span[i] > a.settle_tol]
+        if moving:
+            print(f"\n  ❌ 자세가 멈춰 있지 않다 — 채취를 중단한다.\n")
+            for nm_, sp in moving:
+                print(f"     {nm_:10} {a.settle_s:.0f}초간 {sp:6.2f}° 움직임")
+            print(f"\n     고정된 축: {[names[i] for i in range(n) if span[i] <= a.settle_tol] or '없음'}")
+            print(f"\n  ▸ 이 축들은 기계적으로 구속돼 있지 않다(매달린 상태 + limp = 자유 진자).")
+            print(f"    지그로 고정하거나 사람이 기준자세로 붙든 채 다시 실행할 것.")
+            print(f"    구속 없이 잡은 영점은 다음 순간 이미 틀어진다 — 그게 이 게이트를 만든 이유다.")
+            print(f"    (정말 이대로 강행하려면 --settle-s 0)")
+            return 1
+        print(f"  ✅ 전 축 정지 (최대 변동 {max(span):.3f}°)\n")
 
     st = read_state()
     ch, src = channel_angles(st, joints)
@@ -149,6 +183,21 @@ def main() -> int:
     if err >= 1e-6:
         print("    ✗ 식이 안 맞는다. 적용하지 말 것."); return 1
     print()
+
+    # ── 재현성 검사 ────────────────────────────────────────────────────────
+    #   ★정지 게이트만으로는 부족하다 — **다 흔들리고 나서 멈춘 진자도 "정지" 로 통과한다.**
+    #     그 정지점은 중력 평형점이지 기준자세가 아니다. 구분하는 유일한 방법은
+    #     "지난번에 잡은 영점과 같은 값이 나오는가" 다. 안 나오면 그 자세는 재현되지 않는 것.
+    redo = [(names[i], old[i], new[i]) for i in range(n)
+            if abs(old[i]) > 1e-9 and abs(new[i] - old[i]) > 1.0]
+    if redo:
+        print("  ── ❌ 재현성 실패 — 이 축들은 지난 영점과 다른 값이 나온다 ──")
+        for nm_, o, nw in redo:
+            print(f"     {nm_:10} 지난 {o:+8.2f}  →  이번 {nw:+8.2f}   ({nw-o:+.2f}° 차)")
+        print("     이 자세는 재현되지 않는다 = 그 축이 기계적으로 구속돼 있지 않다는 뜻이다.")
+        print("     (매달린 상태 + limp 이면 hip·thigh·foot 은 자유 진자다. calf 는 구조적")
+        print("      한계에 닿아 있어 재현된다 — 그 차이가 그대로 여기 드러난다.)")
+        print("     ⇒ 지그/사람이 기준자세로 붙든 채 다시 잴 것. 그 전에는 --apply 하지 말 것.\n")
 
     # ── 안전 경고 ──────────────────────────────────────────────────────────
     warn = []

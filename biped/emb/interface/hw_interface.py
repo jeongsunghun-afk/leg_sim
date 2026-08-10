@@ -7,6 +7,8 @@ IMU RPY(deg) → quat(wxyz), gyro(deg/s) → rad/s. 접촉은 실기 힘센서 �
 """
 from __future__ import annotations
 import numpy as np
+
+R2D = 180.0 / np.pi
 from joint_map import JointMap, D2R
 
 
@@ -48,8 +50,18 @@ class HwInterface:
         return self.jm.ch_to_q_joint(self._raw.q_deg)
 
     def dq_leg_dps(self) -> np.ndarray:
-        """다리 8관절 각속도 [모델각 deg/s]. offset 은 상수라 미적용."""
-        return np.asarray(self._raw.dq_dps, float)[self.jm.ch] / self.jm.sign
+        """다리 8관절 각속도 [모델각 deg/s]. offset 은 상수라 미적용.
+
+        ★2026-08-10 수정 — 여기만 `sign` 으로만 나눠 **gear_k 와 커플링이 빠져 있었다.**
+          위치 경로(ch_to_q_joint)·컨트롤러 경로(ch_to_dq_ctrl)와 규약이 달라, calf 는
+          속도가 1.5배, foot 은 커플링 항만큼 틀린 값이 나왔다.
+          ⇒ JointMap.ch_to_dq_ctrl 에 위임한다(rad/s 로 주므로 deg/s 로 되돌린다).
+            수식을 여기 복사하지 않는다 — 같은 실수를 GUI 한계·gen_emb_init_pose·
+            calib_zero 에서 이미 세 번 했다.
+        ⚠지금은 이 함수를 아무도 안 쓴다(전수 grep 0건). 그래서 드러나지 않았다.
+          RL·모델기반이 붙으면 바로 쓰게 되는 자리라 미리 맞춰 둔다.
+        """
+        return self.jm.ch_to_dq_ctrl(self._raw.dq_dps) * R2D
 
     def ctrl_state(self):
         """모델기반용 상태: (q_rad[8], dq_rad[8], quat_wxyz[4], gyro_rad[3], acc[3], contact[2])."""

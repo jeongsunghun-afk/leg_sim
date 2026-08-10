@@ -160,6 +160,8 @@ class WbcLegged {
   bool ankleHard_ = false; double kpAnkle_ = 150, kdAnkle_ = 12;  // ★발목 hard-constraint(ANKLE_HARD, 기본off). 발목4 q̈=PD를 hard eq로=TSID 내 발목만 strict("poor-man's HQP", 진짜 HQP계층 아님). ⚠검증(2026-08): weighted posture보다 나쁨(VX=0.5 4/6 vs weighted 6/6)+강성 낮춰야만 안정(kpAnk30 OK·80+ 붕괴) — 강체 발목이 터치다운 컴플라이언스·QP trade-off 자유를 뺏음. 기록용 유지
   bool basePd_ = false, baseNoFF_ = false; double kpBase_ = 100, kdBase_ = 10;  // BASE_PD/BASE_NOFF 진단
   void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
+  vector_t rotorArm_;  // ★반사관성(Irot·N², pinocchio 관절순). MuJoCo plant의 dof_armature와 정합=컨트롤러가 실제 관절관성 반영(고속 저-토크 붕괴 근본수정). 빈 벡터=미적용(하위호환).
+  void setRotorArmature(const vector_t& a) { rotorArm_ = a; }
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
   vector_t torqueLimits_;
   int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0, nWsr_ = 20;
@@ -180,7 +182,9 @@ class WbcLegged {
     pinocchio::updateFramePlacements(model, data);
     pinocchio::crba(model, data, qM_);
     data.M.triangularView<Eigen::StrictlyLower>() = data.M.transpose().triangularView<Eigen::StrictlyLower>();
-    M_ = data.M; nle_ = pinocchio::nonLinearEffects(model, data, qM_, vM_);
+    M_ = data.M;
+    if (rotorArm_.size() == nJ_) for (int j = 0; j < nJ_; ++j) M_(6 + j, 6 + j) += rotorArm_(j);  // ★반사관성=plant dof_armature 정합(순수 관성항, nle 불변)
+    nle_ = pinocchio::nonLinearEffects(model, data, qM_, vM_);
     j_ = matrix_t::Zero(3 * nc_, nv_);
     for (int i = 0; i < nc_; ++i) { matrix_t jac = matrix_t::Zero(6, nv_); pinocchio::getFrameJacobian(model, data, eeId_[i], pinocchio::LOCAL_WORLD_ALIGNED, jac); j_.middleRows(3 * i, 3) = jac.topRows<3>(); }
     pinocchio::computeJointJacobiansTimeVariation(model, data, qM_, vM_);

@@ -190,8 +190,8 @@ int main(int argc, char** argv) {
   // ★legged_control 충실 이식 WBC (WBC_LEGGED=1). [q̈,f,τ]·full EOM·torque limit·FF base.
   const bool wbcLegged = getenv("WBC_LEGGED");
   WbcLegged wbcL(interface.getPinocchioInterface(), info, footId);
-  // ★게이트별 base task 가중 기본값(2026-08-10): trot=150(고속 base 회복 authority↑ → VX≤0.5 강건, W_BASE=50은 ≤0.3만).
-  //   ⚠trot 전용 — bound/static_walk는 150에서 붕괴(falls>2000)하므로 50 유지. MPC_HZ=100 병용 시 trot VX≤0.8. env W_BASE로 override.
+  // ★게이트별 base task 가중 기본값(2026-08-10): trot=150(base 회복 authority↑). ⚠trot 전용 — bound/static_walk는
+  //   150에서 붕괴(falls>2000)하므로 50 유지. env W_BASE로 override. (엔벨로프 절대치=반사관성 정합 후 실측물리 기준: trot/bound≤0.8.)
   if (gait == "trot") wbcL.wBase_ = 150; else if (gait != "stance") wbcL.wBase_ = 50;
   if (getenv("W_SW")) wbcL.wSwing_ = atof(getenv("W_SW"));
   if (getenv("W_BASE")) wbcL.wBase_ = atof(getenv("W_BASE"));
@@ -365,16 +365,23 @@ int main(int argc, char** argv) {
   // ★A와 동일 GEARBOX(반사관성+댐핑+마찰): dof_armature=I_rot·N²(MJCF 0→발목 flail 과장 보정). 감속비 hip7·thigh7·calf10.5·foot8.4
   { const char* GN[4] = {"hip", "thigh", "calf", "foot"}; double gear[4] = {7.0, 7.0, 10.5, 8.4};
     bool gbx = !(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"), "0"));  // 기본 ON, GEARBOX=0으로만 끔
-    double Irot = getenv("ROTOR_I") ? std::atof(getenv("ROTOR_I")) : 1e-4;
-    double jdmp = getenv("JDAMP") ? std::atof(getenv("JDAMP")) : 0.1, jfrc = getenv("JFRIC") ? std::atof(getenv("JFRIC")) : 0.5;
+    double Irot = getenv("ROTOR_I") ? std::atof(getenv("ROTOR_I")) : 7.4e-4;  // ★PACE 실측(2026-08-05, 구 placeholder 1e-4의 7.4배). armature=Irot·N²
+    double jdmp = getenv("JDAMP") ? std::atof(getenv("JDAMP")) : 0.099, jfrc = getenv("JFRIC") ? std::atof(getenv("JFRIC")) : 0.38;  // ★PACE 실측(처프 동적)
     if (gbx) for (int k = 0; k < m->nu; ++k) { int jid = m->actuator_trnid[k * 2]; if (jid < 0) continue;
       const char* jn = mj_id2name(m, mjOBJ_JOINT, jid); if (!jn) continue;
       int gi = 0; for (int g = 0; g < 4; ++g) if (std::strstr(jn, GN[g])) gi = g;  // FB_waist→hip fallback(감속7:1, A와 동일)
       double N = gear[gi]; int dof = m->jnt_dofadr[jid];
-      m->dof_armature[dof] = Irot * N * N; m->dof_damping[dof] = jdmp; m->dof_frictionloss[dof] = jfrc; } }
+      m->dof_armature[dof] = Irot * N * N; m->dof_damping[dof] = jdmp; m->dof_frictionloss[dof] = jfrc; }
+    // ★★컨트롤러 모델 정합(2026-08-10): WBC pinocchio M에도 같은 반사관성(Irot·N²)을 넣어야 실제 관절관성 반영.
+    //   안 하면 plant는 무거운데 컨트롤러는 가벼운 줄 알아 저-토크 명령→고속서 다리 지연→붕괴(사용자 "댐핑 부족" 지적의 근본).
+    //   WBC 관절순=jointNames(FL,FR,HL,HR × hip,thigh,calf,foot) → type=j%perLeg. GEARBOX=0이면 plant도 armature 0이라 미적용.
+    if (gbx && wbcLegged) { const int perLeg = nJ / 4; vector_t rotorArm(nJ);
+      for (int j = 0; j < nJ; ++j) { double N = gear[j % perLeg]; rotorArm(j) = Irot * N * N; }
+      wbcL.setRotorArmature(rotorArm); } }
   const double dt = m->opt.timestep;
-  // ★기본 100Hz(2026-08-10): 재계획률↑=base 회복 authority↑=범용 고속 엔벨로프 확장(trot≤1.1·bound≤0.8·walk≤0.5,
-  //   50Hz 대비 trot≤0.5·bound≤0.7·walk≤0.3). 저속/stance 무회귀. 연산 2배지만 solve~7ms<10ms budget 여유(D1=연구·비실시간). MPC_HZ env로 override.
+  // ★기본 100Hz(2026-08-10): 재계획률↑=base 회복 authority↑=고속 엔벨로프 확장(범용 레버). 저속/stance 무회귀.
+  //   연산 2배지만 solve~7ms<10ms budget 여유(D1=연구·비실시간). MPC_HZ env로 override.
+  //   ※엔벨로프 절대치는 반사관성 정합(GEARBOX plant + WBC rotorArm) 후 = 실측 PACE 물리 기준 trot/bound≤0.8·walk≤0.3.
   const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 100.0;
   const int mpcDecim = std::max(1, int((1.0 / mpcHz) / dt));  // 재계획 주기
   const double Kp = getenv("KP") ? std::atof(getenv("KP")) : 60.0;

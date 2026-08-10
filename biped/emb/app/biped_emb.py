@@ -535,7 +535,16 @@ def main():
               dt_buf.append(period)
               if len(dt_buf) > 2000:            # 최근 ~4초(500Hz 기준)
                   del dt_buf[:len(dt_buf) - 2000]
-          if loop_t - last_pub > 0.05:
+          # ★발행 주기 0.05(20Hz) → 0.02(50Hz). 표시 지연의 병목이 여기였다:
+          #   명령은 내부 500Hz 로 실행되는데 화면은 20Hz 라 "로봇은 빠른데 표시가 느리다".
+          #   ★실측 — 지터 비용은 없다(안정 후 30초, 2000샘플):
+          #       20Hz: p50 1.999 · p95 2.691 · max 11.276 ms · 평균 500.0Hz
+          #       50Hz: p50 1.999 · p95 2.501 · max  7.884 ms · 평균 500.0Hz
+          #     /tmp 가 tmpfs(RAM)라 json.dump+os.replace 가 충분히 싸다.
+          #   ⚠기동 직후 ~15초는 과도구간이라 max 가 300ms 까지 튄다(SHM init). 그때 재면
+          #     "50Hz 가 지터를 만든다" 는 오판을 하게 된다 — 반드시 안정 후에 잴 것.
+          #   ⚠더 올릴 거면(>100Hz) 발행을 별도 스레드로 빼라. 루프 안 I/O 는 언젠가 문제가 된다.
+          if loop_t - last_pub > 0.02:
               if dt_buf:
                   sdt = sorted(dt_buf)
                   n = len(sdt)

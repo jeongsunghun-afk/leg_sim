@@ -11,6 +11,7 @@ CFG="$HERE/ocs2_02leg/config/task.info $HERE/ocs2_02leg/urdf/02leg_ocs2.urdf $HE
 MJCF="$HERE/mjcf/quad_real_17dof_waist_sphere.mjcf"
 # ★legged식 WBC(WBC_LEGGED) 사용. 동적 gait은 base 가중↑(W_BASE 50)로 안정 trot.
 #   1ms/1kHz·바닥강성 0.005·허리 단단 홀드는 바이너리 기본값(A 제어기와 동일 세팅).
-WFLAGS="WBC_LEGGED=1"; [ "$GAIT" != "stance" ] && WFLAGS="WBC_LEGGED=1 W_BASE=50"
+# ★W_BASE는 바이너리가 게이트별로 설정(trot=150 고속회복·bound/walk=50). 강제 안 함(env W_BASE로만 override).
+WFLAGS="WBC_LEGGED=1"
 echo "▶ gait=$GAIT vx=$VXX  (마우스=카메라, 창 닫기=종료)"
 env WBC=1 VIEW=1 VX="$VXX" $WFLAGS "$EXE" $CFG "$MJCF" "$GAIT" 100000

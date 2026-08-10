@@ -190,6 +190,9 @@ int main(int argc, char** argv) {
   // ★legged_control 충실 이식 WBC (WBC_LEGGED=1). [q̈,f,τ]·full EOM·torque limit·FF base.
   const bool wbcLegged = getenv("WBC_LEGGED");
   WbcLegged wbcL(interface.getPinocchioInterface(), info, footId);
+  // ★게이트별 base task 가중 기본값(2026-08-10): trot=150(고속 base 회복 authority↑ → VX≤0.5 강건, W_BASE=50은 ≤0.3만).
+  //   ⚠trot 전용 — bound/static_walk는 150에서 붕괴(falls>2000)하므로 50 유지. MPC_HZ=100 병용 시 trot VX≤0.8. env W_BASE로 override.
+  if (gait == "trot") wbcL.wBase_ = 150; else if (gait != "stance") wbcL.wBase_ = 50;
   if (getenv("W_SW")) wbcL.wSwing_ = atof(getenv("W_SW"));
   if (getenv("W_BASE")) wbcL.wBase_ = atof(getenv("W_BASE"));
   if (getenv("W_F")) wbcL.wForce_ = atof(getenv("W_F"));

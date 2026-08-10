@@ -35,6 +35,11 @@ target_link_libraries(biped_sim PRIVATE ${EIQP_LIB} ${MUJOCO_LIB})
 add_executable(biped_deploy src/biped_deploy.cpp)
 target_include_directories(biped_deploy PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${MUJOCO_INCLUDE})
 target_link_libraries(biped_deploy PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} dl)
+
+# ── ★실기 모니터 뷰어 — 엔코더 표시 전용(제어·물리 없음) ────────────────────
+add_executable(biped_monitor src/biped_monitor.cpp)
+target_include_directories(biped_monitor PRIVATE ${EIGEN_INCLUDE} ${MUJOCO_INCLUDE})
+target_link_libraries(biped_monitor PRIVATE ${MUJOCO_LIB} glfw dl)
 target_link_directories(biped_sim PRIVATE ${ENV_PREFIX}/lib)
 set_target_properties(biped_sim PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
 

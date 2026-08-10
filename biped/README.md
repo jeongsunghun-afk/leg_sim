@@ -41,8 +41,10 @@ HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GU
 | `biped_mpc_wbic.py` | SRBD MPC(2발) + WBIC 추종 + heading-hold + 선회/좌우. **메인** |
 | `biped_run.py` | 실행기: 컨트롤러+뷰어 + JSON 명령채널(v/vy/w/body_h/mode) + 상태발행 |
 | `biped_view.py` | 단독 뷰어(낙상 자동리셋) · `biped_ref_export.py` RL 레퍼런스 생성 |
-| `../quad/teleop_gui_biped.py` | 슬림 GUI (dearpygui, 듀얼스틱) |
-| `run_gui_biped.sh`·`run_gui_cpp.sh`·`record_biped.sh` | 원샷 런처 |
+| `teleop_gui_biped.py` | 슬림 GUI (dearpygui, 듀얼스틱 + 각축 JOG 패널). ★커밋 7953c5c 에서 `quad/` → `biped/` 로 이동 |
+| `run_gui_biped.sh` | sim 원샷 런처(컨트롤러+뷰어+GUI) |
+| `run_gui_only.sh` | **GUI 만** — 실기 JOG 검증용(컨트롤러는 `emb/app/biped_emb.py` 따로) |
+| `run_gui_cpp.sh`·`record_biped.sh` | 기타 런처 |
 
 **C++** (`cpp/`, 배포용 — 성숙 quad C++과 동일 구조·파리티 검증)
 | 파일 | 역할 |

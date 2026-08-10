@@ -74,6 +74,14 @@ cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded 2>&1 \
   - 물리 한계 전에 멈춰야 하면 → `min_deg`/`max_deg` (및 `jog.range_frac`) 조정
 - [ ] 8축 전부 방향·0점·한계 확정 → config 저장 → **git commit**
 
+★**게인 후보 (2026-08-07 실기 전언)**: kp **hip 100 / thigh 50 / calf 50 / foot 30**
+  — 처짐 대항이 괜찮았다는 보고. MJCF 중력토크 교차검증에서도 방향이 맞다
+  (hip 이 중력토크 4.96 Nm 로 최대 → 처짐 7.1°@kp40 → 2.8°@kp100).
+  ⚠ 적용 전: (1) `pace/spec.yaml` `kp_max: 60` 과 충돌(hip 100) — 상한 재조정 필요
+             (2) kd 는 전언에 없다. kp 를 2.5배 올리면 진동 여지 → 축별 스텝응답으로 짝 확정.
+                 Kd 는 속도 노이즈(±15 dps)를 토크로 증폭하니 함부로 올리지 말 것.
+  상세는 `config/biped_emb.yaml` joints 위 메모.
+
 ⚠ 게인은 hip 만 실측(kp40/kd2)이고 나머지는 ×5 외삽이다. thigh/calf/foot 은 부하가 다르므로
 `mot_test` 로 축별 재검증할 것. `Kd` 는 속도 노이즈를 그대로 토크로 증폭하니 함부로 올리지 말 것.
 
@@ -81,9 +89,16 @@ cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded 2>&1 \
 
 ## 4. home 모드 실기 검증  (코드는 있는데 실기에서 한 번도 안 돌았다)
 
-mock 검증만 끝난 상태다. GUI 는 Pi 에 `dearpygui` 가 없어 띄워보지도 못했다.
+mock 검증만 끝난 상태다. **GUI 는 2026-08-07 에 Pi 설치 완료**(`~/.venvs/gui`).
 
-- [ ] **먼저 CLI 로** (dearpygui 없이 가능, 더 안전):
+```bash
+# 터미널 A — 컨트롤러(off·jog·home·hold)
+cd ~/simulation/biped/emb && python3 app/biped_emb.py
+# 터미널 B — GUI 만
+cd ~/simulation/biped && ./run_gui_only.sh
+```
+
+- [ ] **먼저 CLI 로 해도 된다**(GUI 없이, 더 보수적):
       `/tmp/biped_cmd.json` 에 `{"mode":"home", "seq":N}` 을 20Hz 로 써서 확인
       (⚠ `seq` 를 매번 증가시킬 것 — 워치독이 내용 변화로 생존을 판정한다)
 - [ ] 확인할 것: 전 축 **동시 출발·동시 도착**, 계단 없이 부드러운 출발, 도착 후 홈 유지,
@@ -91,7 +106,8 @@ mock 검증만 끝난 상태다. GUI 는 Pi 에 `dearpygui` 가 없어 띄워보
 - [ ] `home.q_deg` 재설정 — **현재 전 축 0° 는 다리를 쭉 편 자세**다. 다리를 단 지금은
       실제 기립 자세(무릎 굽힘)로 잡아야 한다. 굽힘이 크면 `jog.range_frac`(현재 0.5)에
       걸려 클램프되고 기동 시 경고가 뜬다 → `range_frac` 부터 검토.
-- [ ] (선택) GUI: `dearpygui` 설치. aarch64 휠 있음. PEP 668 → venv 또는 `--break-system-packages`
+- [x] GUI 설치 완료 — `python3 -m venv --system-site-packages ~/.venvs/gui && ~/.venvs/gui/bin/pip install dearpygui`
+      (system-site-packages 라 yaml·numpy 를 상속한다 → GUI 가 config 의 실제 관절한계를 읽는다)
 
 ⚠ `home.q_deg` 의 "0" 은 **모터 엔코더 0점**이다 (jog/home 경로는 `offset_deg` 를 안 거친다).
 3번 캘리브레이션이 끝나야 기계적 홈과 일치한다.

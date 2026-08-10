@@ -33,11 +33,16 @@ emb/
 │   └── hw_interface.py       매핑+IMU변환 묶음(jog·hold·torque write, ctrl_state)
 ├── control/
 │   ├── jog.py                per-axis 저속 위치 램프 ← ★각축 검증
-│   ├── mode_fsm.py           off/jog/hold/stand/walk 상태기계
-│   └── model_ctrl.py         모델기반(MPC+WBIC) 래퍼 — biped_deploy 포팅(stand/walk)
-├── app/biped_emb.py          메인 RT 루프 + 상태발행
-├── gui/teleop_emb.py         JOG 패널(8관절 슬라이더·실측) + 모드버튼 + walk 조이스틱
-└── run_emb.sh                런처(app + GUI)
+│   ├── home.py               홈 자세로 S-curve 복귀(전축 동시출발·동시도착)
+│   ├── mode_fsm.py           off/jog/home/hold/stand/walk 상태기계
+│   └── model_ctrl.py         (미사용) 모델기반 래퍼 — ★배포는 C++ cpp/build/biped_deploy
+├── app/biped_emb.py          메인 RT 루프 + 상태발행 (off·jog·home·hold 만)
+└── run_emb.sh                런처
+```
+
+★GUI 는 이 트리에 없다. `../teleop_gui_biped.py` 하나로 통합돼 있다
+  (커밋 9454912 에서 각축 JOG 패널을 흡수하며 `gui/teleop_emb.py` 제거,
+   7953c5c 에서 `quad/` → `biped/` 로 이동). 실행: `../run_gui_only.sh`
 ```
 
 ## 실행

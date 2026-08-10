@@ -8,7 +8,10 @@
   ★stand/walk 는 **이 앱이 처리하지 않는다** — 실기 배포는 C++ 기준이다.
     cpp/build/biped_deploy 가 담당한다(emb/NEXT_HW.md §9). 여기서 받으면 hold 로 되돌린다.
     ⚠모터 명령 writer 는 한 번에 하나만 — 둘을 동시에 띄우지 말 것.
-GUI(gui/teleop_emb.py)와 JSON 채널(/tmp/biped_cmd.json)로 디커플. 상태는 /tmp/biped_state.json 발행.
+GUI(../teleop_gui_biped.py — 실행은 ../run_gui_only.sh)와 JSON 채널(/tmp/biped_cmd.json)로
+디커플. 상태는 /tmp/biped_state.json 발행.
+  ★종전 주석의 `gui/teleop_emb.py` 는 **없는 파일**이었다 — 커밋 9454912 에서 각축 JOG 패널을
+    teleop_gui_biped 로 통합하며 teleop_emb 를 제거했는데 참조가 안 고쳐져 있었다.
 
 실행:
   MOCK=1 python app/biped_emb.py         # 데스크톱 데모(SHM 없이 jog 루프 검증)

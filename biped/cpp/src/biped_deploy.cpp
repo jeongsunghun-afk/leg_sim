@@ -138,6 +138,31 @@ int main(int argc, char** argv){
 
   for(int s : {SIGINT,SIGTERM,SIGHUP,SIGQUIT}) std::signal(s, on_sig);
 
+  // ★★IMU 생존 확인 — tilt E-stop 은 IMU 가 있어야만 동작한다.
+  //   이 로봇은 SHM fIMUBuf 가 전부 0 인데 IsUpdatedIMU() 는 1 을 반환한다
+  //   (emb/IMU_RECOVERY.md). 그러면 tilt ≡ 0 이라 임계 40° 에 **영원히 도달 못 하고**
+  //   tilt E-stop 이 **완전히 무력**해진다. 조용히 넘어가면 보호장치가 있다고
+  //   착각하게 되므로 기동 시 명시적으로 경고하고 상태에도 노출한다.
+  //   ⚠"값이 0" 보다 "신선한 0" 이 더 위험하다 — freshness 검사로 안 걸러진다.
+  bool imu_dead = false;
+  { HwState s0; hw->read(s0);
+    double a = std::fabs(s0.acc[0])+std::fabs(s0.acc[1])+std::fabs(s0.acc[2]);
+    double r = std::fabs(s0.rpy[0])+std::fabs(s0.rpy[1])+std::fabs(s0.rpy[2]);
+    // 정상 IMU 는 정지 중에도 가속도계에 중력 ~9.81 이 반드시 잡힌다. 그게 없으면 죽은 것.
+    imu_dead = (a < 0.5 && r < 1e-9);
+    if(imu_dead){
+      std::fprintf(stderr,
+        "\n%s\n"
+        "!! ⚠⚠ IMU 가 전부 0 → **tilt E-stop 무력**(tilt≡0 이라 임계에 도달 불가).\n"
+        "!!    남은 런타임 보호는 워치독 · 토크트립 · 속도트립 **뿐**이다.\n"
+        "!!    stand/walk 는 자세 피드백이 필요하다 — IMU 없이 돌리는 것은 위험하다.\n"
+        "!!    원인·조치: emb/IMU_RECOVERY.md\n%s\n\n",
+        std::string(72,'!').c_str(), std::string(72,'!').c_str());
+    } else {
+      std::printf("[deploy] IMU 정상 — |acc|합 %.2f (중력 감지). tilt E-stop 유효.\n", a);
+    }
+  }
+
   // ── 상태 ──
   std::vector<float> q_ch(NCH), dq_ch(NCH), tau_ch(NCH), kp_ch(NCH), kd_ch(NCH), zero(NCH,0.f);
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
@@ -153,7 +178,7 @@ int main(int argc, char** argv){
   std::printf("[deploy] 모드: off/hold/stand/walk. GUI 로 조종(%s).\n", cmd_p.c_str());
   std::printf("[deploy] ⚠ jog·home 은 Python 앱 담당. writer 는 한 번에 하나만.\n");
 
-  double t0 = now_s(), prev_loop = t0; long long k = 0;
+  double t0 = now_s(), prev_loop = t0; long long k = 0; bool overrun_warned=false;
   int rc = 0;
   while(!g_stop && (now_s()-t0) < T){
     double lt = now_s();
@@ -273,7 +298,11 @@ int main(int argc, char** argv){
 
       // 토크 → 채널. ★tau_max_frac 로 한 번 더 클램프(컨트롤러 내부 클립과 별개의 상위 안전망).
       for(int i=0;i<NU;i++){
-        double lim = m->jnt_actfrcrange[(i+1)*2+1] * cfg.tau_max_frac;   // freejoint 다음이 액추에이터 관절
+        // ★actuator_trnid 로 관절을 찾는다. "freejoint 다음이 순서대로 액추에이터 관절"
+        //   이라는 가정은 현재 MJCF 에선 맞지만(검증함), 모델이 바뀌면 조용히 틀린 축의
+        //   토크한계를 쓰게 된다. quad 도 같은 방식이다(quad_control.hpp:81 인근).
+        int jid = m->actuator_trnid[i*2];
+        double lim = (jid>=0 ? m->jnt_actfrcrange[jid*2+1] : 0.0) * cfg.tau_max_frac;
         if(lim<=0) lim = 80.0;
         tau_ctrl[i] = std::max(-lim, std::min(lim, d->ctrl[i]));
       }
@@ -311,16 +340,27 @@ int main(int argc, char** argv){
         "\"rpy_deg\":[%.2f,%.2f,%.2f],\"tilt_deg\":%.2f,\"loop_hz\":%.1f,"
         "\"motors_on\":%s,\"health\":%s,\"installed\":%s,"
         "\"n_ok\":%d,\"n_fault\":%d,\"n_dead\":%d,\"n_absent\":%d,\"n_installed\":%d,"
-        "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s}",
+        "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s,\"tilt_estop_ok\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
         rpy[2]*JointMap::R2D, tilt, hz_ema, (mode!="off"&&!wd)?"true":"false",
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,
-        (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false");
+        (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",
+        imu_dead?"false":"true");
       write_state(stt_p, buf);
     }
 
     // ⑦ 실시간 페이싱(절대시각 — 누적 드리프트 없음)
+    //   ★밀렸을 때 재동기: Pi 부하로 루프가 느려지면 t0+k·dt 가 현재보다 한참 과거가 되고,
+    //     부하가 풀리는 순간 sleep 없이 수백 틱을 몰아쳐 돈다(제어주기 붕괴).
+    //     10 틱 이상 밀리면 스케줄을 현재로 되맞추고, 지속되면 한 번 경고한다.
     k++;
+    double lag = now_s() - (t0 + k*dt);
+    if(lag > 10*dt){
+      if(!overrun_warned){ overrun_warned = true;
+        std::fprintf(stderr, "[deploy] ⚠ 루프가 %.0fms 밀렸다 — 제어주기 %.0fHz 를 못 지키고 있다."
+                             " CPU 부하/우선순위 확인.\n", lag*1e3, cfg.ctrl_hz); }
+      t0 = now_s() - k*dt;                 // 스케줄 재동기(캐치업 스핀 방지)
+    }
     sleep_s(t0 + k*dt - now_s());
   }
 

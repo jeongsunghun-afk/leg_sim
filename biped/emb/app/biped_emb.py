@@ -72,9 +72,8 @@ def safe_shutdown(hw, jm):
     """
     try:
         hw.enable(False)
-        z = jm.q_ctrl_to_ch(np.zeros(jm.n_leg))
         for _ in range(25):                     # enable=False → 브리지가 kp=kd=0 으로 기록
-            hw.write_jog(z)
+            hw.write_limp()
             time.sleep(0.002)
         print("[biped_emb] 종료 — 무여자(Kp=Kd=0) 명령 25회 기록 완료.")
     except Exception as e:
@@ -203,7 +202,7 @@ def main():
     tau_over_t0  = None                      # 토크 연속초과 시작시각(None=정상)
 
     jog_goal = np.zeros(jm.n_leg)            # GUI 축별 목표각[deg]
-    hold_ch  = np.zeros(jm.n_channel)        # hold 목표(채널)
+    hold_leg = np.zeros(jm.n_leg)            # hold 목표 [**모델각 deg**]
     walk_cmd = {"v": 0.0, "vy": 0.0, "w": 0.0, "body_h": 0.38}
     # ★model_ctrl(Python 모델기반)은 더 이상 쓰지 않는다 — 배포는 C++ 기준(§9).
     model_warned = False                     # stand/walk 거부 안내를 한 번만 출력
@@ -255,7 +254,7 @@ def main():
         pass
 
     if fsm.mode == FSM.HOLD:
-        hold_ch = _raw0.q_deg.copy()          # ★측정각 래치 — 인계 순간 움직임 0
+        hold_leg = jm.ch_to_q_joint(_raw0.q_deg)   # ★측정각 래치(모델각) — 인계 순간 움직임 0
         hw.enable(True)
         print(f"[biped_emb] 인계: hold 로 시작 — Emb 가 잡고 있던 자세를 그대로 유지한다.\n"
               f"            q_leg={np.round(_raw0.q_deg[jm.ch], 2).tolist()} deg\n"
@@ -352,7 +351,7 @@ def main():
                                 + "  ".join(f"{jm.names[i]}{q_leg[i]:+.1f}→{homer.q_home[i]:+.1f}"
                                             for i in range(jm.n_leg)), flush=True)
                       if fsm.entered(FSM.HOLD):
-                          hold_ch = raw.q_deg.copy()
+                          hold_leg = q_leg.copy()          # 모델각
 
           # ── 워치독: 명령 끊기면 안전(limp) ──
           #   ★전이를 출력한다. 조용히 enable(False) 만 하면 워치독이 도는지 운용 중에도
@@ -374,7 +373,7 @@ def main():
           #     (b) `hw.enable(True)` 였다 — E-stop 인데 **인가 상태**로 두는 것이라
           #         yaml 주석의 "limp" 와 정반대였다 → enable(False)
           #     (c) **래치가 없어** 20ms 뒤 명령파일이 여전히 stand 면 곧바로 재무장했다.
-          #         게다가 hold_ch 를 매 틱 재캡처해 목표가 낙하를 따라가 복원토크가 0 이 됐다.
+          #         게다가 hold 목표를 매 틱 재캡처해 목표가 낙하를 따라가 복원토크가 0 이 됐다.
           #         → 래치 + 1회만 캡처. 해제는 명령파일이 명시적으로 off 를 보낼 때만.
           tilt_now = float(np.hypot(rpy[0], rpy[1]))
           if (not estop_latched) and fsm.mode != FSM.OFF and tilt_now > tilt_estop:
@@ -430,7 +429,7 @@ def main():
 
           # ── 모드 디스패치 (전 채널 명령; 미배선/죽은 축은 임베디드가 흡수) ──
           if fsm.mode == FSM.OFF:
-              hw.write_jog(jm.q_ctrl_to_ch(np.zeros(jm.n_leg)))     # enable=False → 브리지 0 토크
+              hw.write_limp()          # enable=False → 브리지가 kp=kd=0 기록. 위치는 측정각 유지
           elif fsm.mode == FSM.JOG:
               hw.write_jog(jogger.step(jog_goal, dt_meas))
               extra["jog_at_goal"] = jogger.at_goal(jog_goal, settle)
@@ -447,7 +446,7 @@ def main():
               extra["home_done"] = homer.done
               extra["home_at_goal"] = homer.at_goal(q_leg, home_settle)
           elif fsm.mode == FSM.HOLD:
-              hw.write_hold(hold_ch)
+              hw.write_hold(hold_leg)
           # ★stand/walk 디스패치는 없다 — 진입에서 hold 로 되돌린다(위 참조).
           #   실기 모델기반 제어는 cpp/build/biped_deploy 담당(NEXT_HW.md §9).
 

@@ -100,7 +100,7 @@ class HomeTrajectory:
     DT_CAP = 0.05          # 한 틱에 반영할 경과시간 상한[s]
 
     def step(self, dt: float | None = None) -> np.ndarray:
-        """다음 목표각을 채널 배열[deg]로 반환하고 시간을 진행.
+        """다음 목표각을 **모델각 배열[deg]**(n_leg)로 반환하고 시간을 진행.
 
         dt 를 주면 **실제 경과시간**만큼 궤적을 진행한다(미제공 시 공칭 dt).
         ★왜: 루프가 밀렸다 몰아 돌면 self.t 가 실제보다 빨리 흘러 궤적이 **빨리감기** 된다
@@ -113,9 +113,7 @@ class HomeTrajectory:
         s = tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
         self._q_leg = self.q0 + self.d * s
         self.t += self.dt if dt is None else min(dt, self.DT_CAP)
-        out = np.zeros(self.jm.n_channel)
-        out[self.jm.ch] = self._q_leg
-        return out
+        return self._q_leg.copy()      # ★모델각(n_leg). 채널 변환은 hw_interface 담당
 
     # ── 상태 ────────────────────────────────────────────────────────────────
     @property

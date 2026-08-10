@@ -37,8 +37,20 @@ class HwInterface:
         return self._raw
 
     def q_leg_deg(self) -> np.ndarray:
-        """다리 8관절 현재각[deg] (GUI 피드백·jog 기준)."""
-        return self._raw.q_deg[self.jm.ch].copy()
+        """다리 8관절 현재각 [**모델각 deg**] — GUI 표시·jog·home·hold 의 기준 단위.
+
+        ★2026-08-10: 종전엔 채널각(드라이버 보고각)을 그대로 반환했다. 그래서
+          (a) sign 이 안 먹어 GUI/뷰어가 모델과 반대로 보이고
+          (b) 감속비 보정이 없어 calf 가 1.5배, foot 이 1.2배 크게 보였다
+              (드라이버가 전 축을 7:1 로 가정하기 때문).
+          ⇒ 여기서 모델각으로 바꿔 **위 계층 전체를 한 단위로** 통일한다.
+        """
+        return self.jm.ch_to_q_joint(self._raw.q_deg)
+
+    def dq_leg_dps(self) -> np.ndarray:
+        """다리 8관절 각속도 [모델각 deg/s]. offset 은 상수라 미적용."""
+        return (np.asarray(self._raw.dq_dps, float)[self.jm.ch]
+                / self.jm.scale / self.jm.sign)
 
     def ctrl_state(self):
         """모델기반용 상태: (q_rad[8], dq_rad[8], quat_wxyz[4], gyro_rad[3], acc[3], contact[2])."""
@@ -58,15 +70,26 @@ class HwInterface:
 
     # ── 명령 ────────────────────────────────────────────────────────────────
     #   미배선 모터는 통신이 없어 명령이 무효 → 별도 enable 게이팅 없이 전 채널 명령(임베디드가 흡수).
-    def write_jog(self, q_ch_deg):
-        """각축 검증: jog 안전한계 클램프 + 저게인 위치."""
-        q = self.jm.clamp_jog(q_ch_deg)
-        self.be.write_pos(q, self.jm.kp_ch(), self.jm.kd_ch())
+    def write_jog(self, q_leg_joint_deg):
+        """각축 검증: **모델각**을 받아 jog 안전한계로 클램프 후 채널각으로 변환해 기록.
 
-    def write_hold(self, q_ch_deg):
-        """현재자세 홀드(관절한계 클램프)."""
-        q = self.jm.clamp_ch(q_ch_deg)
-        self.be.write_pos(q, self.jm.kp_ch(), self.jm.kd_ch())
+        ★한계를 **모델각에서** 건다. 종전엔 채널각에 걸어서 sign=−1 축의 허용범위가
+          거울처럼 뒤집혔다(HR_thigh 물리한계 2.5° 초과).
+        """
+        qj = self.jm.clamp_jog_joint(q_leg_joint_deg)
+        self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+
+    def write_hold(self, q_leg_joint_deg):
+        """현재자세 홀드: **모델각** 입력, 관절한계 클램프 후 채널각으로 변환."""
+        qj = self.jm.clamp_joint(q_leg_joint_deg)
+        self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+
+    def write_limp(self):
+        """무여자 기록 — 위치는 **현재 측정각**을 그대로 되돌려 준다(계단 방지).
+        ★enable(False) 상태에서 브리지가 kp=kd=0 으로 쓰므로 위치값 자체는 무의미하지만,
+          0 을 쓰면 재무장 순간 0 으로 튀는 명령이 남는다. 측정각을 유지하는 편이 안전하다."""
+        z = np.zeros(self.jm.n_channel)
+        self.be.write_pos(self._raw.q_deg.copy(), z, z)
 
     def write_torque(self, q_ctrl_rad, dq_ctrl_rad, tau_ctrl_nm, kp_leg=0.0, kd_leg=0.0):
         """모델기반: 컨트롤러 토크(Nm) → 채널 MIT. kp/kd=0 = 순수 토크."""

@@ -1,7 +1,11 @@
 """control/jog.py — per-axis 안전 저속 위치 jog. 첫 딜리버러블(각축 검증)의 핵심.
 
-GUI 가 축별 목표각(deg, 다리 8관절)을 주면 max_speed 로 램프 → 급격한 명령 방지.
-jog 안전한계(JointMap.jog_min/max) 로 클램프. 출력 = 채널 배열(hw.write_jog).
+GUI 가 축별 목표각(**모델각 deg**, 다리 8관절)을 주면 max_speed 로 램프 → 급격한 명령 방지.
+jog 안전한계(JointMap.jog_min/max, 모델각) 로 클램프. 출력 = **모델각 배열(n_leg)**.
+
+★2026-08-10 단위 통일: 종전엔 채널 배열(n_channel)을 반환해 hw.write_jog 가 그대로 SHM 에
+  썼다. 그 경로엔 sign·scale 이 없어서 (a) 모델과 방향이 어긋나고 (b) 감속비 보정이 빠졌다.
+  이제 여기는 **모델각만** 다루고, 채널 변환은 hw_interface 가 SHM 경계에서 한 번만 한다.
 """
 from __future__ import annotations
 import numpy as np
@@ -15,13 +19,13 @@ class Jogger:
         self.jm = jm
         self.max_speed = float(max_speed_dps)      # [deg/s] — 실경과시간 기준 제한용
         self.max_step = max_speed_dps * dt         # 1스텝 최대 이동[deg] (dt 미제공 시 폴백)
-        self.q_leg = np.zeros(jm.n_leg)            # 램프 중인 명령(다리 8, deg)
+        self.q_leg = np.zeros(jm.n_leg)            # 램프 중인 명령(다리 8, **모델각 deg**)
 
     def reset(self, q_leg_deg):
         """현재 측정각에서 시작(명령 점프·튀는 동작 방지)."""
         self.q_leg = np.clip(np.asarray(q_leg_deg, float), self.jm.jog_min, self.jm.jog_max)
 
-    def step(self, goal_leg_deg, dt: float | None = None) -> np.ndarray:
+    def step(self, goal_leg_deg, dt: float | None = None) -> np.ndarray:   # → 모델각(n_leg)
         """1틱 전진. dt 를 주면 **실제 경과시간** 기준으로 속도를 제한한다.
 
         ★왜 실경과시간인가 (2026-08-07 실측): 종전엔 호출 1회당 max_speed·dt_nominal 만큼
@@ -35,9 +39,7 @@ class Jogger:
         goal = np.clip(np.asarray(goal_leg_deg, float), self.jm.jog_min, self.jm.jog_max)
         err = goal - self.q_leg
         self.q_leg += np.clip(err, -step, step)
-        out = np.zeros(self.jm.n_channel)
-        out[self.jm.ch] = self.q_leg
-        return out
+        return self.q_leg.copy()                   # ★모델각(n_leg). 채널 변환은 hw_interface 담당
 
     def at_goal(self, goal_leg_deg, tol_deg) -> bool:
         goal = np.clip(np.asarray(goal_leg_deg, float), self.jm.jog_min, self.jm.jog_max)

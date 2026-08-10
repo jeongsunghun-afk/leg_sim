@@ -97,7 +97,7 @@ int main(int argc,char**argv){
 
   glfwSetMouseButtonCallback(win,mouse_btn); glfwSetCursorPosCallback(win,mouse_move); glfwSetScrollCallback(win,scroll);
 
-  std::vector<double> q_ch(jm.n_leg,0.0);
+  std::vector<double> q_ch(jm.n_leg,0.0);   // ★모델각[deg] (이름은 유지, 의미는 모델각)
   std::string mode="-", backend="-", raw_prev;
   double stale_since = now_s(), tilt=0, loop_hz=0;
   int n_ok=0, n_absent=0;
@@ -117,13 +117,13 @@ int main(int argc,char**argv){
         n_absent = (int)json_num(sj,"n_absent",n_absent);
       } }
 
-    // ── 채널각(deg) → 컨트롤러각(rad) → 모델 주입 ──
-    //   ★state 의 q_leg_deg 는 **채널 raw 값**이다. sign/offset 을 거쳐야 모델 각이 된다.
-    //     (joint_map 규약: q_ctrl = (q_ch − offset)/sign · D2R)
-    for(int i=0;i<jm.n_leg;i++){
-      const auto& j = cfg.joints[i];
-      d->qpos[7+i] = ((q_ch[i] - j.offset_deg) / j.sign) * JointMap::D2R;
-    }
+    // ── 모델각(deg) → rad → 모델 주입 ──
+    //   ★★2026-08-10 단위 통일: state.json 의 q_leg_deg 는 이제 **모델각**이다
+    //     (제어기 hw_interface.q_leg_deg 가 sign·offset·scale 을 이미 적용해 발행).
+    //     여기서 sign/offset 을 **다시 적용하면 이중 변환**이 되어 sign=−1 축이
+    //     원위치로 돌아가고 감속비 보정도 두 번 걸린다. 단위 환산만 한다.
+    for(int i=0;i<jm.n_leg;i++)
+      d->qpos[7+i] = q_ch[i] * JointMap::D2R;
     d->qvel[0]=0; for(int i=0;i<m->nv;i++) d->qvel[i]=0;
     mj_forward(m,d);          // ★mj_step 아님 — 물리를 돌리지 않는다(기구학만)
 
@@ -138,7 +138,7 @@ int main(int argc,char**argv){
       int n = std::snprintf(hud,sizeof hud,
         "mode=%s  backend=%s  loop=%.0fHz  tilt=%.1f deg\n"
         "axes ok=%d absent=%d   state age=%.0f ms%s\n"
-        "---- encoder [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, tilt,
+        "---- joint angle (model coord) [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, tilt,
         n_ok, n_absent, stale_ms, stale_ms>1000 ? "  *** STALE ***" : "");
       for(int i=0;i<jm.n_leg && n<(int)sizeof(hud)-40;i++)
         n += std::snprintf(hud+n,sizeof(hud)-n,"%-9s %+7.2f%s",

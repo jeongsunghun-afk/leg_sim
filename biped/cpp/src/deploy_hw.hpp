@@ -309,11 +309,24 @@ struct JointMap {
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
       out[i] = (j.couple_src<0)? raw[i] : raw[i] - j.couple_coef*raw[j.couple_src]; }
   }
+  // ★±180 포화 — Python joint_map.q_joint_to_ch 와 **반드시 같아야 한다**.
+  //   Emb 는 초과분을 클램프가 아니라 **래핑**한다(halGait.cpp:666-671,
+  //   while(fPosition>180) fPosition-=360) → 181° 가 −179° 로 뒤집혀 반대편으로 날아간다.
+  //   ⚠2026-08-10: Python 에만 넣고 여기를 빠뜨렸다. 관절한계 박스 꼭짓점에서
+  //     py 180.00 vs cpp 240.09 로 **60° 어긋났다**. 당시 패리티 시험이 기준자세
+  //     하나만 봐서 통과했다 — 그래서 biped_parity 를 만들어 한계 박스까지 훑는다.
+  static constexpr double WRAP_DEG = 180.0;
+  mutable long n_saturated = 0;               // 포화 발생 횟수(진단용)
+  mutable int  last_saturated_ch = -1;
+
   void q_joint_to_ch(const double* q_j, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
       const double raw = (j.couple_src<0)? q_j[i] : q_j[i] + j.couple_coef*q_j[j.couple_src];
-      out[j.channel] = (float)(raw*j.sk() + j.offset_deg); }
+      double v = raw*j.sk() + j.offset_deg;
+      if(v >  WRAP_DEG){ v =  WRAP_DEG; n_saturated++; last_saturated_ch = j.channel; }
+      if(v < -WRAP_DEG){ v = -WRAP_DEG; n_saturated++; last_saturated_ch = j.channel; }
+      out[j.channel] = (float)v; }
     for(size_t k=0;k<c->waist_ch.size();k++)
       out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
   }

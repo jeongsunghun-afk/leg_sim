@@ -37,6 +37,10 @@ target_include_directories(biped_deploy PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE}
 target_link_libraries(biped_deploy PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} dl)
 
 # ── ★실기 모니터 뷰어 — 엔코더 표시 전용(제어·물리 없음) ────────────────────
+# ★JointMap Python↔C++ 패리티 시험. MuJoCo 불필요(deploy_hw.hpp 만).
+#   한 점 검증으로는 못 잡는 divergence 를 한계 박스 전 꼭짓점으로 훑는다.
+add_executable(biped_parity src/biped_parity.cpp)
+
 add_executable(biped_monitor src/biped_monitor.cpp)
 target_include_directories(biped_monitor PRIVATE ${EIGEN_INCLUDE} ${MUJOCO_INCLUDE})
 target_link_libraries(biped_monitor PRIVATE ${MUJOCO_LIB} glfw dl)

@@ -161,15 +161,17 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 - **②발목은 오답**: POST 튜닝=whack-a-mole(VX0.5 잡으면 0.4 깨짐). 발목 hard-constraint(ANKLE_HARD=TSID 내 발목만 strict="poor-man's HQP", 진짜 HQP계층 아님)도 weighted보다 나쁨(VX0.5 4/6<6/6). 실측 발목강성 유한+백래시(PACE)라 강체 불가→weighted가 sim2real 정합. **TSID 유지가 맞음**(HQP 이식 불요).
 - **③진짜 병목=base 회복 authority**(터치다운 coupled base_z sink+tilt 회복 한계, 진단이 정확히 지목). 레버=**W_BASE**(base task 가중, trot 전용 150·bound/walk는 붕괴→50)·**MPC_HZ**(재계획률, 범용, 기본 50→100 승격). KP_B(base PD) 단독은 무효. 저속/stance 무회귀.
 
-**결과 — D1 강건 엔벨로프(기본값) ~2배 확장** (OMP=1, 각 3~6회 falls=0):
+- **④[중대 정정] 반사관성 모델 불일치**(사용자 "댐핑 부족"·"MJCF armature 표준?" 지적, 커밋19aaa10): GEARBOX(plant armature)는 있으나 ROTOR_I 기본=**1e-4**(옛 placeholder, PACE 실측 7.4e-4의 1/7.4)·**컨트롤러 모델(pinocchio)엔 로터관성 전무** → plant는 무겁고 컨트롤러는 가벼운 줄 앎. ROTOR_I 작을 땐 불일치 작아 고속됨(비현실). **실측 7.4e-4면 불일치 커져 저-토크→고속 붕괴**. 수정=GEARBOX 기본 PACE화(7.4e-4·JFRIC0.38·JDAMP0.099) + **WBC M 대각에 반사관성 가산**(`M(6+j,6+j)+=Irot·N²`) → plant-컨트롤러 정합.
 
-| 게이트 | 이전(50Hz) | 현재(기본 100Hz) |
+**결과 — 실측 PACE 물리 위 D1 강건 엔벨로프**(OMP=1, 각 4회 falls=0):
+
+| 게이트 | 실측물리·수정前(불일치) | **실측물리·반사관성 정합 後** |
 |---|---|---|
-| trot | VX≤0.3 | **≤1.1** (W_BASE=150 자동+MPC100, 1.2 가장자리) |
-| bound | ≤0.7 | **≤0.8** |
-| static_walk | ≤0.3 | **≤0.5** |
+| trot | ≤0.3 (붕괴) | **≤0.8** |
+| bound | ≤0.3 (붕괴) | **≤0.8** |
+| static_walk | ≤0.3 | **≤0.3~0.4** |
 
-여전히 **비배포급**(실시간 0.15~0.3×, MPC100으로 더 느려짐; A가 배포 본선). 커밋 6ca5050(OMP=1)·c21ab1c(W_BASE 게이트별)·0e574a3(MPC_HZ 기본). 상세=[[controller-balance-mechanisms]].
+⚠앞서 보고한 "trot≤1.1"은 **비현실 물리(반사관성 1/7.4)의 산물**이라 폐기. 실측-물리 정직 엔벨로프=**trot/bound≤0.8·walk≤0.3**. 여전히 **비배포급**(실시간 0.15~0.3×; A가 배포 본선). 커밋 6ca5050(OMP=1)·c21ab1c(W_BASE)·0e574a3(MPC_HZ)·**19aaa10(반사관성 정합=근본)**. 상세=[[controller-balance-mechanisms]].
 
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).

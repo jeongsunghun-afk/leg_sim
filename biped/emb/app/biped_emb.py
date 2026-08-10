@@ -227,6 +227,33 @@ def main():
     #     예상 못 한 움직임을 만든다.
     #   ⇒ 기본을 hold 로 바꾸고, 무여자로 시작하려면 --start-mode off 를 쓴다.
     _raw0 = hw.read()
+    # ── ★installed_channels 불일치 감지 (2026-08-07) ──────────────────────────
+    #   `installed_channels` 는 사람이 선언하는 값이라 **조용히 낡는다** — 실제로
+    #   8축을 다 연결하고도 config 가 [0,4] 로 남아 LED 가 안 바뀌는 일이 있었다.
+    #   Emb 는 모터가 없어도 connected=1 을 주므로 그걸로는 판정할 수 없다. 대신
+    #   **엔코더 값**을 본다: 미장착 채널은 0.000 에서 꿈쩍도 안 하고, 장착 채널은
+    #   비영값이거나 노이즈로 미세하게 흔들린다.
+    #   ⚠휴리스틱이다(진짜로 0.000 에 정지한 축은 오판할 수 있다) → **자동으로 고치지 않고
+    #     경고만** 한다. 선언은 사람이 하는 게 맞다.
+    try:
+        _s0 = hw.read().q_deg.copy()
+        time.sleep(0.15)
+        _s1 = hw.read().q_deg.copy()
+        _sus = []
+        for _i, _ch in enumerate(jm.ch):
+            if bool(jm.installed[_i]):
+                continue
+            _live = abs(float(_s1[_ch])) > 1e-6 or abs(float(_s1[_ch]) - float(_s0[_ch])) > 1e-9
+            if _live:
+                _sus.append(f"{jm.names[_i]}(ch{_ch}, {_s1[_ch]:+.2f}°)")
+        if _sus:
+            print(f"[biped_emb] ⚠ installed_channels 가 낡았을 수 있다 — 미장착으로 선언됐는데 "
+                  f"**엔코더가 살아 있는** 축: {', '.join(_sus)}\n"
+                  f"    config/biped_emb.yaml 과 pace/spec.yaml 의 meta.installed_channels 를 갱신할 것.\n"
+                  f"    (그 전까지 GUI LED 는 어두운 채로 남고 ok 카운트에도 안 잡힌다)")
+    except Exception:
+        pass
+
     if fsm.mode == FSM.HOLD:
         hold_ch = _raw0.q_deg.copy()          # ★측정각 래치 — 인계 순간 움직임 0
         hw.enable(True)

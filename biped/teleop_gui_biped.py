@@ -206,11 +206,25 @@ left  = JoyPad('joyL', 190, on_left, cross_only=True)   # ★십자만(전후 XO
 right = JoyPad('joyR', 190, on_right, x_only=True)
 
 dpg.create_context()
-_FONT = os.environ.get('GUI_FONT', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc')
+# ★한글 폰트 — GUI(dearpygui) 는 TTF 를 로드하므로 한글이 정상이다.
+#   ⚠깨져 보였던 것은 **MuJoCo 뷰어** 쪽이다(mjr_overlay = ASCII 전용 비트맵 폰트).
+#     둘은 별개다 — 뷰어 HUD 는 영문으로 바꿨고(biped_monitor.cpp), 여기는 TTF 를 쓴다.
+#   폰트 파일이 없으면 라벨이 깨져 JOG 검증에서 축 이름을 못 읽으므로 기동 시 경고한다.
+_FONT_CANDS = [os.environ.get('GUI_FONT', ''),
+               '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+               '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+               '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc']
+_FONT = next((f for f in _FONT_CANDS if f and os.path.exists(f)), None)
 _kf = None
-if os.path.exists(_FONT):
+if _FONT:
     with dpg.font_registry():
         _kf = dpg.add_font(_FONT, 18)
+    # ⚠add_font_range_hint 는 쓰지 않는다 — dearpygui 2.x 에서 **deprecated no-op** 이다
+    #   ("character ranges are now automatic"). 부르면 경고만 나오고 효과가 없다.
+    print(f'[gui] 한글 폰트: {_FONT}')
+else:
+    print('[gui] ⚠ CJK 폰트를 못 찾았다 — 한글 라벨이 깨져 보인다.\n'
+          '      설치: sudo apt install fonts-noto-cjk   (또는 GUI_FONT=/경로/폰트.ttf)')
 with dpg.theme() as _dark:
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (22, 24, 32))

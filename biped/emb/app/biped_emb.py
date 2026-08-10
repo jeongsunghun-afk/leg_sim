@@ -165,12 +165,61 @@ def main():
     ap.add_argument("--mock", action="store_true", help="SHM 없이 데스크톱 데모")
     ap.add_argument("--T", type=float, default=1e12, help="최대 실행시간[s] (검증용)")
     # ★시작 모드 — 기본 hold. 근거는 아래 "인계" 주석 참조.
+    ap.add_argument("--force", action="store_true",
+                    help="다른 writer 가 떠 있어도 강행(권장하지 않음)")
     ap.add_argument("--start-mode", choices=["hold", "off"], default="hold",
                     help="시작 모드. hold=Emb 가 잡고 있던 자세를 그대로 인계(기본) · off=무여자")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
     force_mock = args.mock or os.environ.get("MOCK") == "1"
+
+    # ── ★중복 writer 차단 (2026-08-10 실기 사고) ─────────────────────────────
+    #   모터 명령 writer 가 둘이면 **같은 SHM 에 1kHz 로 서로 다른 명령을 번갈아 쓴다.**
+    #   실제로 코드 버전이 다른 두 인스턴스가 떠서 sign=−1 축이 +18° ↔ −20° 로 진동했다.
+    #   문서에 "writer 는 하나만" 이라고 적어두는 것만으로는 못 막는다 — 여기서 거부한다.
+    #   ⚠mock 은 SHM 을 안 쓰므로 예외(데스크톱에서 여러 개 띄워 시험할 수 있어야 한다).
+    if not force_mock:
+        import subprocess as _sp
+        me = os.getpid()
+        # 자기 자신과 **조상 프로세스 전부**를 제외한다 — 이 앱을 띄운 셸의 커맨드라인에
+        # "app/biped_emb.py" 가 들어 있어 오탐이 난다(2026-08-10 실측).
+        _anc, _p = set(), me
+        for _ in range(24):
+            try:
+                with open(f"/proc/{_p}/stat") as f:
+                    _p = int(f.read().split(") ", 1)[1].split()[1])
+            except (OSError, IndexError, ValueError):
+                break
+            if _p <= 1:
+                break
+            _anc.add(_p)
+        others = []
+        for pat in ("app/biped_emb.py", "biped_deploy", "mot_test", "actuator_test.py"):
+            r = _sp.run(["pgrep", "-f", pat], capture_output=True, text=True)
+            for pid in r.stdout.split():
+                pid = int(pid)
+                if pid == me or pid in _anc:
+                    continue
+                try:                                   # 자기 자신·pgrep 자체를 세지 않도록 확인
+                    with open(f"/proc/{pid}/cmdline") as f:
+                        cl = f.read().replace("\0", " ")
+                except OSError:
+                    continue
+                if "pgrep" in cl or "grep" in cl:
+                    continue
+                if pat.split("/")[-1] in cl:
+                    others.append((pid, cl.strip()[:90]))
+        if others:
+            print("✗ **모터 명령 writer 가 이미 실행 중이다.** 둘이 뜨면 SHM 에 서로 다른 명령을\n"
+                  "  1kHz 로 번갈아 써서 관절이 진동한다(2026-08-10 실기 사고: +18° ↔ −20°).")
+            for pid, cl in others:
+                print(f"    PID {pid}: {cl}")
+            print("  → 먼저 종료할 것:  kill " + " ".join(str(p) for p, _ in others))
+            print("  (의도적으로 강행하려면 --force. 권장하지 않는다.)")
+            if not args.force:
+                return 1
+            print("  ⚠ --force 로 강행한다. 명령이 꼬일 수 있다.")
     jm = JointMap(cfg)
     backend, be_name = make_backend(cfg, force_mock)
     hw = HwInterface(backend, jm, imu_deg=bool(cfg["shm"].get("imu_deg", True)))

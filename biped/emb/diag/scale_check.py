@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scale_check.py — 축별 **보고각 vs 실제각 배율**을 재는 도우미.
+"""scale_check.py — 축별 **채널각 vs 실제각 배율**을 재는 도우미.
 
 왜 필요한가 (2026-08-10):
   JOG 검증 중 "calf 가 뷰어에서 실제보다 훨씬 많이 움직인다" 는 관찰이 나왔다.
@@ -88,7 +88,7 @@ def main() -> int:
         watch(a.watch)
         return 0
 
-    print("=== 축별 현재 보고각 ===")
+    print("=== 축별 현재 채널각 ===")
     for i, q in enumerate(st["q_leg_deg"]):
         print(f"  {i}: {nm[i]:10} {q:+8.2f}°   (감속비 {GEAR.get(i, '?')})")
     print()

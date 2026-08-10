@@ -488,7 +488,7 @@ def main():
                    "n_ok": health.count("ok"), "n_fault": health.count("fault"),
                    "n_dead": health.count("dead"), "n_absent": health.count("absent"),
                    "n_installed": int(jm.installed.sum()),
-                   # ★raw 채널각(=드라이버 보고각, sign·offset 적용 **전**). 관절 순서로 정렬.
+                   # ★raw 채널각(=드라이버 채널각, sign·offset 적용 **전**). 관절 순서로 정렬.
                    #   영점 캘리브레이션은 이 값이 있어야 한다 — offset 은 채널각 단위이고
                    #   모델각만 보고 있으면 offset≠0 이 된 뒤로는 역산이 헷갈린다.
                    #   diag/calib_zero.py 가 이 필드를 쓴다.

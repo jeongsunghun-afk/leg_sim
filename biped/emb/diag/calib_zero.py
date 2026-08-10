@@ -5,13 +5,17 @@
   로봇을 **기준자세**에 놓은 상태에서 드라이버 보고각(채널각)을 읽어, 그 자세가
   의도한 모델각으로 읽히도록 offset_deg 를 계산한다.
 
-식 (interface/joint_map.py 와 동일):
-      모델각 = (채널각 − offset) / sign
-  기준자세에서 모델각이 φ_ref 로 읽히길 원하므로
-      φ_ref = (ch_ref − offset)/sign   ⇒   ★ offset = ch_ref − φ_ref · sign
+식 — ★수식을 여기 복사하지 말 것. **JointMap 을 그대로 쓴다.**
+  (2026-08-10: 이 파일이 `offset = ch − ref·sign` 복사본을 갖고 있었는데 gear_k 와
+   커플링이 추가되자 조용히 틀린 값을 내게 됐다. gen_emb_init_pose.py 도 같은 실수를
+   했었다 — 변환 수식의 복사본은 예외 없이 stale 이 된다.)
 
-  ⇒ φ_ref 가 전부 0 이면 offset 은 그냥 **그때의 채널각 그대로**다.
-    0 이 아닌 축(예: calf −55°)만 sign 을 곱해 빼면 된다.
+      q_raw   = (q_ch − offset) / (sign·k)
+      q_joint = q_raw − coef · q_joint_src            (커플링 있는 축만)
+  기준자세에서 q_joint 가 ref 로 읽히길 원하므로, raw_ref = ref + coef·ref_src 에 대해
+      ★ offset = q_ch(기준자세) − raw_ref · sign · k
+
+  ⇒ 커플링·감속비가 없는 축(k=1, coef 없음)이고 ref=0 이면 offset 은 **그때의 채널각 그대로**다.
 
 사용법:
   1) 제어기를 띄운다:            cd emb && python3 app/biped_emb.py
@@ -23,7 +27,7 @@
 기준자세 기본값은 config 의 `calib.ref_joint_deg`.
 
 ⚠ 이 스크립트는 모터에 아무것도 쓰지 않는다. --apply 는 config 파일만 고친다.
-⚠ calf·foot 은 드라이버 감속비 오설정(7:1 가정)으로 보고각이 실제의 1.5/1.2 배다.
+⚠ calf·foot 은 드라이버 감속비 오설정(7:1 가정)으로 채널각이 실제의 1.5/1.2 배다.
   offset 은 **기준자세 그 한 점에서만** 정확해지고, 거기서 멀어질수록 그 배율만큼
   틀어진다. 근본 해결은 드라이버 설정이다 — 아래 경고 참조.
 """
@@ -78,8 +82,11 @@ def channel_angles(st, joints):
     q = st.get("q_leg_deg")
     if not q:
         sys.exit("✗ state 에 q_ch_deg 도 q_leg_deg 도 없다.")
-    ch = [float(q[i]) * float(j["sign"]) + float(j["offset_deg"])
-          for i, j in enumerate(joints)]
+    import numpy as np
+    from joint_map import JointMap
+    _jm0 = JointMap({**cfg_all, "joints": joints}) if False else None
+    ch = [float(q[i]) * float(j["sign"]) * float(j.get("gear_k", 1.0)) + float(j["offset_deg"])
+          for i, j in enumerate(joints)]   # ⚠커플링 미반영 폴백 — q_ch_deg 를 쓰는 게 정답
     return ch, "q_leg_deg 에서 역산 (⚠제어기 재시작 필요 — q_ch_deg 필드가 없는 구버전)"
 
 
@@ -144,7 +151,7 @@ def main() -> int:
     ch, src = channel_angles(st, joints)
 
     print("=" * 78)
-    print("  영점 캘리브레이션 — offset = 채널각(기준자세) − 모델각(기준자세) · sign")
+    print("  영점 캘리브레이션 — offset = 채널각(기준자세) − raw각(기준자세)·sign·k")
     print("=" * 78)
     print(f"  채널각 출처 : {src}")
     print(f"  상태 나이   : {st['_age']:.2f}s      모드: {st.get('mode','?')}")
@@ -155,13 +162,20 @@ def main() -> int:
         print(f"  ⚠ 상태가 {st['_age']:.1f}s 나 묵었다 — 제어기가 살아있는지 확인할 것.")
     print()
 
-    new = [ch[i] - ref[i] * sign[i] for i in range(n)]
+    # ★JointMap 으로 raw 를 만든다 — sign·k·커플링을 여기서 다시 쓰지 않는다.
+    import numpy as np
+    from joint_map import JointMap
+    _jm = JointMap(cfg)
+    _raw_ref = np.asarray(ref, float).copy()
+    for _d, _s, _c in zip(_jm.cpl_dst, _jm.cpl_src, _jm.cpl_coef):
+        _raw_ref[_d] = ref[_d] + _c * ref[_s]
+    new = [ch[i] - float(_raw_ref[i]) * float(_jm.sk[i]) for i in range(n)]
 
-    print(f"  {'축':10} {'sign':>5} {'채널각':>9} {'기준모델각':>11} "
+    print(f"  {'축':10} {'sign·k':>7} {'채널각':>9} {'기준모델각':>11} "
           f"{'현 offset':>10} {'→ 새 offset':>12} {'변화':>8}")
     print("  " + "-" * 74)
     for i in range(n):
-        print(f"  {names[i]:10} {sign[i]:+5.0f} {ch[i]:+9.2f} {ref[i]:+11.2f} "
+        print(f"  {names[i]:10} {float(_jm.sk[i]):+7.2f} {ch[i]:+9.2f} {ref[i]:+11.2f} "
               f"{old[i]:+10.2f} {new[i]:+12.2f} {new[i]-old[i]:+8.2f}")
     print()
 

@@ -18,8 +18,9 @@
   · 명령:  m_fGaitSet_Position = fDir·target + ofs  = target   (:665-674)
   · SHM 위치명령은 m_fGaitCmd_Position 으로 들어가고(:265), 램프는 같은 배열에
     m_fGaitCmd_PositionInit 을 넣는다(:547,557,574)
-  ⇒ m_fGaitCmd_PositionInit 의 단위 = 우리가 SHM 에 쓰는 **채널각** = 드라이버 보고각.
-    따라서 ch = 모델각·sign + offset 을 그대로 넣으면 된다.
+  ⇒ m_fGaitCmd_PositionInit 의 단위 = 우리가 SHM 에 쓰는 **채널각**이다.
+    따라서 JointMap.q_joint_to_ch(홈자세) 결과를 그대로 넣으면 된다
+    (sign·gear_k·offset·커플링·±180 포화가 전부 반영된 값).
 
 ★손으로 베끼지 말 것. config 의 sign/offset 이 바뀌면 이 값도 같이 바뀌어야 하는데,
   수동 동기화는 반드시 어긋난다(같은 실수를 GUI 의 jog 한계 복제에서 이미 했다).
@@ -87,7 +88,7 @@ def main() -> int:
     cfg, js, ref, ch = compute()
     names = [j["name"] for j in js]
 
-    print("  Emb 기동 램프 목표 = 우리 홈자세  (ch = 모델각·sign + offset)\n")
+    print("  Emb 기동 램프 목표 = 우리 홈자세  (JointMap.q_joint_to_ch 로 산출)\n")
     print(f"  {'Emb':5} {'우리 축':10} {'모델각':>9} {'sign':>5} {'offset':>9} {'→ 채널각':>10}")
     for i in range(8):
         j = next(x for x in js if int(x["channel"]) == i)

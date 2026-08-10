@@ -28,7 +28,10 @@ UNIFIED = os.path.join(os.path.dirname(__file__), 'biped_flatfoot.mjcf')
 
 def main():
     contact = os.environ.get('CONTACT', '2pt')     # 시작 접촉모드(평발 정적 rest 기본)
-    c = BM.BipedMPCWBIC(mjcf=os.environ.get('BIPED_MJCF', UNIFIED))
+    # ★`or UNIFIED` — get(...,기본값) 만으로는 **빈 문자열을 못 거른다**.
+    #   런처가 BIPED_MJCF='' 를 넘기면 '' 가 그대로 경로가 되어
+    #   ParseXML: Error opening file '' 로 죽는다(2026-08-07 실제 발생).
+    c = BM.BipedMPCWBIC(mjcf=(os.environ.get('BIPED_MJCF') or UNIFIED))
     c.set_contact_mode(contact); c.reset(); c.setup_mpc()
     print(f"[biped_run] 통합모델 · 시작 접촉모드={contact} · 발당 접촉구 {len(c.foot_spheres[0])}개 · heel={c.has_heel}")
     m, d = c.m, c.d; dt = m.opt.timestep

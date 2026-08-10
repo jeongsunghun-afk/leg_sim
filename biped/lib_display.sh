@@ -63,3 +63,37 @@ setup_display() {
 EOS
   return 1
 }
+
+# ★MuJoCo 뷰어가 뜰 수 있는 디스플레이인가 — 화면 크기가 0x0 이면 못 뜬다.
+#   rootless Xwayland(GNOME/Wayland)는 루트 윈도를 **정상적으로** 0x0 으로 보고한다.
+#   dearpygui 는 고정크기(700x800)로 창을 만들어 뜨지만, MuJoCo 뷰어는 **화면 크기로**
+#   창을 잡으려 해서 실패한다:
+#     GLFWError: (65540) Invalid window size 0x0 · ERROR: could not create window
+#   ⇒ sim 뷰어는 ssh -X(노트북 화면) 또는 노트북 로컬 실행이어야 한다.
+viewer_capable() {
+  command -v xdpyinfo >/dev/null 2>&1 || return 0        # 확인 불가 → 통과시킨다
+  local dim
+  dim=$(DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xdpyinfo 2>/dev/null | grep -m1 dimensions)
+  case "$dim" in *"0x0 pixels"*) return 1;; esac
+  return 0
+}
+
+warn_if_no_viewer() {
+  viewer_capable && return 0
+  cat >&2 <<'EOS'
+
+⚠⚠ 이 디스플레이는 화면 크기가 0x0 이라 **MuJoCo 뷰어를 띄울 수 없다**.
+    (rootless Xwayland 의 정상 동작이다 — GUI 는 뜨지만 뷰어만 못 뜬다)
+
+    sim 을 보려면:
+      ① 노트북에서 직접 실행  ← 가장 빠르다(X 포워딩 없이 네이티브)
+           (노트북)  cd ~/simulation && git pull && cd biped && ./run_gui_biped.sh
+      ② 노트북 화면으로 포워딩
+           (노트북)  ssh -X rpetubt@<로봇IP>
+           (로봇)    cd ~/simulation/biped && ./run_gui_biped.sh
+
+    GUI 만 필요하면(실기 JOG 검증 등) 뷰어 없이 ./run_gui_only.sh 를 쓸 것.
+
+EOS
+  return 1
+}

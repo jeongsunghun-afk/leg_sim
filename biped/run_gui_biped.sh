@@ -34,6 +34,9 @@ PY_GUI="$(pick_py dearpygui)"     # GUI: dearpygui 필요
   echo "   Pi: ~/.venvs/mj 확인 · 노트북: proxddp env 확인 · 또는 PY=/경로/python"; exit 1; }
 [ -z "$PY_GUI" ] && { echo "❌ dearpygui 가 있는 python 이 없다."; \
   echo "   설치: python3 -m venv --system-site-packages ~/.venvs/gui && ~/.venvs/gui/bin/pip install dearpygui"; exit 1; }
+# ★sim 뷰어가 뜰 수 있는 디스플레이인지 먼저 본다. 못 뜨면 여기서 멈추는 게 낫다 —
+#   안 그러면 컨트롤러만 조용히 죽고 "controller DEAD" 로만 보인다.
+warn_if_no_viewer || exit 1
 echo "controller=$PY_RUN"
 echo "gui=$PY_GUI"
 
@@ -46,7 +49,11 @@ sleep 1
 echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.50,"mode":"off","contact":"1pt","seq":0}' > "$CMD"
 
 # ① 컨트롤러 + 뷰어
-setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' QUAD_CMD='$CMD' BIPED_MJCF='${BIPED_MJCF:-}' '$PY_RUN' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
+# ★BIPED_MJCF 는 **값이 있을 때만** 넘긴다. 빈 문자열을 넘기면
+#   biped_run.py 의 os.environ.get('BIPED_MJCF', UNIFIED) 가 '' 를 "설정됨"으로 받아
+#   기본 MJCF 를 무시하고 빈 경로를 연다 → ParseXML: Error opening file ''
+MJENV=""; [ -n "${BIPED_MJCF:-}" ] && MJENV="BIPED_MJCF='$BIPED_MJCF'"
+setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' QUAD_CMD='$CMD' $MJENV '$PY_RUN' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (★biped/ 에 위치. 7953c5c 에서 quad/ 로부터 이동)
 setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' QUAD_CMD='$CMD' '$PY_GUI' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &

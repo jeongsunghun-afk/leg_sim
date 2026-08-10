@@ -100,11 +100,6 @@ class Hardware:
         self.hold_kp = hold_kp if isinstance(hold_kp, dict) else float(hold_kp)
         self.hold_kd = hold_kd if isinstance(hold_kd, dict) else float(hold_kd)
 
-    def _hold_gain_of(self, ch: int) -> tuple[float, float]:
-        kp = self.hold_kp[ch] if isinstance(self.hold_kp, dict) else self.hold_kp
-        kd = self.hold_kd[ch] if isinstance(self.hold_kd, dict) else self.hold_kd
-        return float(kp), float(kd)
-
         lib = C.CDLL(lib_path)
         lib.bridge_init.restype = C.c_int
         lib.bridge_init.argtypes = [C.c_int]
@@ -147,6 +142,18 @@ class Hardware:
         atexit.register(self.limp)
 
     # ── 종료 / limp ─────────────────────────────────────────────────────────
+    def _hold_gain_of(self, ch: int) -> tuple[float, float]:
+        """홀드축 게인. dict 면 축별, 스칼라면 전 축 동일(하위호환).
+
+        ⚠KeyError 방지 — dict 에 없는 채널은 0(=무여자)이 아니라 **예외**로 드러낸다.
+          조용히 0 을 주면 그 축이 홀드 안 된 채로 시험이 돌아 결과가 오염된다.
+        """
+        if isinstance(self.hold_kp, dict):
+            if ch not in self.hold_kp or ch not in self.hold_kd:
+                raise KeyError(f"hold_kp/hold_kd 에 채널 {ch} 가 없다 — spec.yaml 확인")
+            return float(self.hold_kp[ch]), float(self.hold_kd[ch])
+        return float(self.hold_kp), float(self.hold_kd)
+
     def _on_signal(self, *_):
         self.limp()
         raise SystemExit(130)

@@ -38,25 +38,48 @@ def main() -> int:
     print(f"  표본 {len(rows)}개 (꼭짓점 {sum(1 for x in rows if x[0]=='V')} + 무작위 {sum(1 for x in rows if x[0]=='R')})")
     print(f"  C++ 포화 통계: {r.stderr.strip()}")
 
-    worst, worst_row = 0.0, None
+    # ★전 경로를 본다 — 위치만 보다가 q_ctrl_to_ch 의 포화 누락(54.9° 차)을 놓쳤다.
+    D2R = np.pi / 180.0
+    PATHS = ["q_joint_to_ch", "q_ctrl_to_ch", "dq_ctrl_to_ch", "tau_ctrl_to_ch", "ch_to_q_joint(왕복)"]
+    worst = {k: (0.0, None) for k in PATHS}
     for row in rows:
-        bar = row.index("|")
-        q   = np.array([float(x) for x in row[1:bar]])
-        cpp = np.array([float(x) for x in row[bar+1:]])
-        py  = jm.q_joint_to_ch(q)[jm.ch]
-        d   = float(np.max(np.abs(py - cpp)))
-        if d > worst:
-            worst, worst_row = d, (row[0], q, py, cpp)
-    print(f"\n  최대차 {worst:.3e}°  (허용 {a.tol:.0e})")
-    if worst > a.tol:
-        tag, q, py, cpp = worst_row
-        i = int(np.argmax(np.abs(py - cpp)))
-        print(f"  ❌ 불일치 — 유형 {tag} · 축 {jm.names[i]}")
-        print(f"     q_joint = {np.round(q,2).tolist()}")
-        print(f"     py  ch = {py[i]:+.4f}")
-        print(f"     cpp ch = {cpp[i]:+.4f}")
+        segs, cur = [], []
+        for tok in row[1:]:
+            if tok == "|": segs.append(cur); cur = []
+            else: cur.append(float(tok))
+        segs.append(cur)
+        q = np.array(segs[0])
+        py = [
+            jm.q_joint_to_ch(q)[jm.ch],
+            jm.q_ctrl_to_ch(q * D2R)[jm.ch],
+            jm.dq_ctrl_to_ch(q * D2R)[jm.ch],
+            jm.tau_ctrl_to_ch(q)[jm.ch],
+            jm.ch_to_q_joint(jm.q_joint_to_ch(q)),
+        ]
+        for k, name in enumerate(PATHS):
+            cpp = np.array(segs[k + 1])
+            d = float(np.max(np.abs(py[k] - cpp)))
+            if d > worst[name][0]:
+                worst[name] = (d, (row[0], q, py[k], cpp))
+    print()
+    bad = False
+    for name in PATHS:
+        d, _ = worst[name]
+        ok = d <= a.tol
+        bad |= not ok
+        print(f"  {name:22} 최대차 {d:.3e}   {'✅' if ok else '❌'}")
+    print(f"\n  허용 {a.tol:.0e}")
+    if bad:
+        for name in PATHS:
+            d, w = worst[name]
+            if d <= a.tol or w is None: continue
+            tag, q, py_v, cpp = w
+            i = int(np.argmax(np.abs(py_v - cpp)))
+            print(f"\n  ❌ {name} — 유형 {tag} · 축 {jm.names[i]}")
+            print(f"     q      = {np.round(q,2).tolist()}")
+            print(f"     py/cpp = {py_v[i]:+.4f} / {cpp[i]:+.4f}")
         return 1
-    print(f"  ✅ 통과 — 한계 박스 전 영역에서 Python↔C++ 일치")
+    print(f"  ✅ 통과 — 한계 박스 전 영역·전 변환경로에서 Python↔C++ 일치")
     return 0
 
 if __name__ == "__main__":

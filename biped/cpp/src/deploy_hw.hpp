@@ -336,13 +336,14 @@ struct JointMap {
   }
 
   // 컨트롤러(rad) → 채널(deg). 허리는 hold 각으로 고정.
+  // ★q_joint_to_ch 에 **위임**한다(2026-08-10). 종전엔 같은 식을 두 벌 갖고 있어
+  //   ±180 포화를 q_joint_to_ch 에만 넣었을 때 이 함수가 조용히 갈라졌다
+  //   (한계 박스 내부에서 py −180.00 vs cpp −234.88, 최대 54.9° 차).
+  //   Python 도 같은 이유로 위임 구조다(joint_map.py:q_ctrl_to_ch).
   void q_ctrl_to_ch(const double* q_rad, float* out) const {
-    for(int i=0;i<n_channel;i++) out[i]=0.f;
-    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      const double q = (j.couple_src<0)? q_rad[i] : q_rad[i] + j.couple_coef*q_rad[j.couple_src];
-      out[j.channel] = (float)(j.sk() * q * R2D + j.offset_deg); }
-    for(size_t k=0;k<c->waist_ch.size();k++)
-      out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
+    std::vector<double> q_deg(n_leg);
+    for(int i=0;i<n_leg;i++) q_deg[i] = q_rad[i] * R2D;
+    q_joint_to_ch(q_deg.data(), out);
   }
   void dq_ctrl_to_ch(const double* dq_rad, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
@@ -382,9 +383,17 @@ struct JointMap {
     for(int i=0;i<n_leg;i++) out[c->joints[i].channel] = (float)(c->joints[i].kd*scale);
     for(int ch : c->waist_ch) out[ch] = (float)c->waist_kd;
   }
-  void clamp_ch(float* q_ch) const {
-    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      q_ch[j.channel] = (float)std::max(j.min_deg, std::min(j.max_deg, (double)q_ch[j.channel])); }
+  // ★clamp_ch 삭제(2026-08-10). **모델각 한계(min/max_deg)를 채널각에 거는 것은 틀렸다.**
+  //   offset 이 0 이던 시절엔 두 값이 같아 무해했지만, 영점 캘리브레이션 후에는 완전히
+  //   다른 수다. 기준자세에서 hold 를 걸면 HR_foot 채널 87.69 → 62 로 잘려
+  //   **모델각 21.4° 점프**(채널 25.7° × kp30 = 13.4 Nm — 트립 15Nm 바로 아래라 E-stop 도
+  //   못 잡는다). Python 은 오늘 clamp_joint 로 고쳤고 C++ 만 남아 있었다.
+  //   ⇒ 대체: ch_to_q_joint → clamp_joint → q_joint_to_ch (모델각 공간에서 클램프)
+  void clamp_ch_via_joint(float* q_ch) const {
+    std::vector<double> qj(n_leg);
+    ch_to_q_joint(q_ch, qj.data());
+    clamp_joint(qj.data());
+    q_joint_to_ch(qj.data(), q_ch);
   }
 };
 

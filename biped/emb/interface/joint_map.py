@@ -337,16 +337,7 @@ class JointMap:
         for c in self.waist_ch: out[c] = self.waist_kd
         return out
 
-    def clamp_ch(self, q_ch_deg) -> np.ndarray:
-        out = np.asarray(q_ch_deg, float).copy()
-        out[self.ch] = np.clip(out[self.ch], self.min_deg, self.max_deg)
-        for c, h in zip(self.waist_ch, self.waist_hold):
-            out[c] = h
-        return out
-
-    def clamp_jog(self, q_ch_deg) -> np.ndarray:
-        out = np.asarray(q_ch_deg, float).copy()
-        out[self.ch] = np.clip(out[self.ch], self.jog_min, self.jog_max)
-        for c, h in zip(self.waist_ch, self.waist_hold):
-            out[c] = h
-        return out
+    # ★clamp_ch / clamp_jog 삭제(2026-08-10) — **모델각 한계를 채널각에 거는**
+    #   함수였다. 호출자는 이미 0 이었지만(전수 grep) 남겨 두면 같은 오용이
+    #   재생산된다. 실제로 C++ 미러가 그걸 쓰다가 hold 진입 21.4° 점프를 만들었다.
+    #   클램프는 반드시 **모델각 공간**에서: clamp_joint / clamp_jog_joint.

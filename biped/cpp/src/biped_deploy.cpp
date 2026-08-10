@@ -216,7 +216,7 @@ int main(int argc, char** argv){
         if(nm != mode){
           prev_mode = mode; mode = nm;
           hw->enable(mode=="off" ? 0 : 1);
-          if(mode=="hold"){ hold_ch = hs.q_deg; jm.clamp_ch(hold_ch.data()); }
+          if(mode=="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
           if(mode=="stand" || mode=="walk"){
             c.reset(); c.com_ref_z = body_h;
             est.reset(Eigen::Vector3d(0,0,d->qpos[2]));

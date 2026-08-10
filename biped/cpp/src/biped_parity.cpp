@@ -16,12 +16,32 @@ int main(int argc, char** argv){
   const int N = jm.n_leg;
   const int nrand = (argc > 2) ? std::atoi(argv[2]) : 300;
   std::vector<double> q(N); std::vector<float> ch(jm.n_channel);
+  // ★위치만 보면 안 된다 — 2026-08-10 에 q_joint_to_ch 만 검사하다가
+  //   q_ctrl_to_ch 의 포화 누락(최대 54.9° 차)을 놓쳤다. **전 경로**를 뱉는다.
+  std::vector<float> dch(jm.n_channel), tch(jm.n_channel);
+  std::vector<double> qb(N), dqb(N);
   auto emit = [&](const char* tag){
-    jm.q_joint_to_ch(q.data(), ch.data());
     std::printf("%s", tag);
     for(int i=0;i<N;i++) std::printf(" %.6f", q[i]);
     std::printf(" |");
+    jm.q_joint_to_ch(q.data(), ch.data());                    // ① 모델각 → 채널각
     for(int i=0;i<N;i++) std::printf(" %.6f", ch[c.joints[i].channel]);
+    std::printf(" |");
+    std::vector<double> qr(N);                                 // ② rad 경로
+    for(int i=0;i<N;i++) qr[i] = q[i]*JointMap::D2R;
+    jm.q_ctrl_to_ch(qr.data(), dch.data());
+    for(int i=0;i<N;i++) std::printf(" %.6f", dch[c.joints[i].channel]);
+    std::printf(" |");
+    jm.dq_ctrl_to_ch(qr.data(), dch.data());                   // ③ 속도(같은 벡터 재사용)
+    for(int i=0;i<N;i++) std::printf(" %.6f", dch[c.joints[i].channel]);
+    std::printf(" |");
+    jm.tau_ctrl_to_ch(q.data(), tch.data());                   // ④ 토크(q 를 Nm 로 재사용)
+    for(int i=0;i<N;i++) std::printf(" %.6f", tch[c.joints[i].channel]);
+    std::printf(" |");
+    jm.ch_to_q_joint(ch.data(), qb.data());                    // ⑤ 역변환(왕복)
+    jm.q_joint_to_ch(q.data(), ch.data());
+    jm.ch_to_q_joint(ch.data(), qb.data());
+    for(int i=0;i<N;i++) std::printf(" %.6f", qb[i]);
     std::printf("\n");
   };
   // ① 한계 박스 꼭짓점 전부 (2^8 = 256)

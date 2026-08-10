@@ -281,7 +281,8 @@ struct JointMap {
   //   ★k(gear_k) = 드라이버 감속비 오설정 보정. 2026-08-10 도입 — offset 만으로는
   //     기준자세 **한 점**만 맞고 기울기가 틀렸다(calf 1.5배·foot 1.2배 과대표시).
   //   ⚠토크만 반대로 **나눈다**: 보고토크 = 실제관절토크/k → 명령은 τ/k.
-  //   ⚠k 는 아직 실측이 아니라 감속비 계산값이다. 근본 해결은 드라이버 설정(RGA).
+  //   ★k 는 실기 검증됨(2026-08-10, 육안). 상수 k 로 전 구간이 맞는다는 것이
+  //     링키지가 아니라 **드라이버 고정 7:1** 임을 뒷받침한다. 근본 해결은 드라이버(RGA).
   //   GUI·jog·home·hold·표시는 전부 모델각. 채널각은 SHM 경계에서만.
   void ch_to_q_joint(const float* q_ch, double* out) const {
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];

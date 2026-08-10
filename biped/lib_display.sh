@@ -65,11 +65,14 @@ EOS
 }
 
 # ★MuJoCo 뷰어가 뜰 수 있는 디스플레이인가 — 화면 크기가 0x0 이면 못 뜬다.
-#   rootless Xwayland(GNOME/Wayland)는 루트 윈도를 **정상적으로** 0x0 으로 보고한다.
-#   dearpygui 는 고정크기(700x800)로 창을 만들어 뜨지만, MuJoCo 뷰어는 **화면 크기로**
-#   창을 잡으려 해서 실패한다:
+#   MuJoCo 뷰어는 **화면 크기로** 창을 잡으므로 0x0 이면 이렇게 죽는다:
 #     GLFWError: (65540) Invalid window size 0x0 · ERROR: could not create window
-#   ⇒ sim 뷰어는 ssh -X(노트북 화면) 또는 노트북 로컬 실행이어야 한다.
+#   (dearpygui 는 고정크기 700x800 이라 0x0 에서도 뜬다 — 그래서 GUI 만 뜨고 뷰어가 죽는다)
+#
+#   ⚠2026-08-07 정정: 처음엔 "rootless Xwayland 는 원래 0x0" 으로 진단했는데 **틀렸다.**
+#     모니터가 깨어 있으면 1920x1280 로 정상 보고한다. 0x0 은 **일시적 상태**다
+#     (모니터 절전 / 세션 잠금 등). 그래서 이 검사로 **막지 않고 경고만** 한다 —
+#     일시적 판독으로 런처를 차단하면 멀쩡한 상황에서 못 뜨게 된다.
 viewer_capable() {
   command -v xdpyinfo >/dev/null 2>&1 || return 0        # 확인 불가 → 통과시킨다
   local dim
@@ -78,22 +81,24 @@ viewer_capable() {
   return 0
 }
 
-warn_if_no_viewer() {
+warn_if_no_viewer() {                 # ★경고만 한다. 막지 않는다(위 정정 참조)
   viewer_capable && return 0
   cat >&2 <<'EOS'
 
-⚠⚠ 이 디스플레이는 화면 크기가 0x0 이라 **MuJoCo 뷰어를 띄울 수 없다**.
-    (rootless Xwayland 의 정상 동작이다 — GUI 는 뜨지만 뷰어만 못 뜬다)
+⚠ 화면 크기가 0x0 으로 읽힌다 — 이대로면 MuJoCo 뷰어가 창을 못 만든다
+  (GLFWError: Invalid window size 0x0). GUI 는 고정크기라 그래도 뜬다.
 
-    sim 을 보려면:
-      ① 노트북에서 직접 실행  ← 가장 빠르다(X 포워딩 없이 네이티브)
-           (노트북)  cd ~/simulation && git pull && cd biped && ./run_gui_biped.sh
-      ② 노트북 화면으로 포워딩
-           (노트북)  ssh -X rpetubt@<로봇IP>
-           (로봇)    cd ~/simulation/biped && ./run_gui_biped.sh
+  가장 흔한 원인: **모니터가 절전 상태**다. 로봇 모니터를 깨우고 다시 실행해 볼 것.
+  (마우스를 움직이거나 키를 한 번 누르면 된다)
 
-    GUI 만 필요하면(실기 JOG 검증 등) 뷰어 없이 ./run_gui_only.sh 를 쓸 것.
+  그래도 0x0 이면 sim 뷰어는 다른 화면에서 봐야 한다:
+    ① 노트북에서 직접 실행 ← 가장 빠름
+         (노트북)  cd ~/simulation && git pull && cd biped && ./run_gui_biped.sh
+    ② ssh -X 로 노트북 화면에 포워딩
+  GUI 만 필요하면(실기 JOG 검증) 뷰어 없이 ./run_gui_only.sh 를 쓸 것.
+
+  → 일단 그대로 진행한다. 뷰어가 죽으면 위를 참고할 것.
 
 EOS
-  return 1
+  return 0                            # ★0 반환 = 런처를 멈추지 않는다
 }

@@ -34,9 +34,9 @@ PY_GUI="$(pick_py dearpygui)"     # GUI: dearpygui 필요
   echo "   Pi: ~/.venvs/mj 확인 · 노트북: proxddp env 확인 · 또는 PY=/경로/python"; exit 1; }
 [ -z "$PY_GUI" ] && { echo "❌ dearpygui 가 있는 python 이 없다."; \
   echo "   설치: python3 -m venv --system-site-packages ~/.venvs/gui && ~/.venvs/gui/bin/pip install dearpygui"; exit 1; }
-# ★sim 뷰어가 뜰 수 있는 디스플레이인지 먼저 본다. 못 뜨면 여기서 멈추는 게 낫다 —
-#   안 그러면 컨트롤러만 조용히 죽고 "controller DEAD" 로만 보인다.
-warn_if_no_viewer || exit 1
+# ★sim 뷰어가 뜰 수 있는 디스플레이인지 미리 본다(경고만 — 0x0 은 모니터 절전 등
+#   일시적일 수 있어 막지 않는다). 안 그러면 컨트롤러만 조용히 죽어 원인을 못 찾는다.
+warn_if_no_viewer
 echo "controller=$PY_RUN"
 echo "gui=$PY_GUI"
 

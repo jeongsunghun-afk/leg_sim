@@ -343,6 +343,7 @@ def main():
     prev_loop_t = t0
     pace_warned = False          # 루프 밀림 경고 1회만
     hz_ema = float(cfg["meta"]["ctrl_hz"])
+    dt_buf = []          # 루프 주기 표본(지터 통계용)
 
     # ★어떤 경로로 죽어도 무여자로 빠지게 한다. 기존엔 정상 종료(args.T 만료) 경로에만
     #   종료 처리가 있어서 Ctrl-C·예외·SIGTERM 이면 모터가 잡힌 채로 앱만 사라졌다.
@@ -522,11 +523,28 @@ def main():
           # ★stand/walk 디스패치는 없다 — 진입에서 hold 로 되돌린다(위 참조).
           #   실기 모델기반 제어는 cpp/build/biped_deploy 담당(NEXT_HW.md §9).
 
-          # ── 상태 발행(~20Hz) + HUD hz (실제 루프 주기) ──
+          # ── 상태 발행(~20Hz) + 루프 주기 통계 ──
+          #   ★종전엔 hz_ema = EMA(1/period) 를 발행했는데 이건 **편향된 지표**다.
+          #     주기가 들쭉날쭉하면 1/period 의 평균은 실제 평균 주파수보다 항상 높게 나온다
+          #     (산술평균 ≥ 조화평균). 짧은 틱 하나가 긴 틱 하나보다 지표를 더 크게 끌어올린다.
+          #     그래서 목표 500Hz 인데 화면에 700Hz 가 떠 "CPU 때문에 빨라졌나?" 로 오해를 샀다.
+          #   ⇒ 진짜 평균 = 표본수/총경과시간 을 쓰고, 지터는 **주기 분위수**로 따로 낸다.
+          #     평균만 보면 지터가 안 보이고, 지터는 제어 품질에 직접 영향을 준다.
           period = loop_t - prev_loop_t; prev_loop_t = loop_t
           if period > 0:
-              hz_ema = 0.98 * hz_ema + 0.02 * (1.0 / period)
+              dt_buf.append(period)
+              if len(dt_buf) > 2000:            # 최근 ~4초(500Hz 기준)
+                  del dt_buf[:len(dt_buf) - 2000]
           if loop_t - last_pub > 0.05:
+              if dt_buf:
+                  sdt = sorted(dt_buf)
+                  n = len(sdt)
+                  hz_true = n / sum(sdt)                       # ★편향 없는 실제 평균 주파수
+                  extra["dt_ms_p50"] = round(sdt[n // 2] * 1e3, 3)
+                  extra["dt_ms_p95"] = round(sdt[min(n - 1, int(n * 0.95))] * 1e3, 3)
+                  extra["dt_ms_max"] = round(sdt[-1] * 1e3, 3)
+                  extra["dt_ms_nom"] = round(cfg_dt * 1e3, 3)
+                  hz_ema = hz_true
               publish_state(fsm.mode, q_leg, rpy, hz_ema, fsm.mode != FSM.OFF, be_name, extra)
               last_pub = loop_t
 

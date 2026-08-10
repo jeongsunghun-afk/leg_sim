@@ -99,7 +99,10 @@ int main(int argc,char**argv){
 
   std::vector<double> q_ch(jm.n_leg,0.0);   // ★모델각[deg] (이름은 유지, 의미는 모델각)
   std::string mode="-", backend="-", raw_prev;
-  double stale_since = now_s(), tilt=0, loop_hz=0;
+  // ★loop_hz 는 **제어기(biped_emb)의 제어루프 주파수**다 — 뷰어 렌더링 속도도,
+  //   데이터 수신 주기도 아니다. HUD 라벨이 `loop=` 라 오해를 샀다 → `ctrl=` 로 바꾸고
+  //   지터(주기 p95 / 공칭)를 함께 띄운다. 평균만 보면 지터가 안 보인다.
+  double stale_since = now_s(), tilt=0, loop_hz=0, dt_p95=0, dt_nom=0;
   int n_ok=0, n_absent=0;
 
   while(!glfwWindowShouldClose(win)){
@@ -113,6 +116,8 @@ int main(int argc,char**argv){
         backend = json_str(sj,"backend",backend);
         tilt    = json_num(sj,"tilt_deg",tilt);
         loop_hz = json_num(sj,"loop_hz",loop_hz);
+        dt_p95  = json_num(sj,"dt_ms_p95",dt_p95);
+        dt_nom  = json_num(sj,"dt_ms_nom",dt_nom);
         n_ok     = (int)json_num(sj,"n_ok",n_ok);
         n_absent = (int)json_num(sj,"n_absent",n_absent);
       } }
@@ -137,9 +142,9 @@ int main(int argc,char**argv){
     { double stale_ms = (now_s()-stale_since)*1e3;
       char hud[700];
       int n = std::snprintf(hud,sizeof hud,
-        "mode=%s  backend=%s  loop=%.0fHz  tilt=%.1f deg\n"
+        "mode=%s  backend=%s  ctrl=%.0fHz(dt p95 %.2f/%.2fms)  tilt=%.1f deg\n"
         "axes ok=%d absent=%d   state age=%.0f ms%s\n"
-        "---- joint angle (model coord) [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, tilt,
+        "---- joint angle (model coord) [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, dt_p95, dt_nom, tilt,
         n_ok, n_absent, stale_ms, stale_ms>1000 ? "  *** STALE ***" : "");
       for(int i=0;i<jm.n_leg && n<(int)sizeof(hud)-40;i++)
         n += std::snprintf(hud+n,sizeof(hud)-n,"%-9s %+7.2f%s",

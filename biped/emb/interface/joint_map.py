@@ -43,6 +43,24 @@ class JointMap:
         # jog 안전 한계 = 관절한계를 0쪽으로 range_frac 축소(중립 근처만 허용)
         self.jog_min = self.min_deg * self.jog_frac
         self.jog_max = self.max_deg * self.jog_frac
+        # ★축별 예외 (2026-08-10). range_frac 은 "0 근처만 허용" 이라는 전제인데, 영점을
+        #   잡고 나면 **정지 자세가 0 이 아닌 축**이 생긴다(calf 는 구조적 한계인 −55° 에
+        #   서 있다). 그런 축까지 0.5배로 좁히면 JOG 에 들어가는 순간 한계까지 끌려간다
+        #   (calf 는 27.5°). 그건 안전이 아니라 의도치 않은 동작이다.
+        #   ⇒ 그런 축만 config 에서 jog_min_deg / jog_max_deg 로 직접 지정한다.
+        for i, j in enumerate(js):
+            if "jog_min_deg" in j:
+                self.jog_min[i] = float(j["jog_min_deg"])
+            if "jog_max_deg" in j:
+                self.jog_max[i] = float(j["jog_max_deg"])
+        bad = [(self.names[i], self.jog_min[i], self.jog_max[i], self.min_deg[i], self.max_deg[i])
+               for i in range(self.n_leg)
+               if self.jog_min[i] < self.min_deg[i] - 1e-9 or self.jog_max[i] > self.max_deg[i] + 1e-9
+               or self.jog_min[i] > self.jog_max[i]]
+        if bad:
+            raise ValueError("jog 한계가 관절한계 밖이거나 뒤집혔다: "
+                             + "; ".join(f"{n} jog[{a:+.1f},{b:+.1f}] vs limit[{c:+.1f},{d:+.1f}]"
+                                         for n, a, b, c, d in bad))
 
         # ── 실장 여부 (meta.installed_channels) ────────────────────────────
         #   ★Emb 는 모터가 물리적으로 없어도 8채널 전부 connected=1·ucStatus=0 으로

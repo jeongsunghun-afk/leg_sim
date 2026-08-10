@@ -80,9 +80,14 @@ class HomeTrajectory:
 
         ★반드시 **측정각**으로 시작할 것(명령각이 아니라). 부하로 처져 있는 상태에서
           명령각을 기점으로 잡으면 첫 틱에 그 편차만큼 계단 명령이 나간다.
+
+        ★q0 는 **클램프하지 않는다**(2026-08-10). 시작점을 jog 한계로 자르면 현재 자세가
+          범위 밖일 때 첫 틱에 그 차이만큼 계단 명령이 나간다 — 막으려던 바로 그 현상이다.
+          클램프는 **목표(q_home)** 에만 건다(__init__). 그러면 범위 밖에서 시작해도
+          S-curve 가 범위 안 목표까지 매끄럽게 데려온다.
+          (calf 영점을 −55° 로 잡으면 jog 한계 −27.5° 와 27.5° 차이라 실제로 문제가 된다)
         """
-        q0 = np.clip(np.asarray(q_leg_now_deg, float)[: self.jm.n_leg],
-                     self.jm.jog_min, self.jm.jog_max)
+        q0 = np.asarray(q_leg_now_deg, float)[: self.jm.n_leg].copy()
         self.q0 = q0
         self.d = self.q_home - q0
         dmax = float(np.max(np.abs(self.d))) if self.d.size else 0.0

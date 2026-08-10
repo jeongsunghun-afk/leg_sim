@@ -22,8 +22,16 @@ class Jogger:
         self.q_leg = np.zeros(jm.n_leg)            # 램프 중인 명령(다리 8, **모델각 deg**)
 
     def reset(self, q_leg_deg):
-        """현재 측정각에서 시작(명령 점프·튀는 동작 방지)."""
-        self.q_leg = np.clip(np.asarray(q_leg_deg, float), self.jm.jog_min, self.jm.jog_max)
+        """현재 측정각에서 **클램프 없이** 시작(명령 점프 방지).
+
+        ★2026-08-10 수정 — 종전엔 시작점까지 jog 한계로 클램프했다. 그러면 현재 자세가
+          jog 범위 밖일 때 **진입 즉시 한계까지 순간이동 명령**이 나간다(= 막으려던 바로 그
+          점프). 영점 캘리브레이션으로 calf 가 −55°(구조적 한계)를 읽게 되면 jog 한계
+          −27.5° 와 27.5° 차이라 실제로 터진다.
+          시작점은 측정값 그대로 두고, **목표만** step() 에서 클램프한다. 그러면 범위 밖에
+          있어도 max_speed 로 천천히 범위 안으로 복귀한다.
+        """
+        self.q_leg = np.asarray(q_leg_deg, float).copy()
 
     def step(self, goal_leg_deg, dt: float | None = None) -> np.ndarray:   # → 모델각(n_leg)
         """1틱 전진. dt 를 주면 **실제 경과시간** 기준으로 속도를 제한한다.

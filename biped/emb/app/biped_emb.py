@@ -305,8 +305,13 @@ def main():
     if fsm.mode == FSM.HOLD:
         hold_leg = jm.ch_to_q_joint(_raw0.q_deg)   # ★측정각 래치(모델각) — 인계 순간 움직임 0
         hw.enable(True)
+        # ★`q_leg=` 라고 쓰고 채널각을 찍고 있었다(2026-08-10 수정). offset 이 전부 0 이던
+        #   동안은 두 값이 같아 드러나지 않았지만, 영점 캘리브레이션 후에는 완전히 다른
+        #   숫자다(예 HL_foot 채널 −84.8° = 모델 0°). 인계 자세를 눈으로 확인하는 자리라
+        #   여기서 틀리면 "홈 자세가 이상하다" 는 오진으로 바로 이어진다. 둘 다 찍는다.
         print(f"[biped_emb] 인계: hold 로 시작 — Emb 가 잡고 있던 자세를 그대로 유지한다.\n"
-              f"            q_leg={np.round(_raw0.q_deg[jm.ch], 2).tolist()} deg\n"
+              f"            q_leg(모델각)={np.round(hold_leg, 2).tolist()} deg\n"
+              f"            q_ch (채널각)={np.round(_raw0.q_deg[jm.ch], 2).tolist()} deg\n"
               f"            (무여자로 시작하려면 --start-mode off)")
     else:
         hw.enable(False)
@@ -468,7 +473,12 @@ def main():
           extra = {"health": health, "installed": [bool(x) for x in jm.installed],
                    "n_ok": health.count("ok"), "n_fault": health.count("fault"),
                    "n_dead": health.count("dead"), "n_absent": health.count("absent"),
-                   "n_installed": int(jm.installed.sum())}
+                   "n_installed": int(jm.installed.sum()),
+                   # ★raw 채널각(=드라이버 보고각, sign·offset 적용 **전**). 관절 순서로 정렬.
+                   #   영점 캘리브레이션은 이 값이 있어야 한다 — offset 은 채널각 단위이고
+                   #   모델각만 보고 있으면 offset≠0 이 된 뒤로는 역산이 헷갈린다.
+                   #   diag/calib_zero.py 가 이 필드를 쓴다.
+                   "q_ch_deg": [round(float(raw.q_deg[c]), 2) for c in jm.ch]}
 
           # ★실측 루프주기 — jog/home 의 속도·궤적 제한을 **호출 횟수가 아니라 실제 시간**
           #   기준으로 걸기 위해 넘긴다(캐치업 폭주로 한계가 뚫리는 것 방지).

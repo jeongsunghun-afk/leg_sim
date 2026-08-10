@@ -155,14 +155,14 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -2.79, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 3.21, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -31.78, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -55, jog_max_deg: 32.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -84.81, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: -0.51, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 0.09, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 42.70, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -55, jog_max_deg: 32.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 87.56, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.39, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -31.03, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -36.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -25.19, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.94, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 34.44, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 47.20, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:  -1, offset_deg: 87.69, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:
@@ -204,7 +204,7 @@ home:
   #       (b) 그 자세에서 다리가 실제로 몸을 지탱하는지(지금은 공중 매달림 상태)
   #   ⚠jog 안전한계 밖 값을 쓰면 클램프되고 기동 시 경고가 뜬다(calf 는 축별 예외로
   #     jog_min_deg −55 를 줘서 −55 가 한계 안이다).
-  q_deg: [0.0, 0.0, -55.0, 0.0, 0.0, 0.0, -55.0, 0.0]
+  q_deg: [0.0, 35.0, -60.0, 60.0, 0.0, 35.0, -60.0, 0.0]
   max_speed_dps: 15.0            # 궤적 최대 각속도[deg/s]. jog(20)보다 보수적으로
   max_acc_dps2: 30.0             # 궤적 최대 각가속도[deg/s²]
   min_time_s: 0.6                # 아주 가까운 거리라도 최소 이 시간은 쓴다(순간이동 방지)
@@ -223,7 +223,7 @@ home:
 #     이 offset 은 **−55° 그 지점에서만** 정확하고, 모델 0° 부근에선 약 27.5° 틀어진다.
 #     ⇒ 드라이버 감속비를 고친 뒤 **반드시 재측정**할 것. foot(8.4, 1.2배)도 동일 주의.
 calib:
-  ref_joint_deg: [0.0, 0.0, -55.0, 0.0, 0.0, 0.0, -55.0, 0.0]
+  ref_joint_deg: [0.0, 35.0, -60.0, 60.0, 0.0, 35.0, -60.0, 0.0]
 
 # ── 안전 ────────────────────────────────────────────────────────────────────
 safety:

@@ -33,7 +33,14 @@ try:
     _cfg = yaml.safe_load(open(_cfgp))
     _frac = float(_cfg.get('jog', {}).get('range_frac', 0.5))
     JOG_NAMES = [j['name'] for j in _cfg['joints']]
-    JOG_LIM = [(j['min_deg'] * _frac, j['max_deg'] * _frac) for j in _cfg['joints']]
+    # ★축별 예외(jog_min_deg/jog_max_deg)를 반드시 반영한다 — 2026-08-10.
+    #   여기는 emb/interface/joint_map.py 의 jog 한계 규칙을 **복제**한 코드다(GUI 는 별도
+    #   venv 라 joint_map 을 import 하지 않는다). 그래서 그쪽만 고치면 여기가 조용히 어긋난다.
+    #   실제로 어긋났었다: calf 를 [−55, 32.5] 로 넓혔는데 GUI 는 min_deg×0.5 = −27.5 를 써서,
+    #   구조적 한계(−55°)에 서 있는 무릎이 [JOG 검증] 진입 순간 **+27.5° 명령**을 받았다.
+    #   ⚠joint_map 의 규칙을 바꾸면 여기도 같이 고칠 것.
+    JOG_LIM = [(float(j.get('jog_min_deg', j['min_deg'] * _frac)),
+                float(j.get('jog_max_deg', j['max_deg'] * _frac))) for j in _cfg['joints']]
 except Exception:
     pass
 NJ = len(JOG_NAMES)
@@ -190,13 +197,30 @@ def set_mode(mode):
         dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
         return
     if mode == 'jog':           # ★각축 검증 진입: 슬라이더를 현재 실측각으로 정렬(명령 점프 방지)
+        # ★실패하면 **jog 로 들어가지 않는다**(2026-08-10). 종전엔 except: pass 라
+        #   상태를 못 읽어도 그대로 jog 로 진입했고, 그때 jog_deg 는 초기값 0 이다.
+        #   영점을 잡은 지금 그건 "전 축 모델 0° 로 가라" 는 뜻이라 무릎이 55° 펴진다.
+        #   시드에 실패했다는 건 명령 점프를 막을 근거가 없다는 뜻이므로 fail-closed 가 맞다.
         try:
-            q = json.load(open(STATE)).get('q_leg_deg', [0.0] * NJ)
+            q = json.load(open(STATE))['q_leg_deg']
+            if len(q) < NJ:
+                raise ValueError(f'q_leg_deg 길이 {len(q)} < {NJ}')
             for i in range(NJ):
                 v = float(max(JOG_LIM[i][0], min(JOG_LIM[i][1], q[i])))
+                if abs(v - float(q[i])) > 0.5:
+                    raise ValueError(
+                        f'{JOG_NAMES[i]} 실측 {q[i]:+.1f}° 가 jog 한계 '
+                        f'[{JOG_LIM[i][0]:+.1f},{JOG_LIM[i][1]:+.1f}] 밖 — 진입 시 '
+                        f'{abs(v-float(q[i])):.1f}° 움직인다. 한계를 넓히거나 자세를 먼저 옮길 것')
                 dpg.set_value(f'jog_{i}', v); pub.cmd['jog_deg'][i] = v
-        except Exception:
-            pass
+        except Exception as e:
+            msg = f'JOG 진입 취소 — {e}'
+            print(f'[gui] {msg}', flush=True)          # /tmp/teleop_gui_biped.log
+            try:
+                dpg.set_value('state', msg)            # 갱신 루프가 곧 덮어쓸 수 있다
+            except Exception:
+                pass
+            return                                     # ★mode 를 안 보낸다 = 현재 모드 유지
     pub.set(mode=mode)          # off/jog/hold 등
     left.clear(); right.clear(); pub.set(v=0.0, vy=0.0, w=0.0)
     dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
@@ -305,10 +329,15 @@ with dpg.window(tag='main'):
                 dpg.draw_circle([_LED_R + 3, _LED_R + 3], _LED_R, fill=(70, 70, 78),
                                 color=(30, 30, 36), tag=f'led_{i}')
             dpg.add_text(f'{nm:9s}', color=(190, 195, 210))
+            # ★슬라이더 양끝에 jog 한계를 숫자로 박아 둔다. 이 한계는 축마다 다르고
+            #   (config 의 jog_min_deg/jog_max_deg 예외), 관절한계와도 다르다 —
+            #   화면에 안 쓰여 있으면 "왜 여기서 안 넘어가지" 를 매번 config 를 열어 확인해야 한다.
+            dpg.add_text(f'{JOG_LIM[i][0]:>6.1f}', color=(120, 130, 150))
             dpg.add_slider_float(tag=f'jog_{i}', default_value=0.0,
                                  min_value=JOG_LIM[i][0], max_value=JOG_LIM[i][1],
                                  width=240, format='%.1f', user_data=i,
                                  callback=lambda s, v, u: on_jog(s, v, u))
+            dpg.add_text(f'{JOG_LIM[i][1]:<6.1f}', color=(120, 130, 150))
             dpg.add_text('--.-', tag=f'meas_{i}', color=(150, 220, 150))
     dpg.add_separator()
     dpg.add_text('-', tag='state', color=(150, 220, 150))

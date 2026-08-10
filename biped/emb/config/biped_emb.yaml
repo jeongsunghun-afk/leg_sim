@@ -38,13 +38,21 @@ shm:
 #   name    : biped 관절명(= robot_interface.JOINT_NAMES 순서, 고정)
 #   channel : RobotSharedMem Gait 채널(ENUM_Gait_JointID)
 #   sign    : 실모터 회전방향 = sign · (컨트롤러 각).
-#             ★HL_hip·HR_hip = +1 **실측 확정**(2026-08-05, 육안 검증).
-#               `+` 명령 시 두 축 모두 정면에서 볼 때 **반시계**로 회전한다.
-#               MJCF hip `axis="1 0 0"` 은 정면 관찰자 쪽으로 +X 가 향하므로 오른손
-#               법칙상 `+q` = 반시계 → 실측과 일치 ⇒ sign=+1 (부호 반전 불필요).
-#               **좌우 거울 장착이 아니다** — 두 축을 동시에 같은 각도로 움직였을 때
-#               같은 방향으로 회전함을 확인(이것이 결정적 관찰이었다).
-#             ⚠ 나머지 6축은 미장착 → 여전히 미검증(기본 +1).
+#
+#   ★★2026-08-10 **8축 전부 장착방향 실측 확정** (다리 조립 후, GUI 슬라이더 + 명령을
+#     주고 **실기와 뷰어 모델을 직접 대조**해 판정. 가장 직접적인 기준이다).
+#             HL: hip −1 · thigh +1 · calf −1 · foot −1
+#             HR: hip −1 · thigh −1 · calf +1 · foot +1
+#
+#   ⚠ **2026-08-05 의 "hip = +1 실측 확정" 과 모순이 아니다** — 재는 대상이 다르다:
+#       2026-08-05 : **모터축 회전방향** (다리 없이 모터 단품. 여전히 유효한 관찰)
+#       2026-08-10 : **장착 후 관절 방향** (기구 브라켓·링키지 방향이 더해진 결과)
+#     `sign` 은 "컨트롤러 각 → 실제 로봇 움직임" 이므로 **장착방향**이 들어가야 한다.
+#     차이(+1 → −1)는 기구 장착이 만든 것이고 둘 다 참이다.
+#
+#   ★내부 정합 확인: hip 만 좌우 동일(−1/−1)이고 thigh·calf·foot 은 좌우 반대다.
+#     2026-08-05 의 "hip 은 **좌우 거울 장착이 아니다**"(두 축을 같은 각도로 움직였을 때
+#     같은 방향으로 회전) 와 정확히 일치한다 — 서로 다른 두 시점의 관찰이 맞물린다.
 #   offset_deg: 실모터 0점 − 컨트롤러 0점[deg]. ★캘리브레이션
 #   min/max_deg: 소프트웨어 관절한계[deg](MJCF range 변환). 명령·jog 모두 클램프
 #   kp/kd   : jog·hold 시 모터 임피던스 게인(모델기반은 tau_ff, kp/kd=0)
@@ -107,14 +115,14 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # 외삽(미장착)
-  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # 외삽(미장착)
-  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # 외삽(미장착)
-  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
-  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # 외삽(미장착)
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # 외삽(미장착)
-  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # 외삽(미장착)
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

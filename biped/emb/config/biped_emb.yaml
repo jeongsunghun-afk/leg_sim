@@ -163,13 +163,13 @@ joints:
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
   - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.39, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -31.03, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -85.19, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -31.03, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -85.19, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.94, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 34.44, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 77.20, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.69, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 34.44, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 77.20, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.69, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:
@@ -182,7 +182,17 @@ waist:
 #   안전 우선: 저속 위치 램프. GUI가 축별 목표각(deg) 발행 → 여기 속도·한계로 제한.
 jog:
   max_speed_dps: 20.0            # 축 최대 각속도[deg/s] — 천천히(안전)
-  range_frac: 0.5               # 초기엔 관절한계의 이 비율까지만 허용(캘리브레이션 안전마진)
+  # ★0.5 → 1.0 (2026-08-10). 0.5 는 "영점이 안 잡혀 있으니 **모델 0 근처만** 허용" 이라는
+  #   전제의 안전마진이었다. 영점을 잡고 나니 정지자세가 0 인 축이 거의 없어(calf −60°,
+  #   foot 60°) 그 전제가 깨졌다 — thigh 는 위쪽 여유가 5°, foot 은 2° 밖에 안 남아
+  #   각축 검증 자체가 불가능했다.
+  #   ⇒ 이제 jog 한계 = 관절한계(min/max_deg)다. 그 값들은 MJCF range + 실측 보정이라
+  #     소프트웨어 한계로서 이미 올바른 기준이다. 채널각 ±180 도 전 축 여유 안이다
+  #     (최대 HR_thigh 169.4 · HR_calf 174.7 · foot 180.0 — foot 은 극단 조합에서만 닿는다).
+  #   ⚠hip·thigh 의 관절한계는 MJCF 유래라 **물리 하드스톱과 대조된 적이 없다**(calf·foot 은
+  #     실측으로 −62/+62 로 넓혔다). 끝단까지 몰기 전에 눈으로 확인할 것.
+  #   축별로 다시 좁히려면 joints 항목에 jog_min_deg / jog_max_deg 를 넣으면 된다.
+  range_frac: 1.0
   settle_deg: 0.5               # 목표 도달 판정[deg]
 
 # ── home(홈 복귀) ───────────────────────────────────────────────────────────

@@ -155,6 +155,22 @@
 ### Phase 5 — DTC (별도, 후속)
 OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 
+### 고속 엔벨로프 확장 — base 회복 authority (2026-08-10)
+발목 TSID 조사에서 출발(사용자 "TSID라 발목 조절 힘들다→HQP?"). D1은 이미 16-DOF 능동발목(null-space weighted posture 제어). 규명:
+- **①비결정성**: run-to-run 편차 주원인=라이브러리 OpenMP 리덕션 순서 → `OMP_NUM_THREADS=1` 바이너리 내장(override 가능). 마진 튜닝 신뢰 회복.
+- **②발목은 오답**: POST 튜닝=whack-a-mole(VX0.5 잡으면 0.4 깨짐). 발목 hard-constraint(ANKLE_HARD=TSID 내 발목만 strict="poor-man's HQP", 진짜 HQP계층 아님)도 weighted보다 나쁨(VX0.5 4/6<6/6). 실측 발목강성 유한+백래시(PACE)라 강체 불가→weighted가 sim2real 정합. **TSID 유지가 맞음**(HQP 이식 불요).
+- **③진짜 병목=base 회복 authority**(터치다운 coupled base_z sink+tilt 회복 한계, 진단이 정확히 지목). 레버=**W_BASE**(base task 가중, trot 전용 150·bound/walk는 붕괴→50)·**MPC_HZ**(재계획률, 범용, 기본 50→100 승격). KP_B(base PD) 단독은 무효. 저속/stance 무회귀.
+
+**결과 — D1 강건 엔벨로프(기본값) ~2배 확장** (OMP=1, 각 3~6회 falls=0):
+
+| 게이트 | 이전(50Hz) | 현재(기본 100Hz) |
+|---|---|---|
+| trot | VX≤0.3 | **≤1.1** (W_BASE=150 자동+MPC100, 1.2 가장자리) |
+| bound | ≤0.7 | **≤0.8** |
+| static_walk | ≤0.3 | **≤0.5** |
+
+여전히 **비배포급**(실시간 0.15~0.3×, MPC100으로 더 느려짐; A가 배포 본선). 커밋 6ca5050(OMP=1)·c21ab1c(W_BASE 게이트별)·0e574a3(MPC_HZ 기본). 상세=[[controller-balance-mechanisms]].
+
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).
 - **모델 포팅 근사(해소)**: 발목 잠금(point-foot)은 **Phase 2c에서 16-DOF 능동 발목으로 해소**(허리만 fixed 유지). 발목 능동화엔 GEARBOX(반사관성)·널스페이스 posture·앞뒤 발목 nominal이 필수.

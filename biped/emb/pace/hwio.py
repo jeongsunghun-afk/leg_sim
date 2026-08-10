@@ -92,8 +92,18 @@ class Hardware:
         #   ⇒ 시험축을 가진할 때 hold_channels 를 측정위치에 함께 잡아둔다.
         #   ⚠기본값은 빈 튜플 = 종전 동작 그대로. spec.yaml 의 safety.hold_others 로 켠다.
         self.hold_ch = tuple(int(c) for c in hold_channels)
-        self.hold_kp = float(hold_kp)
-        self.hold_kd = float(hold_kd)
+        # ★홀드 게인은 **축별**로 줄 수 있다(2026-08-10).
+        #   이유: 홀드축은 스프링이고 공진 f_n = √(kp·k²/I) 가 처프 대역 안에 들어오면
+        #   그 위 주파수에서 홀드가 '자유' 처럼 행동해 식별값이 오염된다.
+        #   축마다 I 와 gear_k 가 달라 필요한 kp 도 다르다 — 스칼라 하나로는 못 맞춘다.
+        #   스칼라를 주면 종전대로 전 축 동일(하위호환).
+        self.hold_kp = hold_kp if isinstance(hold_kp, dict) else float(hold_kp)
+        self.hold_kd = hold_kd if isinstance(hold_kd, dict) else float(hold_kd)
+
+    def _hold_gain_of(self, ch: int) -> tuple[float, float]:
+        kp = self.hold_kp[ch] if isinstance(self.hold_kp, dict) else self.hold_kp
+        kd = self.hold_kd[ch] if isinstance(self.hold_kd, dict) else self.hold_kd
+        return float(kp), float(kd)
 
         lib = C.CDLL(lib_path)
         lib.bridge_init.restype = C.c_int
@@ -279,8 +289,9 @@ class Hardware:
         kd_v = np.zeros(self.n, np.float32)
         for hc in self.hold_ch:
             if hc != ch and hc < self.n:
-                kp_v[hc] = min(self.hold_kp * scale, self.lim.kp_max)
-                kd_v[hc] = min(self.hold_kd * scale, self.lim.kd_max)
+                _kp, _kd = self._hold_gain_of(hc)
+                kp_v[hc] = min(_kp * scale, self.lim.kp_max)
+                kd_v[hc] = min(_kd * scale, self.lim.kd_max)
         return kp_v, kd_v
 
     def _raw_write(self, ch: int, q_cmd_deg: float, kp: float, kd: float,

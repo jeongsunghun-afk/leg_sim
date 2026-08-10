@@ -88,7 +88,7 @@ int main(int argc,char**argv){
   d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
 
   if(!glfwInit()){ std::fprintf(stderr,"glfw init 실패\n"); return 1; }
-  GLFWwindow* win=glfwCreateWindow(1100,820,"biped 실기 모니터 (엔코더 표시 전용)",NULL,NULL);
+  GLFWwindow* win=glfwCreateWindow(1100,820,"biped HW monitor (encoder display only)",NULL,NULL);
   if(!win){ std::fprintf(stderr,"창 생성 실패(DISPLAY? 모니터 절전?)\n"); glfwTerminate(); return 1; }
   glfwMakeContextCurrent(win); glfwSwapInterval(1);
   mjv_defaultCamera(&cam); mjv_defaultOption(&opt); mjv_defaultScene(&scn); mjr_defaultContext(&con);
@@ -131,22 +131,24 @@ int main(int argc,char**argv){
     mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);
     mjr_render(vp,&scn,&con);
 
+    // ★HUD 는 **ASCII 만** 쓴다. MuJoCo mjr_overlay 는 내장 비트맵 폰트라
+    //   한글/유니코드를 못 그린다(전부 깨져서 나온다). 2026-08-07 실기에서 확인.
     { double stale_ms = (now_s()-stale_since)*1e3;
       char hud[700];
       int n = std::snprintf(hud,sizeof hud,
         "mode=%s  backend=%s  loop=%.0fHz  tilt=%.1f deg\n"
-        "정상 %d / 미장착 %d      state 신선도 %.0f ms%s\n"
-        "── 엔코더 실측각 [deg] ──\n", mode.c_str(), backend.c_str(), loop_hz, tilt,
-        n_ok, n_absent, stale_ms, stale_ms>1000 ? "  ⚠정지" : "");
+        "axes ok=%d absent=%d   state age=%.0f ms%s\n"
+        "---- encoder [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, tilt,
+        n_ok, n_absent, stale_ms, stale_ms>1000 ? "  *** STALE ***" : "");
       for(int i=0;i<jm.n_leg && n<(int)sizeof(hud)-40;i++)
         n += std::snprintf(hud+n,sizeof(hud)-n,"%-9s %+7.2f%s",
              cfg.joints[i].name.c_str(), q_ch[i], (i%2==1)?"\n":"   ");
       mjr_overlay(mjFONT_NORMAL,mjGRID_TOPLEFT,vp,
-                  "biped 실기 모니터 — 표시 전용(제어·물리 없음)",hud,&con);
+                  "biped HW MONITOR - display only (no control, no physics)",hud,&con);
       mjr_overlay(mjFONT_NORMAL,mjGRID_BOTTOMLEFT,vp,"",
-        "이 창은 로봇을 제어하지 않는다. 조작은 GUI(teleop_gui_biped) 에서.\n"
-        "베이스는 고정 표시(IMU 없음) — 관절각만 실측이다.\n"
-        "마우스: 좌드래그 회전 · 우드래그 이동 · 휠 줌", &con);
+        "This window does NOT control the robot. Use the GUI (teleop_gui_biped).\n"
+        "Base is fixed (no IMU) - joint angles are the measured values.\n"
+        "mouse: L-drag rotate | R-drag pan | wheel zoom", &con);
     }
     glfwSwapBuffers(win); glfwPollEvents();
   }

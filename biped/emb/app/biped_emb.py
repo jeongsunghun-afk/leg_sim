@@ -165,6 +165,9 @@ def main():
     ap.add_argument("--config", default=os.path.join(EMB, "config", "biped_emb.yaml"))
     ap.add_argument("--mock", action="store_true", help="SHM 없이 데스크톱 데모")
     ap.add_argument("--T", type=float, default=1e12, help="최대 실행시간[s] (검증용)")
+    # ★시작 모드 — 기본 hold. 근거는 아래 "인계" 주석 참조.
+    ap.add_argument("--start-mode", choices=["hold", "off"], default="hold",
+                    help="시작 모드. hold=Emb 가 잡고 있던 자세를 그대로 인계(기본) · off=무여자")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
@@ -176,7 +179,7 @@ def main():
 
     cfg_dt = 1.0 / float(cfg["meta"]["ctrl_hz"])
     jogger = Jogger(jm, cfg_dt, float(cfg["jog"]["max_speed_dps"]))
-    fsm = FSM.ModeFSM(FSM.OFF)
+    fsm = FSM.ModeFSM(FSM.HOLD if args.start_mode == 'hold' else FSM.OFF)
     hcfg = cfg.get("home", {})
     homer = HomeTrajectory(jm, cfg_dt,
                            hcfg.get("q_deg", [0.0] * jm.n_leg),
@@ -208,7 +211,32 @@ def main():
     print(f"[biped_emb] backend={be_name} · ctrl_hz={cfg['meta']['ctrl_hz']} · CMD={CMD_PATH}")
     print("            모드: off/jog/hold(=지금) · stand/walk(=jog 검증 후). GUI로 조종.")
 
-    hw.enable(False)
+    # ── ★Emb → 이 앱 인계 (2026-08-07) ────────────────────────────────────
+    #   Emb 는 기동 시 4.5초 램프로 전 관절을 0°로 보낸 뒤 **그 자세를 잡고 있다**
+    #   (halGait.cpp:694-711, kp 100/50/50/20·kd 5). 그 상태에서 이 앱이 뜬다.
+    #
+    #   ⚠종전엔 무조건 off 로 시작했다 — 그러면 브리지가 kp=kd=0 을 SHM 에 쓰고
+    #     Emb 가 그걸 **클램프 없이 통과**시켜(commGait.cpp:190 memcpy) 모터가 풀린다.
+    #     즉 우리 앱이 **능동적으로 잡고 있던 걸 놓아 다리를 떨어뜨렸다.**
+    #     다리 미장착 시절엔 무해했지만(잡을 게 없었다) 조립 후에는 hip 중력토크
+    #     4.96 Nm 로 실제 낙하한다.
+    #
+    #   ★원칙이 뒤집힌 지점: "사람이 버튼을 누르기 전에 전류가 흐르면 위험" 이라는
+    #     기존 근거는 **Emb 가 이미 전류를 흘리고 있는 상황**에선 성립하지 않는다.
+    #     인계 시 움직임이 0 인 쪽(hold)이 더 안전하다 — 우리가 푸는 쪽이 오히려
+    #     예상 못 한 움직임을 만든다.
+    #   ⇒ 기본을 hold 로 바꾸고, 무여자로 시작하려면 --start-mode off 를 쓴다.
+    _raw0 = hw.read()
+    if fsm.mode == FSM.HOLD:
+        hold_ch = _raw0.q_deg.copy()          # ★측정각 래치 — 인계 순간 움직임 0
+        hw.enable(True)
+        print(f"[biped_emb] 인계: hold 로 시작 — Emb 가 잡고 있던 자세를 그대로 유지한다.\n"
+              f"            q_leg={np.round(_raw0.q_deg[jm.ch], 2).tolist()} deg\n"
+              f"            (무여자로 시작하려면 --start-mode off)")
+    else:
+        hw.enable(False)
+        print("[biped_emb] off 로 시작 — ⚠Emb 가 잡고 있던 자세가 풀려 다리가 떨어진다.")
+
     t0 = time.perf_counter(); k = 0; last_cmd_t = t0; last_pub = 0.0
     estop_latched = False
     wd_tripped = False

@@ -42,11 +42,15 @@ NJ = len(JOG_NAMES)
 class Pub:
     def __init__(self, path=CMD):
         self.path = path
-        # ★시작 모드는 반드시 'off'. 'stand' 였을 때는 Pub() 이 import/생성 시점에
-        #   곧바로 _pub() 하므로(뷰포트 생성 전!) **앱이 기동 4초 내 자동 무장**됐다.
-        #   실기에서 사람이 버튼을 누르기도 전에 모터에 전류가 흐르는 것이라 위험하다.
-        #   (README 의 "off 에서 시작해 사용자가 명시적으로 무장" 원칙과도 정면 배치)
-        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'off', 'contact': '2pt',
+        # ★시작 모드 — 'stand' 는 절대 금지. Pub() 이 생성 시점에 곧바로 _pub() 하므로
+        #   (뷰포트 생성 전!) **기동 4초 내 자동 무장**되고 모델기반 제어가 돌아버린다.
+        #
+        # ★2026-08-07: 'off' → 'hold'. 실기에서 Emb 가 4.5초 램프로 잡아둔 자세를
+        #   GUI 가 off 를 쏘는 순간 놓아버려 **다리가 떨어졌다**(hip 중력토크 4.96 Nm).
+        #   hold 는 "지금 그 자리를 유지" 라 인계 시 움직임이 0 이다.
+        #   ⚠stand/walk 와 달리 hold 는 모델기반 제어가 아니다 — 측정각 임피던스 유지뿐.
+        #   sim 에서는 컨트롤러가 hold 를 모르면 무시하므로 무해하다.
+        self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'hold', 'contact': '2pt',
                     'jog_deg': [0.0] * NJ, 'seq': 0}
         self._pub()
 

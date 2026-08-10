@@ -446,6 +446,59 @@ class Hardware:
                 "tau": np.array(taus), "tau_base": tau_b, "tau_base_sd": tau_sd,
                 "q0": q0, "delta": delta_deg}
 
+    def _raw_write_all(self, q_cmd_vec, kp: float, kd: float) -> None:
+        """전 채널을 **동시에** 구동. goto_all 전용."""
+        kp = min(max(kp, 0.0), self.lim.kp_max)
+        kd = min(max(kd, 0.0), self.lim.kd_max)
+        kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
+        for c in range(self.n):
+            v = float(q_cmd_vec[c])
+            self._q_cmd[c] = min(max(v, self.lim.q_min), self.lim.q_max)
+            kp_v[c] = kp; kd_v[c] = kd
+        self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
+
+    def goto_all(self, targets_ch, kp: float, kd: float,
+                 speed_dps: float = 8.0, log=print) -> float:
+        """전 채널을 목표 채널각으로 **동시에** S-curve 이동. 소요시간[s] 반환.
+
+        ★왜 다축 동시인가 — 한 축씩 옮기면 중간 자세가 설계에 없는 형상이 되고,
+          매단 상태에선 그 자세에서 다른 축이 중력으로 끌린다.
+        ★왜 S-curve 인가 — 등속 램프는 시작·끝에서 가속도가 계단이라 관성부하가 큰
+          (다리 장착) 지금은 그 순간 토크가 튄다. 5차식은 양 끝 가속도가 0 이다.
+        ⚠이 함수는 **측정 전 자세 정렬 전용**이다. 측정 자체는 시험축만 구동한다.
+        """
+        q0 = np.array([self.read(c)[0] for c in range(self.n)], float)
+        tgt = np.array([float(x) for x in targets_ch], float)
+        if tgt.size != self.n:
+            raise ValueError(f"targets 길이 {tgt.size} != n_channel {self.n}")
+        d = tgt - q0
+        dmax = float(np.max(np.abs(d)))
+        if dmax < 0.05:
+            log(f"    이미 목표 자세(최대 편차 {dmax:.3f}°) — 이동 생략")
+            return 0.0
+        T = max(dmax / max(speed_dps, 1e-6) * 1.875, 1.0)      # 5차식 피크속도 계수
+        log(f"    홈 이동: 최대 {dmax:.1f}° · {T:.1f}s · {speed_dps:.0f}dps 상한")
+        t0 = time.perf_counter()
+        while True:
+            t = time.perf_counter() - t0
+            tau = min(t / T, 1.0)
+            sfac = tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
+            self._raw_write_all(q0 + d * sfac, kp, kd)
+            for c in range(self.n):                      # 트립 감시(전 축)
+                q, dq, tq, _ = self.read(c)
+                self._check(c, q, dq, tq, float(self._q_cmd[c]))
+            if tau >= 1.0:
+                break
+            time.sleep(1.0 / self.rate)
+        t_settle = time.perf_counter()
+        while time.perf_counter() - t_settle < 0.5:      # 정착
+            self._raw_write_all(tgt, kp, kd)
+            time.sleep(1.0 / self.rate)
+        err = np.array([self.read(c)[0] for c in range(self.n)]) - tgt
+        log(f"    도착 — 최대 추종오차 {np.max(np.abs(err)):.2f}° "
+            f"({', '.join(f'ch{c}{err[c]:+.1f}' for c in range(self.n))})")
+        return T
+
     def goto(self, ch: int, q_target_deg: float, kp: float, kd: float,
              speed_dps: float = 8.0) -> None:
         """현재 위치에서 목표각까지 등속 램프(안전 이동)."""

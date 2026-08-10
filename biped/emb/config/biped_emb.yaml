@@ -53,17 +53,21 @@ shm:
 #   ★내부 정합 확인: hip 만 좌우 동일(−1/−1)이고 thigh·calf·foot 은 좌우 반대다.
 #     2026-08-05 의 "hip 은 **좌우 거울 장착이 아니다**"(두 축을 같은 각도로 움직였을 때
 #     같은 방향으로 회전) 와 정확히 일치한다 — 서로 다른 두 시점의 관찰이 맞물린다.
-#   scale   : **보고각 / 실제 관절각** (감속비 보정).
-#             ★2026-08-10 — GUI/뷰어에 "calf 가 실제보다 훨씬 많이 움직인다" 로 드러났다.
-#             드라이버는 모터각을 감속비로 나눠 관절각으로 보고하는데(2026-08-05 hip 검증:
-#             36° 명령 → 출력축 36° 회전), 그 감속비가 **전 축 7:1 로 고정**돼 있다.
-#             실제 감속비는 hip/thigh 7 · calf 10.5 · foot 8.4 이므로
-#                 보고각 = 실제 관절각 × (실제감속비 / 7)
-#                 → calf 1.5 · foot 1.2 · hip/thigh 1.0
-#             ⚠근본 수정은 **드라이버 감속비 설정**이다(RGA 문의). 여기 scale 은 우회책이고,
-#               우리 코드에서만 맞는다 — RobotTestGait·mot_test 등 다른 도구는 여전히 틀린다.
-#             ⚠아직 **측정으로 확정하지 않았다**(diag/scale_check.py). 값이 1.5/1.2 가 아니거나
-#               자세에 따라 변하면 감속비가 아니라 링키지 문제다.
+#   ⚠⚠ **알려진 미해결 — 드라이버 감속비 오설정** (2026-08-10 발견, 소프트로 보정하지 않음)
+#     드라이버는 모터각을 감속비로 나눠 관절각으로 보고한다(2026-08-05 hip 검증:
+#     36° 명령 → 출력축 36° 회전). 그런데 그 감속비가 **전 축 7:1 로 고정**된 것으로 보인다.
+#     실제 감속비는 hip/thigh 7 · calf 10.5 · foot 8.4 이므로
+#         보고각 = 실제 관절각 × (실제감속비/7)   →  calf 1.5배 · foot 1.2배 과대보고
+#     증상: JOG 중 "calf 가 뷰어에서 실제보다 훨씬 많이 움직인다".
+#
+#     ★소프트 보정(scale)을 **의도적으로 넣지 않는다.** 근본 원인이 드라이버 설정이고,
+#       우리 코드에만 보정을 넣으면 (a) 근본 수정이 가려지고 (b) RobotTestGait·mot_test 등
+#       다른 도구는 여전히 틀린 채로 남아 **도구마다 각도가 달라진다**.
+#     ⇒ 드라이버/MCU 감속비 설정을 고칠 것(RGA 문의). 고쳐지면 아래 offset 만으로 충분하다.
+#     ⚠고쳐지기 전까지 **calf·foot 의 표시각·명령각은 실제와 1.5/1.2 배 다르다.**
+#       그 축의 각도를 신뢰하지 말 것(방향·부호는 유효하다).
+#     ⚠배율은 아직 실측 미확정 — diag/chain_check.py --axis N --physical 로 잴 수 있다.
+#       1.5/1.2 가 아니거나 자세에 따라 변하면 감속비가 아니라 링키지 문제다.
 #
 #   offset_deg: 실모터 0점 − 컨트롤러 0점[deg]. ★캘리브레이션 (**모델각 단위**)
 #   min/max_deg: 소프트웨어 관절한계[deg](MJCF range 변환). 명령·jog 모두 클램프
@@ -127,14 +131,14 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign: -1, scale: 1.0, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, scale: 1.0, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, scale: 1.5, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, scale: 1.2, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_hip,   channel: 4, sign: -1, scale: 1.0, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, scale: 1.0, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, scale: 1.5, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:  1, scale: 1.2, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

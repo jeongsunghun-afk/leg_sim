@@ -40,17 +40,16 @@ class HwInterface:
         """다리 8관절 현재각 [**모델각 deg**] — GUI 표시·jog·home·hold 의 기준 단위.
 
         ★2026-08-10: 종전엔 채널각(드라이버 보고각)을 그대로 반환했다. 그래서
-          (a) sign 이 안 먹어 GUI/뷰어가 모델과 반대로 보이고
-          (b) 감속비 보정이 없어 calf 가 1.5배, foot 이 1.2배 크게 보였다
-              (드라이버가 전 축을 7:1 로 가정하기 때문).
+          sign 이 안 먹어 GUI/뷰어가 모델과 반대로 보였다.
           ⇒ 여기서 모델각으로 바꿔 **위 계층 전체를 한 단위로** 통일한다.
+        ⚠calf·foot 은 드라이버 감속비 오설정으로 보고각이 실제의 1.5/1.2 배다.
+          소프트 보정을 넣지 않기로 했으므로(config 사유 참조) 그 두 축의 **크기**는 부정확하다.
         """
         return self.jm.ch_to_q_joint(self._raw.q_deg)
 
     def dq_leg_dps(self) -> np.ndarray:
         """다리 8관절 각속도 [모델각 deg/s]. offset 은 상수라 미적용."""
-        return (np.asarray(self._raw.dq_dps, float)[self.jm.ch]
-                / self.jm.scale / self.jm.sign)
+        return np.asarray(self._raw.dq_dps, float)[self.jm.ch] / self.jm.sign
 
     def ctrl_state(self):
         """모델기반용 상태: (q_rad[8], dq_rad[8], quat_wxyz[4], gyro_rad[3], acc[3], contact[2])."""

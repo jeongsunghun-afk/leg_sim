@@ -31,7 +31,6 @@ namespace bipedhw {
 // ─────────────────────────────────────────────────────────────────────────────
 struct JointCfg {
   std::string name; int channel=0; double sign=1, offset_deg=0;
-  double scale=1.0;                       // ★보고각/실제 관절각 (감속비 보정, 2026-08-10)
   double min_deg=-30, max_deg=30, kp=40, kd=2;
 };
 
@@ -116,8 +115,6 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       j.channel    = (int)getd(kv,"channel",0);
       j.sign       = getd(kv,"sign",1);
       j.offset_deg = getd(kv,"offset_deg",0);
-      j.scale      = getd(kv,"scale",1.0);
-      if(j.scale <= 0) j.scale = 1.0;
       j.min_deg    = getd(kv,"min_deg",-30);
       j.max_deg    = getd(kv,"max_deg",30);
       j.kp         = getd(kv,"kp",40);
@@ -273,16 +270,18 @@ struct JointMap {
   static constexpr double D2R = 0.017453292519943295;
 
   // ── 모델각[deg] ↔ 채널각[deg] — Python joint_map 과 **같은 규약** ────────
-  //   모델각 = (채널각/scale − offset)/sign      채널각 = (모델각·sign + offset)·scale
+  //   모델각 = (채널각 − offset)/sign            채널각 =  모델각·sign + offset
+  //   ⚠calf·foot 은 드라이버 감속비 오설정으로 보고각이 실제의 1.5/1.2 배다.
+  //     소프트 보정(scale)은 의도적으로 넣지 않는다 — emb/config/biped_emb.yaml 사유 참조.
   //   GUI·jog·home·hold·표시는 전부 모델각. 채널각은 SHM 경계에서만.
   void ch_to_q_joint(const float* q_ch, double* out) const {
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)q_ch[j.channel]/j.scale - j.offset_deg)/j.sign; }
+      out[i] = ((double)q_ch[j.channel] - j.offset_deg)/j.sign; }
   }
   void q_joint_to_ch(const double* q_j, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)((q_j[i]*j.sign + j.offset_deg)*j.scale); }
+      out[j.channel] = (float)(q_j[i]*j.sign + j.offset_deg); }
     for(size_t k=0;k<c->waist_ch.size();k++)
       out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
   }
@@ -295,28 +294,28 @@ struct JointMap {
   void q_ctrl_to_ch(const double* q_rad, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)((j.sign * q_rad[i] * R2D + j.offset_deg) * j.scale); }
+      out[j.channel] = (float)(j.sign * q_rad[i] * R2D + j.offset_deg); }
     for(size_t k=0;k<c->waist_ch.size();k++)
       out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
   }
   void dq_ctrl_to_ch(const double* dq_rad, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(j.sign * dq_rad[i] * R2D * j.scale); }
+      out[j.channel] = (float)(j.sign * dq_rad[i] * R2D); }
   }
   void tau_ctrl_to_ch(const double* tau, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(j.sign * tau[i] / j.scale); }   // ★토크는 각도와 반대로 스케일
+      out[j.channel] = (float)(j.sign * tau[i]); }
   }
   // 채널(deg) → 컨트롤러(rad)
   void ch_to_q_ctrl(const float* q_ch, double* out) const {
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)q_ch[j.channel]/j.scale - j.offset_deg) / j.sign * D2R; }
+      out[i] = ((double)q_ch[j.channel] - j.offset_deg) / j.sign * D2R; }
   }
   void ch_to_dq_ctrl(const float* dq_ch, double* out) const {
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)dq_ch[j.channel]/j.scale / j.sign) * D2R; }
+      out[i] = ((double)dq_ch[j.channel] / j.sign) * D2R; }
   }
   // 게인 벡터(채널). ★Nm/rad 그대로 — 환산하지 않는다.
   void kp_ch(float* out, double scale=1.0) const {

@@ -88,6 +88,8 @@ class JointMap:
             s = {int(c) for c in inst}
             self.installed = np.array([int(c) in s for c in self.ch], bool)
 
+        self.n_saturated = 0
+        self.last_saturated = []
         self._check_wrap()
 
     # ── ±180 래핑 가드 ────────────────────────────────────────────────────
@@ -123,13 +125,13 @@ class JointMap:
         return out
 
     def _check_wrap(self):
+        # ★예외가 아니라 경고다(2026-08-10 정정). q_joint_to_ch 가 ±180 으로 포화시키므로
+        #   래핑 사고는 이미 막혀 있다. 그리고 한계의 **모양**이 박스가 아니다 — 제약은
+        #   발목 모터각(raw = foot + coef·calf)에 걸리므로, 박스 꼭짓점 하나가 넘는다고
+        #   foot 단독 한계를 좁히면 무릎이 펴져 있을 때 쓸 범위까지 불필요하게 잘린다.
         jog = self._ch_extremes(self.jog_min, self.jog_max)
-        bad = [(self.names[i], jog[i]) for i in range(self.n_leg) if jog[i] > self.WRAP_DEG]
-        if bad:
-            raise ValueError(
-                "jog 범위에서 채널각이 ±180 을 넘는다 — Emb 가 래핑해 반대편으로 튄다: "
-                + ", ".join(f"{n} {v:.1f}°" for n, v in bad)
-                + "\n  jog_min_deg/jog_max_deg 를 좁히거나 offset 을 다시 잡을 것.")
+        self.jog_wrap_warn = [(self.names[i], jog[i]) for i in range(self.n_leg)
+                              if jog[i] > self.WRAP_DEG]
         lim = self._ch_extremes(self.min_deg, self.max_deg)
         self.wrap_warn = [(self.names[i], lim[i]) for i in range(self.n_leg)
                           if lim[i] > self.WRAP_DEG]
@@ -223,6 +225,16 @@ class JointMap:
     #       raw_foot    = 모델각_foot + coef · 모델각_calf
     #     (raw_x = (채널각_x − offset_x)/(sign_x·k_x) — 커플링 풀기 **전** 값)
     #
+    #   ★★coef 는 **감속비 이후(관절각) 공간**의 계수다. 모터각 공간이 아니다.
+    #     raw 가 이미 sign·k 로 나눠진 값이므로 자동으로 그렇게 된다.
+    #     의미: "calf 관절이 30° 돌면 foot 관절도 30° 돈다" = coef 크기 1
+    #           (calf 10.5:1, foot 8.4:1 로 감속비가 달라도 **관절각**끼리 1:1)
+    #     ⇒ 그 결과 모터(채널)각 비율은 1:1 이 **아니다**: k_foot/k_calf = 1.2/1.5 = 0.8.
+    #       실측 확인 — calf 관절 +30° 명령 시 채널각은 calf ∓45°, foot ±36° 로 나간다.
+    #     ⚠여기를 모터각 공간으로 착각해 넣으면 관절각이 30° vs 24° 로 어긋난다.
+    #       감속비가 고쳐져 k 가 전부 1.0 이 되면 두 공간이 같아져 이 구분이 사라진다 —
+    #       그때 무심코 옮겨 적지 말 것.
+    #
     #   ★삼각(triangular) 구조라 역변환이 닫힌 형태로 존재한다: 소스(calf)가 스스로
     #     커플링되지 않으므로 calf 를 먼저 풀고 그 값을 foot 에 쓰면 된다.
     #   ⚠소스가 또 커플링된 축이면(체인) 이 구현은 틀린다 — 지금은 금지하고 검출한다.
@@ -255,13 +267,29 @@ class JointMap:
         return out
 
     def q_joint_to_ch(self, q_joint_deg) -> np.ndarray:
-        """모델각 → 채널각. 명령 쓰기 경로. 커플링을 **되먹인다**. 허리는 hold_deg 고정."""
+        """모델각 → 채널각. 명령 쓰기 경로. 커플링을 **되먹인다**. 허리는 hold_deg 고정.
+
+        ★마지막에 채널각을 ±180 으로 **포화(saturate)** 시킨다.
+          Emb 는 초과분을 클램프가 아니라 **래핑**하므로(halGait.cpp:666-671) 181° 가
+          −179° 로 뒤집혀 반대편으로 날아간다. 포화는 "한계에서 멈춤" 이라 훨씬 안전하다.
+        ★한계의 **모양**이 중요하다: 물리적 제약은 발목 **모터각**(raw = foot + coef·calf)에
+          걸린다. foot 단독 한계로 좁히면 무릎이 펴져 있을 때 쓸 수 있는 범위까지 잘린다.
+          그래서 모델각 한계는 그대로 두고 여기 raw/채널 공간에서만 막는다.
+        ⚠포화가 실제로 걸리면 명령이 조용히 왜곡되므로 횟수를 세어 앱이 알릴 수 있게 한다.
+        """
         qj = np.asarray(q_joint_deg, float)
         raw = qj.copy()
         for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
             raw[d] = qj[d] + c * qj[s]
         out = np.zeros(self.n_channel)
-        out[self.ch] = raw * self.sk + self.offset
+        v = raw * self.sk + self.offset
+        n_sat = int(np.count_nonzero(np.abs(v) > self.WRAP_DEG))
+        if n_sat:
+            self.n_saturated += n_sat
+            self.last_saturated = [self.names[i] for i in range(self.n_leg)
+                                   if abs(v[i]) > self.WRAP_DEG]
+            v = np.clip(v, -self.WRAP_DEG, self.WRAP_DEG)
+        out[self.ch] = v
         for c_, h in zip(self.waist_ch, self.waist_hold):
             out[c_] = h
         return out

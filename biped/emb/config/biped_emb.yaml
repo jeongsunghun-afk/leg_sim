@@ -165,11 +165,11 @@ joints:
   - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.39, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -31.03, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 58.81, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HL_calf, couple_coef: -1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -85.19, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.94, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 34.44, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, jog_min_deg: -67.5, jog_max_deg: 40, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 77.20, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, jog_min_deg: -62, jog_max_deg: 32.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: -56.31, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HR_calf, couple_coef: -1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.69, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, jog_min_deg: -40, jog_max_deg: 62, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

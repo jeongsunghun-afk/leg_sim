@@ -67,7 +67,7 @@ Python 검증 알고리즘을 C++로 포팅. `cpp/src/`:
 # sim 검증(배포 API가 biped_run과 동일 + 추정오차 리포트) — GUI 함께
 python biped_deploy.py --backend sim --view          # 헤드리스=--view 생략, 1s마다 추정오차 출력
 python biped_deploy.py --backend sim --est-ctrl      # ★폐루프: 추정 base로 제어(추정기 품질 검증)
-#   GUI:  cd ../../quad && python teleop_gui_biped.py   (같은 채널, 추정오차 표시)
+#   GUI:  cd .. && python teleop_gui_biped.py   (같은 채널, 추정오차 표시)
 
 # 실배포 (HardwareInterface 구현 후) — base는 추정기가 센서만으로 복원
 python biped_deploy.py --backend hw

@@ -18,26 +18,24 @@ CMD="${QUAD_CMD:-/tmp/biped_cmd.json}"
 source "$HERE/lib_display.sh"
 setup_display || exit 1
 
-# python 자동탐색: PY env → GUI venv → proxddp(노트북) → 시스템
-pick_py() {                       # ★set -e 하에서 && 체인 실패가 스크립트를 죽인다 → if 로
-  for p in "$PY" "$HOME/.venvs/gui/bin/python" /home/jsh/miniforge3/envs/proxddp/bin/python \
-           "$(command -v python3)"; do
-    if [ -n "$p" ] && [ -x "$p" ]; then echo "$p"; return; fi
+# ★python 자동탐색 — **컨트롤러와 GUI 는 서로 다른 인터프리터일 수 있다.**
+#   Pi 에서는 실제로 갈려 있다: ~/.venvs/mj = mujoco·qpsolvers(sim) / ~/.venvs/gui = dearpygui.
+#   그래서 "실행 가능한 첫 python" 을 고르면 안 되고 **필요한 모듈이 있는지로** 골라야 한다.
+pick_py() {                       # $1=검사할 모듈. set -e 대비로 if 사용
+  local mod="$1" p
+  for p in "$PY" "$HOME/.venvs/mj/bin/python" "$HOME/.venvs/gui/bin/python" \
+           /home/jsh/miniforge3/envs/proxddp/bin/python "$(command -v python3)"; do
+    if [ -n "$p" ] && [ -x "$p" ] && "$p" -c "import $mod" 2>/dev/null; then echo "$p"; return; fi
   done
   echo ""; }
-PY_RUN="$(PY="${PY:-}" pick_py)"
-[ -z "$PY_RUN" ] && { echo "❌ python 을 못 찾았다. PY=/경로/python 으로 지정할 것."; exit 1; }
-# GUI 는 dearpygui 가 있는 인터프리터여야 한다(컨트롤러와 다를 수 있다)
-PY_GUI="$PY_RUN"
-if ! "$PY_GUI" -c "import dearpygui" 2>/dev/null; then
-  for p in "$HOME/.venvs/gui/bin/python" "$(command -v python3)"; do
-    if [ -x "$p" ] && "$p" -c "import dearpygui" 2>/dev/null; then PY_GUI="$p"; break; fi
-  done
-fi
+PY_RUN="$(pick_py mujoco)"        # 컨트롤러+뷰어: mujoco 필요
+PY_GUI="$(pick_py dearpygui)"     # GUI: dearpygui 필요
+[ -z "$PY_RUN" ] && { echo "❌ mujoco 가 있는 python 이 없다 (sim 컨트롤러 실행 불가)."; \
+  echo "   Pi: ~/.venvs/mj 확인 · 노트북: proxddp env 확인 · 또는 PY=/경로/python"; exit 1; }
+[ -z "$PY_GUI" ] && { echo "❌ dearpygui 가 있는 python 이 없다."; \
+  echo "   설치: python3 -m venv --system-site-packages ~/.venvs/gui && ~/.venvs/gui/bin/pip install dearpygui"; exit 1; }
 echo "controller=$PY_RUN"
 echo "gui=$PY_GUI"
-"$PY_GUI" -c "import dearpygui" 2>/dev/null || {
-  echo "❌ dearpygui 가 없다. 설치: python3 -m venv --system-site-packages ~/.venvs/gui && ~/.venvs/gui/bin/pip install dearpygui"; exit 1; }
 
 pkill -f biped_run.py 2>/dev/null || true
 pkill -f teleop_gui_biped 2>/dev/null || true

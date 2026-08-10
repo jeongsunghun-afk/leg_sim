@@ -103,13 +103,23 @@ int main(int argc,char**argv){
   //   데이터 수신 주기도 아니다. HUD 라벨이 `loop=` 라 오해를 샀다 → `ctrl=` 로 바꾸고
   //   지터(주기 p95 / 공칭)를 함께 띄운다. 평균만 보면 지터가 안 보인다.
   double stale_since = now_s(), tilt=0, loop_hz=0, dt_p95=0, dt_nom=0;
+  static const int UPDN = 32;            // 갱신 시각 링버퍼(≈0.6s @50Hz)
+  double upd[UPDN] = {0}; unsigned uw = 0;
   int n_ok=0, n_absent=0;
 
   while(!glfwWindowShouldClose(win)){
     // ── 엔코더 상태 읽기 (읽기 전용. 모터엔 아무것도 쓰지 않는다) ──
     { std::ifstream f(STATE);
       if(f){ std::stringstream ss; ss<<f.rdbuf(); std::string sj=ss.str();
-        if(sj != raw_prev){ raw_prev = sj; stale_since = now_s(); }
+        if(sj != raw_prev){ raw_prev = sj;
+          // ★age(신선도[ms])와 rate(갱신주파수[Hz])는 **다른 질문**에 답한다:
+          //   age  = "지금 보는 숫자가 얼마나 묵었나" — 피드가 끊기면 **즉시** 단조 증가해
+          //          임계를 정확한 순간에 넘는다. liveness 지표로는 이쪽이 엄격히 낫다.
+          //   rate = "제어기가 얼마나 자주 보내나" — 창 평균이라 끊겨도 서서히 0 으로 내려가
+          //          검출이 늦다. 대신 설정(50Hz)이 실제로 반영됐는지 확인하는 데 쓴다.
+          // ⇒ 둘 다 띄운다. 하나로 다른 하나를 대신할 수 없다.
+          upd[uw % UPDN] = now_s(); uw++;
+          stale_since = now_s(); }
         std::vector<double> v;
         if(json_array(sj,"q_leg_deg",v) && (int)v.size()>=jm.n_leg) q_ch = v;
         mode    = json_str(sj,"mode",mode);
@@ -140,12 +150,18 @@ int main(int argc,char**argv){
     // ★HUD 는 **ASCII 만** 쓴다. MuJoCo mjr_overlay 는 내장 비트맵 폰트라
     //   한글/유니코드를 못 그린다(전부 깨져서 나온다). 2026-08-07 실기에서 확인.
     { double stale_ms = (now_s()-stale_since)*1e3;
+      // 링버퍼가 찼을 때만 rate 를 낸다(부분 채움이면 과소평가된다)
+      double st_hz = 0.0;
+      if(uw >= (unsigned)UPDN){
+        double oldest = upd[uw % UPDN], newest = upd[(uw-1) % UPDN];
+        if(newest > oldest) st_hz = (UPDN-1) / (newest - oldest);
+      }
       char hud[700];
       int n = std::snprintf(hud,sizeof hud,
         "mode=%s  backend=%s  ctrl=%.0fHz(dt p95 %.2f/%.2fms)  tilt=%.1f deg\n"
-        "axes ok=%d absent=%d   state age=%.0f ms%s\n"
+        "axes ok=%d absent=%d   state %.0fHz age=%.0f ms%s\n"
         "---- joint angle (model coord) [deg] ----\n", mode.c_str(), backend.c_str(), loop_hz, dt_p95, dt_nom, tilt,
-        n_ok, n_absent, stale_ms, stale_ms>1000 ? "  *** STALE ***" : "");
+        n_ok, n_absent, st_hz, stale_ms, stale_ms>1000 ? "  *** STALE ***" : "");
       for(int i=0;i<jm.n_leg && n<(int)sizeof(hud)-40;i++)
         n += std::snprintf(hud+n,sizeof(hud)-n,"%-9s %+7.2f%s",
              cfg.joints[i].name.c_str(), q_ch[i], (i%2==1)?"\n":"   ");

@@ -140,7 +140,9 @@ P2.5가 "파이프라인 작동"(커리큘럼+캐시로 걷기+gap크로싱)을 
 
 = **DTC는 "무용"도 "만능"도 아님. 정밀 발배치 지형(계단·stepping stone)엔 크게 기여(특히 샘플효율)·관용 지형(gap)엔 방해.** 이 nuance는 3D 재설계로만 드러남.
 
-**자산·주의**: `tamols/{cache_gen_stairs,test_stairs}.cpp`·`tamols_stair_cache/`·env 토글 `QUAD17_{HEIGHTMAP,FOOTHOLD_OBS,TERRAIN_KIND,FULL_TAMOLS,USE_TAMOLS_CACHE}`. 학습 dir=`2026-08-03_{14-52-36 base42·17-34-56 dtc42}`. 비교영상=`stair_compare.mp4`(iter5000). ★런치 주의: 동일-초 발사 시 IsaacLab이 같은 타임스탬프 dir 충돌(base7/dtc7 겹침)→발사 간 sleep 필요. GPU0/1/3=사용자 임시허가(내일까지)로 4-병렬, 이후 GPU2-only 복귀.
+**★★한계(2026-08-04, GIAC 퇴화) — P2.7은 "balance-aware full DTC"가 아니었음:** P2.7의 TO-on 참조 = **trot 캐시**인데, trot의 2발(대각) 국면은 지지영역이 **선분(1D)으로 붕괴** → 두 접촉력이 대각선 축 모멘트를 못 만듦 → **GIAC가 roll/전복 DOF를 최적화 못 함(퇴화)**. 즉 P2.7 발판은 **지형-aware이지 균형-최적화가 아님**. → P2.7이 검증한 건 **"저-균형 지형(계단)서 지형 발판이 샘플효율 도움"**까지고, **GIAC/균형의 가치는 미검증**("full-TAMOLS DTC 검증"이라 부른 건 과함). 계단은 준-1D(높이만 상승)라 2D 균형 스트레스가 작아 GIAC 퇴화가 덜 물어 trot 참조로도 성립했으나, **GIAC 퇴화가 진짜 무는 건 stepping(2D 정밀균형)** — 실제로 trot+snap-발판은 **평지서도 낙상**(place_err↑·base_contact 15). **GIAC가 유효(삼각 지지)한 건 3발+ = walk**이므로 balance-aware DTC의 진짜 검증 = **walk RL(정적크롤) + full-TAMOLS-stepping(walk 정식화 캐시)** = 현재 진행중(§P2.9 예정). cmp_gait서 walk 발판이 trot보다 tread 10× 정밀했던 것도 이와 일관.
+
+**자산·주의**: `tamols/{cache_gen_stairs,test_stairs}.cpp`·`tamols_stair_cache/`·env 토글 `QUAD17_{HEIGHTMAP,FOOTHOLD_OBS,TERRAIN_KIND,FULL_TAMOLS,USE_TAMOLS_CACHE}`. 학습 dir=`2026-08-03_{14-52-36 base42·17-34-56 dtc42}`. **비교영상=`simulation/docs/stair_compare.{mp4,gif}`** — iter4000(동일 학습량) 두 정책을 같은 level-4 계단(step 6.7cm)서 나란히: DTC-ON=계단 등반 / DTC-OFF=계단 밑 정체(샘플효율 실증). 녹화용 서버패치(RobotSW_IsaacLab, 미커밋): play.py obs-CSV 비활성(num_envs>1서 죽던 것), env `QUAD17_PLAY_TERRAIN_LEVEL`(play시 지형레벨 고정+커리큘럼 freeze), viewer asset_root 로봇추적. ★런치 주의: 동일-초 발사 시 IsaacLab이 같은 타임스탬프 dir 충돌(base7/dtc7 겹침)→발사 간 sleep 필요. GPU0/1/3=사용자 임시허가(내일까지)로 4-병렬, 이후 GPU2-only 복귀.
 
 ### P2.8 — TO 정식화 선택: walk-TO 레퍼런스 (★2026-08-04, Go2 이식 세션서 도출)
 
@@ -153,6 +155,33 @@ Go2 이식 조사(`pipeline_tamols.html` §6)서 solve_fast 정식화 버그 4�
 - **TO의 값어치 = 발판+접촉스케줄**이지 실행가능 base 궤적이 아님. 배포 험지는 A+footScore(selectFoot)로 가고(계단 실측 A 완주 vs solve_fast 0), TO는 정밀 험지 DTC 레퍼런스로 재사용.
 
 **요약: DTC TO 정식화 = walk(CoM-centering+크롤순서 수정) + footScore 발판, 오프라인 캐시(iter 넉넉). base-z/실행=RL. 평지·관용 gap엔 DTC off(순수 Raibert-RL, P2.7).**
+
+### P2.9 — stepping-stone: walk 게이트(10×)가 핵심·발판(TO)=초기 샘플효율만 (★2026-08-05~06, gap/계단과 일관)
+§P2.8대로 **균형-aware DTC는 walk(3발지지=GIAC 유효)라야 검증 가능** → 정밀지형(2.5D 이산 stepping-stone) + walk 게이트 RL로 직접 검증. (사용자 질문서 도출: "gap이 발판의 진짜 이유"·GIAC 마찰-sway·2발 GIAC 퇴화.)
+
+**셋업**(worker): stepping-stone 지형 커리큘럼(돌 0.55m/gap0.02 → **0.14m/gap0.30m**, level0~9)·2.5D 이산 발판 snap-selection(최근접 돌)·**발판 4색 마커 시각화**(play default). **walk(정적크롤) 게이트 모드**(4-phase FL→HL→FR→HR·duty0.25·**항상 3발지지**·period0.7, trot byte불변 gated). 지표=terrain_level(통과)·foothold_place_err(추종)·epLen. env토글 `QUAD17_{GAIT=walk,TERRAIN_KIND=stepping}`.
+
+**★★핵심결과1 — walk ≫ trot on stepping (~10×)**:
+| | 최종 terrain_level (stepping) |
+|---|---|
+| trot RL (heightmap) | **0.32 정체**(≈평지, 큰돌만) |
+| **walk RL (heightmap)** | **3.37**(돌 0.40m·gap0.12m 실제 통과) |
+
+→ walk(3발지지·GIAC 유효)가 정밀지형 실행기, **trot(2발·GIAC 퇴화)은 부적합** = GIAC 논의 실측 확증. walk RL 잘 학습(reward67·epLen820·낙상1.6). 짤=`walk_vs_trot_stepping.{mp4,gif}`.
+
+**★★핵심결과2 — walk 게이트 품질(자세)이 발판 가치를 좌우: 크라우치=중립 → 직립=도움 (★2차 정정)**:
+- (1차) 저품질 walk(크라우치)에선 발판 delay-then-catchup=**중립**(walk_fh 1.97≈walk_off 1.99 @iter7000). 앞선 "발판이 해"(iter2000 조기중단)는 부트스트랩 조기판단 오류(사용자 지적 맞음).
+- ★**(2차, 결정적) walk가 저품질이었음**: 자세보상 약해(base_height −10·orient −1) RL이 **저CoM 웅크림-셔플로 gaming**(terrain_level은 traverse만 재고 자세는 안 잼). base_height_target=0.82(지형보정 정상)인데도 −10이 약해 웅크림. **재균형(base_height −10→−25·orient −1→−3·swing 0.08→0.11, biped 재균형#4 동일 처방)** → 직립 크롤 회복(base 목표서 3cm·`walk_rebalanced.mp4`).
+- ★★**깨끗한(직립) walk 발판 = 초기 샘플효율만, 최종은 baseline이 더 높음(발판이 점근 제약)**: 재균형 walk+발판(walkrb_fh) vs baseline(walkrb_off) — **iter5000서 1.58 vs 0.89(발판 ~1.8× 앞섬, 샘플효율)** 이나 **iter8000부터 발판 정체(2.82→2.98) BUT baseline 계속 상승 → 최종 3.72 vs 2.98 = baseline 추월/우위**. 게다가 재균형 baseline(3.72) > 크라우치 walk(3.37) = 직립이 셔플보다 통과↑.
+- → **정밀지형서도 발판(TO) 가치 = "초기 샘플효율 레버일 뿐, 최종능력 개선 못 함(오히려 제약)"** = **gap(emergent 이김)·계단(P2.7 샘플효율만·점근동률)과 완전 일관.** RL 창발 발배치가 점근서 동급~우위. **정밀지형 근본=게이트(walk, 10×)이지 발판 아님.**
+- ★★방법론 교훈(중요): **중반(iter5000-7000)서 "발판 도움" 판단은 성급**했고 최종(iter10000)서 뒤집힘(baseline 추월). **점근은 끝까지 학습해야 판정**. 또 **terrain_level은 traverse만 재고 게이트 품질(자세)은 안 잼** → 크라우치 셔플을 수치상 "성공"으로 오판 → 반드시 렌더로 자세 확인. (본 세션서 이 두 함정에 각각 걸렸다가 최종·렌더로 교정.)
+
+**★교훈**:
+- **정밀지형의 근본 = 올바른 게이트(walk/정적안정)이지 발판(TO)이 아님.** 게이트=10×, 발판=~중립. DTC 발판의 진짜 가치는 **RL이 혼자 못 푸는 지형서만**(우리 stepping은 walk RL이 스스로 품) → Kim2025 샘플링 플래너=진짜 이산지형용.
+- **GIAC 한계 3종(사용자 도출)**: ①2발(trot)=지지 선분붕괴로 퇴화(roll 미최적화) ②마찰콘이 lateral sway 허용→CoM 안 당기면 드리프트(COM_W 필요, walk 0.017 vs trot 0.064 sway) ③gradient-TAMOLS 2.5D 이산발판 약함(~70% 돌위)이나 **발-on-stone은 RL 추종 몫이지 planner 실패 아님**(사용자 정정).
+- **방법론**: **walk 부트스트랩(느림) 구간서 조기판단 금지** — walk_off·walk_fh 둘 다 iter4000까진 terrain_level 0였다가 급가속. 서버 WiFi 단절에도 tmux 학습 생존(uptime 무영향).
+
+**자산**: stepping 지형·walk gait mode(env, worker·gated)·`test_stepping.cpp`(발판 feasibility)·`cmp_gait.cpp`(walk/trot 발판 정량)·`walk_vs_trot_stepping.{mp4,gif}`. 학습 dir `2026-08-04_17-21-15(walk_off)`·`2026-08-05_09-39(walk_fh)`. 서버 미커밋.
 
 ### P3 — 지형·강건성·CVAE (예정)
 지형 heightmap → 발판에 물리 압력(갭=헛디디면 낙상), Kim2025 competitive CVAE 커리큘럼, 실제 TAMOLS 참조(`tamols_02leg.py`)로 절차적 발판 대체 ← **P2.5서 실현(오프라인 캐시)**, height scan(발→목표 직선).

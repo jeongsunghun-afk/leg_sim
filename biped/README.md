@@ -8,17 +8,18 @@ quad 17-DOF 뒷다리(HL/HR)를 추출한 8-DOF biped를 **성숙 MPC+WBIC 스�
 ## 실행
 
 ```bash
+# 모든 명령 경로 무관(절대 cd로 자기완결). B=/home/jsh/문서/jsh/simulation/biped · PXI=/home/jsh/miniforge3/envs/proxddp/bin/python
 # ── Python (개발·튜닝) ──
-./run_gui_biped.sh               # 뷰어 + GUI 동시 (★사용자 터미널에서)
-python3 biped_view.py            # 단독 뷰어 (VX=0.15 로 보행)
-VIEW=0 T=25 python3 biped_run.py # 헤드리스 검증
+(cd /home/jsh/문서/jsh/simulation/biped && bash run_gui_biped.sh)                                          # 뷰어 + GUI 동시 (★사용자 터미널에서)
+(cd /home/jsh/문서/jsh/simulation/biped && /home/jsh/miniforge3/envs/proxddp/bin/python biped_view.py)     # 단독 뷰어 (VX=0.15 로 보행)
+(cd /home/jsh/문서/jsh/simulation/biped && VIEW=0 T=25 /home/jsh/miniforge3/envs/proxddp/bin/python biped_run.py)   # 헤드리스 검증
 
 # ── C++ (배포·실시간) ──
-./run_gui_cpp.sh                 # C++ 뷰어(biped_view) + 같은 GUI
-cd cpp && ./build/biped_sim ../biped_from_quad.mjcf 0.15 15   # 헤드리스 폐루프
+(cd /home/jsh/문서/jsh/simulation/biped && bash run_gui_cpp.sh)                                            # C++ 뷰어(biped_view) + 같은 GUI
+(cd /home/jsh/문서/jsh/simulation/biped/cpp && ./build/biped_sim /home/jsh/문서/jsh/simulation/biped/biped_from_quad.mjcf 0.15 15)   # 헤드리스 폐루프
 
 # ── 녹화 ──
-./record_biped.sh               # GUI + OBS
+(cd /home/jsh/문서/jsh/simulation/biped && bash record_biped.sh)                                           # GUI + OBS
 ```
 **GUI**(teleop_gui_biped): **좌스틱=전후(vx)/측방(vy) · 우스틱=선회(wz)** (우클릭 고정) ·
 vx/vy/wz·몸통높이 슬라이더 · 버튼 **RESET / Off 전원 / Stand 서기 / Walk 이동**(17-DOF 순서·테마).
@@ -41,10 +42,8 @@ HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GU
 | `biped_mpc_wbic.py` | SRBD MPC(2발) + WBIC 추종 + heading-hold + 선회/좌우. **메인** |
 | `biped_run.py` | 실행기: 컨트롤러+뷰어 + JSON 명령채널(v/vy/w/body_h/mode) + 상태발행 |
 | `biped_view.py` | 단독 뷰어(낙상 자동리셋) · `biped_ref_export.py` RL 레퍼런스 생성 |
-| `teleop_gui_biped.py` | 슬림 GUI (dearpygui, 듀얼스틱 + 각축 JOG 패널). ★커밋 7953c5c 에서 `quad/` → `biped/` 로 이동 |
-| `run_gui_biped.sh` | sim 원샷 런처(컨트롤러+뷰어+GUI) |
-| `run_gui_only.sh` | **GUI 만** — 실기 JOG 검증용(컨트롤러는 `emb/app/biped_emb.py` 따로) |
-| `run_gui_cpp.sh`·`record_biped.sh` | 기타 런처 |
+| `teleop_gui_biped.py` | 슬림 GUI (dearpygui, 듀얼스틱) |
+| `run_gui_biped.sh`·`run_gui_cpp.sh`·`record_biped.sh` | 원샷 런처 |
 
 **C++** (`cpp/`, 배포용 — 성숙 quad C++과 동일 구조·파리티 검증)
 | 파일 | 역할 |

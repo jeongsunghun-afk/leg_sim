@@ -37,6 +37,19 @@ inline void set_walk_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) 
     for (int i = 0; i < 4; ++i) { int c = fix ? cs_qleg[s][i] : cs_old[s][i]; st.gait[k].contact[i] = c; st.gait[k].at_des[i] = (c==0)?1:0; } }
 }
 
+// ★bound(바운드) 게이트 5-phase: 앞쌍(FL,FR)·뒷쌍(RL/HL,RR/HR)이 각각 함께 swing → 사이 all-contact.
+//   구조는 trot과 동일(2그룹 anti-phase·듀티~0.5·5-phase, all-contact 완충)하되 대각쌍이 아니라 앞/뒤 쌍.
+//   플래너 라벨 [FL,FR,RL,RR]=idx[0,1,2,3](hip_offsets·straddle-init과 동일)이라 앞쌍=idx0,1·뒷쌍=idx2,3.
+//   P1: 앞쌍 swing(idx0,1) → P2에서 앞쌍 at_des. P3: 뒷쌍 swing(idx2,3) → P4 all at_des. trot과 정확히 미러.
+//   off = horizon-shift 위상 오프셋(매 replan 회전 → swing 실행, trot/walk과 동일).
+inline void set_bound_gait(TamolsState& st, double phase_dur = 0.2, int off = 0) {
+  int P = 5; st.gait.resize(P);
+  int cs[5][4] = {{1,1,1,1},{0,0,1,1},{1,1,1,1},{1,1,0,0},{1,1,1,1}};   // 앞쌍 idx0,1 → 뒷쌍 idx2,3
+  int ad[5][4] = {{0,0,0,0},{0,0,0,0},{1,1,0,0},{1,1,0,0},{1,1,1,1}};
+  for (int k = 0; k < P; ++k) { int s = ((k + off) % P + P) % P; st.gait[k].duration = phase_dur;
+    for (int i = 0; i < 4; ++i) { st.gait[k].contact[i] = cs[s][i]; st.gait[k].at_des[i] = ad[s][i]; } }
+}
+
 // ── 온라인 replan: 현재 상태 → TamolsState(로컬, 앞으로 vadv 전진) → solve_fast(warm-start) ──
 //   base0 = [z,yaw] 현재값(x,y=로컬 원점). v0 = 현재 base 속도(local x,y). foot_meas = 현재 발위치(로컬, base 기준 상대 xy + world z).
 //   vadv = 명령 전진속도. 반환 = QpResult(수렴 여부).
@@ -44,6 +57,7 @@ struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool wa
   double gap_x0 = -1, gap_x1 = -1;   // ★로컬 프레임 gap [x0,x1](base 기준). <0 = gap 없음(평지 walk)
   int phase_off = 0;                 // ★horizon-shift 위상 오프셋(매 replan 증가 → swing 실행)
   bool walk = false;                 // ★walk(crawl 4-phase 한발씩=정적안정) vs trot(5-phase 대각쌍)
+  bool bound = false;                // ★bound(5-phase 앞/뒤 쌍 anti-phase). walk보다 우선(bound=true면 walk 무시)
   bool z0_terrain = false;           // ★지형모드: base z 밴드를 z0 기준 상대로(계단 상승 허용)
   bool straddle_init = true; };      // ★aggressive 발판 straddle 초기화. false=nominal init+gap회피는 constraint 담당
                                      //   (RL offline 캐시용: 먼 gap의 도달불가 straddle 방지, 필요한 최소 shift만)
@@ -51,8 +65,9 @@ struct OnlineCfg { double vadv = 0.4, phase_dur = 0.2; int rti_iter = 5; bool wa
 inline QpResult online_replan(TamolsState& st, const Grid& h, double cell, int map_size,
                               double z0, double yaw0, double vx0, double vy0,
                               const Eigen::Matrix<double,4,3>& foot_meas, const OnlineCfg& cfg) {
-  if (cfg.walk) set_walk_gait(st, cfg.phase_dur, cfg.phase_off);   // ★walk=한발씩 정적안정
-  else          set_trot_gait(st, cfg.phase_dur, cfg.phase_off);   // ★horizon-shift 위상 회전(swing 실행)
+  if (cfg.bound)     set_bound_gait(st, cfg.phase_dur, cfg.phase_off);  // ★bound=앞/뒤 쌍 anti-phase(walk보다 우선)
+  else if (cfg.walk) set_walk_gait(st, cfg.phase_dur, cfg.phase_off);   // ★walk=한발씩 정적안정
+  else               set_trot_gait(st, cfg.phase_dur, cfg.phase_off);   // ★horizon-shift 위상 회전(swing 실행)
   int P = st.num_phases(); double T = P * cfg.phase_dur, xf = cfg.vadv * T;
   st.base_pose << 0, 0, z0, 0, 0, yaw0;             // 로컬 원점서 시작(컨트롤러가 현재 x,y 앵커)
   st.base_vel  << vx0, vy0, 0, 0, 0, 0;

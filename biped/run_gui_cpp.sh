@@ -31,7 +31,7 @@ echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.38,"mode":"stand","contact":"2pt"}' >
 setsid bash -c "cd '$HERE/cpp'; CMDFILE='$CMD' $EST $W2ENV $LATENV DISPLAY='$DISPLAY' LD_LIBRARY_PATH='$ENV/lib' ./build/biped_view ../biped_flatfoot.mjcf > /tmp/biped_view_cpp.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (Python dearpygui)
-setsid bash -c "cd '$HERE/../quad'; QUAD_CMD='$CMD' DISPLAY='$DISPLAY' '$PY' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE'; QUAD_CMD='$CMD' DISPLAY='$DISPLAY' '$PY' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &
 sleep 2
 
 pgrep -f biped_view     >/dev/null && echo "✅ C++ 뷰어 RUNNING ($MODEDESC)" || { echo "❌ 뷰어 DEAD"; tail -6 /tmp/biped_view_cpp.log; }

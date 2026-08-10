@@ -174,5 +174,9 @@ def main():
     _done=(pk>=N-1.0) and not fell
     print("[BRIDGE] %s 최종 x=%.3f (TOWR목표%.3f) z=%.3f tilt=%.1f pk=%.1f/%d"
           %("✅완주" if _done else ("❌낙상" if fell else "⚠️정체"),dd.qpos[0],P[0,-1],dd.qpos[2],til,pk,N),flush=True)
+    if device.viewer is not None:   # ★완주 후 뷰어 유지(창 닫을 때까지) — 관찰용
+        import time as _th
+        print("[BRIDGE] 뷰어 유지 중 — 창 닫으면 종료",flush=True)
+        while device.viewer.is_running(): device.viewer.sync(); _th.sleep(0.03)
 
 if __name__=='__main__': main()

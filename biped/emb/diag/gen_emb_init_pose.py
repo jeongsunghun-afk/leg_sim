@@ -52,7 +52,16 @@ EMB_DESC = ["Left  thighs   Roll", "Left  thighs   Pitch", "Left  Knee     Pitch
 
 
 def compute():
+    """★변환은 반드시 JointMap 을 통해서 한다 — 수식을 여기 복사하지 말 것.
+
+    2026-08-10 실제로 당했다: 이 파일이 `ch = q·sign + offset` 복사본을 갖고 있었는데
+    gear_k 와 커플링이 추가되자 조용히 틀린 값을 뽑아 벤더 파일에 패치까지 했다
+    (HL_calf −6.62 를 냈지만 정답은 +23.38). 이 스크립트의 docstring 이 바로 그
+    "손으로 베끼지 말 것" 을 경고하고 있었는데 정작 자신이 베끼고 있었다.
+    """
     import yaml
+    sys.path.insert(0, os.path.join(EMB, "interface"))
+    from joint_map import JointMap
     cfg = yaml.safe_load(open(CFG))
     js = cfg["joints"]
     ref = cfg["calib"]["ref_joint_deg"]
@@ -61,11 +70,9 @@ def compute():
         print("  ⚠ home.q_deg 와 calib.ref_joint_deg 가 다르다. **home 기준**으로 생성한다.")
         print(f"      home {home}\n      ref  {ref}")
         ref = home
-    ch = {}
-    for j in js:
-        c = int(j["channel"])
-        q = float(ref[js.index(j)])
-        ch[c] = q * float(j["sign"]) + float(j["offset_deg"])
+    jm = JointMap(cfg)
+    ch_full = jm.q_joint_to_ch([float(x) for x in ref])      # sign·k·offset·커플링 전부 반영
+    ch = {int(j["channel"]): float(ch_full[int(j["channel"])]) for j in js}
     if sorted(ch) != list(range(8)):
         sys.exit(f"✗ 채널이 0~7 이 아니다: {sorted(ch)}")
     return cfg, js, ref, [ch[c] for c in range(8)]

@@ -221,6 +221,19 @@ def main():
                 return 1
             print("  ⚠ --force 로 강행한다. 명령이 꼬일 수 있다.")
     jm = JointMap(cfg)
+    if getattr(jm, "cpl_dst", None):
+        print("[biped_emb] 기구 커플링 보정 활성: "
+              + ", ".join(f"{jm.names[d]} ← {jm.names[s]} × {c:+g}"
+                          for d, s, c in zip(jm.cpl_dst, jm.cpl_src, jm.cpl_coef)))
+    # ★Emb 는 ±180 을 넘는 명령을 **클램프가 아니라 래핑**한다(halGait.cpp:666-671).
+    #   한계에서 멈추는 게 아니라 반대편으로 날아간다. jog 범위는 JointMap 이 기동 시
+    #   예외로 막지만, 관절한계 박스까지 넓게 쓰면 넘는 축은 여기서 알린다.
+    if getattr(jm, "wrap_warn", None):
+        print("[biped_emb] ⚠ 관절한계 전 범위를 쓰면 채널각이 ±180 을 넘는 축이 있다 — "
+              "Emb 가 래핑해 **반대편으로 튄다**:\n    "
+              + ", ".join(f"{n} 최대 {v:.0f}°" for n, v in jm.wrap_warn)
+              + "\n    지금 jog 범위 안에서는 안전하다. stand/walk 로 넓게 쓰기 전에 "
+                "foot 한계를 좁히거나 offset 을 다시 잡을 것.")
     backend, be_name = make_backend(cfg, force_mock)
     hw = HwInterface(backend, jm, imu_deg=bool(cfg["shm"].get("imu_deg", True)))
     hw.init()

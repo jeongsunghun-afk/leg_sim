@@ -39,6 +39,7 @@ class JointMap:
         if np.any(self.k <= 0):
             raise ValueError(f"gear_k 는 양수여야 한다: {self.k.tolist()}")
         self.sk      = self.sign * self.k
+        self._couple(js)                       # 기구 커플링(calf→foot) 파싱. 아래 참조
         self.min_deg = np.array([j["min_deg"] for j in js], float)
         self.max_deg = np.array([j["max_deg"] for j in js], float)
         self.kp_leg  = np.array([j["kp"] for j in js], float)
@@ -87,39 +88,107 @@ class JointMap:
             s = {int(c) for c in inst}
             self.installed = np.array([int(c) in s for c in self.ch], bool)
 
-    # ── 컨트롤러(rad) → 채널(deg) ──────────────────────────────────────────
-    def q_ctrl_to_ch(self, q_rad) -> np.ndarray:
-        out = np.zeros(self.n_channel)
-        out[self.ch] = self.sk * (np.asarray(q_rad) * R2D) + self.offset
-        for c, h in zip(self.waist_ch, self.waist_hold):
-            out[c] = h
+        self._check_wrap()
+
+    # ── ±180 래핑 가드 ────────────────────────────────────────────────────
+    #   ★Emb 는 우리 명령을 ±180 으로 **래핑한다**(halGait.cpp:666-671):
+    #       while(fPosition > 180) fPosition -= 360;
+    #     그래서 채널각 232.8° 를 보내면 −127.2° 로 뒤집혀 **완전히 다른 자세로 튄다.**
+    #     클램프가 아니라 래핑이라 "한계에서 멈춘다" 가 아니고 반대편으로 날아간다.
+    #   ⚠커플링을 넣으면서 실제로 위험해졌다 — foot 명령이 calf 각도만큼 더해지기 때문에
+    #     (raw_foot = φ_foot − φ_calf) 두 축 한계의 **조합**에서 ±180 을 넘는다.
+    #   ⇒ jog 박스(운전자가 실제로 쓰는 범위)는 **기동 시 예외로 막고**,
+    #     관절한계 박스는 도달 불가 조합일 수 있으므로 경고만 한다.
+    WRAP_DEG = 180.0
+
+    def _ch_extremes(self, lo, hi):
+        """[lo,hi] 박스의 꼭짓점을 훑어 축별 채널각 최대 절대값을 구한다.
+        커플링 때문에 축별 독립 최악값이 아니라 **조합**을 봐야 한다(소스축과 함께 움직임)."""
+        out = np.zeros(self.n_leg)
+        pair = {d: s for d, s in zip(self.cpl_dst, self.cpl_src)}
+        for i in range(self.n_leg):
+            cand = []
+            for a in (lo[i], hi[i]):
+                if i in pair:
+                    s = pair[i]
+                    for b in (lo[s], hi[s]):
+                        q = (lo + hi) / 2.0
+                        q[i] = a; q[s] = b
+                        cand.append(self.q_joint_to_ch(q)[self.ch[i]])
+                else:
+                    q = (lo + hi) / 2.0
+                    q[i] = a
+                    cand.append(self.q_joint_to_ch(q)[self.ch[i]])
+            out[i] = max(abs(v) for v in cand)
         return out
 
+    def _check_wrap(self):
+        jog = self._ch_extremes(self.jog_min, self.jog_max)
+        bad = [(self.names[i], jog[i]) for i in range(self.n_leg) if jog[i] > self.WRAP_DEG]
+        if bad:
+            raise ValueError(
+                "jog 범위에서 채널각이 ±180 을 넘는다 — Emb 가 래핑해 반대편으로 튄다: "
+                + ", ".join(f"{n} {v:.1f}°" for n, v in bad)
+                + "\n  jog_min_deg/jog_max_deg 를 좁히거나 offset 을 다시 잡을 것.")
+        lim = self._ch_extremes(self.min_deg, self.max_deg)
+        self.wrap_warn = [(self.names[i], lim[i]) for i in range(self.n_leg)
+                          if lim[i] > self.WRAP_DEG]
+
+    # ── 컨트롤러(rad) → 채널(deg) ──────────────────────────────────────────
+    #   ★deg 경로(q_joint_to_ch)에 **위임**한다. 종전엔 같은 식을 두 벌 썼는데, 커플링처럼
+    #     규약이 늘어날 때마다 한쪽을 빠뜨릴 위험이 커진다(실제로 GUI 복제본에서 당했다).
+    def q_ctrl_to_ch(self, q_rad) -> np.ndarray:
+        return self.q_joint_to_ch(np.asarray(q_rad, float) * R2D)
+
     def dq_ctrl_to_ch(self, dq_rad) -> np.ndarray:
+        # 속도도 위치와 **같은 선형관계**를 따른다(상수항 offset 만 빠진다).
+        dq = np.asarray(dq_rad, float) * R2D
+        raw = dq.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            raw[d] = dq[d] + c * dq[s]
         out = np.zeros(self.n_channel)
-        out[self.ch] = self.sk * (np.asarray(dq_rad) * R2D)
+        out[self.ch] = self.sk * raw
         return out
 
     def tau_ctrl_to_ch(self, tau_nm) -> np.ndarray:
-        # ★토크는 k 로 **나눈다**(각도는 곱한다). 드라이버가 감속비를 7 로 착각하면
-        #   보고 토크 = 실제 관절토크 / k 이므로, 관절토크 τ 를 내려면 τ/k 를 보내야 한다.
+        """관절토크[Nm] → 채널 토크.
+
+        ★두 가지가 각도와 **다르게** 들어간다:
+          (1) k 로 **나눈다**(각도는 곱한다). 드라이버가 감속비를 7 로 착각하면
+              보고토크 = 실제관절토크/k 이므로, τ 를 내려면 τ/k 를 보낸다.
+          (2) 커플링은 **전치(transpose)** 로 들어간다. q_true=(I−C)·q_raw 이면
+              일률 보존에서 τ_raw=(I−C)ᵀ·τ_true → 소스축(calf)이 목적축(foot) 토크를
+              **떠안는다**: τ_raw_calf = τ_calf − c·τ_foot.
+              (각도처럼 foot 쪽에 더하면 틀린다 — 방향이 반대다)
+        """
+        t = np.asarray(tau_nm, float)
+        raw = t.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            raw[s] = raw[s] - c * t[d]
         out = np.zeros(self.n_channel)
-        out[self.ch] = self.sign * np.asarray(tau_nm) / self.k
+        out[self.ch] = self.sign * raw / self.k
         return out
 
     # ── 채널(deg) → 컨트롤러(rad) ──────────────────────────────────────────
     def ch_to_q_ctrl(self, q_ch_deg) -> np.ndarray:
-        q = np.asarray(q_ch_deg, float)
-        return ((q[self.ch] - self.offset) / self.sk) * D2R
+        return self.ch_to_q_joint(q_ch_deg) * D2R
 
     def ch_to_dq_ctrl(self, dq_ch_dps) -> np.ndarray:
         dq = np.asarray(dq_ch_dps, float)
-        return (dq[self.ch] / self.sk) * D2R
+        raw = dq[self.ch] / self.sk
+        out = raw.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            out[d] = raw[d] - c * raw[s]
+        return out * D2R
 
     def ch_to_tau_joint(self, tau_ch_nm) -> np.ndarray:
-        """보고 토크(채널) → **실제 관절토크**[Nm]. 실제 = 보고 · k."""
+        """보고 토크(채널) → **실제 관절토크**[Nm]. 실제 = 보고·k, 커플링은 (I+C)ᵀ."""
         t = np.asarray(tau_ch_nm, float)
-        return t[self.ch] * self.k / self.sign
+        raw = t[self.ch] * self.k / self.sign
+        out = raw.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            out[s] = raw[s] + c * raw[d]
+        return out
 
     # ── 모델각[deg] ↔ 채널각[deg] ────────────────────────────────────────
     #   ★★단위 규약 (2026-08-10 확정):
@@ -146,17 +215,55 @@ class JointMap:
     #         1.50/1.20 의 소수점 아래는 미확정이다. 큰 각도 동작에서 재확인할 것.
     #     ⚠근본 해결은 여전히 드라이버 설정이다(RGA). 고쳐지면 k 를 전부 1.0 으로 되돌리고
     #       offset 만 다시 잡으면 된다 — 그때 RobotTestGait 등 다른 도구와도 다시 일치한다.
+    # ── ★기구 커플링 (2026-08-10 발견) ───────────────────────────────────
+    #   calf 를 움직이면 foot 이 종속적으로 따라 움직인다(발목이 링키지 구동).
+    #   MJCF 는 4관절을 **독립**으로 모델링하므로 여기서 풀어 준다.
+    #
+    #       모델각_foot = raw_foot − coef · 모델각_calf
+    #       raw_foot    = 모델각_foot + coef · 모델각_calf
+    #     (raw_x = (채널각_x − offset_x)/(sign_x·k_x) — 커플링 풀기 **전** 값)
+    #
+    #   ★삼각(triangular) 구조라 역변환이 닫힌 형태로 존재한다: 소스(calf)가 스스로
+    #     커플링되지 않으므로 calf 를 먼저 풀고 그 값을 foot 에 쓰면 된다.
+    #   ⚠소스가 또 커플링된 축이면(체인) 이 구현은 틀린다 — 지금은 금지하고 검출한다.
+    def _couple(self, cfg_js):
+        self.cpl_dst, self.cpl_src, self.cpl_coef = [], [], []
+        for i, j in enumerate(cfg_js):
+            src = j.get("couple_from")
+            if not src:
+                continue
+            if src not in self.names:
+                raise ValueError(f"{j['name']}.couple_from='{src}' 를 joints 에서 못 찾았다")
+            s = self.names.index(src)
+            if cfg_js[s].get("couple_from"):
+                raise ValueError(f"커플링 체인은 지원하지 않는다: {j['name']} ← {src} ← ...")
+            if s == i:
+                raise ValueError(f"{j['name']} 이 자기 자신에 커플링됐다")
+            self.cpl_dst.append(i); self.cpl_src.append(s)
+            self.cpl_coef.append(float(j.get("couple_coef", 1.0)))
+        self.has_couple = bool(self.cpl_dst)
+
     def ch_to_q_joint(self, q_ch_deg) -> np.ndarray:
-        """채널각(보고각) → 모델각. 상태 읽기 경로."""
+        """채널각(보고각) → 모델각. 상태 읽기 경로. 커플링을 **푼다**."""
         q = np.asarray(q_ch_deg, float)[self.ch]
-        return (q - self.offset) / self.sk
+        raw = (q - self.offset) / self.sk
+        if not self.has_couple:
+            return raw
+        out = raw.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            out[d] = raw[d] - c * raw[s]        # 소스는 커플링 없음 → raw[s] = 모델각
+        return out
 
     def q_joint_to_ch(self, q_joint_deg) -> np.ndarray:
-        """모델각 → 채널각. 명령 쓰기 경로. 허리는 hold_deg 로 고정."""
+        """모델각 → 채널각. 명령 쓰기 경로. 커플링을 **되먹인다**. 허리는 hold_deg 고정."""
+        qj = np.asarray(q_joint_deg, float)
+        raw = qj.copy()
+        for d, s, c in zip(self.cpl_dst, self.cpl_src, self.cpl_coef):
+            raw[d] = qj[d] + c * qj[s]
         out = np.zeros(self.n_channel)
-        out[self.ch] = np.asarray(q_joint_deg, float) * self.sk + self.offset
-        for c, h in zip(self.waist_ch, self.waist_hold):
-            out[c] = h
+        out[self.ch] = raw * self.sk + self.offset
+        for c_, h in zip(self.waist_ch, self.waist_hold):
+            out[c_] = h
         return out
 
     # ── 한계 클램프 (전부 **모델각** 입력/출력) ───────────────────────────

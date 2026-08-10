@@ -36,6 +36,9 @@ struct JointCfg {
   //   sk() 로만 쓸 것 — sign 과 k 를 따로 곱하다 한쪽을 빠뜨리는 실수를 막는다.
   double gear_k=1;
   double sk() const { return sign*gear_k; }
+  // ★기구 커플링: 이 관절이 couple_from 관절에 종속(발목이 링키지 구동).
+  //   모델각 = raw − coef·모델각_src   ·   raw = 모델각 + coef·모델각_src
+  std::string couple_from; double couple_coef=1; int couple_src=-1;   // src 는 load 시 해석
   double min_deg=-30, max_deg=30, kp=40, kd=2;
 };
 
@@ -98,6 +101,18 @@ inline std::vector<double> parse_list(const std::string& v){
   return out;
 }
 
+inline void resolve_couple(EmbCfg& c){
+  for(size_t i=0;i<c.joints.size();i++){
+    auto& j=c.joints[i];
+    if(j.couple_from.empty()){ j.couple_src=-1; continue; }
+    int s=-1; for(size_t m=0;m<c.joints.size();m++) if(c.joints[m].name==j.couple_from) s=(int)m;
+    if(s<0) throw std::runtime_error(j.name+".couple_from not found: "+j.couple_from);
+    if(s==(int)i) throw std::runtime_error(j.name+" coupled to itself");
+    if(!c.joints[s].couple_from.empty()) throw std::runtime_error("couple chain unsupported: "+j.name);
+    j.couple_src=s;
+  }
+}
+
 inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
   std::ifstream f(path);
   if(!f){ err = "설정 파일을 열 수 없다: " + path; return false; }
@@ -121,6 +136,8 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       j.sign       = getd(kv,"sign",1);
       j.offset_deg = getd(kv,"offset_deg",0);
       j.gear_k     = getd(kv,"gear_k",1);
+      j.couple_from= kv.count("couple_from")? kv["couple_from"] : std::string();
+      j.couple_coef= getd(kv,"couple_coef",1);
       if(j.gear_k <= 0) throw std::runtime_error("gear_k must be > 0: "+j.name);
       j.min_deg    = getd(kv,"min_deg",-30);
       j.max_deg    = getd(kv,"max_deg",30);
@@ -155,6 +172,7 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
     }
   }
   if(c.joints.empty()){ err = "joints 를 하나도 못 읽었다 — 설정 형식 확인: " + path; return false; }
+  try { resolve_couple(c); } catch(const std::exception& e){ err = e.what(); return false; }
   return true;
 }
 
@@ -285,13 +303,17 @@ struct JointMap {
   //     링키지가 아니라 **드라이버 고정 7:1** 임을 뒷받침한다. 근본 해결은 드라이버(RGA).
   //   GUI·jog·home·hold·표시는 전부 모델각. 채널각은 SHM 경계에서만.
   void ch_to_q_joint(const float* q_ch, double* out) const {
+    std::vector<double> raw(n_leg);
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)q_ch[j.channel] - j.offset_deg)/j.sk(); }
+      raw[i] = ((double)q_ch[j.channel] - j.offset_deg)/j.sk(); }
+    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
+      out[i] = (j.couple_src<0)? raw[i] : raw[i] - j.couple_coef*raw[j.couple_src]; }
   }
   void q_joint_to_ch(const double* q_j, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(q_j[i]*j.sk() + j.offset_deg); }
+      const double raw = (j.couple_src<0)? q_j[i] : q_j[i] + j.couple_coef*q_j[j.couple_src];
+      out[j.channel] = (float)(raw*j.sk() + j.offset_deg); }
     for(size_t k=0;k<c->waist_ch.size();k++)
       out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
   }
@@ -304,28 +326,37 @@ struct JointMap {
   void q_ctrl_to_ch(const double* q_rad, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(j.sk() * q_rad[i] * R2D + j.offset_deg); }
+      const double q = (j.couple_src<0)? q_rad[i] : q_rad[i] + j.couple_coef*q_rad[j.couple_src];
+      out[j.channel] = (float)(j.sk() * q * R2D + j.offset_deg); }
     for(size_t k=0;k<c->waist_ch.size();k++)
       out[c->waist_ch[k]] = (float)(k<c->waist_hold.size()? c->waist_hold[k] : 0.0);
   }
   void dq_ctrl_to_ch(const double* dq_rad, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(j.sk() * dq_rad[i] * R2D); }
+      const double d = (j.couple_src<0)? dq_rad[i] : dq_rad[i] + j.couple_coef*dq_rad[j.couple_src];
+      out[j.channel] = (float)(j.sk() * d * R2D); }
   }
   void tau_ctrl_to_ch(const double* tau, float* out) const {
     for(int i=0;i<n_channel;i++) out[i]=0.f;
+    // ★토크: k 로 나누고, 커플링은 **전치**로 — 소스축이 목적축 토크를 떠안는다.
+    std::vector<double> raw(tau, tau+n_leg);
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[j.channel] = (float)(j.sign * tau[i] / j.gear_k); }   // ★토크는 k 로 나눈다
+      if(j.couple_src>=0) raw[j.couple_src] -= j.couple_coef*tau[i]; }
+    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
+      out[j.channel] = (float)(j.sign * raw[i] / j.gear_k); }
   }
   // 채널(deg) → 컨트롤러(rad)
   void ch_to_q_ctrl(const float* q_ch, double* out) const {
-    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)q_ch[j.channel] - j.offset_deg) / j.sk() * D2R; }
+    ch_to_q_joint(q_ch, out);
+    for(int i=0;i<n_leg;i++) out[i] *= D2R;
   }
   void ch_to_dq_ctrl(const float* dq_ch, double* out) const {
+    std::vector<double> raw(n_leg);
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
-      out[i] = ((double)dq_ch[j.channel] / j.sk()) * D2R; }
+      raw[i] = (double)dq_ch[j.channel] / j.sk(); }
+    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
+      out[i] = ((j.couple_src<0)? raw[i] : raw[i] - j.couple_coef*raw[j.couple_src]) * D2R; }
   }
   // 게인 벡터(채널). ★Nm/rad 그대로 — 환산하지 않는다.
   void kp_ch(float* out, double scale=1.0) const {

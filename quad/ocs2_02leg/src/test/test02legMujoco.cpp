@@ -373,7 +373,9 @@ int main(int argc, char** argv) {
       double N = gear[gi]; int dof = m->jnt_dofadr[jid];
       m->dof_armature[dof] = Irot * N * N; m->dof_damping[dof] = jdmp; m->dof_frictionloss[dof] = jfrc; } }
   const double dt = m->opt.timestep;
-  const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 50.0;
+  // ★기본 100Hz(2026-08-10): 재계획률↑=base 회복 authority↑=범용 고속 엔벨로프 확장(trot≤1.1·bound≤0.8·walk≤0.5,
+  //   50Hz 대비 trot≤0.5·bound≤0.7·walk≤0.3). 저속/stance 무회귀. 연산 2배지만 solve~7ms<10ms budget 여유(D1=연구·비실시간). MPC_HZ env로 override.
+  const double mpcHz = getenv("MPC_HZ") ? std::atof(getenv("MPC_HZ")) : 100.0;
   const int mpcDecim = std::max(1, int((1.0 / mpcHz) / dt));  // 재계획 주기
   const double Kp = getenv("KP") ? std::atof(getenv("KP")) : 60.0;
   const double Kd = getenv("KD") ? std::atof(getenv("KD")) : 2.0;

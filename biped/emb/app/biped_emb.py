@@ -275,6 +275,7 @@ def main():
         print("[biped_emb] ⚠⚠ IMU 값이 전부 0 → **tilt E-stop 비활성**. "
               "IMU 배선/펌웨어 확인 전까지 기울기 보호가 없다고 간주할 것.")
     prev_loop_t = t0
+    pace_warned = False          # 루프 밀림 경고 1회만
     hz_ema = float(cfg["meta"]["ctrl_hz"])
 
     # ★어떤 경로로 죽어도 무여자로 빠지게 한다. 기존엔 정상 종료(args.T 만료) 경로에만
@@ -421,11 +422,17 @@ def main():
                    "n_dead": health.count("dead"), "n_absent": health.count("absent"),
                    "n_installed": int(jm.installed.sum())}
 
+          # ★실측 루프주기 — jog/home 의 속도·궤적 제한을 **호출 횟수가 아니라 실제 시간**
+          #   기준으로 걸기 위해 넘긴다(캐치업 폭주로 한계가 뚫리는 것 방지).
+          dt_meas = loop_t - prev_loop_t if prev_loop_t else cfg_dt
+          if dt_meas <= 0:
+              dt_meas = cfg_dt
+
           # ── 모드 디스패치 (전 채널 명령; 미배선/죽은 축은 임베디드가 흡수) ──
           if fsm.mode == FSM.OFF:
               hw.write_jog(jm.q_ctrl_to_ch(np.zeros(jm.n_leg)))     # enable=False → 브리지 0 토크
           elif fsm.mode == FSM.JOG:
-              hw.write_jog(jogger.step(jog_goal))
+              hw.write_jog(jogger.step(jog_goal, dt_meas))
               extra["jog_at_goal"] = jogger.at_goal(jog_goal, settle)
           elif fsm.mode == FSM.HOME:
               # ★워치독 트립 중에는 궤적을 현재 측정각으로 계속 재기준한다.
@@ -435,7 +442,7 @@ def main():
               #   복귀 시 처진 자리에서 홈까지 궤적을 처음부터 다시 그린다.
               if wd_trip:
                   homer.start(q_leg)
-              hw.write_jog(homer.step())
+              hw.write_jog(homer.step(dt_meas))
               extra["home_progress"] = round(homer.progress, 3)
               extra["home_done"] = homer.done
               extra["home_at_goal"] = homer.at_goal(q_leg, home_settle)
@@ -453,9 +460,26 @@ def main():
               last_pub = loop_t
 
           # ── 실시간 페이싱 ──
+          #   ★캐치업 폭주 방지 (2026-08-07 실측으로 발견).
+          #     종전엔 `lag>0 이면 sleep` 뿐이라, 루프가 밀리면(Pi load 5.14/4코어 관측)
+          #     그 다음 수십 틱이 **sleep 없이 연속 실행**됐다. loop_hz 가 500 → 4452 로
+          #     튄 게 그 흔적이다(실제로 빨리 돈 게 아니라 몰아서 돈 것).
+          #   ⚠이게 표시 문제가 아닌 이유: jog 속도제한·home S-curve 는 "호출이 dt 간격으로
+          #     온다"는 전제로 걸려 있다. 25틱을 2ms 에 몰아 돌면 jog 가 20dps → **500dps** 로
+          #     뚫리고 home 궤적은 빨리감기 된다. 즉 안전한계가 조용히 무력화된다.
+          #   ⇒ 일정 이상 밀리면 스케줄을 현재로 재동기해 폭주 구간 자체를 없앤다.
+          #     (남은 영향은 "가끔 한 틱이 느려짐" = 명령이 느려지는 쪽이라 안전하다)
           k += 1
-          lag = t0 + k * cfg_dt - time.perf_counter()
-          if lag > 0:
+          now = time.perf_counter()
+          lag = t0 + k * cfg_dt - now
+          if lag < -10 * cfg_dt:                    # 10틱(20ms) 이상 밀림 → 재동기
+              if not pace_warned:
+                  pace_warned = True
+                  print(f"[biped_emb] ⚠ 루프가 {-lag*1e3:.0f}ms 밀렸다 — {cfg['meta']['ctrl_hz']}Hz "
+                        f"를 못 지키고 있다. CPU 부하 확인(현재 Pi 4코어).\n"
+                        f"    캐치업 폭주는 막았으나, 지속되면 ctrl_hz 를 낮추는 게 낫다.", flush=True)
+              t0 = now - k * cfg_dt
+          elif lag > 0:
               time.sleep(lag)
 
 

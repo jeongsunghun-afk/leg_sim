@@ -97,15 +97,22 @@ class HomeTrajectory:
         return self.T
 
     # ── 1틱 ────────────────────────────────────────────────────────────────
-    def step(self) -> np.ndarray:
-        """다음 목표각을 채널 배열[deg]로 반환하고 시간을 dt 만큼 진행.
+    DT_CAP = 0.05          # 한 틱에 반영할 경과시간 상한[s]
+
+    def step(self, dt: float | None = None) -> np.ndarray:
+        """다음 목표각을 채널 배열[deg]로 반환하고 시간을 진행.
+
+        dt 를 주면 **실제 경과시간**만큼 궤적을 진행한다(미제공 시 공칭 dt).
+        ★왜: 루프가 밀렸다 몰아 돌면 self.t 가 실제보다 빨리 흘러 궤적이 **빨리감기** 된다
+          → v/a 한계가 무의미해진다. 경과시간 기준이면 몰아 돌아도 궤적 속도가 유지된다.
+          (2026-08-07 Pi 과부하에서 loop_hz 500→4452 스파이크로 발견)
 
         T 를 지난 뒤에도 계속 호출해도 된다 — τ 가 1 로 클램프되어 홈 자세를 유지한다.
         """
         tau = 1.0 if self.T <= 0.0 else min(self.t / self.T, 1.0)
         s = tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
         self._q_leg = self.q0 + self.d * s
-        self.t += self.dt
+        self.t += self.dt if dt is None else min(dt, self.DT_CAP)
         out = np.zeros(self.jm.n_channel)
         out[self.jm.ch] = self._q_leg
         return out

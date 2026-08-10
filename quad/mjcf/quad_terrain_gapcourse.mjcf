@@ -1,0 +1,12 @@
+<mujoco model="gap_course">
+  <include file="quad_real_17dof_waist_sphere.mjcf"/>
+  <worldbody>
+    <geom name="gc_start" type="box" group="2" size="0.550 0.7 0.10" pos="-0.050 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc0" type="box" group="2" size="0.350 0.7 0.10" pos="1.170 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc1" type="box" group="2" size="0.350 0.7 0.10" pos="2.190 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc2" type="box" group="2" size="0.350 0.7 0.10" pos="3.210 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc3" type="box" group="2" size="0.350 0.7 0.10" pos="4.230 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc4" type="box" group="2" size="0.350 0.7 0.10" pos="5.250 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="gc5" type="box" group="2" size="0.350 0.7 0.10" pos="6.270 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+  </worldbody>
+</mujoco>

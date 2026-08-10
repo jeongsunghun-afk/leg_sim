@@ -13,7 +13,10 @@ set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CMD="${QUAD_CMD:-/tmp/biped_cmd.json}"
 STATE="${QUAD_STATE:-/tmp/biped_state.json}"
-export DISPLAY="${DISPLAY:-:0}"
+# ★DISPLAY 를 :0 으로 **강제하지 않는다** — 이 로봇은 Wayland 라 mutter 전용 쿠키가
+#   필요하고, 그냥 :0 을 주면 dearpygui 가 X11 인증 실패로 core dump 한다.
+source "$HERE/lib_display.sh"
+setup_display || exit 1
 
 # dearpygui 가 있는 인터프리터를 고른다(시스템 python 엔 보통 없다)
 PY_GUI=""

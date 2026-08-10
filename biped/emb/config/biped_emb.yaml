@@ -61,9 +61,14 @@ shm:
 #     장착 후 축별로 mot_test 로 재검증할 것. ⚠Kd 는 속도 노이즈(±15deg/s 관측)를
 #     그대로 토크로 증폭하므로(kd2 → ±0.5Nm) 함부로 올리지 말 것.
 joints:
-  # ══ ★2026-08-07 실기 튜닝 전언 — 다리 조립 후 처짐 대항 게인 (미적용, 검토 후 반영) ══
-  #   보고: kp 를 **hip 100 / thigh 50 / calf 50 / foot 30** 까지 올리니 처짐에 대항하는
-  #         움직임이 괜찮았다. (전언 — 직접 실측 로그는 아직 없음)
+  # ══ ★2026-08-07 게인 상향 적용 — 다리 조립 후 처짐 대항 ═══════════════════════
+  #   적용: kp **hip 100 / thigh 50 / calf 50 / foot 30**, kd **5.0 전축** (종전 40/40/40/30, kd 2/2/2/1.5)
+  #
+  #   ★출처가 확인됐다 — 이건 임의값이 아니라 **Emb 펌웨어가 이미 쓰는 값**이다:
+  #     ZSource/RobotEmbedded/modules/ctrlGait/halGait.cpp:694-711
+  #       LtR(hip) Kp=100 · LtP(thigh) Kp=50 · LkP(knee) Kp=50 · LaP(ankle) Kp=20 · Kd=5.0 전축
+  #     Emb 는 기동 시 4.5초 램프에서 이 게인으로 전 관절을 0°로 보낸다. 즉 **이 로봇에서
+  #     실제로 동작이 검증된 게인**이다. (발목만 20 vs 우리 30 — 우리가 약간 높다)
   #
   #   MJCF 중력토크로 교차검증한 결과 **이 방향이 물리적으로 맞다**:
   #     축     중력토크   kp40 처짐 → 제안 kp   처짐     개선
@@ -74,23 +79,42 @@ joints:
   #   hip 이 중력토크가 제일 크고(다리 전체를 roll 로 듦) 실기에서도 hip 을 가장 많이
   #   올렸다는 점이 일치한다. 근거 있는 튜닝이다.
   #
-  #   ⚠적용 전 확인할 것 2가지:
-  #    (1) **kp_max 충돌** — pace/spec.yaml 의 `gains.kp_max: 60` ("이 값 초과 금지, 감사 권고").
-  #        hip 100 은 이걸 넘는다. PACE 시험과 배포 운용의 상한을 어느 쪽에 맞출지 결정 필요.
-  #        (PACE 는 다리 미장착 기준으로 정한 값이라 재검토 대상이긴 하다)
-  #    (2) **kd 는 전언에 없다.** 현재 2.0/2.0/2.0/1.5 유지 가정.
-  #        ⚠Kd 는 속도 노이즈(정지 중에도 ±15 deg/s 관측)를 그대로 토크로 증폭한다
-  #          (kd2 → ±0.5 Nm). kp 를 2.5배 올리면 진동 여지가 생기므로 kd 도 같이 봐야 한다.
-  #        ⇒ JOG 로 축별 스텝응답 보며 kp/kd 짝을 확정할 것(NEXT_HW.md §3).
+  #   ★kd 는 **축별로 계산**해 넣었다(6.0/4.0/3.5/2.0). kp 만 올리면 진동한다 —
+  #     감쇠비 ζ = kd/(2√(kp·I)) 계산(armature 7.4e-4 포함 등가관성):
+  #       hip   kp40/kd2 ζ=0.36 → kp100/kd2 ζ=**0.23**(심한 저감쇠) → kp100/kd5 ζ=0.57 ✅
+  #       thigh 0.40 → 0.36 → 0.90   calf 0.48 → 0.43 → 1.06   foot 0.68 → 0.78 → 1.96
+  #   ★kd 산출: 목표 감쇠비 ζ≈0.7~0.8 에서  kd = 2ζ√(kp·I) − JDAMP(0.09)
+  #     I 는 armature(ROTOR_I·N²) 포함 등가관성 = MJCF 질량행렬 대각성분(홈자세 q=0):
+  #       hip 0.1951 · thigh 0.1557 · calf 0.1104 · foot 0.0542 kg·m²
+  #     채택값의 실제 ζ:  hip 0.69 · thigh 0.73 · calf 0.76 · foot 0.82
+  #     ⚠Emb 펌웨어의 **균일 kd=5 는 축별로 안 맞는다** — hip ζ=0.58(저감쇠)/foot ζ=2.00(과감쇠).
+  #       Emb 는 4.5초 램프용이라 그 정도로 충분하지만, 우리는 축별로 잡는 게 맞다.
+  #     ⚠자세 의존: 무릎을 굽히면 hip/thigh 관성이 +15~16% → ζ 가 0.80→0.74 로 약간 내린다.
+  #       설계 여유 안이다(ζ 0.7 이상 유지).
+  #   ⚠대가 — 속도노이즈 증폭: 실측 σ_dq=2.11 dps(p-p 14.6)가 kd 배로 토크 리플이 된다.
+  #     채택값의 p-p 리플: hip 1.53 · thigh 1.02 · calf 0.89 · foot 0.51 Nm.
+  #     정지마찰(0.5 Nm)을 넘으므로 **소리·발열로는 떨림이 난다**.
+  #     ★그러나 위치로는 거의 안 나타난다 — 이 노이즈는 고주파라 관성이 걸러낸다.
+  #       변위 ≈ T/(I·ω²): hip 1.53 Nm @100Hz → 0.0013° (엔코더 분해능 0.0044° 이하).
+  #       ⇒ 눈에 보이는 떨림이 실제로 생기면 그건 노이즈가 아니라 **저감쇠(ζ 부족)**
+  #         이거나 게인 과다다. kd 를 올릴 게 아니라 kp 를 내리고 다시 볼 것.
+  #     거슬리면 kd 를 ζ=0.7 선(hip 6.1/thigh 3.8/calf 3.2/foot 1.7)까지만 내릴 수 있다.
+  #
+  #   ⚠ **safety.tau_trip_nm 을 8 → 15 로 같이 올렸다**(아래 safety 절). 안 올리면 못 쓴다:
+  #     kp100 에서 8 Nm 는 **4.58° 오차**에 트립인데 중력 처짐만 2.84° → 여유 1.74° 뿐이라
+  #     JOG 첫 동작에서 바로 E-stop 이 난다.
+  #   ⚠ PACE 하네스(pace/spec.yaml)의 `gains.kp_max: 60` 은 **그대로 뒀다**. PACE 는 자체
+  #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
+  #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
-  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
-  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)
-  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 40, kd: 2.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
-  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 40, kd: 2.0}  # 외삽(미장착)
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 40, kd: 2.0}  # 외삽(미장착)
-  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 1.5}  # 외삽(미장착)
+  - {name: HL_hip,   channel: 0, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # 외삽(미장착)
+  - {name: HL_calf,  channel: 2, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # 외삽(미장착)
+  - {name: HL_foot,  channel: 3, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # 외삽(미장착)
+  - {name: HR_hip,   channel: 4, sign:  1, offset_deg: 0.0, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0}  # ★sign 실측확정 · 게인 실측 · offset 미확정(다리 장착 후)
+  - {name: HR_thigh, channel: 5, sign:  1, offset_deg: 0.0, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0}  # 외삽(미장착)
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -55, max_deg:  65, kp: 50, kd: 3.5}  # 외삽(미장착)
+  - {name: HR_foot,  channel: 7, sign:  1, offset_deg: 0.0, min_deg: -80, max_deg:  40, kp: 30, kd: 2.0}  # 외삽(미장착)
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:
@@ -146,7 +170,14 @@ safety:
   #   읽어놓고 안전 판정에 전혀 반영하지 않았다. tilt E-stop 은 IMU 가 전부 0 이라 무력하므로
   #   (위 tilt_estop_deg 참조) 실질적인 런타임 보호가 **워치독 하나뿐**이었다.
   #   ⇒ 시험 하네스에서 검증된 값을 배포 앱으로 승격한다.
-  tau_trip_nm: 8.0              # 채널 토크 절대값 임계[Nm]. 실측 정지마찰 0.71 / 파단 0.62~0.67
+  # ★2026-08-07: 8.0 → 15.0. 게인 상향(kp hip 100)과 다리 장착의 필연적 결과다.
+  #   kp100 에서 토크 T[Nm] 에 대응하는 오차각 = T/(100·π/180) = T·0.573°
+  #     8 Nm  → 4.58° 인데 **중력 처짐만 2.84°** → 여유 1.74° → JOG 첫 동작에 오트립
+  #     15 Nm → 8.59° → 중력 제외 5.75° 여유. 실측 추종지연(kp40 에서 1.4°)을 충분히 수용
+  #   여전히 보수적이다: hip 피크토크 84 Nm 의 18% 에 불과하다.
+  #   ⚠ err_max 12° 는 kp100 에서 20.9 Nm 라 **토크트립이 항상 먼저 걸린다**(의도된 순서 —
+  #     토크가 물리적으로 의미 있는 양이다). err_max 는 사실상 2차 방어선이 됐다.
+  tau_trip_nm: 15.0             # 채널 토크 절대값 임계[Nm]. 실측 정지마찰 0.71 / 파단 0.62~0.67
                                 #   대비 10배 이상 여유. ⚠다리 장착 후 재검토(부하가 달라진다)
   tau_trip_ms: 50               # 위 임계를 이 시간 이상 **연속** 초과해야 트립(순간 스파이크 무시)
   vel_trip_dps: 200.0           # 채널 속도 절대값 임계[deg/s].

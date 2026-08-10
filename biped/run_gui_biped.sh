@@ -15,7 +15,8 @@
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CMD="${QUAD_CMD:-/tmp/biped_cmd.json}"
-export DISPLAY="${DISPLAY:-:0}"
+source "$HERE/lib_display.sh"
+setup_display || exit 1
 
 # python 자동탐색: PY env → GUI venv → proxddp(노트북) → 시스템
 pick_py() {                       # ★set -e 하에서 && 체인 실패가 스크립트를 죽인다 → if 로
@@ -47,10 +48,10 @@ sleep 1
 echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.50,"mode":"off","contact":"1pt","seq":0}' > "$CMD"
 
 # ① 컨트롤러 + 뷰어
-setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' BIPED_MJCF='${BIPED_MJCF:-}' '$PY_RUN' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' QUAD_CMD='$CMD' BIPED_MJCF='${BIPED_MJCF:-}' '$PY_RUN' biped_run.py > /tmp/biped_run.log 2>&1" </dev/null &
 sleep 2
 # ② 슬림 GUI (★biped/ 에 위치. 7953c5c 에서 quad/ 로부터 이동)
-setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' QUAD_CMD='$CMD' '$PY_GUI' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE'; DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' QUAD_CMD='$CMD' '$PY_GUI' teleop_gui_biped.py > /tmp/teleop_gui_biped.log 2>&1" </dev/null &
 sleep 2
 
 pgrep -f biped_run.py       >/dev/null && echo "✅ controller+viewer RUNNING" || { echo "❌ controller DEAD"; tail -5 /tmp/biped_run.log; }

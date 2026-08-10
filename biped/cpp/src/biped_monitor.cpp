@@ -119,7 +119,8 @@ int main(int argc,char**argv){
 
     // ── 모델각(deg) → rad → 모델 주입 ──
     //   ★★2026-08-10 단위 통일: state.json 의 q_leg_deg 는 이제 **모델각**이다
-    //     (제어기 hw_interface.q_leg_deg 가 sign·offset·scale 을 이미 적용해 발행).
+    //     (제어기 hw_interface.q_leg_deg 가 sign·offset·gear_k 를 이미 적용해 발행).
+    //     ★뷰어는 **재변환하지 않는다** — D2R 만 곱해 qpos 에 넣는다. 여기서 또 곱하면 이중적용.
     //     여기서 sign/offset 을 **다시 적용하면 이중 변환**이 되어 sign=−1 축이
     //     원위치로 돌아가고 감속비 보정도 두 번 걸린다. 단위 환산만 한다.
     for(int i=0;i<jm.n_leg;i++)

@@ -4,7 +4,8 @@ GUI 가 축별 목표각(**모델각 deg**, 다리 8관절)을 주면 max_speed 
 jog 안전한계(JointMap.jog_min/max, 모델각) 로 클램프. 출력 = **모델각 배열(n_leg)**.
 
 ★2026-08-10 단위 통일: 종전엔 채널 배열(n_channel)을 반환해 hw.write_jog 가 그대로 SHM 에
-  썼다. 그 경로엔 sign·scale 이 없어서 (a) 모델과 방향이 어긋나고 (b) 감속비 보정이 빠졌다.
+  썼다. 그 경로엔 sign·offset·gear_k 가 없어서 (a) 모델과 방향이 어긋나고
+  (b) 영점·감속비 보정이 빠졌다.
   이제 여기는 **모델각만** 다루고, 채널 변환은 hw_interface 가 SHM 경계에서 한 번만 한다.
 """
 from __future__ import annotations

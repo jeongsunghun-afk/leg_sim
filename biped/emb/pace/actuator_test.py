@@ -183,6 +183,48 @@ def _gain(v):
     return float(v)
 
 
+def _torque_html(r: dict) -> str:
+    """토크모드 프로브 결과를 리포트 조각으로. **파단토크는 채널토크다** — k 배해야 관절값.
+
+    ★2026-08-11: 이 함수가 없어서 torque 결과가 리포트에 전혀 안 남았다.
+      다른 시험은 (html, res) 를 돌려주는데 probe_torque_mode 만 res 만 돌려주는
+      비대칭이 원인이었다. 터미널을 닫으면 측정이 사라지는 상태였다.
+    """
+    k = float(r.get("gear_k", 1.0))
+    rows = "".join(
+        f"<tr><td>{'+' if t['dir']>0 else '−'}</td>"
+        f"<td class=numeric>{t['tau_break']:.3f}</td>"
+        f"<td class=numeric>{t['tau_break']*k:.3f}</td>"
+        f"<td class=numeric>{t['tau_peak']:.3f}</td>"
+        f"<td class=numeric>{t['dq_max']:.1f}</td>"
+        f"<td>{'파단' if t['moved'] else '미동'}</td></tr>"
+        for t in r.get("trials", []) if t.get("tau_break") is not None)
+    tb = r.get("tau_break_mean")
+    concl = ""
+    if tb:
+        vals = [t["tau_break"] for t in r["trials"] if t.get("tau_break")]
+        sd = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+        concl = (f"<p><b>평균 파단토크 {tb:.3f} ± {sd:.3f} Nm(채널)</b> → "
+                 f"관절 <b>{tb*k:.3f} Nm</b> (k={k}) · "
+                 f"모터축 <b>{tb*k/float(r.get('gear', 8.4)):.4f} Nm</b></p>")
+    ok = r.get("supported")
+    return f"""
+<h2>{r['name']} (ch{r['ch']}) — 순수 토크모드 프로브</h2>
+<p class=dim>Kp=Kd=0 으로 두고 τ_ff 만 올려 파단(breakaway)을 찾는다. 움직이면 드라이버가
+τ_ff 를 실제로 쓴다는 뜻이고, 그 파단토크는 위치모드로 잰 정지마찰과 <b>일치해야</b> 한다.</p>
+<p><b>{'✅ 순수 토크모드 지원됨' if ok else '❌ 미지원(τ_ff 무시)'}</b></p>
+<table><tr><th>방향</th><th>파단τ[Nm 채널]</th><th>파단τ[Nm 관절]</th>
+<th>최대τ</th><th>최대q̇[dps]</th><th>결과</th></tr>{rows}</table>
+{concl}
+<div class=warn><b>해석 주의</b><ul>
+<li>원시값은 <b>채널토크</b>다. 드라이버가 전 축 7:1 로 가정하므로 관절토크 = τ_ch·k.</li>
+<li>축끼리 비교하려면 <b>모터축</b>(관절토크÷N)으로 환산할 것 — 8축이 같은 모터다.</li>
+<li>이 시험은 <b>마찰</b>을 잰다. 관성(I_total)은 재지 않는다 — 0.3° 에서 즉시 중단하므로
+가속 구간이 없다. 관성은 <code>--tests inertia</code>(2단 토크법)로 잰다.</li>
+</ul></div>
+"""
+
+
 _JIG_DEV: dict = {}          # 마지막 precheck 의 (편차, 기준) — 오류 메시지용
 
 
@@ -377,7 +419,7 @@ def main() -> int:
                     help="HOME 판정 허용편차[deg] (기본 spec.safety.home_tol_deg=3.0). "
                          "--jig 에서 이 값을 넘으면 이동하지 않고 중단한다.")
     ap.add_argument("--tests", default="friction",
-                help="friction,torque,backlash,frf,latency,pace 중 콤마구분")
+                help="friction,torque,inertia,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
     ap.add_argument("--jig", action="store_true",
@@ -396,7 +438,7 @@ def main() -> int:
     # ★이름이 틀리면 **조용히 아무것도 안 돈다** — 아래 디스패치가 전부 `in tests` 정확일치라
     #   오타 하나면 HOME 정렬만 하고 끝난다(2026-08-11: `--tests torque_mode` 로 실제 발생.
     #   맞는 이름은 `torque`). 정렬은 로봇을 움직이므로 "안 돌았다" 를 알아채기도 어렵다.
-    KNOWN = ("friction", "torque", "backlash", "frf", "latency", "pace")
+    KNOWN = ("friction", "torque", "inertia", "backlash", "frf", "latency", "pace")
     bad = [t for t in tests if t not in KNOWN]
     if bad:
         import difflib
@@ -415,6 +457,7 @@ def main() -> int:
     from act_probe_torque_mode import probe_torque_mode
     from act_measure_backlash import measure_backlash
     from act_measure_frf import measure_frf
+    from act_measure_inertia_torque import measure_inertia_torque
 
     jmap = {int(j["ch"]): j for j in spec["joints"]}
     sf, g = spec["safety"], spec["gains"]
@@ -550,8 +593,15 @@ def main() -> int:
                     html, res = measure_actuator_friction(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("friction", res))
                 if "torque" in tests:
+                    # ★fragments.append 가 빠져 있었다(2026-08-11) — 터미널에만 찍히고
+                    #   리포트에는 안 남았다. 다른 시험은 전부 (html, res) 를 돌려주는데
+                    #   이것만 res 만 돌려주는 비대칭이 원인이었다.
                     res = probe_torque_mode(hw, spec, j)
+                    fragments.append(_torque_html(res))
                     summary.append(("torque", res))
+                if "inertia" in tests:
+                    html, res = measure_inertia_torque(hw, spec, j, plotdir)
+                    fragments.append(html); summary.append(("inertia", res))
                 if "backlash" in tests:
                     html, res = measure_backlash(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("backlash", res))
@@ -580,6 +630,13 @@ def main() -> int:
         if kind == "friction":
             print(f"  {r['name']:9s} 마찰  JFRIC={r['jfric']:.4f} Nm  "
                   f"JDAMP={r['jdamp']:.4f} Nm·s/rad  τ_s={r['tau_static']:.4f} Nm  R²={r['r2']:.3f}")
+        elif kind == "inertia":
+            if "I_joint" in r:
+                e = f"  MJCF 대비 {r['err_pct']:+.1f}%" if "err_pct" in r else ""
+                print(f"  {r['name']:9s} 관성  I_ch={r['I_ch']:.5f}  "
+                      f"I_joint={r['I_joint']:.5f} kg·m²{e}")
+            else:
+                print(f"  {r['name']:9s} 관성  측정 실패(표본 부족)")
         elif kind == "torque":
             tb = f"{r['tau_break_mean']:.3f} Nm" if r["tau_break_mean"] else "—"
             print(f"  {r['name']:9s} 토크모드  {'지원됨' if r['supported'] else '미지원'}  파단토크={tb}")

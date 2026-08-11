@@ -252,8 +252,12 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         fits[lbl] = {"I_ch": float(1.0 / th[0]),
                      "intercept": float(-th[1] / th[0]),   # τ 축 절편 = b·q̇_ref+τ_c+τ_g
                      "r2": float(r2), "n": len(sel), "cond": float(np.linalg.cond(A))}
-        log(f"  [{name}] {lbl}방향: I_ch={th[0]:.5f} kg·m²(채널) · "
-            f"절편={th[1]:+.3f} Nm · R²={r2:.4f} · cond={np.linalg.cond(A):.1f} (n={len(sel)})")
+        # ⚠th 를 그대로 찍지 말 것 — 회귀를 q̈~τ 로 바꾼 뒤 th[0]=1/I, th[1]=q̈축 절편이다.
+        #   dict 에 담은 환산값(I_ch, intercept)을 찍어야 한다.
+        f_ = fits[lbl]
+        log(f"  [{name}] {lbl}방향: I_ch={f_['I_ch']:.5f} kg·m²(채널) · "
+            f"절편={f_['intercept']:+.3f} Nm · R²={r2:.4f} · "
+            f"cond={f_['cond']:.1f} (n={len(sel)})")
     res["fits"] = fits
     for w in warn:
         log(f"  [{name}] ⚠ {w}")
@@ -282,8 +286,16 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                 f"(기준 15%){'  ✓' if res['dir_spread'] <= 0.15 else '  ✗'}")
             ic = float(np.mean([f["intercept"] for f in fits.values()]))
             res["intercept_mean"] = ic
-            log(f"  [{name}] 절편 {ic:+.3f} Nm = b·q̇_ref + τ_c + τ_g "
-                f"— 파단토크 0.674 Nm(채널) 과 같은 크기여야 맞다")
+            tb = joint.get("_tau_break")
+            if tb:
+                # τ_c(q̇_ref) = 절편 − b·q̇_ref. 정지마찰(파단)보다 낮으면 Stribeck.
+                log(f"  [{name}] 절편 {ic:+.3f} Nm = b·q̇_ref + τ_c(q̇={vref:.0f}dps) + τ_g")
+                log(f"           vs **자기 파단토크(정지마찰) {tb:.3f} Nm** → "
+                    f"{(ic/tb-1)*100:+.0f}%"
+                    + ("  ⇒ 운동마찰이 정지마찰보다 낮다(Stribeck)" if ic < tb * 0.95 else ""))
+            else:
+                log(f"  [{name}] 절편 {ic:+.3f} Nm = b·q̇_ref + τ_c + τ_g "
+                    f"(파단토크 미측정 — `--tests torque,inertia` 로 같이 돌리면 대조된다)")
         if I_pred_joint:
             dd = (I_joint / float(I_pred_joint) - 1.0) * 100.0
             res.update(I_pred_joint=float(I_pred_joint), err_pct=dd)

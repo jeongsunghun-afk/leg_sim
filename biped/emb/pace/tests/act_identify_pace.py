@@ -183,6 +183,27 @@ def identify_pace(hw, spec, joint, plotdir, outdir, log=print) -> tuple[str, dic
     Bb = 0.0                                                 # cos 항 미사용
     W = regressor(dq)
     pred = W @ theta
+    # ── ★전류 교차검증 (2026-08-10) ─────────────────────────────────────
+    #   체크리스트 원칙: 보고토크가 kp(q*−q)+kd(q̇*−q̇) 로 재구성되면 회귀가 순환이 된다.
+    #   전류는 그 경로와 **독립**이므로 τ_rep 와 Kt·I 를 비교하면 판별된다.
+    #   (기존 hip 데이터 검증: MIT 재구성 R² 0.53 → 보고토크는 측정 기반이었다.
+    #    그래도 축마다 다를 수 있으니 매 측정에서 확인한다.)
+    kt = float(joint.get("kt_nm_per_a", 0.0) or 0.0)
+    cur = A.get("cur")
+    if kt > 0 and cur is not None and len(cur) == len(tau) + 0:
+        cur_m = cur[m] if len(cur) != len(tau) else cur
+        tau_i = kt * cur_m
+        if np.std(tau_i) > 1e-9:
+            r_ti = float(np.corrcoef(tau, tau_i)[0, 1])
+            rms  = float(np.sqrt(np.mean((tau - tau_i) ** 2)))
+            log(f"  [{name}] 전류 교차검증: corr(τ_rep, Kt·I)={r_ti:.4f} · RMS차 {rms:.4f} Nm")
+            if r_ti < 0.9:
+                warn.append(f"τ_rep 와 Kt·I 상관 {r_ti:.3f} — 둘 중 하나가 틀렸다. 전류 쪽을 신뢰할 것")
+        else:
+            warn.append("전류가 거의 상수 — 전류센싱이 죽었을 수 있다(교차검증 불가)")
+    else:
+        warn.append("전류 또는 kt_nm_per_a 없음 — τ 순환 여부를 독립 검증하지 못했다")
+
     res = tau - pred
     ss_tot = float(np.sum((tau - np.mean(tau)) ** 2))
     r2 = 1.0 - float(np.sum(res ** 2)) / ss_tot if ss_tot > 1e-12 else float("nan")
@@ -230,6 +251,9 @@ def identify_pace(hw, spec, joint, plotdir, outdir, log=print) -> tuple[str, dic
     # ── 데이터셋 내보내기 (노트북 CMA-ES 용) ────────────────────────────────
     npz = f"{outdir}/pace_dataset_ch{ch:02d}.npz"
     np.savez(npz, t=A["t"], q=A["q"], dq=A["dq"], tau=A["tau"], q_cmd=A["q_cmd"],
+             cur=A["cur"],   # ★전류 저장(2026-08-10) — τ = Kt·I 교차검증용.
+                             #   hwio 는 읽고 있었는데 저장에서 빠져 있었다.
+                             #   보고토크가 명령 재구성인지 측정인지 가르는 유일한 독립 근거다.
              kp=kp, kd=kd, dt=dt, gear=gear, ch=ch, name=name,
              units="q,q_cmd:deg dq:deg/s tau:reported",
              theta=np.array([I_total, b, tau_c, Aa, Bb, c]), eps=eps,

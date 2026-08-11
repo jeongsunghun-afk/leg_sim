@@ -174,14 +174,14 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.02, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -33.72, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.56, min_deg: -59.6, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -83.25, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 2.57, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 35.50, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 85.69, min_deg: -59.6, max_deg:  49.8, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.00, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.21, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -34.09, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.19, min_deg: -59.6, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -83.50, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 1.70, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 35.12, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 81.38, min_deg: -59.6, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.50, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

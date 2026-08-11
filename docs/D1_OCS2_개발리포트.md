@@ -173,6 +173,9 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 
 ⚠앞서 보고한 "trot≤1.1"은 **비현실 물리(반사관성 1/7.4)의 산물**이라 폐기. 실측-물리 정직 엔벨로프=**trot/bound≤0.8·walk≤0.3**. 여전히 **비배포급**(실시간 0.15~0.3×; A가 배포 본선). 커밋 6ca5050(OMP=1)·c21ab1c(W_BASE)·0e574a3(MPC_HZ)·**19aaa10(반사관성 정합=근본)**. 상세=[[controller-balance-mechanisms]].
 
+### 실접촉 기반 제어(CONTACT_ACTUAL) — MPC-WBC 정합 문제 (2026-08-10, negative·revert)
+사용자 요청②(발접촉상태 기반 움직임). WBC에 실접촉 오버라이드 훅(`setActualContact`, `d->ncon`→발별 감지)은 있으나 결함(기본 off). **falling-edge 디바운스·pure-actual 정식(motionC=forceC=touch·swingC=!touch) 둘 다 시도했으나 저속조차 붕괴**(trot0.3 falls>2000). **근본=MPC가 스케줄로 힘·base 피드포워드(aBaseFF)를 계획** → WBC가 실접촉으로 접촉집합을 바꾸면 **늦은착지 구간에 스케줄이 기대한 지지발이 실제 미접촉→지지 부족→base 침하→붕괴**. 스케줄 모드가 작동하는 건 낙관적 "닿았다" 가정+soft-contact가 미세 타이밍 흡수 덕. ⇒ **WBC 토글이 아니라 이벤트-기반 게이트**(실접촉→gait schedule 앞당김→MPC 재계획, OCS2 reference manager 온라인 갱신)가 필요=research-scope. tight-coupled NMPC의 구조적 한계([[controller-balance-mechanisms]] capture 이식 실패와 동형). **실험은 revert**(현 커밋 클린 유지).
+
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).
 - **모델 포팅 근사(해소)**: 발목 잠금(point-foot)은 **Phase 2c에서 16-DOF 능동 발목으로 해소**(허리만 fixed 유지). 발목 능동화엔 GEARBOX(반사관성)·널스페이스 posture·앞뒤 발목 nominal이 필수.

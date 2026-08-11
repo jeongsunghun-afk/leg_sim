@@ -95,7 +95,7 @@ def check_inertia(d, log):
     return not bad, ev
 
 
-def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, log=print):
+def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat", log=print):
     links, joints = load_urdf(urdf_path)
     kids = {}
     for j in joints.values():
@@ -174,12 +174,15 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, log=print):
                          f'range="{r[0]:g} {r[1]:g}" '
                          f'actuatorfrcrange="-{j["effort"]:g} {j["effort"]:g}" />')
             for m in cd["meshes"][:1]:
-                s.append(f'{p}  <geom type="mesh" contype="0" conaffinity="0" group="1" '
+                # ★점발(배포)은 링크메시가 **충돌체**다. 평발은 시각 전용이고 접촉은 구가 맡는다.
+                #   종전 두 MJCF 의 차이가 정확히 이것 + heel 구 유무였다.
+                col = "" if foot == "point" else 'contype="0" conaffinity="0" '
+                s.append(f'{p}  <geom type="mesh" {col}group="1" '
                          f'density="0" rgba="0.75294 0.75294 0.75294 1" '
                          f'mesh="{os.path.splitext(m)[0]}" />')
             # ★접촉구 — URDF 에 없는 시뮬 설정. 평발 2점 접촉(발목 heel + 발끝 toe).
             side = c.split("_")[0]
-            if "_foot_link" in c:
+            if "_foot_link" in c and foot == "flat":     # heel 구는 평발에만
                 s.append(f'{p}  <geom name="{side}_sphere2" type="sphere" size="{SPHERE_R}" '
                          f'pos="0 0 0" rgba="0.3 0.5 0.9 1" '
                          + " ".join(f'{k}="{v}"' for k, v in CONTACT.items()) + " />")
@@ -199,6 +202,8 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, log=print):
                        f'file="{m}" />' for m in names)
     act = "\n".join(f'    <motor joint="{n}" name="{n[:-6]}" />'
                     for n in joints if joints[n]["type"] != "fixed")
+    foot_note = {"flat": "평발 — 링크메시는 시각 전용, 접촉은 발목(heel)+발끝(toe) **2점 구**",
+                 "point": "점발(배포) — 링크메시가 **충돌체**, 접촉은 발끝 **1점 구**"}[foot]
     rng_note = {"urdf": "새 URDF 값 그대로",
                 "legacy": "종전 MJCF(quad 승계) 값 유지",
                 "intersect": "두 값의 **교집합**(보수적)"}[ranges_mode]
@@ -212,6 +217,7 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, log=print):
     사람이 정한 것   : 바닥 · 조명 · IMU site · actuator · sensor · option · default ·
                       **접촉구(sphere, r={SPHERE_R})** — URDF 에는 이런 개념이 없다
 
+    ⚠발 구성: {foot_note}
     ⚠관절범위: {rng_note}
     ⚠armature/damping/frictionloss 는 **의도적으로 없다** — 런타임(apply_gearbox)이 주입한다.
       여기 적으면 이중적용된다.
@@ -265,7 +271,9 @@ if __name__ == "__main__":
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--ranges", choices=["urdf", "legacy", "intersect"], default="urdf",
                     help="관절범위 출처. urdf=새 CAD · legacy=종전 유지 · intersect=교집합(보수적)")
+    ap.add_argument("--foot", choices=["flat", "point"], default="flat",
+                    help="flat=평발 2점 구(링크메시 시각전용) · point=점발 1점 구(링크메시 충돌체)")
     ap.add_argument("--base", default=None, help="base 링크 이름(기본: 부모 없는 링크)")
     a = ap.parse_args()
-    print(f"URDF → MJCF  (범위: {a.ranges})")
-    build(a.urdf, a.out, a.ranges, a.base)
+    print(f"URDF → MJCF  (범위: {a.ranges} · 발: {a.foot})")
+    build(a.urdf, a.out, a.ranges, a.base, a.foot)

@@ -176,7 +176,7 @@ joints:
   # ═══════════════════════════════════════════════════════════════════════════════
   - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.02, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -33.72, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.56, min_deg: -59.6, max_deg:  49.8, kp: 60, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.56, min_deg: -59.6, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -83.25, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 2.57, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 35.50, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10

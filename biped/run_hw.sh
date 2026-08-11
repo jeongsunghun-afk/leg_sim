@@ -10,7 +10,12 @@
 #
 # 사용 순서:
 #   ① 모터전원 ON → Emb 기동 → **5초 대기**
-#        cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded
+#        cd ~/ZSource/RobotEmbedded/build && ./src/RobotEmbedded
+#        ★sudo 없이 실행할 것 (2026-08-11). setcap 이 적용돼 있다
+#        (cap_net_admin,cap_net_raw=eip · SHM perms 666 이라 비루트 attach 도 된다).
+#        ⚠sudo 로 띄우면 래퍼 2개가 끼어 **Ctrl+C 가 실제 프로세스에 도달하지 않는다**
+#          — 죽은 줄 알고 다시 띄우면 중복 writer 가 된다. 게다가 root 소유라
+#          일반 사용자가 kill 도 못 한다(실측: sudo=신호무시 / 직접실행=0.11초 종료).
 #   ② 제어기 (별도 터미널)   cd ~/simulation/biped/emb && python3 app/biped_emb.py
 #   ③ 이 스크립트            cd ~/simulation/biped && ./run_hw.sh
 #

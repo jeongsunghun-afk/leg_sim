@@ -37,8 +37,13 @@
       ⚠ 명령을 "안 쓰는" 것은 정지가 아니다. Emb 는 마지막 명령을 1kHz 로 영원히 재전송한다.
 
 ```bash
-# Emb 기동 (⚠ 직후 4.5s 동안 전 관절이 0°로 램프 — 다리 달렸으니 주변 확인)
-cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded 2>&1 \
+# Emb 기동 — ★**sudo 없이** 실행할 것 (2026-08-11)
+#   setcap 적용됨(cap_net_admin,cap_net_raw=eip) · SHM perms 666 이라 비루트 attach 가능.
+#   ⚠sudo 로 띄우면 래퍼 2개가 끼어 **Ctrl+C 가 실제 프로세스에 도달하지 않는다.**
+#     죽은 줄 알고 다시 띄우면 **중복 writer** 가 되고, root 소유라 kill 도 못 한다.
+#     실측: sudo → SIGINT 무시 · 직접실행 → 0.11초 종료.
+#   ⚠기동 램프는 **제자리 유지**로 패치됨(halGait.cpp) — 로봇이 움직이지 않아야 정상이다.
+cd ~/ZSource/RobotEmbedded/build && ./src/RobotEmbedded 2>&1 \
   | grep --line-buffered -aE "EtherCAT|Slave|WKC|Fail" > /tmp/emb.log
 ```
 

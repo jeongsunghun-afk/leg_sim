@@ -127,7 +127,9 @@ int main(int argc, char** argv){
     if (stale(ch)){
         printf("  ✗ ch%d 텔레메트리 정지 — pos/vel/tau 가 1초간 완전히 동일(플래그만 갱신됨).\n", ch);
         printf("    EtherCAT 이 OP 를 잃었을 가능성. Emb 는 스스로 복구하지 못하므로 재기동 필요:\n");
-        printf("      sudo pkill -x RobotEmbedded ; cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded\n");
+        // ★sudo 없이 띄운다(2026-08-11). setcap 적용됨 — sudo 는 래퍼가 끼어
+        //   Ctrl+C 가 실제 프로세스에 도달하지 않고 중복 writer 를 만든다.
+        printf("      pkill -x RobotEmbedded ; cd ~/ZSource/RobotEmbedded/build && ./src/RobotEmbedded\n");
         return 4;                            // 명령을 쓰지 않고 종료(아직 아무것도 안 썼다)
     }
     printf("  ✓ 수신 OK(신선). ch%d pos=%.3f vel=%.3f tau=%.3f\n", ch, g_pos[ch], g_vel[ch], g_tau[ch]);

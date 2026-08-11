@@ -176,7 +176,10 @@ def _gain(v):
     return float(v)
 
 
-def _jig_precheck(hw, jm, tgt_ch, spec: dict, log=print) -> bool:
+_JIG_DEV: dict = {}          # 마지막 precheck 의 (편차, 기준) — 오류 메시지용
+
+
+def _jig_precheck(hw, jm, tgt_ch, spec: dict, log=print, tol_override=None) -> bool:
     """지금 자세가 이미 HOME 인가? 겸사겸사 **영점 검증**이 된다.
 
     ★지그 자세 = HOME = 영점이 같은 자세다(사용자 확인, 2026-08-11).
@@ -187,20 +190,23 @@ def _jig_precheck(hw, jm, tgt_ch, spec: dict, log=print) -> bool:
     ★모델각으로 보고하는 이유 — 지그 자세의 모델각은 **정의상 전부 0** 이어야 한다.
       여기서 나오는 편차가 곧 영점 오차다. 시험 전에 공짜로 얻는 교정 검증이다.
     """
-    tol = float(spec.get("safety", {}).get("home_tol_deg", 3.0))
+    tol = float(tol_override if tol_override is not None
+                else spec.get("safety", {}).get("home_tol_deg", 3.0))
     q_ch = np.array([hw.read(c)[0] for c in range(hw.n)], float)
     q_j = np.asarray(jm.ch_to_q_joint(q_ch), float)
     d_ch = np.array([q_ch[c] - float(tgt_ch[c]) for c in jm.ch])
     emax = float(np.max(np.abs(d_ch)))
     at_home = emax <= tol
+    _JIG_DEV.update(dev=emax, tol=tol)
     log(f"  자세 확인 — HOME 대비 최대 {emax:.2f}° (판정 기준 {tol}°)")
     log("    " + "  ".join(f"ch{c}{d_ch[i]:+.2f}" for i, c in enumerate(jm.ch)))
-    if at_home:
-        # 모델각은 전부 0 이어야 한다 — 아니면 영점이 틀어진 것이다.
-        log(f"  ✓ 이미 HOME — **모터 이동 없음**. 영점 검증(모델각, 0 이어야 함):")
-        log("    " + "  ".join(f"{n}{q_j[i]:+.2f}" for i, n in
-                               enumerate(x["name"] for x in
-                                         sorted(spec["joints"], key=lambda y: int(y["ch"])))))
+    # 모델각은 지그 자세에서 **정의상 전부 0** 이어야 한다. 편차가 크든 작든 항상
+    # 찍는다 — 어긋났을 때야말로 이 표가 원인(어느 축의 영점인지)을 알려준다.
+    log(("  ✓ 이미 HOME — **모터 이동 없음**. " if at_home else "  ⚠ ") +
+        "영점 검증(모델각, 0 이어야 함):")
+    log("    " + "  ".join(f"{n}{q_j[i]:+.2f}" for i, n in
+                           enumerate(x["name"] for x in
+                                     sorted(spec["joints"], key=lambda y: int(y["ch"])))))
     return at_home
 
 
@@ -358,6 +364,9 @@ def main() -> int:
     ap.add_argument("--no-home", action="store_true",
                     help="시험 전 HOME 정렬을 생략한다(권장하지 않음 — 아래 사유)")
     ap.add_argument("--home-speed", type=float, default=8.0, help="HOME 이동 속도[deg/s]")
+    ap.add_argument("--home-tol", type=float, default=None,
+                    help="HOME 판정 허용편차[deg] (기본 spec.safety.home_tol_deg=3.0). "
+                         "--jig 에서 이 값을 넘으면 이동하지 않고 중단한다.")
     ap.add_argument("--tests", default="friction",
                 help="friction,torque,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
@@ -435,6 +444,8 @@ def main() -> int:
         # ★hold 가 비어도 정의해 둔다 — HOME 정렬이 이 값을 쓴다(예전엔 if 안에 있어서
         #   hold_others=false 면 NameError 였다).
         _kp, _kd = _gain(sf.get("hold_kp", 40.0)), _gain(sf.get("hold_kd", 2.0))
+        _kp_ch = _kp[ch] if isinstance(_kp, dict) else _kp     # 시험축의 배포게인
+        _kd_ch = _kd[ch] if isinstance(_kd, dict) else _kd
         if hold:
             _fmt = (lambda g: "축별 " + " ".join(f"ch{c}:{g[c]:g}" for c in sorted(g))
                     if isinstance(g, dict) else f"{g:g}")
@@ -481,22 +492,33 @@ def main() -> int:
                         # ★arm 이 먼저다 — enable 없이 goto_all 을 부르면 SHM 에 kp=kd=0 이
                         #   나가(shm_bridge.cpp:112) 모터가 전혀 안 움직인다.
                         #   시험축도 홀드게인으로 arm 한다(정렬 중엔 시험축도 '홀드' 다).
-                        _kp_ch = _kp[ch] if isinstance(_kp, dict) else _kp
-                        _kd_ch = _kd[ch] if isinstance(_kd, dict) else _kd
                         # ★지그가 이미 물려 있으면 자세가 곧 HOME 이다(지그자세=HOME=영점).
                         #   그때는 **모터를 한 번도 움직이지 않고** 시험에 들어간다.
                         _log = lambda m: print(f"  [{j['name']}]{m}")
-                        _at_home = _jig_precheck(hw, _jm, _tgt, spec, log=_log)
+                        _at_home = _jig_precheck(hw, _jm, _tgt, spec, log=_log,
+                                                 tol_override=a.home_tol)
+                        _dev, _tol = _JIG_DEV["dev"], _JIG_DEV["tol"]
                         hw.arm(ch, _kp_ch, _kd_ch)
                         if _at_home:
                             # 이미 HOME — 모터를 움직이지 않는다. 지그가 물려 있으면
                             # 움직이려는 시도 자체가 지그와 싸우는 것이다.
                             if a.jig:
                                 _jig_lower_gains(hw, spec, log=_log)
+                        elif a.jig:
+                            # ★--jig 는 "지그가 이미 물려 있다" 는 선언이다 → **절대 움직이지
+                            #   않는다**. 여기서 goto_all 을 부르면 모터가 지그를 밀어낸다.
+                            #   실제로 그렇게 됐다(2026-08-11): 편차 4.78° 를 '미설치' 로 오판해
+                            #   1.1초 동안 밀었고, 축은 4.42° 그대로였다 — 지그가 이겼다.
+                            #   편차가 크면 그건 이동으로 풀 문제가 아니라 **영점/지그 불일치**다.
+                            hw.limp()
+                            raise SystemExit(
+                                f"✗ 지그 자세가 HOME 과 {_dev:.2f}° 어긋난다(기준 {_tol}°).\n"
+                                f"  지그 자세 = HOME = 영점이어야 하므로 이건 셋 중 하나다:\n"
+                                f"    ① 영점(calib.offset)이 틀어졌다  ② 지그가 HOME 자세가 아니다\n"
+                                f"    ③ 편차가 정상 범위인데 기준이 빡빡하다\n"
+                                f"  ③ 이라고 판단되면 --home-tol 로 올려서 재실행할 것.\n"
+                                f"  모터로 밀어서 맞추지 않는다 — 지그와 싸우게 된다. limp 함.")
                         else:
-                            if a.jig:
-                                _log("  ⚠지그 미설치(자세가 HOME 이 아니다) — 먼저 HOME 으로 "
-                                     "이동한 뒤 지그 설치를 기다린다.")
                             # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
                             #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
                             #   목표에 못 닿는다(중력 4.96Nm / kp40).
@@ -526,7 +548,10 @@ def main() -> int:
                 #   (2026-08-05: 그 상태에서 "순수토크 미지원" 이라는 틀린 결론이 나왔다.
                 #    대조군 — 위치+게인으로 같은 크기 토크를 걸어본 것 — 이 잡아냈다.)
                 print(f"  [{j['name']}] 드라이버 생존 확인…", flush=True)
-                hw.verify_driver_live(ch, kp=float(g["kp"]), kd=float(g["kd"]))
+                # ★게인은 **그 축의 배포값**을 쓴다. 예전엔 g["kp"] 를 읽었는데 spec 에
+                #   gains.kp 가 없어져(축별 hold_kp 로 옮겨감) KeyError 로 죽었다.
+                #   시험축은 지그에 물리지 않으므로 인하 없이 배포값 그대로가 맞다.
+                hw.verify_driver_live(ch, kp=_kp_ch, kd=_kd_ch)
                 print(f"  [{j['name']}] ✓ 파워단 정상 — 시험 시작")
                 if "friction" in tests:
                     html, res = measure_actuator_friction(hw, spec, j, plotdir)

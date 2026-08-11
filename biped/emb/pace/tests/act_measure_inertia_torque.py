@@ -15,9 +15,15 @@
   그러면 `b·q̇_ref` 가 준위마다 **같은 상수**가 되어 τ_c·τ_g 와 함께 절편으로 빠진다:
         τ_i = I · q̈_i|_(q̇=q̇_ref)  +  [b·q̇_ref + τ_c + τ_g]
                                       └── 준위 무관 상수 = 절편 ──┘
-  ⇒ τ 를 q̈ 에 회귀하면 **기울기가 곧 I**. 점성 모델도 마찰 모델도 필요 없다.
+  ★회귀는 반드시 **q̈ 를 τ 에** 한다(x=τ, y=q̈). I = 1/기울기.
+    τ 는 우리가 명령한 값이라 **오차가 없고**, 잡음은 전부 q̈ 에 있다. 반대로 놓으면
+    (x=q̈) errors-in-variables 감쇠로 기울기가 0 쪽으로 눌린다 —
+    합성검증에서 τ_c 산포 12% 일 때 **편향 −19.05%** 였다(올바른 방향은 +1.38%).
 
-★쓰지 않는 방법 셋 (전부 실패를 확인했다):
+★쓰지 않는 방법 넷 (전부 실패를 확인했다):
+  ⓪ **τ 를 q̈ 에 회귀**(x=q̈) — 잡음이 x 축에 있어 감쇠한다. τ_c 산포 12% 에서 −19%.
+     0% 산포에서는 멀쩡해 보여(편향 +0.02%) 합성검증만으로는 안 드러난다.
+     **실기의 지배적 오차원이 마찰 산포**(파단토크 CV 15.6%)라는 걸 알고서야 보였다.
   ① 단순 "τ vs 평균 q̈" — **+20.3% 편향**(합성). 준위가 높을수록 속도가 빨라져
      b·q̇ 손실이 커지고 q̈ 가 눌린다. 그 압축이 기울기를 부풀린다.
   ② 4모수 전역회귀(I·q̈ + b·q̇ + τ_c·sgn + τ_g) — **cond 1e15**. q̈·q̇·sgn 이 전부
@@ -82,6 +88,28 @@ def _ddq_at_speed(t, q, dq, dt, vref_dps: float, skip_s: float,
             "n_win": int(sel.sum()), "v_max": reached}
 
 
+def design_levels(tau_break, I_ch, vref_dps, travel_deg, vel_cap_dps,
+                  skip_s=0.04, half_s=0.05, n=6, u_lo_frac=0.30, margin=0.7):
+    """순토크 u=τ−τ_c 의 가용 구간에서 준위를 자동으로 뽑는다.
+
+    ★축마다 파단토크가 다르므로 상수 준위표는 못 쓴다 — HL 0.674 · HR 0.753 이었고,
+      HL 기준으로 잡은 0.90 은 HR 에겐 파단의 20% 위밖에 안 돼 Stribeck 구간이었다.
+
+    제약 넷 (하나라도 어기면 창이 못 잡히거나 런이 탈락한다):
+      ① 창이 과도구간 뒤:    t_ref = q̇_ref·I/u ≥ skip+half   → u ≤ q̇_ref·I/(skip+half)
+      ② 창 끝이 속도상한 전: v(t_ref+half) ≤ vcap            → u ≤ (vcap−q̇_ref)·I/half
+      ③ q̇_ref 까지 이동이 범위 안:                            → u ≥ q̇_ref²·I/(2·travel·margin)
+      ④ 파단 근처 회피(Stribeck):                             → u ≥ u_lo_frac·τ_c
+    """
+    v = vref_dps * DEG
+    u_hi = min(v * I_ch / (skip_s + half_s),
+               (vel_cap_dps * DEG - v) * I_ch / half_s)
+    u_lo = max(v * v * I_ch / (2 * travel_deg * DEG * margin), u_lo_frac * tau_break)
+    if u_hi <= u_lo:
+        return None, (u_lo, u_hi)
+    return [tau_break + u for u in np.linspace(u_lo, u_hi, n)], (u_lo, u_hi)
+
+
 def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     ch = int(joint["ch"])
     name = joint["name"]
@@ -100,15 +128,57 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
 
     log(f"  [{name}] 관성 측정(공통속도법) — 준위 {levels} Nm · 이동 {travel}° · "
         f"속도상한 {v_cap:.0f}dps · **q̇_ref {vref:.0f}dps**")
-    log(f"           모든 준위에서 **같은 속도**의 q̈ 를 읽는다 ⇒ b·q̇ 가 절편으로 빠지고"
-        f" 기울기가 곧 I")
+    log(f"           모든 준위에서 **같은 속도**의 q̈ 를 읽는다 ⇒ b·q̇ 가 절편으로 빠진다.")
+    log(f"           회귀는 q̈~τ (x=τ 정확·y=q̈ 잡음) 로 한다 — 반대로 놓으면 감쇠한다")
 
-    q_start = hw.read(ch)[0]
+    # ── 준위 자동설계 (측정된 파단토크 기준) ──────────────────────────────
+    tau_break = joint.get("_tau_break")            # torque 시험이 같은 실행에서 채워준다
+    if tau_break and cfg.get("auto_levels", True):
+        I_des = float(I_pred_joint or 0.054) / max(k_gear ** 2, 1e-9)
+        auto, (ulo, uhi) = design_levels(
+            tau_break, I_des, vref, travel, v_cap,
+            skip_s, half_s, int(cfg.get("n_levels", 6)),
+            float(cfg.get("u_lo_frac", 0.30)))
+        if auto:
+            levels = auto
+            log(f"  [{name}] 준위 자동설계 — 파단 {tau_break:.3f} Nm 기준 · "
+                f"순토크 u {ulo:.3f}~{uhi:.3f} (비 {uhi/ulo:.2f})")
+        else:
+            log(f"  [{name}] ⚠준위 자동설계 불가(u 구간 없음 {ulo:.3f}~{uhi:.3f}) — spec 값 사용")
+    elif not tau_break:
+        log(f"  [{name}] ⚠파단토크 미측정 — spec 상수 준위 사용. "
+            f"`--tests torque,inertia` 로 같이 돌리면 자동설계된다")
+
+    # ── 방향별 시작점 — 한계상자 끝에서 출발해 **이동거리를 최대로** ────────
+    #   HOME 에서 양방향으로 가면 각 방향이 상자의 절반밖에 못 쓴다. 방향마다
+    #   반대쪽 끝에서 출발하면 상자 전체를 쓴다(실측 27° → 69°).
+    #   ★런이 짧으면 저τ 준위가 q̇_ref 에 못 닿아 **탈락**하고, 탈락은 τ_c 가 큰 쪽에
+    #     치우쳐 일어나 회귀를 오염시킨다.
+    box = joint.get("_ch_box")
+    M = float(cfg.get("box_margin_deg", 3.0))
+    q_home = hw.read(ch)[0]
+    starts, travels = {}, {}
+    for d in (+1.0, -1.0):
+        if box:
+            lo, hi = box[0] + M, box[1] - M
+            starts[d] = lo if d > 0 else hi
+            travels[d] = min(hi - lo, float(cfg.get("travel_max_deg", 70.0)))
+        else:
+            starts[d] = q_home
+            travels[d] = travel
+    log(f"  [{name}] 방향별 시작 — +{starts[+1.0]:.1f}°(이동 {travels[+1.0]:.0f}°) · "
+        f"−{starts[-1.0]:.1f}°(이동 {travels[-1.0]:.0f}°)")
+
+    n_rep = int(cfg.get("repeats", 1))
     runs = []
     try:
+      for rep in range(n_rep):
+        if n_rep > 1:
+            log(f"  [{name}] ── 반복 {rep+1}/{n_rep} ──")
         for direction in (+1.0, -1.0):
+            q_start, travel_d = starts[direction], travels[direction]
             for tau in levels:
-                hw.goto(ch, q_start, brake_kp, brake_kd, speed_dps=10.0)  # 시작점 복귀
+                hw.goto(ch, q_start, brake_kp, brake_kd, speed_dps=20.0)  # 시작점으로
                 time.sleep(0.3)
                 hw.arm(ch, 0.0, 0.0)                  # kp=kd=0 (게인 램프 0→0, 무해)
                 q0 = hw.read(ch)[0]
@@ -122,7 +192,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                         break
                     s = hw.step_torque(ch, direction * tau, tau_max)
                     T.append(t); Q.append(s.q_deg); V.append(s.dq_dps); TAU.append(s.tau)
-                    if abs(s.q_deg - q0) >= travel:
+                    if abs(s.q_deg - q0) >= travel_d:
                         hit = "이동상한"
                         break
                     if abs(s.dq_dps) >= v_cap:
@@ -144,7 +214,8 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                     log(f"    {sgn} τ={tau:.2f}: ✗ {f1['fail']}  "
                         f"(런 {t[-1]:.3f}s/{len(T)}표본 · {hit})")
                     continue
-                runs.append({"dir": direction, "tau_cmd": tau, "signed_tau": direction * tau,
+                runs.append({"rep": rep, "dir": direction, "tau_cmd": tau,
+                             "signed_tau": direction * tau,
                              "ddq": f1["ddq"], "v_at": f1["v_at"], "t_at": f1["t_at"],
                              "n_win": f1["n_win"], "v_max": f1["v_max"],
                              "travel": float(q[-1]), "stop": hit, "dur": float(t[-1]),
@@ -153,7 +224,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                     f"{f1['ddq']:+7.2f} rad/s²  (t={f1['t_at']:.3f}s · 창표본 {f1['n_win']} · "
                     f"런 {t[-1]:.3f}s · {hit})")
     finally:
-        hw.goto(ch, q_start, brake_kp, brake_kd, speed_dps=10.0)
+        hw.goto(ch, q_home, brake_kp, brake_kd, speed_dps=20.0)   # 끝나면 HOME 으로
 
     res = {"ch": ch, "name": name, "levels": levels, "runs":
            [{kk: vv for kk, vv in r.items() if kk not in ("t", "q", "dq", "tau")}
@@ -169,13 +240,18 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             warn.append(f"{lbl}방향 유효표본 {len(sel)}개 < {MIN_PTS} — 회귀 생략"
                         f"(2점 회귀는 R²=1 이 나오지만 검증력이 없다)")
             continue
-        x = np.array([r["ddq"] * d for r in sel])
-        y = np.array([r["tau_cmd"] for r in sel])
+        # ★x=τ(정확), y=q̈(잡음). I = 1/기울기.  ⚠반대로 놓으면 감쇠한다(모듈 주석 ⓪)
+        x = np.array([r["tau_cmd"] for r in sel])
+        y = np.array([r["ddq"] * d for r in sel])
         A = np.column_stack([x, np.ones_like(x)])
         th, *_ = np.linalg.lstsq(A, y, rcond=None)
+        if abs(th[0]) < 1e-9:
+            warn.append(f"{lbl}방향 기울기 0 — 회귀 불가")
+            continue
         r2 = 1.0 - np.sum((y - A @ th) ** 2) / max(np.sum((y - y.mean()) ** 2), 1e-12)
-        fits[lbl] = {"I_ch": float(th[0]), "intercept": float(th[1]), "r2": float(r2),
-                     "n": len(sel), "cond": float(np.linalg.cond(A))}
+        fits[lbl] = {"I_ch": float(1.0 / th[0]),
+                     "intercept": float(-th[1] / th[0]),   # τ 축 절편 = b·q̇_ref+τ_c+τ_g
+                     "r2": float(r2), "n": len(sel), "cond": float(np.linalg.cond(A))}
         log(f"  [{name}] {lbl}방향: I_ch={th[0]:.5f} kg·m²(채널) · "
             f"절편={th[1]:+.3f} Nm · R²={r2:.4f} · cond={np.linalg.cond(A):.1f} (n={len(sel)})")
     res["fits"] = fits

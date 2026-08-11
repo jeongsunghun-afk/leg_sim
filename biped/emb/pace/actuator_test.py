@@ -597,9 +597,13 @@ def main() -> int:
                     #   리포트에는 안 남았다. 다른 시험은 전부 (html, res) 를 돌려주는데
                     #   이것만 res 만 돌려주는 비대칭이 원인이었다.
                     res = probe_torque_mode(hw, spec, j)
+                    # ★파단토크를 관성시험에 넘긴다 — 준위를 축별로 자동설계하려면
+                    #   그 축 자신의 파단값이 필요하다(HL 0.674 · HR 0.753 로 다르다).
+                    j["_tau_break"] = res.get("tau_break_mean")
                     fragments.append(_torque_html(res))
                     summary.append(("torque", res))
                 if "inertia" in tests:
+                    j["_ch_box"] = box_pin[ch]     # 방향별 시작점 계산용(채널각 한계)
                     html, res = measure_inertia_torque(hw, spec, j, plotdir)
                     fragments.append(html); summary.append(("inertia", res))
                 if "backlash" in tests:

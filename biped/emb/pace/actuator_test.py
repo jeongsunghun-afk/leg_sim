@@ -14,6 +14,15 @@
   python3 actuator_test.py --ch 0 --tests friction,pace
   python3 actuator_test.py --all                  # spec 의 installed_channels 전부
 
+★권장 순서 — **지그를 먼저 물리고 실행한다** (2026-08-11)
+  지그 자세 = HOME = 영점이 같은 자세이므로, 지그를 먼저 설치하면 자세가 이미 HOME 이고
+  시험 전에 **모터를 한 번도 움직이지 않는다**. 매단 로봇에서 이게 가장 안전하다.
+      ① 지그로 홀드축 고정(시험축은 풀어 둘 것) → ② 하니스 실행
+      python3 actuator_test.py --ch 3 --tests torque --jig
+  하니스가 자세를 읽어 HOME 이면 이동을 건너뛰고, 덤으로 **영점 검증**을 보고한다
+  (지그 자세의 모델각은 정의상 전부 0 이어야 한다).
+  지그가 없으면 늘어진 자세에서 HOME 으로 이동한 뒤 지그 설치를 기다린다.
+
 ⚠ 실행 전 확인
   1. Emb 기동 후 5초 경과 (halGait 초기화 게이트 = 100+4500 tick @1kHz).
   2. **모터 명령 writer 는 한 번에 하나만** — app/biped_emb.py, RobotTestGait, mot_test 종료.
@@ -167,6 +176,44 @@ def _gain(v):
     return float(v)
 
 
+def _jig_precheck(hw, jm, tgt_ch, spec: dict, log=print) -> bool:
+    """지금 자세가 이미 HOME 인가? 겸사겸사 **영점 검증**이 된다.
+
+    ★지그 자세 = HOME = 영점이 같은 자세다(사용자 확인, 2026-08-11).
+      그래서 지그를 **먼저** 물려 두면 자세가 이미 HOME 이고, 시험 전에 모터를
+      한 번도 움직일 필요가 없다 — 매단 로봇에서 이게 가장 안전한 순서다.
+      (반대로 지그가 물린 채 goto_all 을 부르면 모터가 지그와 싸운다.)
+
+    ★모델각으로 보고하는 이유 — 지그 자세의 모델각은 **정의상 전부 0** 이어야 한다.
+      여기서 나오는 편차가 곧 영점 오차다. 시험 전에 공짜로 얻는 교정 검증이다.
+    """
+    tol = float(spec.get("safety", {}).get("home_tol_deg", 3.0))
+    q_ch = np.array([hw.read(c)[0] for c in range(hw.n)], float)
+    q_j = np.asarray(jm.ch_to_q_joint(q_ch), float)
+    d_ch = np.array([q_ch[c] - float(tgt_ch[c]) for c in jm.ch])
+    emax = float(np.max(np.abs(d_ch)))
+    at_home = emax <= tol
+    log(f"  자세 확인 — HOME 대비 최대 {emax:.2f}° (판정 기준 {tol}°)")
+    log("    " + "  ".join(f"ch{c}{d_ch[i]:+.2f}" for i, c in enumerate(jm.ch)))
+    if at_home:
+        # 모델각은 전부 0 이어야 한다 — 아니면 영점이 틀어진 것이다.
+        log(f"  ✓ 이미 HOME — **모터 이동 없음**. 영점 검증(모델각, 0 이어야 함):")
+        log("    " + "  ".join(f"{n}{q_j[i]:+.2f}" for i, n in
+                               enumerate(x["name"] for x in
+                                         sorted(spec["joints"], key=lambda y: int(y["ch"])))))
+    return at_home
+
+
+def _jig_lower_gains(hw, spec: dict, log=print) -> None:
+    """지그가 이미 물려 있는 경우 — 대기 없이 홀드게인만 낮춘다."""
+    frac = float(spec.get("safety", {}).get("jig_hold_frac", 0.2))
+    scale = lambda v: ({k: x * frac for k, x in v.items()}
+                       if isinstance(v, dict) else v * frac)
+    hw.hold_kp, hw.hold_kd = scale(hw.hold_kp), scale(hw.hold_kd)
+    hw.check_hold()
+    log(f"  ✓ 지그 물린 상태 확인 — 홀드게인 {frac:.0%} 로 인하(추락 방지용만 남김)")
+
+
 def _jig_engage(hw, spec: dict, hold, joint, log=print) -> None:
     """HOME 정렬 뒤 **지그 설치**를 기다렸다가 홀드게인을 낮춘다.
 
@@ -185,6 +232,8 @@ def _jig_engage(hw, spec: dict, hold, joint, log=print) -> None:
       → 그 미끄러짐은 check_hold() 가 그대로 **지그 슬립 감지기**로 동작해 잡는다.
     """
     frac = float(spec.get("safety", {}).get("jig_hold_frac", 0.2))
+    scale = lambda v: ({k: x * frac for k, x in v.items()}
+                       if isinstance(v, dict) else v * frac)
     log("\n" + "─" * 66)
     log(f"  ★지그 모드 — 지금 자세(HOME)에서 홀드축 {hold} 를 기구적으로 고정할 것.")
     log(f"    설치가 끝나면 홀드게인을 {frac:.0%} 로 낮춘다(추락 방지용만 남김).")
@@ -195,8 +244,6 @@ def _jig_engage(hw, spec: dict, hold, joint, log=print) -> None:
     except (EOFError, KeyboardInterrupt):
         hw.limp()
         raise SystemExit("지그 설치 취소 — limp 함")
-    scale = lambda v: ({k: x * frac for k, x in v.items()}
-                       if isinstance(v, dict) else v * frac)
     hw.hold_kp, hw.hold_kd = scale(hw.hold_kp), scale(hw.hold_kd)
     hw.check_hold()          # 지그 물린 뒤에도 자세가 유지되는지 즉시 확인
     log(f"  ✓ 홀드게인 {frac:.0%} 로 인하 — 이후 check_hold 는 **지그 슬립 감지기**로 동작한다\n")
@@ -436,18 +483,31 @@ def main() -> int:
                         #   시험축도 홀드게인으로 arm 한다(정렬 중엔 시험축도 '홀드' 다).
                         _kp_ch = _kp[ch] if isinstance(_kp, dict) else _kp
                         _kd_ch = _kd[ch] if isinstance(_kd, dict) else _kd
+                        # ★지그가 이미 물려 있으면 자세가 곧 HOME 이다(지그자세=HOME=영점).
+                        #   그때는 **모터를 한 번도 움직이지 않고** 시험에 들어간다.
+                        _log = lambda m: print(f"  [{j['name']}]{m}")
+                        _at_home = _jig_precheck(hw, _jm, _tgt, spec, log=_log)
                         hw.arm(ch, _kp_ch, _kd_ch)
-                        # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
-                        #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
-                        #   목표에 못 닿는다(중력 4.96Nm / kp40).
-                        hw.goto_all(_tgt, kp=_kp, kd=_kd, speed_dps=a.home_speed,
-                                    log=lambda m: print(f"  [{j['name']}]{m}"), q_box=box)
+                        if _at_home:
+                            # 이미 HOME — 모터를 움직이지 않는다. 지그가 물려 있으면
+                            # 움직이려는 시도 자체가 지그와 싸우는 것이다.
+                            if a.jig:
+                                _jig_lower_gains(hw, spec, log=_log)
+                        else:
+                            if a.jig:
+                                _log("  ⚠지그 미설치(자세가 HOME 이 아니다) — 먼저 HOME 으로 "
+                                     "이동한 뒤 지그 설치를 기다린다.")
+                            # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
+                            #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
+                            #   목표에 못 닿는다(중력 4.96Nm / kp40).
+                            hw.goto_all(_tgt, kp=_kp, kd=_kd, speed_dps=a.home_speed,
+                                        log=_log, q_box=box)
+                            if a.jig:
+                                _jig_engage(hw, spec, hold, j)
                         # ★정렬이 끝났으니 한계를 **시험용(좁은)** 으로 조인다.
                         hw.lim = lim_test
                         print(f"  [{j['name']}] 한계 전환 → 시험용 채널각 "
                               f"[{lim_test.q_min:.2f}, {lim_test.q_max:.2f}]")
-                        if a.jig:
-                            _jig_engage(hw, spec, hold, j)
                     except Exception as e:
                         hw.limp()
                         print(f"  ✗ HOME 정렬 실패({type(e).__name__}: {e}) — limp 하고 중단.")

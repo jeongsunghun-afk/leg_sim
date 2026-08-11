@@ -402,6 +402,55 @@ class Hardware:
         return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), kp, kd)
 
     # ── 궤적 실행 ───────────────────────────────────────────────────────────
+    def run_torque(self, ch: int, tau_fn, duration_s: float, tau_max: float,
+                   drift_max_deg: float = 8.0, progress: str | None = None) -> list[Sample]:
+        """★τ_ff 가진 루프 (kp=kd=0). `run` 의 토크판.
+
+        왜 필요한가 — **위치처프는 순환이다.** 드라이버가 돌려주는 τ 가
+        `kp·err + kd·derr` 로 R² 0.97 재구성되므로(지연 10ms 정렬 시), 그 τ 로 회귀하면
+        우리 게인의 그림자를 식별하는 셈이 된다. `kp=kd=0` 이면 재구성할 항이 없고
+        **우리가 넣은 τ_ff 가 곧 입력**이라 순환이 원천 소멸한다.
+
+        ⚠**가진축은 복원력이 0 이다.** 위치제어가 아니므로 τ_ff 가 조금만 틀려도
+          그 방향으로 계속 흘러간다. `_check` 의 추종오차 검사는 여기서 무력이므로
+          **위치 드리프트 워치독**을 따로 둔다 — 시작각 대비 `drift_max_deg` 를 넘으면
+          즉시 중단하고 limp 한다.
+        ⚠중력은 축마다 다르다(HOME 기준): hip 4.96 · thigh 0.33 · calf 0.36 · **foot 0.10** Nm.
+          tau_fn 에 그 상수를 실어야 흘러내리지 않는다. foot 은 사실상 없어도 된다 —
+          그래서 **토크 경로 첫 시험은 foot 이 맞다**.
+        ⚠홀드축은 step_torque 가 계속 잡아 준다(전 채널 무여자로 만들지 않는다).
+        """
+        out: list[Sample] = []
+        q0 = self.read(ch)[0]
+        t0 = time.monotonic()
+        k = 0
+        try:
+            while True:
+                t = time.monotonic() - t0
+                if t >= duration_s:
+                    break
+                smp = self.step_torque(ch, float(tau_fn(t)), tau_max)
+                out.append(smp)
+                if abs(smp.q_deg - q0) > drift_max_deg:
+                    self.limp()
+                    raise SafetyAbort(
+                        f"ch{ch} 위치 드리프트 {smp.q_deg - q0:+.2f}° > {drift_max_deg}° "
+                        f"— τ_ff 가 중력을 못 이기거나 부호가 반대다. limp 함")
+                k += 1
+                if progress and k % max(1, int(1.0 / self.dt)) == 0:
+                    print(f"    {progress} {t:5.1f}/{duration_s:.0f}s "
+                          f"q={smp.q_deg:7.2f}(Δ{smp.q_deg-q0:+5.2f}) tau={smp.tau:6.3f}", flush=True)
+                nxt = t0 + k * self.dt
+                slp = nxt - time.monotonic()
+                if slp > 0:
+                    time.sleep(slp)
+        except SafetyAbort:
+            raise
+        except Exception:
+            self.limp()
+            raise
+        return out
+
     def run(self, ch: int, qcmd_fn, duration_s: float, kp: float, kd: float,
             progress: str | None = None) -> list[Sample]:
         """qcmd_fn(t)->목표각[deg] 를 duration_s 동안 실행하며 샘플을 모은다.

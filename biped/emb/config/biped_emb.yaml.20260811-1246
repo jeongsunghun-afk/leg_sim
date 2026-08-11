@@ -174,13 +174,13 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.01, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -34.25, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -66.06, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.06, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -68.62, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -156.06, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -83.06, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 2.70, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 33.81, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 85.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 2.69, min_deg: -35, max_deg:  35, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 68.78, min_deg: -135, max_deg: 65, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 175.62, min_deg: -62, max_deg:  65, kp: 50, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 86.94, min_deg: -80, max_deg:  62, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
@@ -233,12 +233,10 @@ home:
   #       (b) 그 자세에서 다리가 실제로 몸을 지탱하는지(지금은 공중 매달림 상태)
   #   ⚠jog 안전한계 밖 값을 쓰면 클램프되고 기동 시 경고가 뜬다(calf 는 축별 예외로
   #     jog_min_deg −55 를 줘서 −55 가 한계 안이다).
-  # ★2026-08-11 전축 0 (사용자 지정). 영점을 현재 조립자세(= MJCF 0 자세)로 다시 잡았으므로
-  #   홈 = 기준자세 = 현재 자세다. 즉 HOME 은 다시 "제자리 유지"가 된다.
-  #   ⚠이 등식은 **영점 재측정(calib_zero.py --apply)을 마친 뒤에만** 성립한다. 적용 전에
-  #     제어기를 재시작하면 HOME 목표 0 이 옛 프레임의 0 이라 무릎이 크게 움직인다.
-  #     순서: ① 이 파일 편집 → ② calib_zero.py --apply → ③ 제어기·뷰어 재시작.
-  q_deg: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  # ★foot 목표만 0 (2026-08-10 사용자 지정). 영점(calib.ref_joint_deg)은 그대로 60 이다 —
+  #   영점은 '이 자세를 몇 도라 부를까'(캘리브레이션)이고, 홈은 '어디로 갈까'(목표)라
+  #   서로 달라도 된다. 이제 홈 ≠ 기준자세이므로 HOME 을 누르면 발목이 실제로 움직인다.
+  q_deg: [0.0, 35.0, -60.0, 0.0, 0.0, 35.0, -60.0, 0.0]
   max_speed_dps: 15.0            # 궤적 최대 각속도[deg/s]. jog(20)보다 보수적으로
   max_acc_dps2: 30.0             # 궤적 최대 각가속도[deg/s²]
   min_time_s: 0.6                # 아주 가까운 거리라도 최소 이 시간은 쓴다(순간이동 방지)
@@ -250,17 +248,14 @@ home:
 #   즉 "로봇을 아래 자세에 물리적으로 놓았을 때, 뷰어/GUI 가 이 숫자로 읽혀야 한다".
 #   ⇒ ref 가 0 인 축은 offset 이 곧 **그때의 채널각 그대로**다.
 #
-#   ★2026-08-11 전축 0 으로 변경 (사용자 지정): 현재 조립상태가 **MJCF 모델의 0 자세와
-#     같다**는 판단. 종전 [0,35,−60,60] 은 8/10 시점의 조립/자세를 전제한 값이었다.
-#     ⇒ ref 가 전부 0 이므로 offset_deg 는 **그 자세에서의 채널각 그대로**가 된다.
-#     ⚠calib_zero.py 가 "재현성 실패" 로 thigh(≈35°)·calf(≈90°) 를 찍는데, 그건 자세가
-#       흔들려서가 아니라 **기준자세 정의를 바꿨기 때문**이다(ref 변화량 × sign·k 와 일치).
-#       hip·foot 이 ~0° 차이로 남는지 확인할 것 — 거기가 어긋나면 그건 진짜 자세 변동이다.
-#   ⚠calf·foot 은 드라이버 감속비 오설정(7:1 가정, 실제 10.5/8.4) 축이다. 소프트웨어
-#     gear_k(1.5/1.2)로 보정 중이므로 ref=0 에서 잡은 이 영점은 모델 0° 에서 정확하다.
-#     ⇒ 드라이버 감속비를 고치면 gear_k 를 1 로 되돌리고 **반드시 재측정**할 것.
+#   ★calf 만 −55 인 이유 (2026-08-10): 조립된 실기에서 무릎이 구조적 한계에 닿아 있고,
+#     그 자세가 MJCF 모델각 −55°(= calf 의 min_deg) 에 해당한다. 나머지 축은 그 자세에서
+#     모델각 0° 다.
+#   ⚠calf 는 드라이버 감속비 오설정(7:1 가정, 실제 10.5) 축이라 채널각이 실제의 1.5배다.
+#     이 offset 은 **−55° 그 지점에서만** 정확하고, 모델 0° 부근에선 약 27.5° 틀어진다.
+#     ⇒ 드라이버 감속비를 고친 뒤 **반드시 재측정**할 것. foot(8.4, 1.2배)도 동일 주의.
 calib:
-  ref_joint_deg: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  ref_joint_deg: [0.0, 35.0, -60.0, 60.0, 0.0, 35.0, -60.0, 60.0]
 
 # ── 안전 ────────────────────────────────────────────────────────────────────
 safety:

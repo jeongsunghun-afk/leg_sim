@@ -13,9 +13,10 @@
   ⚠armature/damping/frictionloss 는 **넣지 않는다** — 런타임(apply_gearbox)이 주입한다.
     여기 적으면 이중적용된다. 파이프라인을 바꾸려면 그때 같이 바꿀 것.
 
-⚠**이 스크립트는 MuJoCo 로 검증하지 못한다** — 로봇(Pi)에 mujoco 가 없다.
-  여기서는 XML 구조·메시 존재·관성 양정부호만 확인한다. **실제 로드 검증은 노트북에서**
-  `mj_compile` 또는 `mujoco.MjModel.from_xml_path` 로 반드시 할 것.
+★로드 검증 — Pi 에도 mujoco 를 깔았다(venv ~/.venv-mujoco, aarch64 휠 존재).
+      ~/.venv-mujoco/bin/python -c "import mujoco;mujoco.MjModel.from_xml_path('x.mjcf')"
+  XML 파싱만으로는 못 잡는 것이 실제로 있었다: thigh STL 이 263,287 면이라
+  MuJoCo 상한(200,000)을 넘어 로드 실패했다 → tools/decimate_stl.py 로 감면.
 
 사용:
     python3 tools/urdf_to_mjcf.py <urdf> -o <out.mjcf> [--ranges urdf|legacy|intersect]
@@ -95,7 +96,8 @@ def check_inertia(d, log):
     return not bad, ev
 
 
-def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat", log=print):
+def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat",
+          meshdir_name="meshes", log=print):
     links, joints = load_urdf(urdf_path)
     kids = {}
     for j in joints.values():
@@ -115,7 +117,8 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat", 
     log("    ✓ 전 링크 통과" if ok else "    ★위 항목 확인 필요")
 
     # ── 검증 2: 메시 존재 ───────────────────────────────────────────────
-    meshdir = os.path.join(os.path.dirname(os.path.dirname(urdf_path)), "meshes")
+    # ★MuJoCo 용 감면 메시를 쓴다. 원본(meshes/)은 CAD 비교용으로 보존한다.
+    meshdir = os.path.join(os.path.dirname(os.path.dirname(urdf_path)), meshdir_name)
     names, missing = [], []
     for d in links.values():
         for m in d["meshes"]:
@@ -273,7 +276,9 @@ if __name__ == "__main__":
                     help="관절범위 출처. urdf=새 CAD · legacy=종전 유지 · intersect=교집합(보수적)")
     ap.add_argument("--foot", choices=["flat", "point"], default="flat",
                     help="flat=평발 2점 구(링크메시 시각전용) · point=점발 1점 구(링크메시 충돌체)")
+    ap.add_argument("--meshdir", default="meshes",
+                    help="URDF 패키지 안의 메시 디렉터리명(기본 meshes. MuJoCo 는 meshes_mjcf)")
     ap.add_argument("--base", default=None, help="base 링크 이름(기본: 부모 없는 링크)")
     a = ap.parse_args()
     print(f"URDF → MJCF  (범위: {a.ranges} · 발: {a.foot})")
-    build(a.urdf, a.out, a.ranges, a.base, a.foot)
+    build(a.urdf, a.out, a.ranges, a.base, a.foot, a.meshdir)

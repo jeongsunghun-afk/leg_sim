@@ -520,16 +520,29 @@ class Hardware:
           시절 값이라 hip 중력 4.96Nm 에 **7.1° 처진다**(4.96/40 rad) — 목표에 못 닿는다.
           배포게인(hip100/thigh50/calf50/foot30)을 그대로 쓰는 게 맞다.
         """
-        kpd = isinstance(kp, dict); kdd = isinstance(kd, dict)
         kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
         for c in range(self.n):
             v = float(q_cmd_vec[c])
             self._q_cmd[c] = min(max(v, self.lim.q_min), self.lim.q_max)
-            _kp = float(kp[c]) if kpd else float(kp)
-            _kd = float(kd[c]) if kdd else float(kd)
+            _kp, _kd = self._gain_at(c, kp, kd)
             kp_v[c] = min(max(_kp, 0.0), self.lim.kp_max)
             kd_v[c] = min(max(_kd, 0.0), self.lim.kd_max)
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
+
+    def _gain_at(self, c: int, kp, kd):
+        """채널 c 의 (kp, kd). 스칼라면 그대로, dict 면 **없는 채널은 0**.
+
+        ★없는 채널을 0 으로 두는 게 왜 맞나 — n_channel 은 10 이고 8~9 는 허리다.
+          PACE 는 다리 8축만 다루므로 축별 게인 dict 의 키도 0~7 뿐이다. 예전엔
+          kp[c] 로 바로 찍어 **KeyError: 8 로 죽었다**(2026-08-11 실기).
+          허리를 0 으로 두는 것은 arm() 이 이미 하고 있는 동작과 같다
+          (_hold_gains 는 hold_ch 에만 게인을 준다) — 즉 거동 변화가 없다.
+        ⚠게인 0 인 채널은 goto_all 에서 **목표 이동도 하지 않는다**. 안 그러면
+          나중에 누가 허리에 게인을 넣는 순간 조용히 같이 끌려간다.
+        """
+        _kp = float(kp.get(c, 0.0)) if isinstance(kp, dict) else float(kp)
+        _kd = float(kd.get(c, 0.0)) if isinstance(kd, dict) else float(kd)
+        return _kp, _kd
 
     def goto_all(self, targets_ch, kp, kd,          # kp/kd: 스칼라 또는 {ch: 값}
                  speed_dps: float = 8.0, log=print) -> float:
@@ -546,6 +559,13 @@ class Hardware:
         if tgt.size != self.n:
             raise ValueError(f"targets 길이 {tgt.size} != n_channel {self.n}")
         d = tgt - q0
+        # ★게인 0 인 채널(=허리)은 목표로 끌지 않는다 — 제자리를 명령한다.
+        #   토크가 0 이라 지금은 어차피 안 움직이지만, 명령까지 제자리로 두어야
+        #   나중에 게인이 붙어도 "정렬" 이 허리를 건드리는 일이 없다.
+        idle = [c for c in range(self.n) if self._gain_at(c, kp, kd)[0] <= 0.0]
+        if idle:
+            d[idle] = 0.0
+            log(f"    비구동 채널 {idle} — 제자리 유지(게인 0)")
         dmax = float(np.max(np.abs(d)))
         if dmax < 0.05:
             log(f"    이미 목표 자세(최대 편차 {dmax:.3f}°) — 이동 생략")
@@ -566,11 +586,13 @@ class Hardware:
             time.sleep(1.0 / self.rate)
         t_settle = time.perf_counter()
         while time.perf_counter() - t_settle < 0.5:      # 정착
-            self._raw_write_all(tgt, kp, kd)
+            self._raw_write_all(q0 + d, kp, kd)          # tgt 아님 — 비구동 채널 제자리 유지
             time.sleep(1.0 / self.rate)
-        err = np.array([self.read(c)[0] for c in range(self.n)]) - tgt
-        log(f"    도착 — 최대 추종오차 {np.max(np.abs(err)):.2f}° "
-            f"({', '.join(f'ch{c}{err[c]:+.1f}' for c in range(self.n))})")
+        # 추종오차는 **구동한 채널만** 본다. 비구동 채널은 tgt 와 다른 게 정상이다.
+        drv = [c for c in range(self.n) if c not in idle]
+        err = np.array([self.read(c)[0] for c in range(self.n)]) - (q0 + d)
+        log(f"    도착 — 최대 추종오차 {np.max(np.abs(err[drv])):.2f}° "
+            f"({', '.join(f'ch{c}{err[c]:+.1f}' for c in drv)})")
         return T
 
     def goto(self, ch: int, q_target_deg: float, kp: float, kd: float,

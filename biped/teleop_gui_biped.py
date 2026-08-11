@@ -186,12 +186,13 @@ def jog_zero():                       # 전체 0(home)
 #
 #   ⚠**RESET 버튼을 덮어쓰지 않았다.** RESET 은 이미 `jogger.reset(q_leg)` → HOLD 라는
 #     안전 동작을 한다(jog 램프를 실측각으로 재시드해 점프를 막는다). 그걸 잃으면 안 된다.
-#   ⚠**RobotEmbedded 는 여기서 못 띄운다** — root 권한(EtherCAT raw socket)이 필요하다.
-#     한 번만 아래를 해 두면 sudo 없이 띄울 수 있고, 그때 이 함수도 확장하면 된다:
-#       sudo setcap cap_net_raw,cap_net_admin+eip ~/ZSource/RobotEmbedded/build/src/RobotEmbedded
-#     그 전까지는 **살아있는지 검사만** 하고 죽었으면 명령어를 안내한다.
+#   ★RobotEmbedded 도 띄운다(2026-08-11) — setcap 이 적용돼 일반 사용자로 실행된다:
+#       cap_net_admin,cap_net_raw=eip   (getcap 으로 확인)
+#     SHM 세그먼트는 root 소유지만 perms 666 이라 비루트 attach 에 문제가 없다.
+#     죽어 있을 때만 띄우고, 살아 있으면 건드리지 않는다.
 #   ⚠두 번 눌러야 실행된다(오조작 방지) — 프로세스를 띄우고 모터를 물리는 동작이다.
 _EMB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
+_EMB_BIN = os.path.expanduser('~/ZSource/RobotEmbedded/build/src/RobotEmbedded')
 _restart_armed = [0.0]
 
 
@@ -229,12 +230,30 @@ def _restart_worker():
         except Exception:
             pass
 
-    # ★RobotEmbedded 는 `sudo ./src/RobotEmbedded` 로 뜨므로 명령줄이 'sudo' 로 시작한다.
-    #   prefix 매칭으로는 못 잡는다 ⇒ 프로세스 **이름**으로 찾는다(pgrep -x 와 동일).
+    # ★RobotEmbedded 검출은 프로세스 **이름**으로 한다 — 명령줄 prefix 로는 `sudo ./src/...`
+    #   형태를 못 잡는다(처음에 그렇게 짰다가 실기에서 빈 배열이 나와 발견).
     if not _pgrep_x('RobotEmbedded'):
-        say('✗ RobotEmbedded 가 죽어 있다 — 터미널에서: '
-            'cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded')
-        return
+        # ★setcap 이 돼 있어 **일반 사용자로 띄울 수 있다**(2026-08-11 확인):
+        #     cap_net_admin,cap_net_raw=eip  ·  SHM perms 666 이라 비루트 attach 도 된다.
+        #   그 전에는 sudo 가 필요해 GUI 에서 못 띄웠다.
+        if not os.path.exists(_EMB_BIN):
+            say(f'✗ RobotEmbedded 바이너리가 없다: {_EMB_BIN}'); return
+        say('RobotEmbedded 기동 중 …')
+        try:
+            subprocess.Popen(['./src/RobotEmbedded'], cwd=os.path.dirname(os.path.dirname(_EMB_BIN)),
+                             stdout=open('/tmp/robotembedded.log', 'w'),
+                             stderr=subprocess.STDOUT, start_new_session=True)
+        except Exception as e:
+            say(f'✗ RobotEmbedded 기동 실패: {e} — setcap 확인'); return
+        # 초기화 게이트: halGait 는 수신 100틱 + 램프 4500틱 @1kHz ≈ 4.6초 동안 SHM 명령을
+        # 무시한다. 그 전에 제어기를 붙이면 첫 명령이 버려진다 ⇒ 충분히 기다린다.
+        for i in range(80):
+            time.sleep(0.1)
+            if not _pgrep_x('RobotEmbedded'):
+                say('✗ RobotEmbedded 가 곧바로 죽었다 — /tmp/robotembedded.log 확인'); return
+            if i * 0.1 > 6.0:
+                break
+        say('RobotEmbedded 준비됨(초기화 게이트 6s 대기 완료)')
 
     old = _proc_pids('python3 app/biped_emb.py')
     if old:

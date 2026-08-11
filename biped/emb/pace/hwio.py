@@ -333,6 +333,23 @@ class Hardware:
                 raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "
                                   f"{self.lim.vel_trip} — 잡혀 있지 않다")
 
+    def release_test_axis(self, ch: int, n_write: int = 5) -> None:
+        """**시험축만** 무여자로. 홀드축은 계속 잡아둔다.
+
+        ★왜 limp() 를 못 쓰나 (2026-08-11) — limp 는 전 채널 kp=kd=0 이다. 다리가
+          없을 땐 그게 곧 '안전' 이었지만, 지금은 매단 다리가 **통째로 떨어진다**.
+          HOME 으로 정렬해 놓고 limp 하면 그 자리에서 다시 늘어져 충돌 자세로 돌아간다.
+          시험 사이의 '해제' 는 시험축만 푸는 것이 맞다.
+        ⚠최종 종료는 여전히 limp 다 — 그때는 사람이 붙어 있고, 매단 상태에서 계속
+          토크를 물고 있는 것이 더 위험하다.
+        """
+        if not self.hold_ch:
+            self.limp()
+            return
+        for _ in range(n_write):
+            self._raw_write(ch, float(self._q[ch]), 0.0, 0.0)
+            time.sleep(self.dt)
+
     def verify_driver_live(self, ch: int, kp: float = 40.0, kd: float = 2.0,
                            step_deg: float = 2.0, tau_floor: float = 0.15,
                            move_floor_deg: float = 0.05) -> None:
@@ -356,7 +373,7 @@ class Hardware:
             s = self.step(ch, tgt, kp, kd)
             time.sleep(self.dt)
         moved = (s.q_deg - q0) * (1 if step_deg > 0 else -1)
-        self.limp()
+        self.release_test_axis(ch)
         if abs(s.tau) < tau_floor or moved < move_floor_deg:
             raise SafetyAbort(
                 f"드라이버 미응답 — {step_deg:+.1f}° 명령(kp={kp:.0f})에 "
@@ -513,7 +530,7 @@ class Hardware:
                 "tau": np.array(taus), "tau_base": tau_b, "tau_base_sd": tau_sd,
                 "q0": q0, "delta": delta_deg}
 
-    def _raw_write_all(self, q_cmd_vec, kp, kd) -> None:
+    def _raw_write_all(self, q_cmd_vec, kp, kd, q_box=None) -> None:
         """전 채널을 **동시에** 구동. goto_all 전용. kp/kd 는 스칼라 또는 {ch: 값}.
 
         ★축별 dict 를 받는 이유: 스칼라 하나로는 못 맞춘다. spec 의 kp 40 은 다리 미장착
@@ -523,7 +540,15 @@ class Hardware:
         kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
         for c in range(self.n):
             v = float(q_cmd_vec[c])
-            self._q_cmd[c] = min(max(v, self.lim.q_min), self.lim.q_max)
+            # ★채널마다 한계가 다르다. self.lim 은 **시험축** 한계이므로 다축 경로에
+            #   그걸 쓰면 안 된다 — 2026-08-11 에 foot 의 [−40,30] 이 전 채널에 적용돼
+            #   calf/foot 목표가 최대 57° 잘려나갔다(예외 없이 조용히).
+            #   q_box 가 없으면 클램프하지 않는다: 여기서 잘못 자르는 것이
+            #   안 자르는 것보다 위험하고, 트립(토크·속도·추종오차)이 따로 있다.
+            if q_box is not None and c in q_box:
+                blo, bhi = q_box[c]
+                v = min(max(v, blo), bhi)
+            self._q_cmd[c] = v
             _kp, _kd = self._gain_at(c, kp, kd)
             kp_v[c] = min(max(_kp, 0.0), self.lim.kp_max)
             kd_v[c] = min(max(_kd, 0.0), self.lim.kd_max)
@@ -545,7 +570,8 @@ class Hardware:
         return _kp, _kd
 
     def goto_all(self, targets_ch, kp, kd,          # kp/kd: 스칼라 또는 {ch: 값}
-                 speed_dps: float = 8.0, log=print) -> float:
+                 speed_dps: float = 8.0, log=print, q_box=None,
+                 tol_deg: float = 5.0) -> float:
         """전 채널을 목표 채널각으로 **동시에** S-curve 이동. 소요시간[s] 반환.
 
         ★왜 다축 동시인가 — 한 축씩 옮기면 중간 자세가 설계에 없는 형상이 되고,
@@ -554,6 +580,14 @@ class Hardware:
           (다리 장착) 지금은 그 순간 토크가 튄다. 5차식은 양 끝 가속도가 0 이다.
         ⚠이 함수는 **측정 전 자세 정렬 전용**이다. 측정 자체는 시험축만 구동한다.
         """
+        # ★enable 이 안 된 상태로 부르면 **아무 일도 안 일어난다**. shm_bridge.cpp:109-113 은
+        #   g_enabled=0 이면 kp/kd/tau 를 0 으로, 위치를 g_last_q 로 덮어쓴다. 그런데 이
+        #   함수는 도착오차를 로그로만 남기므로 "정렬 실패" 가 조용히 지나간다 —
+        #   충돌 회피가 목적인 정렬에서 그건 곧 충돌한 자세로 시험이 시작된다는 뜻이다.
+        if not self._armed:
+            raise RuntimeError(
+                "goto_all 전에 arm() 을 호출할 것 — enable 없이 쓰면 SHM 에 kp=kd=0 이 나가"
+                "모터가 전혀 움직이지 않는데 이 함수는 그걸 예외로 만들지 않는다.")
         q0 = np.array([self.read(c)[0] for c in range(self.n)], float)
         tgt = np.array([float(x) for x in targets_ch], float)
         if tgt.size != self.n:
@@ -577,22 +611,33 @@ class Hardware:
             t = time.perf_counter() - t0
             tau = min(t / T, 1.0)
             sfac = tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
-            self._raw_write_all(q0 + d * sfac, kp, kd)
+            self._raw_write_all(q0 + d * sfac, kp, kd, q_box)
             for c in range(self.n):                      # 트립 감시(전 축)
                 q, dq, tq, _ = self.read(c)
                 self._check(c, q, dq, tq, float(self._q_cmd[c]))
             if tau >= 1.0:
                 break
-            time.sleep(1.0 / self.rate)
+            time.sleep(self.dt)          # self.rate 는 없다 — 주기는 dt
         t_settle = time.perf_counter()
         while time.perf_counter() - t_settle < 0.5:      # 정착
-            self._raw_write_all(q0 + d, kp, kd)          # tgt 아님 — 비구동 채널 제자리 유지
-            time.sleep(1.0 / self.rate)
+            self._raw_write_all(q0 + d, kp, kd, q_box)  # tgt 아님 — 비구동 채널 제자리 유지
+            time.sleep(self.dt)          # self.rate 는 없다 — 주기는 dt
         # 추종오차는 **구동한 채널만** 본다. 비구동 채널은 tgt 와 다른 게 정상이다.
         drv = [c for c in range(self.n) if c not in idle]
         err = np.array([self.read(c)[0] for c in range(self.n)]) - (q0 + d)
-        log(f"    도착 — 최대 추종오차 {np.max(np.abs(err[drv])):.2f}° "
+        emax = float(np.max(np.abs(err[drv])))
+        log(f"    도착 — 최대 추종오차 {emax:.2f}° "
             f"({', '.join(f'ch{c}{err[c]:+.1f}' for c in drv)})")
+        # ★도착을 **검사**한다. 로그만 남기면 정렬 실패가 조용히 지나가고, 그 다음 시험이
+        #   엉뚱한(=충돌한) 자세에서 시작된다. 중력 처짐(hip 2.8° @kp100)은 정상이므로
+        #   tol 은 그보다 넉넉히 잡되, 못 닿은 것과 구분은 되게 둔다.
+        if emax > tol_deg:
+            self.limp()
+            raise SafetyAbort(
+                f"자세 정렬 실패 — 최대 오차 {emax:.2f}° > {tol_deg}°. limp 함.\n"
+                f"  ({', '.join(f'ch{c}{err[c]:+.2f}' for c in drv)})\n"
+                f"  게인 부족·파워단 래치오프·기구 간섭 중 하나다. 자세를 못 맞추면 "
+                f"시험은 의미가 없고 위험하다.")
         return T
 
     def goto(self, ch: int, q_target_deg: float, kp: float, kd: float,

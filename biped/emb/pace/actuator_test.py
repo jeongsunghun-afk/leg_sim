@@ -167,6 +167,107 @@ def _gain(v):
     return float(v)
 
 
+def _jointmap():
+    """emb 의 JointMap 을 그대로 쓴다 — 환산식을 여기 복사하지 않는다."""
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
+    from joint_map import JointMap
+    cfg = yaml.safe_load(open(os.path.join(os.path.dirname(HERE),
+                                           "config", "biped_emb.yaml")))
+    return JointMap(cfg), cfg
+
+
+_BOX_CACHE: dict = {}
+
+
+def _mech_limit_box() -> dict:
+    """**기구 한계**(biped_emb.yaml joints.min_deg/max_deg, 모델각) → 채널각 상자.
+
+    ★spec 의 q_min/q_max 와 목적이 다르다:
+        spec       = 시험 중 여기 진폭의 **보수적 여유폭**(hip ±20 등)
+        biped_emb  = 실제로 갈 수 있는 **기구 한계**(hip ±35 등)
+      자세 정렬은 늘어진 자세에서 출발하는데, 그 자세는 시험 여유폭 밖이다:
+        늘어진 calf 는 모델각 −53/−46° 로 spec 의 ±40 을 넘는다.
+      정렬에 spec 상자를 쓰면 arm 이 곧바로 '위치 한계 이탈' 로 트립한다.
+      ⇒ 정렬 구간은 기구 한계, 시험 구간은 spec 한계. 상자를 **두 개** 쓴다.
+    """
+    if "mech" in _BOX_CACHE:
+        return _BOX_CACHE["mech"]
+    jm, cfg = _jointmap()
+    js = sorted(cfg["joints"], key=lambda x: int(x["channel"]))
+    lo_j = np.array([float(x["min_deg"]) for x in js])
+    hi_j = np.array([float(x["max_deg"]) for x in js])
+    n = len(js)
+    lo = np.full(jm.n_channel, np.inf)
+    hi = np.full(jm.n_channel, -np.inf)
+    for m in range(1 << n):
+        qj = np.where([(m >> i) & 1 for i in range(n)], hi_j, lo_j)
+        v = np.asarray(jm.q_joint_to_ch(qj), float)
+        lo = np.minimum(lo, v)
+        hi = np.maximum(hi, v)
+    box = {int(x["channel"]): (float(lo[int(x["channel"])]), float(hi[int(x["channel"])]))
+           for x in js}
+    _BOX_CACHE["mech"] = box
+    return box
+
+
+def _ch_limit_box(spec: dict, pin_home: bool = False) -> dict:
+    """spec.joints 의 q_min/q_max(=**모델각** 여유폭) → **채널각** 한계상자.
+
+    ★왜 필요한가 — 2026-08-11 발견, **예외 없이 조용히 틀리는** 버그였다.
+      이 하니스는 SHM 을 직접 읽고 쓴다. 즉 hwio 가 다루는 q 는 전부 **채널각**이다.
+      그런데 spec 의 q_min/q_max 는 홈 주변 **모델각** 여유폭으로 적혀 있다.
+      영점 재교정 전에는 offset≈0·k=1 이라 두 값이 사실상 같아서 구분이 안 드러났다.
+      지금은 calf/foot 의 offset 이 −66.6/−83.3 이고 gear_k 도 1.5/1.2 다. 그대로 쓰면:
+          ch2 목표 −66.56 → [−40, 40] 로 잘려 −40.00  (26.6° 어긋남)
+          ch3 목표 −83.25 → [−40, 30] 로 잘려 −40.00  (43.2° 어긋남)
+          ch6 목표 +85.69 → [−40, 40] 로 잘려 +40.00  (45.7° 어긋남)
+          ch7 목표 +87.00 → [−40, 30] 로 잘려 +30.00  (57.0° 어긋남)
+      HOME 정렬이 **엉뚱한 자세로 가 놓고 성공했다고 보고**한다. 충돌 회피가 목적인
+      정렬이 그 자체로 위험해지는 형태다.
+
+    ⚠커플링 때문에 foot 의 채널각은 calf **모델각**에도 의존한다 → 상자의 상은 상자가
+      아니다. 여기서는 꼭짓점 2^8 전수의 상을 감싸는 최소상자를 쓴다. 즉 **바깥쪽으로
+      보수적**이다 — 정당한 명령을 잘못 자르지 않는 쪽. 폭주 방어는 q 상자가 아니라
+      토크·속도·추종오차·드리프트 트립이 맡는다.
+
+    pin_home=True — 다른 축을 **HOME 에 고정**한 채 그 축만 범위를 훑는다.
+      이게 **시험 중 실제 조건**이다(홀드축은 잡혀 있다). 커플링 여유가 안 붙어
+      상자가 훨씬 좁고, 그만큼 위치한계 트립이 실제로 일을 한다.
+      예: HL_foot 은 합집합이면 [−167.25, 12.75](폭 180°)인데 pin 하면
+      [−119.25, −35.25](폭 84° = 모델각 70° × gear_k 1.2) — 합집합 쪽은 폭이 커플링
+      여유(=calf 120°)에 먹혀 위치보호가 사실상 무력해진다.
+      다축 이동(goto_all)은 소스축이 **움직이므로** pin 을 쓰면 안 된다.
+    """
+    key = (id(spec), bool(pin_home))
+    if key in _BOX_CACHE:
+        return _BOX_CACHE[key]
+    jm, cfg = _jointmap()
+    js = sorted(spec["joints"], key=lambda x: int(x["ch"]))
+    lo_j = np.array([float(x["q_min"]) for x in js])
+    hi_j = np.array([float(x["q_max"]) for x in js])
+    n = len(js)
+    lo = np.full(jm.n_channel, np.inf)
+    hi = np.full(jm.n_channel, -np.inf)
+    if pin_home:
+        home = np.array([float(x) for x in cfg["home"]["q_deg"]])
+        for i in range(n):                        # 축 하나만 훑고 나머지는 HOME
+            for e in (lo_j[i], hi_j[i]):
+                qj = home.copy(); qj[i] = e
+                v = np.asarray(jm.q_joint_to_ch(qj), float)
+                lo[js[i]["ch"]] = min(lo[js[i]["ch"]], v[js[i]["ch"]])
+                hi[js[i]["ch"]] = max(hi[js[i]["ch"]], v[js[i]["ch"]])
+    else:
+        for m in range(1 << n):                   # 꼭짓점 전수
+            qj = np.where([(m >> i) & 1 for i in range(n)], hi_j, lo_j)
+            v = np.asarray(jm.q_joint_to_ch(qj), float)
+            lo = np.minimum(lo, v)
+            hi = np.maximum(hi, v)
+    box = {int(js[i]["ch"]): (float(lo[js[i]["ch"]]), float(hi[js[i]["ch"]]))
+           for i in range(n)}
+    _BOX_CACHE[key] = box
+    return box
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="액추에이터 마찰/PACE 자동시험")
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
@@ -215,18 +316,30 @@ def main() -> int:
                 f"✗ ch{ch}({jmap[ch]['name']}) 는 meta.installed_channels{sorted(installed)} 에 "
                 f"없다 — 미장착 축이다. 장착 후 spec.yaml 을 갱신할 것.")
         j = jmap[ch]
-        lim = Limits(q_min=float(j["q_min"]), q_max=float(j["q_max"]),
-                     tau_trip=float(sf["tau_trip_nm"]), tau_trip_ms=float(sf["tau_trip_ms"]),
-                     vel_trip=float(sf["vel_trip_dps"]), err_max=float(sf["err_max_deg"]),
-                     stale_ms=float(sf["stale_ms"]),
-                     kp_max=float(g["kp_max"]), kd_max=float(g["kd_max"]))
-        print(f"\n{'='*70}\n{j['name']} (ch{ch})  한계 q∈[{j['q_min']},{j['q_max']}]deg "
-              f"τ_trip={sf['tau_trip_nm']}Nm\n{'='*70}")
+        # ★모델각 한계 → 채널각 한계. 두 상자를 쓴다:
+        #   box      — 소스축이 움직이는 다축 이동(goto_all)용. 합집합이라 넉넉하다.
+        #   box_pin  — 시험축용. 홀드축이 HOME 에 잡혀 있는 **실제 시험 조건**이라 좁다.
+        box = _mech_limit_box()                   # 정렬 구간 — 늘어진 자세를 포함해야 한다
+        box_pin = _ch_limit_box(spec, pin_home=True)
+        lo, hi = box_pin[ch]
+        _mk = lambda a, b: Limits(
+            q_min=a, q_max=b,
+            tau_trip=float(sf["tau_trip_nm"]), tau_trip_ms=float(sf["tau_trip_ms"]),
+            vel_trip=float(sf["vel_trip_dps"]), err_max=float(sf["err_max_deg"]),
+            stale_ms=float(sf["stale_ms"]),
+            kp_max=float(g["kp_max"]), kd_max=float(g["kd_max"]))
+        lim_align = _mk(*box[ch])                 # 정렬용(기구 한계)
+        lim_test = _mk(lo, hi)                    # 시험용(spec 여유폭, 홀드축 HOME 고정 기준)
+        lim = lim_align                           # ★정렬을 먼저 하므로 느슨한 쪽으로 시작
+        print(f"\n{'='*70}\n{j['name']} (ch{ch})  한계 모델각∈[{j['q_min']},{j['q_max']}] "
+              f"→ **채널각**∈[{lo:.2f},{hi:.2f}]deg  τ_trip={sf['tau_trip_nm']}Nm\n{'='*70}")
 
         # ★시험축 외 홀드 대상 = 실장된 채널 − 시험축. 다리 조립 후 필수(spec.safety 주석 참조).
         hold = sorted(installed - {ch}) if bool(sf.get("hold_others", False)) else []
+        # ★hold 가 비어도 정의해 둔다 — HOME 정렬이 이 값을 쓴다(예전엔 if 안에 있어서
+        #   hold_others=false 면 NameError 였다).
+        _kp, _kd = _gain(sf.get("hold_kp", 40.0)), _gain(sf.get("hold_kd", 2.0))
         if hold:
-            _kp, _kd = _gain(sf.get("hold_kp", 40.0)), _gain(sf.get("hold_kd", 2.0))
             _fmt = (lambda g: "축별 " + " ".join(f"ch{c}:{g[c]:g}" for c in sorted(g))
                     if isinstance(g, dict) else f"{g:g}")
             print(f"  [{j['name']}] 홀드축 {hold} 를 측정위치에 고정\n"
@@ -253,26 +366,48 @@ def main() -> int:
                 #     (sign·gear_k·offset·커플링·±180 포화가 전부 반영돼야 한다).
                 if not a.no_home:
                     try:
-                        import sys as _sys
-                        _sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
-                        import yaml as _yaml
-                        from joint_map import JointMap as _JM
-                        _c = _yaml.safe_load(open(os.path.join(os.path.dirname(HERE),
-                                                               "config", "biped_emb.yaml")))
-                        _jm = _JM(_c)
+                        _jm, _c = _jointmap()
                         _tgt = _jm.q_joint_to_ch([float(x) for x in _c["home"]["q_deg"]])
                         print(f"  [{j['name']}] HOME 정렬 — 목표 채널각 "
-                              f"{[round(float(_tgt[ch]), 2) for ch in _jm.ch]}")
+                              f"{[round(float(_tgt[c]), 2) for c in _jm.ch]}")
+                        # ★목표가 채널각 한계 안에 있는지 **먼저** 확인한다. 예전엔 시험축
+                        #   한계(foot [−40,30])가 전 채널에 적용돼 목표가 최대 57° 잘려도
+                        #   조용히 "도착" 했다. 이제는 상자를 채널별로 넘기고, 그래도 밖이면
+                        #   자르지 말고 **멈춘다** — 자세를 못 맞추면 시험할 이유가 없다.
+                        _bad = [(c, float(_tgt[c]), box[c]) for c in _jm.ch
+                                if c in box and not (box[c][0] - 1e-6 <= _tgt[c] <= box[c][1] + 1e-6)]
+                        if _bad:
+                            raise SystemExit(
+                                "HOME 목표가 채널각 한계 밖이다 — spec.joints 의 q_min/q_max"
+                                "(모델각) 또는 calib 을 확인할 것:\n" + "\n".join(
+                                    f"    ch{c}: 목표 {t:+.2f}° ∉ [{b[0]:.2f}, {b[1]:.2f}]"
+                                    for c, t, b in _bad))
+                        # ★arm 이 먼저다 — enable 없이 goto_all 을 부르면 SHM 에 kp=kd=0 이
+                        #   나가(shm_bridge.cpp:112) 모터가 전혀 안 움직인다.
+                        #   시험축도 홀드게인으로 arm 한다(정렬 중엔 시험축도 '홀드' 다).
+                        _kp_ch = _kp[ch] if isinstance(_kp, dict) else _kp
+                        _kd_ch = _kd[ch] if isinstance(_kd, dict) else _kd
+                        hw.arm(ch, _kp_ch, _kd_ch)
                         # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
                         #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
                         #   목표에 못 닿는다(중력 4.96Nm / kp40).
                         hw.goto_all(_tgt, kp=_kp, kd=_kd, speed_dps=a.home_speed,
-                                    log=lambda m: print(f"  [{j['name']}]{m}"))
+                                    log=lambda m: print(f"  [{j['name']}]{m}"), q_box=box)
+                        # ★정렬이 끝났으니 한계를 **시험용(좁은)** 으로 조인다.
+                        hw.lim = lim_test
+                        print(f"  [{j['name']}] 한계 전환 → 시험용 채널각 "
+                              f"[{lim_test.q_min:.2f}, {lim_test.q_max:.2f}]")
                     except Exception as e:
                         hw.limp()
                         print(f"  ✗ HOME 정렬 실패({type(e).__name__}: {e}) — limp 하고 중단.")
                         print(f"    자세를 모르면 충돌 상태에서 시험이 시작될 수 있다.")
                         raise
+                else:
+                    # ★--no-home 이면 자세를 모른다 → 한계를 조이면 지금 자리가 이미
+                    #   시험상자 밖일 수 있다. 느슨한 기구한계를 유지하고 그 사실을 알린다.
+                    print(f"  [{j['name']}] ⚠--no-home — 자세 정렬을 건너뛴다. "
+                          f"한계는 기구값 [{lim_align.q_min:.2f}, {lim_align.q_max:.2f}] 유지.\n"
+                          f"    늘어진 자세면 링크가 간섭한 상태일 수 있다(실측 −22mm).")
 
                 # ★모든 시험 앞에서 파워단 생존을 확인한다. 텔레메트리 신선도(stale 검사)
                 #   만으로는 부족하다 — EtherCAT·Emb·값갱신이 전부 정상인데 드라이버

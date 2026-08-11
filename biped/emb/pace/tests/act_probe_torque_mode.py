@@ -64,7 +64,11 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
                     tau_at_move = abs(tau_cmd); moved = True
                     break                       # ★즉시 중단 → 다음 줄에서 토크 0
                 time.sleep(hw.dt)
-            hw.limp()
+            # ★limp() 가 아니라 시험축만 푼다 (2026-08-11).
+            #   limp 는 **전 채널** kp=kd=0 이라 홀드축까지 놓는다. 다리가 없던 시절엔
+            #   그게 곧 안전이었지만 지금은 매단 다리가 떨어진다. 지그가 물려 있으면
+            #   안 떨어지지만, 지그 없이 --tests torque 를 돌리면 시행마다 다리가 주저앉는다.
+            hw.release_test_axis(ch)
             time.sleep(0.4)
             a = np.array(traj) if traj else np.zeros((1, 5))
             raw.append(a)                       # ★원시 궤적 보존(아래서 npz 로 저장)

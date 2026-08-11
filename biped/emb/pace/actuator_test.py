@@ -172,6 +172,9 @@ def main() -> int:
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
     ap.add_argument("--ch", type=int, action="append", help="시험할 SHM 채널(반복 가능)")
     ap.add_argument("--all", action="store_true", help="spec 의 installed_channels 전부")
+    ap.add_argument("--no-home", action="store_true",
+                    help="시험 전 HOME 정렬을 생략한다(권장하지 않음 — 아래 사유)")
+    ap.add_argument("--home-speed", type=float, default=8.0, help="HOME 이동 속도[deg/s]")
     ap.add_argument("--tests", default="friction",
                 help="friction,torque,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
@@ -239,6 +242,38 @@ def main() -> int:
                       hold_kp=_gain(sf.get("hold_kp", 40.0)),
                       hold_kd=_gain(sf.get("hold_kd", 2.0))) as hw:
             try:
+                # ── ★HOME 정렬 (2026-08-11 추가) ─────────────────────────
+                #   왜 필요한가 — 실기에서 바로 걸렸다:
+                #     제어기를 끄면 다리가 **무여자로 늘어진다**. 하니스는 그 늘어진 자세를
+                #     그대로 잡으므로 시험이 **충돌 상태에서 시작**한다.
+                #     실측: 늘어진 자세에서 두 발 구가 22mm 파고든 상태였다
+                #           (HL_sphere ↔ HR_sphere dist −0.0223). HOME 에서는 충돌 0.
+                #   ⇒ arm 직후 **전 축을 HOME 으로 동시 이동**한 뒤 시험을 시작한다.
+                #     목표 채널각은 JointMap 으로 뽑는다 — 수식을 여기 복사하지 않는다
+                #     (sign·gear_k·offset·커플링·±180 포화가 전부 반영돼야 한다).
+                if not a.no_home:
+                    try:
+                        import sys as _sys
+                        _sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
+                        import yaml as _yaml
+                        from joint_map import JointMap as _JM
+                        _c = _yaml.safe_load(open(os.path.join(os.path.dirname(HERE),
+                                                               "config", "biped_emb.yaml")))
+                        _jm = _JM(_c)
+                        _tgt = _jm.q_joint_to_ch([float(x) for x in _c["home"]["q_deg"]])
+                        print(f"  [{j['name']}] HOME 정렬 — 목표 채널각 "
+                              f"{[round(float(_tgt[ch]), 2) for ch in _jm.ch]}")
+                        # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
+                        #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
+                        #   목표에 못 닿는다(중력 4.96Nm / kp40).
+                        hw.goto_all(_tgt, kp=_kp, kd=_kd, speed_dps=a.home_speed,
+                                    log=lambda m: print(f"  [{j['name']}]{m}"))
+                    except Exception as e:
+                        hw.limp()
+                        print(f"  ✗ HOME 정렬 실패({type(e).__name__}: {e}) — limp 하고 중단.")
+                        print(f"    자세를 모르면 충돌 상태에서 시험이 시작될 수 있다.")
+                        raise
+
                 # ★모든 시험 앞에서 파워단 생존을 확인한다. 텔레메트리 신선도(stale 검사)
                 #   만으로는 부족하다 — EtherCAT·Emb·값갱신이 전부 정상인데 드라이버
                 #   파워단만 래치오프된 상태가 실재하고, 그 상태의 측정은 전부 무효다.

@@ -513,18 +513,25 @@ class Hardware:
                 "tau": np.array(taus), "tau_base": tau_b, "tau_base_sd": tau_sd,
                 "q0": q0, "delta": delta_deg}
 
-    def _raw_write_all(self, q_cmd_vec, kp: float, kd: float) -> None:
-        """전 채널을 **동시에** 구동. goto_all 전용."""
-        kp = min(max(kp, 0.0), self.lim.kp_max)
-        kd = min(max(kd, 0.0), self.lim.kd_max)
+    def _raw_write_all(self, q_cmd_vec, kp, kd) -> None:
+        """전 채널을 **동시에** 구동. goto_all 전용. kp/kd 는 스칼라 또는 {ch: 값}.
+
+        ★축별 dict 를 받는 이유: 스칼라 하나로는 못 맞춘다. spec 의 kp 40 은 다리 미장착
+          시절 값이라 hip 중력 4.96Nm 에 **7.1° 처진다**(4.96/40 rad) — 목표에 못 닿는다.
+          배포게인(hip100/thigh50/calf50/foot30)을 그대로 쓰는 게 맞다.
+        """
+        kpd = isinstance(kp, dict); kdd = isinstance(kd, dict)
         kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
         for c in range(self.n):
             v = float(q_cmd_vec[c])
             self._q_cmd[c] = min(max(v, self.lim.q_min), self.lim.q_max)
-            kp_v[c] = kp; kd_v[c] = kd
+            _kp = float(kp[c]) if kpd else float(kp)
+            _kd = float(kd[c]) if kdd else float(kd)
+            kp_v[c] = min(max(_kp, 0.0), self.lim.kp_max)
+            kd_v[c] = min(max(_kd, 0.0), self.lim.kd_max)
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
 
-    def goto_all(self, targets_ch, kp: float, kd: float,
+    def goto_all(self, targets_ch, kp, kd,          # kp/kd: 스칼라 또는 {ch: 값}
                  speed_dps: float = 8.0, log=print) -> float:
         """전 채널을 목표 채널각으로 **동시에** S-curve 이동. 소요시간[s] 반환.
 

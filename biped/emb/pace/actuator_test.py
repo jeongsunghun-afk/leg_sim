@@ -156,6 +156,17 @@ def preflight(spec: dict, log=print) -> None:
         log("")
 
 
+def _gain(v):
+    """홀드 게인 정규화 — 스칼라면 float, dict 면 **키를 int 로** 맞춘 dict.
+
+    ★yaml 은 `{0: 100.0, ...}` 을 int 키로 읽지만, 문자열 키로 쓰인 설정도 있을 수 있어
+      여기서 한 번 정규화한다. Hardware._hold_gain_of 는 채널 int 로 조회한다.
+    """
+    if isinstance(v, dict):
+        return {int(k): float(x) for k, x in v.items()}
+    return float(v)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="액추에이터 마찰/PACE 자동시험")
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
@@ -212,15 +223,21 @@ def main() -> int:
         # ★시험축 외 홀드 대상 = 실장된 채널 − 시험축. 다리 조립 후 필수(spec.safety 주석 참조).
         hold = sorted(installed - {ch}) if bool(sf.get("hold_others", False)) else []
         if hold:
-            print(f"  [{j['name']}] 홀드축 {hold} 를 측정위치에 고정 "
-                  f"(kp={sf.get('hold_kp', 40.0)}/kd={sf.get('hold_kd', 2.0)}) — "
-                  f"I_link 강체가정 성립 + 하위관절 붕괴 방지")
+            _kp, _kd = _gain(sf.get("hold_kp", 40.0)), _gain(sf.get("hold_kd", 2.0))
+            _fmt = (lambda g: "축별 " + " ".join(f"ch{c}:{g[c]:g}" for c in sorted(g))
+                    if isinstance(g, dict) else f"{g:g}")
+            print(f"  [{j['name']}] 홀드축 {hold} 를 측정위치에 고정\n"
+                  f"            kp = {_fmt(_kp)}\n"
+                  f"            kd = {_fmt(_kd)}\n"
+                  f"            — I_link 강체가정 성립 + 하위관절 붕괴 방지")
         with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], spec["shm"]["rate_hz"],
                       lim, int(spec["shm"]["recv_wait_ms"]),
                       float(g["enable_ramp_s"]),
                       hold_channels=hold,
-                      hold_kp=float(sf.get("hold_kp", 40.0)),
-                      hold_kd=float(sf.get("hold_kd", 2.0))) as hw:
+                      # ★dict(축별) 도 스칼라도 그대로 넘긴다 — Hardware 가 둘 다 받는다.
+                      #   여기서 float() 로 감싸면 축별 게인이 TypeError 로 죽는다(2026-08-11).
+                      hold_kp=_gain(sf.get("hold_kp", 40.0)),
+                      hold_kd=_gain(sf.get("hold_kd", 2.0))) as hw:
             try:
                 # ★모든 시험 앞에서 파워단 생존을 확인한다. 텔레메트리 신선도(stale 검사)
                 #   만으로는 부족하다 — EtherCAT·Emb·값갱신이 전부 정상인데 드라이버

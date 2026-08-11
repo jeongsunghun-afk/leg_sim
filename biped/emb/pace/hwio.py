@@ -75,7 +75,7 @@ class Hardware:
 
     def __init__(self, lib_path: str, n_channel: int, rate_hz: float,
                  limits: Limits, recv_wait_ms: int = 3000, enable_ramp_s: float = 0.3,
-                 hold_channels=(), hold_kp: float = 0.0, hold_kd: float = 0.0):
+                 hold_channels=(), hold_kp=0.0, hold_kd=0.0):   # kp/kd: float 또는 {ch: float}
         self.n = int(n_channel)
         self.dt = 1.0 / float(rate_hz)
         self.lim = limits

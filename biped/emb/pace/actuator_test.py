@@ -167,6 +167,41 @@ def _gain(v):
     return float(v)
 
 
+def _jig_engage(hw, spec: dict, hold, joint, log=print) -> None:
+    """HOME 정렬 뒤 **지그 설치**를 기다렸다가 홀드게인을 낮춘다.
+
+    ★왜 지그가 모터 홀드보다 나은가 — 홀드축은 모터로 잡으면 **스프링**이다.
+      고유진동수 f_n = √(kp·k²/I) 가 배포게인 기준 hip 3.19 · thigh 2.53 · calf 5.08 ·
+      foot 4.49 Hz 로, 처프 대역(0.2~4 Hz) **안**에 있다. 그 위에서는 홀드축이
+      '자유' 처럼 굴어 시험축 식별값을 오염시킨다. 기구 고정은 이 항 자체를 없앤다.
+      부수적으로 홀드 민감도(Schur 보정 −1.4~−35.6%)도 사라진다.
+
+    ⚠ 순서가 중요하다: **정렬 → 지그 → 게인 낮춤**.
+      지그를 먼저 물리면 HOME 으로 갈 수가 없고, 게인을 먼저 낮추면 다리가 떨어진다.
+
+    ⚠ 게인을 0 으로 만들지 않는다. 지그가 하중을 받되 모터는 **추락 방지용**으로만
+      남긴다(기본 20%). 지그가 훨씬 강성이 크므로 이 정도 병렬 스프링은 식별에
+      기여하지 않고, 지그가 미끄러졌을 때 다리를 잡아 준다.
+      → 그 미끄러짐은 check_hold() 가 그대로 **지그 슬립 감지기**로 동작해 잡는다.
+    """
+    frac = float(spec.get("safety", {}).get("jig_hold_frac", 0.2))
+    log("\n" + "─" * 66)
+    log(f"  ★지그 모드 — 지금 자세(HOME)에서 홀드축 {hold} 를 기구적으로 고정할 것.")
+    log(f"    설치가 끝나면 홀드게인을 {frac:.0%} 로 낮춘다(추락 방지용만 남김).")
+    log(f"    시험축 {joint['name']}(ch{joint['ch']})는 **물리지 말 것** — 그게 측정 대상이다.")
+    log("─" * 66)
+    try:
+        input("  지그 설치 완료 후 Enter (중단은 Ctrl+C): ")
+    except (EOFError, KeyboardInterrupt):
+        hw.limp()
+        raise SystemExit("지그 설치 취소 — limp 함")
+    scale = lambda v: ({k: x * frac for k, x in v.items()}
+                       if isinstance(v, dict) else v * frac)
+    hw.hold_kp, hw.hold_kd = scale(hw.hold_kp), scale(hw.hold_kd)
+    hw.check_hold()          # 지그 물린 뒤에도 자세가 유지되는지 즉시 확인
+    log(f"  ✓ 홀드게인 {frac:.0%} 로 인하 — 이후 check_hold 는 **지그 슬립 감지기**로 동작한다\n")
+
+
 def _jointmap():
     """emb 의 JointMap 을 그대로 쓴다 — 환산식을 여기 복사하지 않는다."""
     sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
@@ -280,6 +315,9 @@ def main() -> int:
                 help="friction,torque,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
+    ap.add_argument("--jig", action="store_true",
+                    help="지그로 홀드축을 **기구적으로** 고정하고 측정축만 푼다(권장). "
+                         "HOME 정렬 후 지그 설치를 기다렸다가 홀드게인을 낮춘다.")
     a = ap.parse_args()
 
     if a.selftest:
@@ -290,6 +328,17 @@ def main() -> int:
     if not chans:
         raise SystemExit("--ch 또는 --all 을 지정할 것 (--selftest 는 하드웨어 불필요)")
     tests = [t.strip() for t in a.tests.split(",") if t.strip()]
+    # ★이름이 틀리면 **조용히 아무것도 안 돈다** — 아래 디스패치가 전부 `in tests` 정확일치라
+    #   오타 하나면 HOME 정렬만 하고 끝난다(2026-08-11: `--tests torque_mode` 로 실제 발생.
+    #   맞는 이름은 `torque`). 정렬은 로봇을 움직이므로 "안 돌았다" 를 알아채기도 어렵다.
+    KNOWN = ("friction", "torque", "backlash", "frf", "latency", "pace")
+    bad = [t for t in tests if t not in KNOWN]
+    if bad:
+        import difflib
+        hint = "\n".join(
+            f"    {t!r} → {difflib.get_close_matches(t, KNOWN, 1, 0.3) or list(KNOWN)}"
+            for t in bad)
+        raise SystemExit(f"✗ 모르는 시험 이름: {bad}\n  가능한 값: {', '.join(KNOWN)}\n{hint}")
 
     plotdir = os.path.join(a.out, "plots")
     os.makedirs(plotdir, exist_ok=True)
@@ -397,6 +446,8 @@ def main() -> int:
                         hw.lim = lim_test
                         print(f"  [{j['name']}] 한계 전환 → 시험용 채널각 "
                               f"[{lim_test.q_min:.2f}, {lim_test.q_max:.2f}]")
+                        if a.jig:
+                            _jig_engage(hw, spec, hold, j)
                     except Exception as e:
                         hw.limp()
                         print(f"  ✗ HOME 정렬 실패({type(e).__name__}: {e}) — limp 하고 중단.")

@@ -183,26 +183,47 @@ def identify_pace(hw, spec, joint, plotdir, outdir, log=print) -> tuple[str, dic
     Bb = 0.0                                                 # cos 항 미사용
     W = regressor(dq)
     pred = W @ theta
-    # ── ★전류 교차검증 (2026-08-10) ─────────────────────────────────────
-    #   체크리스트 원칙: 보고토크가 kp(q*−q)+kd(q̇*−q̇) 로 재구성되면 회귀가 순환이 된다.
-    #   전류는 그 경로와 **독립**이므로 τ_rep 와 Kt·I 를 비교하면 판별된다.
-    #   (기존 hip 데이터 검증: MIT 재구성 R² 0.53 → 보고토크는 측정 기반이었다.
-    #    그래도 축마다 다를 수 있으니 매 측정에서 확인한다.)
+    # ── ★전류 "교차검증" — 실제로는 **복제 감지**다 (2026-08-10 정정) ─────
+    #   RESULTS.md:465: SHM 에 독립 전류가 없다 — `fCurrent = fTorque` 중복이다.
+    #   MD80 은 전류센싱을 하지만 그 값이 SHM 으로 올라오지 않는다.
+    #   ⇒ 이 검사는 "독립 근거 확보" 가 아니라 **"독립 근거가 없음을 확인"** 하는 것이다.
+    #     복제가 확인되면 위치처프 식별은 **순환**이고, θ 를 독립 검증할 방법이 없다.
     kt = float(joint.get("kt_nm_per_a", 0.0) or 0.0)
     cur = A.get("cur")
-    if kt > 0 and cur is not None and len(cur) == len(tau) + 0:
-        cur_m = cur[m] if len(cur) != len(tau) else cur
-        tau_i = kt * cur_m
-        if np.std(tau_i) > 1e-9:
-            r_ti = float(np.corrcoef(tau, tau_i)[0, 1])
-            rms  = float(np.sqrt(np.mean((tau - tau_i) ** 2)))
-            log(f"  [{name}] 전류 교차검증: corr(τ_rep, Kt·I)={r_ti:.4f} · RMS차 {rms:.4f} Nm")
-            if r_ti < 0.9:
-                warn.append(f"τ_rep 와 Kt·I 상관 {r_ti:.3f} — 둘 중 하나가 틀렸다. 전류 쪽을 신뢰할 것")
+    if cur is not None and len(cur) == len(A["tau"]):
+        cur_m = np.asarray(cur)[m]
+        if np.allclose(cur_m, tau, rtol=1e-3, atol=1e-6):
+            warn.append("fCurrent 가 fTorque 와 **동일** — SHM 에 독립 전류가 없다(복제). "
+                        "위치처프 식별은 순환이다. τ_ff 가진으로 재측정할 것")
+        elif kt > 0 and np.std(cur_m) > 1e-9:
+            r_ti = float(np.corrcoef(tau, kt * cur_m)[0, 1])
+            log(f"  [{name}] 전류 독립성: corr(τ_rep, Kt·I) = {r_ti:.4f}")
+            if r_ti > 0.999:
+                warn.append(f"τ_rep 와 Kt·I 상관 {r_ti:.4f} — 사실상 같은 신호다(복제 의심)")
         else:
-            warn.append("전류가 거의 상수 — 전류센싱이 죽었을 수 있다(교차검증 불가)")
+            warn.append("전류가 상수이거나 kt 미상 — 독립 검증 불가")
     else:
-        warn.append("전류 또는 kt_nm_per_a 없음 — τ 순환 여부를 독립 검증하지 못했다")
+        warn.append("전류 미저장 — 독립 검증 불가(구버전 데이터)")
+
+    # ── ★★순환 자기진단 — 보고토크가 kp·err 로 재구성되는가 ──────────────
+    #   지연을 맞춰 가며 최대 R² 를 찾는다. 200Hz 샘플로는 8.39ms 지연이 정렬되지 않아
+    #   R² 가 낮게 나오고, 그걸 "측정 기반" 으로 오독하기 쉽다(2026-08-10 실제로 그랬다).
+    try:
+        qc_all = np.asarray(A["q_cmd"], float)[m]
+        best_r2, best_s = -9.9, 0
+        for sh in range(0, 6):
+            qcs = np.roll(qc_all, sh)
+            mit = kp * (qcs - np.degrees(q_rad)) * DEG + kd * (0.0 - np.degrees(dq)) * DEG
+            v = 1.0 - float(np.sum((tau - mit) ** 2) / np.sum((tau - tau.mean()) ** 2))
+            if v > best_r2:
+                best_r2, best_s = v, sh
+        log(f"  [{name}] 순환 자기진단: τ_rep = kp·err + kd·derr 재구성 "
+            f"R² {best_r2:.4f} (지연 {best_s} 샘플)")
+        if best_r2 > 0.9:
+            warn.append(f"★보고토크가 kp/kd 로 R² {best_r2:.3f} 재구성됨 = **계산값**. "
+                        f"이 식별은 순환이므로 θ 를 '독립 검증 없음' 으로 표기할 것")
+    except Exception as e:
+        warn.append(f"순환 자기진단 실패({type(e).__name__})")
 
     res = tau - pred
     ss_tot = float(np.sum((tau - np.mean(tau)) ** 2))

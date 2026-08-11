@@ -105,17 +105,39 @@ ROTOR_I = (I_total − I_link) / N²
 - **R²·잔차 RMS** — R² 가 0.8 미만이면 모델이 못 잡는 성분(백래시·시간지연·온도).
 - **중력+bias 의 속도 무관성** — 속도에 따라 변하면 상쇄 전제가 깨진 것.
 
-## 노트북에서 마무리할 것 (원래의 PACE = CMA-ES sim-매칭)
+## ★두 트랙 — 축별 해석회귀 / PACE 전축 재현매칭 (2026-08-11 정리)
 
-로봇에는 `mujoco`/`cma` 가 없다. 그래서 역할을 나눴다.
-- **로봇**: 가진·수집·해석적 회귀 → `results/pace_dataset_ch##.npz`
-- **노트북**: 그 npz 로 MuJoCo 재현매칭 `Σ(sim−real−bias)²` 를 CMA-ES 로 최소화.
-  회귀 추정값을 `x0` 로 주면 수렴이 훨씬 빠르다. 목적함수 골격은
-  `tests/act_identify_pace.py` 의 `CMAES_OBJECTIVE` 에 그대로 적어두었다.
+| | 축별 해석회귀 | **PACE 전축 동시** |
+|---|---|---|
+| 가진 | 한 축, 나머지는 지그 고정 | **전 축 동시**(비상관 처프) |
+| 모델 | `τ = I_ii·q̈ + b·q̇ + τ_c·sgn + g` (**대각만**) | 시뮬레이터가 `M(q)·C·g` 를 전부 들고 있음 |
+| 목적함수 | 토크 회귀 | **Σ(q_sim − q_real)²** — 궤적 재현 |
+| 순환 문제 | ★있다. 드라이버 τ 가 `kp·err` 로 재구성됨 | **없다.** τ 를 아예 안 쓴다 |
+| 파라미터 정밀도 | 축별로 **또렷함** | 스칼라 목적함수라 일부 조합이 sloppy |
+| 조건 | 실제 보행과 다름(타축 정지) | **배포 조건과 같음** |
 
-`I_link` 도 노트북에서 얻는 게 정확하다 — 시험 자세에서
-`mj_fullM` 의 해당 관절 대각성분 `M[i,i]` 가 곧 관절축 링크관성이다
-(armature 를 0 으로 둔 모델에서 읽을 것).
+⇒ **상호 보완이다.** 축별 값을 CMA-ES 의 **초기값·탐색범위**로 넣고, PACE 로 마무리한다.
+⚠PACE 는 **강체 부분이 맞다는 걸 전제**한다. MJCF 질량·관성이 틀리면 CMA-ES 가 그 오차를
+  armature/damping/friction 으로 흡수해 "잘 맞는데 물리적으로 틀린" 값을 낸다.
+  → 그래서 축별로 `I_link` 를 먼저 검증했다(foot 예측 대비 **−1.0%**, 2026-08-11).
+
+```bash
+# ① 지그를 **빼고** 전축 동시 처프 수집 (위치+게인 모드라 토크 자기제한)
+python3 collect_multichirp.py --dry     # 하드웨어 미접촉 설계검사(상관·한계)
+python3 collect_multichirp.py           # → results/pace_multichirp.npz
+# ② MuJoCo 롤아웃 + CMA-ES
+~/.venv-mujoco/bin/python pace_cmaes.py results/pace_multichirp.npz
+```
+
+★**mujoco 는 이제 로봇(Pi)에 있다** — `~/.venv-mujoco` (aarch64 휠, `cma` 포함).
+  종전 README 의 "노트북에서 마무리" 는 **틀린 전제**였다. 설치를 시도해 본 적이 없었을 뿐이다.
+
+### 자기충돌 포락선 (MJCF 꼭짓점 2^8 전수)
+```
+전축 동일 진폭   ±10° 안전 · ±15° 부터 두 발 충돌(HL_sphere↔HR_sphere −70mm)
+hip 만 ±8° 제한  나머지 ±30° 까지 전부 안전
+```
+원인은 hip 이다 — 내전하면 발이 모인다. 그래서 `spec.pace_multi.amp_deg` 는 hip 만 5°다.
 
 ## 스펙 입력 (`spec.yaml`)
 

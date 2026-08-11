@@ -5,7 +5,7 @@
 실행(proxddp env): /home/jsh/miniforge3/envs/proxddp/bin/python teleop_gui_biped.py
   ① 컨트롤러: python biped_run.py   ② GUI: 위 명령
 """
-import os, json, math, socket, time
+import os, json, math, socket, time, subprocess, threading
 import dearpygui.dearpygui as dpg
 
 CMD    = os.environ.get('QUAD_CMD',   '/tmp/biped_cmd.json')
@@ -180,6 +180,110 @@ def jog_zero():                       # 전체 0(home)
     pub.set(jog_deg=[0.0] * NJ)
 
 
+# ── ★제어기 재기동 (통신 두절 복구) ──────────────────────────────────────
+#   왜 필요한가: 실기 브링업 중 SHM/제어기가 이따금 끊긴다. 그때마다 터미널로 가서
+#   프로세스를 죽이고 다시 띄우는 게 번거롭다. GUI 에서 한 번에 복구한다.
+#
+#   ⚠**RESET 버튼을 덮어쓰지 않았다.** RESET 은 이미 `jogger.reset(q_leg)` → HOLD 라는
+#     안전 동작을 한다(jog 램프를 실측각으로 재시드해 점프를 막는다). 그걸 잃으면 안 된다.
+#   ⚠**RobotEmbedded 는 여기서 못 띄운다** — root 권한(EtherCAT raw socket)이 필요하다.
+#     한 번만 아래를 해 두면 sudo 없이 띄울 수 있고, 그때 이 함수도 확장하면 된다:
+#       sudo setcap cap_net_raw,cap_net_admin+eip ~/ZSource/RobotEmbedded/build/src/RobotEmbedded
+#     그 전까지는 **살아있는지 검사만** 하고 죽었으면 명령어를 안내한다.
+#   ⚠두 번 눌러야 실행된다(오조작 방지) — 프로세스를 띄우고 모터를 물리는 동작이다.
+_EMB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
+_restart_armed = [0.0]
+
+
+def _proc_pids(prefix):
+    """명령줄이 prefix 로 **시작**하는 PID. bash 래퍼·자기 자신이 안 걸리게 한다."""
+    try:
+        out = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True).stdout
+    except Exception:
+        return []
+    pids = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        pid, _, args = line.partition(' ')
+        if args.strip().startswith(prefix):
+            pids.append(int(pid))
+    return pids
+
+
+def _pgrep_x(name):
+    """프로세스 **이름**이 정확히 일치하는 PID (명령줄 prefix 로는 sudo 래퍼를 못 잡는다)."""
+    try:
+        r = subprocess.run(['pgrep', '-x', name], capture_output=True, text=True)
+        return [int(x) for x in r.stdout.split()]
+    except Exception:
+        return []
+
+
+def _restart_worker():
+    def say(m):
+        print(f'[gui] {m}', flush=True)
+        try:
+            dpg.set_value('restart_msg', m)
+        except Exception:
+            pass
+
+    # ★RobotEmbedded 는 `sudo ./src/RobotEmbedded` 로 뜨므로 명령줄이 'sudo' 로 시작한다.
+    #   prefix 매칭으로는 못 잡는다 ⇒ 프로세스 **이름**으로 찾는다(pgrep -x 와 동일).
+    if not _pgrep_x('RobotEmbedded'):
+        say('✗ RobotEmbedded 가 죽어 있다 — 터미널에서: '
+            'cd ~/ZSource/RobotEmbedded/build && sudo ./src/RobotEmbedded')
+        return
+
+    old = _proc_pids('python3 app/biped_emb.py')
+    if old:
+        say(f'제어기 종료 {old} …')
+        for pid in old:
+            try:
+                os.kill(pid, 15)
+            except Exception:
+                pass
+        for _ in range(40):                       # 최대 4초 대기
+            time.sleep(0.1)
+            if not _proc_pids('python3 app/biped_emb.py'):
+                break
+        else:
+            say('✗ 이전 제어기가 안 죽는다 — 수동 확인 필요'); return
+
+    say('제어기 기동 중 …')
+    try:
+        # ★hold 로 시작한다. off 로 띄우면 Emb 게이트가 열리는 순간 무여자 명령이 먹혀
+        #   다리가 풀린다(2026-08-10 실기에서 겪음).
+        subprocess.Popen(['python3', 'app/biped_emb.py', '--start-mode', 'hold'],
+                         cwd=_EMB_DIR, stdout=open('/tmp/biped_emb.log', 'w'),
+                         stderr=subprocess.STDOUT, start_new_session=True)
+    except Exception as e:
+        say(f'✗ 기동 실패: {e}'); return
+
+    for _ in range(100):                          # state 가 신선해질 때까지 최대 10초
+        time.sleep(0.1)
+        try:
+            if time.time() - os.path.getmtime(STATE) < 0.5:
+                st = json.load(open(STATE))
+                say(f"✅ 복구됨 — mode={st.get('mode')} n_ok={st.get('n_ok')}/8 "
+                    f"{st.get('loop_hz', 0):.0f}Hz")
+                return
+        except Exception:
+            pass
+    say('✗ 기동했으나 state 가 갱신되지 않는다 — /tmp/biped_emb.log 확인')
+
+
+def on_restart():
+    now = time.time()
+    if now - _restart_armed[0] > 3.0:             # 1차 클릭 = 무장
+        _restart_armed[0] = now
+        dpg.set_value('restart_msg', '⚠ 3초 안에 한 번 더 누르면 제어기를 재기동한다')
+        return
+    _restart_armed[0] = 0.0
+    threading.Thread(target=_restart_worker, daemon=True).start()
+
+
 def set_mode(mode):
     if mode == 'reset':
         left.clear(); right.clear()
@@ -296,6 +400,7 @@ with dpg.window(tag='main'):
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
         dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
+        dpg.add_button(label='제어기 재기동', width=110, callback=lambda: on_restart())
         with dpg.group():              # ★Home=정해진 홈 자세로 S-curve 복귀(emb/control/home.py)
             _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
             dpg.add_text('(S-curve)', color=(120, 130, 150))
@@ -340,6 +445,7 @@ with dpg.window(tag='main'):
             dpg.add_text(f'{JOG_LIM[i][1]:<6.1f}', color=(120, 130, 150))
             dpg.add_text('--.-', tag=f'meas_{i}', color=(150, 220, 150))
     dpg.add_separator()
+    dpg.add_text('', tag='restart_msg', color=(255, 205, 120))
     dpg.add_text('-', tag='state', color=(150, 220, 150))
 
 with dpg.handler_registry():

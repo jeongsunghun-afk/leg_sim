@@ -6,9 +6,11 @@
   사람이 실행해야만 드러나는 형태였다:
       1회차  KeyError: 8              — 축별 게인 dict 에 허리(8,9) 키가 없다
       2회차  AttributeError: 'rate'   — self.rate 는 없다(주기는 self.dt)
+      3회차  KeyError: 'kp'           — spec.gains.kp 는 이미 없어진 키였다
   둘 다 **한 줄짜리 이름 오류**이고, 둘 다 `python3 -c "import"` 나 구문검사로는
   안 잡힌다. 실행경로를 실제로 밟아야만 나온다.
-  ⇒ 공유 라이브러리를 스텁으로 갈아끼워 arm→goto_all→토크루프를 전부 돌린다.
+  ⇒ 공유 라이브러리를 스텁으로 갈아끼워 arm→홈복귀→토크루프를 전부 돌린다.
+  홈복귀는 GUI 와 같은 control/home.py:HomeTrajectory 를 쓰므로 그 배선까지 여기서 본다.
 
 ⚠이 테스트가 **보장하지 않는** 것 — 물리다. 스텁 플랜트는 1차 지연이고 마찰·중력·
   백래시·통신지연이 없다. 여기 통과는 "코드가 끝까지 돈다" 이지 "값이 맞다" 가 아니다.
@@ -186,8 +188,8 @@ def check(name, cond, detail=""):
 
 
 def t_goto_all_home():
-    """실기에서 두 번 죽은 그 호출. 늘어진 자세 → HOME."""
-    print("\n[1] goto_all — 늘어진 자세에서 HOME 정렬 (실기 재현)")
+    """실기에서 죽었던 그 경로. 늘어진 자세 → HOME (GUI 와 동일 궤적)."""
+    print("\n[1] goto_home — 늘어진 자세에서 HOME 복귀 (실기 재현, HomeTrajectory)")
     spec = _load_spec()
     tgt, jm = _home_targets()
     n = int(spec["shm"]["n_channel"])
@@ -198,13 +200,16 @@ def t_goto_all_home():
     hw = _make_hw(fake, spec, hold=[0, 1, 2, 4, 5, 6, 7])
     kp, kd = sf.get("hold_kp", 40.0), sf.get("hold_kd", 2.0)
     import actuator_test as at
-    box = at._mech_limit_box()      # 실기와 동일: 정렬 구간은 **기구한계** 상자
+    from homing import goto_home, make_homer
+    import yaml as _y
+    cfg = _y.safe_load(open(os.path.join(os.path.dirname(PACE), "config", "biped_emb.yaml")))
+    box = at._mech_limit_box()      # 실기와 동일: 복귀 구간은 **기구한계** 상자
     # (spec 상자를 쓰면 늘어진 ch3=+17.55° 가 상한 12.75° 로 잘려 시작부터 어긋난다 —
-    #  정렬용 상자가 왜 기구한계여야 하는지가 여기서 드러난다.)
+    #  복귀용 상자가 왜 기구한계여야 하는지가 여기서 드러난다.)
     hw.arm(3, 30.0, 2.0)
-    # 실기는 8dps 지만 테스트 시간을 줄이려 60dps. 스텁 플랜트가 따라올 수 있는 상한이다
-    # (400dps 는 스텁이 19° 뒤처져 추종오차 트립에 걸린다 — 실기 사양과 무관한 인공물).
-    T = hw.goto_all(tgt, kp=kp, kd=kd, speed_dps=60.0, q_box=box)
+    homer = make_homer(jm, cfg, hw.dt)
+    # 실기 설정속도지만 테스트 시간을 줄이려 60dps 로 올린다(스텁이 따라올 수 있는 상한).
+    T = goto_home(hw, jm, homer, cfg, q_box=box, speed_dps=60.0)
     err = np.array([hw.read(c)[0] for c in range(n)]) - np.asarray(tgt, float)
     drv = sorted(kp) if isinstance(kp, dict) else list(range(n))
     check("예외 없이 완주", True, f"T={T:.2f}s")
@@ -226,18 +231,38 @@ def t_goto_all_home():
 
 
 def t_scalar_gain():
-    """스칼라 게인(하위호환) 경로도 살아 있는지."""
-    print("\n[2] goto_all — 스칼라 게인(하위호환)")
+    """상태 발행 — 시험 중 뷰어가 자세를 볼 수 있어야 한다."""
+    print("\n[2] publish_fn — 시험 중 뷰어 상태 발행")
+    import json, tempfile
+    from state_pub import publish_state
     spec = _load_spec()
     n = int(spec["shm"]["n_channel"])
-    home, _ = _home_targets()                      # ★HOME 채널각에서 출발(실기와 동일)
+    home, jm = _home_targets()
     fake = FakeLib(n, q_init=home, dt=1 / 500.)
     hw = _make_hw(fake, spec, hold=[0, 1])
+    path = os.path.join(tempfile.gettempdir(), "biped_state_pacetest.json")
+    if os.path.exists(path):
+        os.remove(path)
+    hw.publish_fn = lambda q_ch, rpy, on: publish_state(
+        "pace:HL_foot", jm.ch_to_q_joint(np.asarray(q_ch, float)),
+        np.asarray(rpy, float), 1.0 / hw.dt, on, "pace", path=path)
+    hw.pub_period = 0.0                      # 테스트에서는 매 read 마다
     hw.arm(3, 30.0, 2.0)
-    tgt = np.array(home, float); tgt[3] += 5.0
-    hw.goto_all(tgt, kp=40.0, kd=2.0, speed_dps=60.0)
-    check("스칼라 경로 완주 + 도달", abs(hw.read(3)[0] - tgt[3]) < 1.0,
-          f"q3={hw.read(3)[0]:.3f}° (목표 {tgt[3]:.2f})")
+    for _ in range(5):
+        hw.read(3)
+    ok = os.path.exists(path)
+    check("상태파일 생성", ok, path)
+    if ok:
+        d = json.load(open(path))
+        check("스키마가 뷰어와 같음",
+              all(k in d for k in ("mode", "q_leg_deg", "rpy_deg", "loop_hz",
+                                   "motors_on", "backend")),
+              f"mode={d.get('mode')} backend={d.get('backend')}")
+        # ★모델각으로 실려야 한다 — 채널각을 그대로 흘리면 뷰어가 엉뚱한 자세를 그린다.
+        check("모델각으로 발행(HOME 이면 0)",
+              max(abs(x) for x in d["q_leg_deg"]) < 0.01,
+              f"q_leg_deg={d['q_leg_deg']}")
+        check("motors_on 반영", d["motors_on"] is True)
     hw.limp()
 
 

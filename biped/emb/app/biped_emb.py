@@ -37,7 +37,9 @@ from home import HomeTrajectory
 import mode_fsm as FSM
 
 CMD_PATH   = os.environ.get("QUAD_CMD",   "/tmp/biped_cmd.json")
-STATE_PATH = os.environ.get("QUAD_STATE", "/tmp/biped_state.json")
+# STATE_PATH / publish_state 는 interface/state_pub.py 로 이관(2026-08-11).
+# PACE 하니스도 같은 구현을 써야 뷰어 스키마가 갈라지지 않는다.
+from state_pub import STATE_PATH, publish_state  # noqa: E402
 
 
 def load_cfg(path):
@@ -140,23 +142,6 @@ def axis_health(raw, jm):
         else:
             out.append("ok")
     return out
-
-
-def publish_state(mode, q_leg_deg, rpy_deg, loop_hz, motors_on, backend, extra=None):
-    st = {"mode": mode, "q_leg_deg": [round(float(x), 2) for x in q_leg_deg],
-          "rpy_deg": [round(float(x), 2) for x in rpy_deg],
-          "tilt_deg": round(float(np.hypot(rpy_deg[0], rpy_deg[1])), 2),
-          "loop_hz": round(float(loop_hz), 1), "motors_on": bool(motors_on),
-          "backend": backend}
-    if extra:
-        st.update(extra)
-    try:
-        tmp = STATE_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(st, f)
-        os.replace(tmp, STATE_PATH)
-    except Exception:
-        pass
 
 
 def main():

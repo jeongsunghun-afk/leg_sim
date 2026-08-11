@@ -124,6 +124,15 @@ class Hardware:
         self._tau_over_since = None
         self._armed = False
         self._q_cmd = np.zeros(self.n, np.float32)
+        # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
+        #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
+        #   사라져 화면이 멎었다. 사람이 로봇 옆에서 토크시험을 돌리는 구간에서
+        #   화면이 죽어 있는 건 곤란하다.
+        #   ⚠별도 스레드로 안 만든다 — self._q 등 공유버퍼를 두 스레드가 만지면 찢어진다.
+        #     read() 안에서 20Hz 로 스로틀한다(읽기는 어차피 매 틱 일어난다).
+        self.publish_fn = None
+        self.pub_period = 1.0 / 20.0
+        self._pub_next = 0.0
 
         if lib.bridge_init(int(recv_wait_ms)) != 0:
             raise RuntimeError(
@@ -203,6 +212,12 @@ class Hardware:
         if self._prev is None or cur3 != self._prev:
             self._prev = cur3
             self._last_change_t = now
+        if self.publish_fn is not None and now >= self._pub_next:
+            self._pub_next = now + self.pub_period
+            try:                       # 발행 실패가 시험을 멈추면 안 된다
+                self.publish_fn(self._q, self._rpy, self._armed)
+            except Exception:
+                pass
         return q, dq, tau, cur
 
     def stale_ms(self) -> float:
@@ -569,77 +584,13 @@ class Hardware:
         _kd = float(kd.get(c, 0.0)) if isinstance(kd, dict) else float(kd)
         return _kp, _kd
 
-    def goto_all(self, targets_ch, kp, kd,          # kp/kd: 스칼라 또는 {ch: 값}
-                 speed_dps: float = 8.0, log=print, q_box=None,
-                 tol_deg: float = 5.0) -> float:
-        """전 채널을 목표 채널각으로 **동시에** S-curve 이동. 소요시간[s] 반환.
-
-        ★왜 다축 동시인가 — 한 축씩 옮기면 중간 자세가 설계에 없는 형상이 되고,
-          매단 상태에선 그 자세에서 다른 축이 중력으로 끌린다.
-        ★왜 S-curve 인가 — 등속 램프는 시작·끝에서 가속도가 계단이라 관성부하가 큰
-          (다리 장착) 지금은 그 순간 토크가 튄다. 5차식은 양 끝 가속도가 0 이다.
-        ⚠이 함수는 **측정 전 자세 정렬 전용**이다. 측정 자체는 시험축만 구동한다.
-        """
-        # ★enable 이 안 된 상태로 부르면 **아무 일도 안 일어난다**. shm_bridge.cpp:109-113 은
-        #   g_enabled=0 이면 kp/kd/tau 를 0 으로, 위치를 g_last_q 로 덮어쓴다. 그런데 이
-        #   함수는 도착오차를 로그로만 남기므로 "정렬 실패" 가 조용히 지나간다 —
-        #   충돌 회피가 목적인 정렬에서 그건 곧 충돌한 자세로 시험이 시작된다는 뜻이다.
-        if not self._armed:
-            raise RuntimeError(
-                "goto_all 전에 arm() 을 호출할 것 — enable 없이 쓰면 SHM 에 kp=kd=0 이 나가"
-                "모터가 전혀 움직이지 않는데 이 함수는 그걸 예외로 만들지 않는다.")
-        q0 = np.array([self.read(c)[0] for c in range(self.n)], float)
-        tgt = np.array([float(x) for x in targets_ch], float)
-        if tgt.size != self.n:
-            raise ValueError(f"targets 길이 {tgt.size} != n_channel {self.n}")
-        d = tgt - q0
-        # ★게인 0 인 채널(=허리)은 목표로 끌지 않는다 — 제자리를 명령한다.
-        #   토크가 0 이라 지금은 어차피 안 움직이지만, 명령까지 제자리로 두어야
-        #   나중에 게인이 붙어도 "정렬" 이 허리를 건드리는 일이 없다.
-        idle = [c for c in range(self.n) if self._gain_at(c, kp, kd)[0] <= 0.0]
-        if idle:
-            d[idle] = 0.0
-            log(f"    비구동 채널 {idle} — 제자리 유지(게인 0)")
-        dmax = float(np.max(np.abs(d)))
-        if dmax < 0.05:
-            log(f"    이미 목표 자세(최대 편차 {dmax:.3f}°) — 이동 생략")
-            return 0.0
-        T = max(dmax / max(speed_dps, 1e-6) * 1.875, 1.0)      # 5차식 피크속도 계수
-        log(f"    홈 이동: 최대 {dmax:.1f}° · {T:.1f}s · {speed_dps:.0f}dps 상한")
-        t0 = time.perf_counter()
-        while True:
-            t = time.perf_counter() - t0
-            tau = min(t / T, 1.0)
-            sfac = tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
-            self._raw_write_all(q0 + d * sfac, kp, kd, q_box)
-            for c in range(self.n):                      # 트립 감시(전 축)
-                q, dq, tq, _ = self.read(c)
-                self._check(c, q, dq, tq, float(self._q_cmd[c]))
-            if tau >= 1.0:
-                break
-            time.sleep(self.dt)          # self.rate 는 없다 — 주기는 dt
-        t_settle = time.perf_counter()
-        while time.perf_counter() - t_settle < 0.5:      # 정착
-            self._raw_write_all(q0 + d, kp, kd, q_box)  # tgt 아님 — 비구동 채널 제자리 유지
-            time.sleep(self.dt)          # self.rate 는 없다 — 주기는 dt
-        # 추종오차는 **구동한 채널만** 본다. 비구동 채널은 tgt 와 다른 게 정상이다.
-        drv = [c for c in range(self.n) if c not in idle]
-        err = np.array([self.read(c)[0] for c in range(self.n)]) - (q0 + d)
-        emax = float(np.max(np.abs(err[drv])))
-        log(f"    도착 — 최대 추종오차 {emax:.2f}° "
-            f"({', '.join(f'ch{c}{err[c]:+.1f}' for c in drv)})")
-        # ★도착을 **검사**한다. 로그만 남기면 정렬 실패가 조용히 지나가고, 그 다음 시험이
-        #   엉뚱한(=충돌한) 자세에서 시작된다. 중력 처짐(hip 2.8° @kp100)은 정상이므로
-        #   tol 은 그보다 넉넉히 잡되, 못 닿은 것과 구분은 되게 둔다.
-        if emax > tol_deg:
-            self.limp()
-            raise SafetyAbort(
-                f"자세 정렬 실패 — 최대 오차 {emax:.2f}° > {tol_deg}°. limp 함.\n"
-                f"  ({', '.join(f'ch{c}{err[c]:+.2f}' for c in drv)})\n"
-                f"  게인 부족·파워단 래치오프·기구 간섭 중 하나다. 자세를 못 맞추면 "
-                f"시험은 의미가 없고 위험하다.")
-        return T
-
+    # ── goto_all 은 삭제됨 (2026-08-11) ──────────────────────────────────────
+    #   HOME 복귀는 pace/homing.py 의 goto_home() 이 담당하고, 그건 GUI 와 **같은**
+    #   control/home.py:HomeTrajectory 를 쓴다. 여기 따로 두면 구현이 둘이 된다:
+    #     · 채널각 직선보간 ≠ 모델각 직선보간 (calf→foot 커플링 때문)
+    #     · 가속도 한계 없음 (HomeTrajectory 는 v·a 둘 다 지킨다)
+    #     · jog 한계 클램프·"잘렸다" 보고 없음
+    #   _raw_write_all 은 남는다 — goto_home 이 그걸 쓴다.
     def goto(self, ch: int, q_target_deg: float, kp: float, kd: float,
              speed_dps: float = 8.0) -> None:
         """현재 위치에서 목표각까지 등속 램프(안전 이동)."""

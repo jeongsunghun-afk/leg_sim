@@ -14,14 +14,18 @@
   python3 actuator_test.py --ch 0 --tests friction,pace
   python3 actuator_test.py --all                  # spec 의 installed_channels 전부
 
-★권장 순서 — **지그를 먼저 물리고 실행한다** (2026-08-11)
-  지그 자세 = HOME = 영점이 같은 자세이므로, 지그를 먼저 설치하면 자세가 이미 HOME 이고
-  시험 전에 **모터를 한 번도 움직이지 않는다**. 매단 로봇에서 이게 가장 안전하다.
-      ① 지그로 홀드축 고정(시험축은 풀어 둘 것) → ② 하니스 실행
+★시퀀스 (2026-08-11)
+      arm → **HOME 복귀** → (지그 설치 대기) → 한계 조임 → 드라이버 생존확인 → 시험
+  · HOME 복귀는 **지그 유무와 무관하게 항상** 돈다. 지그가 물려 있으면 편차가 작아
+    즉시 끝난다. 제어기를 끄면 다리가 늘어지고, 그 자세는 두 발이 22mm 파고든
+    **충돌 상태**라 어떤 경우에도 여기서 벗어나야 한다.
+  · 궤적은 **GUI 홈복귀와 같은 구현**을 쓴다(control/home.py:HomeTrajectory, pace/homing.py).
+    모델각 공간에서 보간하고 v·a 한계를 둘 다 지킨다. 하니스가 따로 짜지 않는다.
+  · 시작 시 **영점 검증**을 보고한다 — HOME 자세의 모델각은 정의상 전부 0 이어야 한다.
+  · 시험 중 **뷰어 상태를 계속 발행**한다(interface/state_pub.py, biped_emb 와 같은 파일).
+    writer 는 하나여야 해서 biped_emb 를 끄지만, 화면은 살아 있다.
+
       python3 actuator_test.py --ch 3 --tests torque --jig
-  하니스가 자세를 읽어 HOME 이면 이동을 건너뛰고, 덤으로 **영점 검증**을 보고한다
-  (지그 자세의 모델각은 정의상 전부 0 이어야 한다).
-  지그가 없으면 늘어진 자세에서 HOME 으로 이동한 뒤 지그 설치를 기다린다.
 
 ⚠ 실행 전 확인
   1. Emb 기동 후 5초 경과 (halGait 초기화 게이트 = 100+4500 tick @1kHz).
@@ -45,6 +49,9 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "tests"))
 
 from hwio import DEG, Hardware, Limits, SafetyAbort  # noqa: E402
+from homing import goto_home, make_homer            # noqa: E402  GUI 와 동일 궤적
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
+from state_pub import publish_state                 # noqa: E402  뷰어와 동일 스키마
 
 
 def load_spec(path: str) -> dict:
@@ -363,7 +370,9 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="spec 의 installed_channels 전부")
     ap.add_argument("--no-home", action="store_true",
                     help="시험 전 HOME 정렬을 생략한다(권장하지 않음 — 아래 사유)")
-    ap.add_argument("--home-speed", type=float, default=8.0, help="HOME 이동 속도[deg/s]")
+    ap.add_argument("--home-speed", type=float, default=None,
+                    help="HOME 복귀 속도[deg/s] 상한. 미지정이면 biped_emb.yaml 의 "
+                         "home.max_speed_dps 를 그대로 쓴다(GUI 와 동일).")
     ap.add_argument("--home-tol", type=float, default=None,
                     help="HOME 판정 허용편차[deg] (기본 spec.safety.home_tol_deg=3.0). "
                          "--jig 에서 이 값을 넘으면 이동하지 않고 중단한다.")
@@ -489,43 +498,27 @@ def main() -> int:
                                 "(모델각) 또는 calib 을 확인할 것:\n" + "\n".join(
                                     f"    ch{c}: 목표 {t:+.2f}° ∉ [{b[0]:.2f}, {b[1]:.2f}]"
                                     for c, t, b in _bad))
-                        # ★arm 이 먼저다 — enable 없이 goto_all 을 부르면 SHM 에 kp=kd=0 이
+                        # ★arm 이 먼저다 — enable 없이 복귀를 부르면 SHM 에 kp=kd=0 이
                         #   나가(shm_bridge.cpp:112) 모터가 전혀 안 움직인다.
-                        #   시험축도 홀드게인으로 arm 한다(정렬 중엔 시험축도 '홀드' 다).
-                        # ★지그가 이미 물려 있으면 자세가 곧 HOME 이다(지그자세=HOME=영점).
-                        #   그때는 **모터를 한 번도 움직이지 않고** 시험에 들어간다.
+                        #   시험축도 홀드게인으로 arm 한다(복귀 중엔 시험축도 '홀드' 다).
                         _log = lambda m: print(f"  [{j['name']}]{m}")
-                        _at_home = _jig_precheck(hw, _jm, _tgt, spec, log=_log,
-                                                 tol_override=a.home_tol)
-                        _dev, _tol = _JIG_DEV["dev"], _JIG_DEV["tol"]
+                        # ★뷰어 상태 발행 — 시험 중에는 biped_emb 를 끄므로(writer 는 하나)
+                        #   여기서 발행하지 않으면 **화면이 멎는다**. 사람이 옆에 있는 구간이다.
+                        _mode = f"pace:{j['name']}"
+                        hw.publish_fn = lambda q_ch, rpy, on, _m=_mode, _j=_jm: publish_state(
+                            _m, _j.ch_to_q_joint(np.asarray(q_ch, float)),
+                            np.asarray(rpy, float), 1.0 / hw.dt, on, "pace")
+                        # 자세 보고 + 영점 검증(모델각은 0 이어야 한다). 판정과 무관하게 찍는다.
+                        _jig_precheck(hw, _jm, _tgt, spec, log=_log, tol_override=a.home_tol)
                         hw.arm(ch, _kp_ch, _kd_ch)
-                        if _at_home:
-                            # 이미 HOME — 모터를 움직이지 않는다. 지그가 물려 있으면
-                            # 움직이려는 시도 자체가 지그와 싸우는 것이다.
-                            if a.jig:
-                                _jig_lower_gains(hw, spec, log=_log)
-                        elif a.jig:
-                            # ★--jig 는 "지그가 이미 물려 있다" 는 선언이다 → **절대 움직이지
-                            #   않는다**. 여기서 goto_all 을 부르면 모터가 지그를 밀어낸다.
-                            #   실제로 그렇게 됐다(2026-08-11): 편차 4.78° 를 '미설치' 로 오판해
-                            #   1.1초 동안 밀었고, 축은 4.42° 그대로였다 — 지그가 이겼다.
-                            #   편차가 크면 그건 이동으로 풀 문제가 아니라 **영점/지그 불일치**다.
-                            hw.limp()
-                            raise SystemExit(
-                                f"✗ 지그 자세가 HOME 과 {_dev:.2f}° 어긋난다(기준 {_tol}°).\n"
-                                f"  지그 자세 = HOME = 영점이어야 하므로 이건 셋 중 하나다:\n"
-                                f"    ① 영점(calib.offset)이 틀어졌다  ② 지그가 HOME 자세가 아니다\n"
-                                f"    ③ 편차가 정상 범위인데 기준이 빡빡하다\n"
-                                f"  ③ 이라고 판단되면 --home-tol 로 올려서 재실행할 것.\n"
-                                f"  모터로 밀어서 맞추지 않는다 — 지그와 싸우게 된다. limp 함.")
-                        else:
-                            # ★이동 게인은 **홀드게인(=배포 검증값)** 을 그대로 쓴다.
-                            #   spec.gains.kp 40 은 다리 미장착 시절 값이라 hip 이 7.1° 처져
-                            #   목표에 못 닿는다(중력 4.96Nm / kp40).
-                            hw.goto_all(_tgt, kp=_kp, kd=_kd, speed_dps=a.home_speed,
-                                        log=_log, q_box=box)
-                            if a.jig:
-                                _jig_engage(hw, spec, hold, j)
+                        # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).
+                        #   지그가 물려 있으면 편차가 작아 즉시 끝나거나 생략된다.
+                        #   궤적은 GUI 홈복귀와 **같은 구현**(control/home.py:HomeTrajectory).
+                        _homer = make_homer(_jm, _c, hw.dt)
+                        goto_home(hw, _jm, _homer, _c, q_box=box, log=_log,
+                                  speed_dps=a.home_speed)
+                        if a.jig:
+                            _jig_engage(hw, spec, hold, j)
                         # ★정렬이 끝났으니 한계를 **시험용(좁은)** 으로 조인다.
                         hw.lim = lim_test
                         print(f"  [{j['name']}] 한계 전환 → 시험용 채널각 "

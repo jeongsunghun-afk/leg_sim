@@ -5,6 +5,7 @@
 #   ./emb_ctl.sh start   # 기동(로그: /tmp/emb.log) 후 halGait 초기화(≈5s) + 신선도 확인
 #   ./emb_ctl.sh stop    # 종료
 #   ./emb_ctl.sh log     # EtherCAT 요약(슬레이브/OP/WKC) + 마지막 로그
+#   ./emb_ctl.sh reset   # **싹 종료** — writer·Emb·되살리는 래퍼 셸까지 전부
 #   ./emb_ctl.sh status  # 프로세스·SHM·프레임 유통 상태
 #
 # ★Emb 는 EtherCAT 이 OP 를 잃으면 스스로 복구하지 못한다(commEtherCATm.cpp:520 이 조기 return
@@ -19,7 +20,7 @@ DIAG=$(cd "$(dirname "$0")" && pwd)
 running(){ pgrep -x RobotEmbedded >/dev/null 2>&1; }
 
 # ★중복 기동은 EtherCAT 버스를 깬다. 어떤 명령이든 먼저 알린다.
-_n=$(pgrep -cx RobotEmbedded 2>/dev/null || echo 0)
+_n=$(pgrep -x RobotEmbedded 2>/dev/null | wc -l)
 if [ "$_n" -gt 1 ] 2>/dev/null; then
     echo "⚠⚠ RobotEmbedded 가 **$_n 개** 떠 있다 — EtherCAT 마스터가 여럿이면 버스가 깨진다."
     echo "   pid: $(pgrep -x RobotEmbedded | tr '\n' ' ')"
@@ -55,7 +56,7 @@ start)
     echo "✗ 20s 내 신선한 MotorStatus16 미수신."
     echo "  → 띄운 Emb 를 정리한다(그냥 두면 재시도 시 EtherCAT 마스터가 둘이 된다)."
     sudo pkill -x RobotEmbedded 2>/dev/null; sleep 1
-    n=$(pgrep -cx RobotEmbedded 2>/dev/null || echo 0)
+    n=$(pgrep -x RobotEmbedded 2>/dev/null | wc -l)
     echo "  남은 RobotEmbedded: $n"
     "$0" log
     echo
@@ -64,6 +65,74 @@ start)
     echo "    ② diag/emb_ctl.sh start"
     echo "  ⚠수동으로 RobotEmbedded 를 따로 띄우지 말 것 — 중복 기동이 버스를 깬다."
     exit 2
+    ;;
+reset)
+    # ★"싹 종료" — 모터를 만질 수 있는 모든 프로세스를 없앤다 (2026-08-12).
+    #   ⚠stop 만으로는 부족했다. Emb 를 죽여도 **그걸 띄운 래퍼 셸이 살아남아** 다음
+    #     명령에서 다시 띄운다. 실기에서 계보가 이랬다:
+    #         RobotEmbedded ← sudo ← sudo ← bash(PPID=1, 고아)
+    #     emb_ctl.sh 를 sudo 로 실행해서 sudo 가 두 겹이 됐고, 터미널을 닫아도
+    #     그 bash 가 살아 EtherCAT 마스터가 4개까지 늘었다.
+    #   ⇒ writer → Emb → 래퍼 셸 순으로 지우고, 마지막에 남은 게 없는지 확인한다.
+    #   ★자기 자신과 조상은 절대 죽이지 않는다(스크립트가 중간에 죽으면 정리가 안 끝난다).
+    echo "[emb_ctl] reset — 모터를 만질 수 있는 프로세스를 전부 정리한다"
+    _keep=" $$ $PPID "
+    _anc=$PPID; for _ in 1 2 3 4 5; do
+        _anc=$(ps -o ppid= -p "$_anc" 2>/dev/null | tr -d ' '); [ -z "$_anc" ] && break
+        _keep="$_keep$_anc "; [ "$_anc" = "1" ] && break
+    done
+
+    # ★pkill -f 를 쓰지 않는다. **자기 자신을 죽인다.**
+    #   2026-08-12: 이 스크립트를 시험하던 셸의 argv 에 "actuator_test.py" 라는 문자열이
+    #   들어 있었더니 pkill -f 가 그 셸을 죽여 reset 이 ①에서 끊겼다(exit 144).
+    #   패턴이 인자·히스토리·에디터 명령줄에 우연히 들어가는 건 흔한 일이다.
+    #   ⇒ PID 를 모아 조상 제외 후 하나씩 죽인다. _kill_matching 로 ①③ 공통 처리.
+    _kill_matching() {   # $1 = ERE 패턴, $2 = 라벨
+        for _p in $(ps -eo pid=,args= | grep -E "$1" | grep -vE "grep -E|ps -eo" \
+                    | awk '{print $1}'); do
+            case "$_keep" in *" $_p "*) continue;; esac
+            _a=$(ps -o args= -p "$_p" 2>/dev/null | cut -c1-70)
+            [ -z "$_a" ] && continue
+            echo "     kill $_p  $_a"
+            kill -9 "$_p" 2>/dev/null || sudo kill -9 "$_p" 2>/dev/null
+        done
+    }
+    echo "  ① writer 종료 (biped_emb.py · actuator_test.py · RobotTestGait · mot_test)"
+    _kill_matching "biped_emb\.py|actuator_test\.py|collect_multichirp\.py|RobotTestGait|mot_test"
+    sleep 1
+
+    echo "  ② Emb 종료"
+    sudo pkill -x RobotEmbedded 2>/dev/null; sleep 1
+    if pgrep -x RobotEmbedded >/dev/null 2>&1; then
+        echo "     TERM 으로 안 죽는다 → KILL"
+        sudo pkill -9 -x RobotEmbedded 2>/dev/null; sleep 1
+    fi
+
+    echo "  ③ 되살리는 래퍼 셸·sudo 정리"
+    _kill_matching "RobotEmbedded|emb_ctl\.sh"
+    sleep 1
+
+    # ⚠pgrep -c 는 "0" 을 **찍으면서 exit 1** 이다. `|| echo 0` 을 붙이면
+    #   출력이 "0\n0" 이 되어 문자열 비교가 깨진다(2026-08-12 실제로 실패분기로 빠졌다).
+    _n=$(pgrep -x RobotEmbedded 2>/dev/null | wc -l)
+    _w=0
+    for _p in $(ps -eo pid=,args= | grep -E "biped_emb\.py|actuator_test\.py" \
+                | grep -vE "grep -E|ps -eo" | awk '{print $1}'); do
+        case "$_keep" in *" $_p "*) continue;; esac
+        _w=$((_w+1))
+    done
+    echo
+    echo "  남은 것 — Emb $_n 개 · writer $_w 개"
+    if [ "$_n" != "0" ] || [ "$_w" != "0" ]; then
+        echo "  ✗ 아직 남았다:"; ps -eo pid,ppid,etime,args | grep -E "RobotEmbedded|biped_emb\\.py|actuator_test\\.py" | grep -vE "grep -E|ps -eo"   # ★\.py 를 붙인다 — 뷰어의 biped_emb.**yaml** 경로에 걸렸었다
+        exit 1
+    fi
+    echo "  ✓ 전부 정리됨"
+    echo
+    echo "  다음: ① 모터 전원 OFF → 3초 → ON   ② diag/emb_ctl.sh start"
+    echo "  ⚠ emb_ctl.sh 에 sudo 를 붙이지 말 것 — 스크립트가 안에서 쓴다. 밖에서 한 겹 더"
+    echo "    씌우면 sudo 가 이중이 되고 고아 셸이 남는다(이번 사고의 원인)."
+    exit 0
     ;;
 stop)
     sudo pkill -x RobotEmbedded 2>/dev/null

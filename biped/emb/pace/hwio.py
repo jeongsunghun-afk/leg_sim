@@ -119,7 +119,7 @@ class Hardware:
         self._conn = np.zeros(self.n, np.int32)
         self._stt = np.zeros(self.n, np.int32)
 
-        self._prev = None                  # stale 판정용 직전 (q,dq,tau)
+        self._prev = None                  # stale 판정용 직전 **전 채널** 스냅샷
         self._last_change_t = 0.0
         self._last_read_t = time.monotonic()
         # 이 간격을 넘겨 read 가 끊기면 그 구간은 stale 판정에서 제외한다(위 read 주석).
@@ -255,13 +255,21 @@ class Hardware:
         #     396ms 가 sleep 0.4s 와 일치하는 게 증거다.
         #   ⇒ 직전 read 로부터 오래 지났으면 **판정을 유예**하고 기준시각을 새로 잡는다.
         #     샘플링을 안 한 구간은 신선도를 판단할 근거가 아니다.
+        # ★신선도는 **전 채널**로 본다 (2026-08-12). 종전엔 방금 읽은 채널의
+        #   (q,dq,tau) 만 봤는데, 그러면 **그 축이 가만히 있기만 해도 stale 이 뜬다.**
+        #   실기: 중력추종 홀드가 성공해 축이 멈추자 q 일정 → G(q) 일정 → τ 일정 →
+        #   dq 0 이 되어 셋 다 무변화 → "상태 정지 ch4 360ms" 로 트립했다.
+        #   **정착이 잘 돼서 트립하는** 구조였다.
+        #   ⇒ 진짜 EtherCAT 동결이면 **어느 채널도** 안 변한다. 한 축만 멈춘 것과 구분된다.
+        #     (오늘 실측한 진짜 동결: 494표본 10초 동안 고유 조합 1개 · IMU 변화폭 0)
         gap = now - self._last_read_t
         self._last_read_t = now
+        allv = (self._q.tobytes(), self._dq.tobytes(), self._tau.tobytes(), self._rpy.tobytes())
         if gap > self.stale_gap_s:
-            self._prev = cur3
+            self._prev = allv
             self._last_change_t = now
-        elif self._prev is None or cur3 != self._prev:
-            self._prev = cur3
+        elif self._prev is None or allv != self._prev:
+            self._prev = allv
             self._last_change_t = now
         if self.publish_fn is not None and now >= self._pub_next:
             self._pub_next = now + self.pub_period

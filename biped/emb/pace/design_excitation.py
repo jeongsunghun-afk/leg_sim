@@ -27,10 +27,44 @@
   모델이 틀린 부분(미모델 마찰·백래시·지연)은 여기 안 잡힌다. "SNR 이 충분하다"는
   "이 모델이 맞다면 식별 가능하다"는 뜻이지 "실측이 잘 나온다"가 아니다.
 
+═══ 2026-08-12 이 도구로 얻은 결론 ═══════════════════════════════════════════
+
+★현행 궤적(spec.pace_multi, 30s)의 평가 — 표본 240,000
+    ROTOR_I      RMS 0.087° · 분해능 0.0% · 단독대비 1.0x   ← 깨끗하다
+    JFRIC×4      RMS 0.009~0.030°
+    JDAMP×4      RMS 0.001~0.005°   ← ROTOR_I 의 1/16 ~ 1/87
+    조건수 5.1 · 축간 상관 0.149(설계값과 일치)
+  ⇒ ROTOR_I 는 이 가진으로 잘 잡힌다. 어제 손계산(SNR 3)과 같은 결론이다.
+
+★★그러나 `JDAMP.foot ↔ JFRIC.foot` 상관이 **+0.926** 이다 — 맞바꿔진다.
+  물리적으로 당연하다: foot 최고속(146dps=2.55rad/s)에서 점성토크는
+  0.02×2.55 = 0.051 Nm 로 쿨롱 0.44 Nm 의 **12%** 밖에 안 된다.
+  둘 다 sign(q̇) 를 따라가는 거의 평행한 신호가 된다.
+
+  ⚠**궤적 모양으로 고치려는 시도 둘 다 실패했다**(재시도 방지용으로 기록):
+    ① dual — 느리고 큰 성분을 겹쳐 저속·고속을 동시에 만든다
+         비율 0.30 → r 0.946→**0.957** · 조건수 6.2→7.0
+         비율 0.45 → r 0.946→**0.965** · 조건수 6.2→7.7
+       진폭 예산을 나눠 최고속이 186→106dps 로 떨어졌고, 느린 성분이 계속 움직여
+       q̇≈0 체류가 오히려 줄었다. **정확히 반대 방향이었다.**
+    ② f0scale — f_start 를 낮춰 저속 구간을 늘린다
+         0.3배 → r 0.936 · 조건수 5.7 · 축간 상관 0.400→**0.562**
+         0.1배 → r 0.932 · 조건수 5.5 · 축간 상관 0.400→**0.606**
+       상관은 0.946→0.932 로 **거의 안 움직이고** 축간 상관만 나빠진다.
+       전 축이 초반을 함께 느리게 돌기 때문이다.
+
+  ⇒ **해법은 궤적이 아니다.** JDAMP 또는 JFRIC 중 하나를 축별 시험
+    (q̇_ref 를 훑는 마찰-속도 곡선, NEXT_HW §B)으로 **먼저 못박고** CMA-ES 에서 고정할 것.
+    NEXT_HW 가 그걸 "(선택)" 으로 적어 뒀는데, 이 분석 기준으로는 **선택이 아니다.**
+    같은 결론이 pace_cmaes 셀프테스트에서도 나왔다 — 6세대에서 틀어지는 건 JDAMP 쪽이다.
+
+★분해능 숫자는 **낙관값**이다(백색·독립 잡음 가정). 믿을 것은 **순위와 혼동쌍**이지
+  "분해능 0.1%" 같은 절대값이 아니다. 실제 한계는 잡음이 아니라 모델오차다.
+
 사용:
-    ~/.venv-mujoco/bin/python design_excitation.py                # 현재 spec 평가
+    ~/.venv-mujoco/bin/python design_excitation.py                # 현재 spec 평가(30s)
     ~/.venv-mujoco/bin/python design_excitation.py --T 10         # 짧게(빠른 확인)
-    ~/.venv-mujoco/bin/python design_excitation.py --compare 자유형식.yaml
+    ~/.venv-mujoco/bin/python design_excitation.py --dual 0.3,0.1 # 변형안 평가
 """
 from __future__ import annotations
 
@@ -136,7 +170,6 @@ def main() -> int:
         mc = dict(mc); mc["f_start_hz"] = list(np.array(mc["f_start_hz"], float) * a.f0scale)
     tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate, dual)
     names = list(jm.names)
-    names0 = names
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
     #   (kp_joint = kp_ch·k²). 여기서 갈리면 감도가 통째로 틀린다.

@@ -626,6 +626,32 @@ class Hardware:
                 raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "
                                   f"{Lh.vel_trip} — 잡혀 있지 않다")
 
+    def brake(self, ch: int, kp: float, kd: float, hold_s: float = 0.3,
+              tau_ff_fn=None) -> float:
+        """시험축을 **제어 하에 세우고 그 자리에 붙든다**. limp 대신 쓴다.
+
+        ★2026-08-12 실기에서 limp 가 두 축을 상자 밖으로 날렸다:
+            HL_calf 120dps 에서 스윕 끝(+37) 직후 limp → 마찰만으로 감속하며
+              **21.8° 관성주행**(예측) → 실측 64.69° 에서 위치한계 트립
+            HL_thigh 홈(+4.6)에서 limp → 중력 1.43Nm ÷ I 0.169 = 486deg/s² 로
+              **자유낙하**, 0.3초에 21.9° 떨어지고 속도 146dps → 정지자세(+40)에서 트립
+          두 경우 모두 "측정이 끝났으니 놓는다" 가 곧 "제어를 놓고 날린다" 였다.
+        ⇒ 목표를 **진입 시점의 현재각**으로 잡고 게인을 유지한다. 넘어가는 거리가
+          관성주행 21.8° → 제어정지 2.3° (calf), 자유낙하 → 0°(thigh) 로 줄어든다.
+        ⚠홀드축은 건드리지 않는다 — step() 이 시험축만 쓴다. --solo 에서도 안전하다.
+        """
+        q_hold = float(self.read(ch)[0])
+        t0 = time.monotonic()
+        k = 0
+        while time.monotonic() - t0 < hold_s:
+            self.step(ch, q_hold, kp, kd,
+                      tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0))
+            k += 1
+            slp = t0 + k * self.dt - time.monotonic()
+            if slp > 0:
+                time.sleep(slp)
+        return q_hold
+
     def release_test_axis(self, ch: int, n_write: int = 5) -> None:
         """**시험축만** 무여자로. 홀드축은 계속 잡아둔다.
 

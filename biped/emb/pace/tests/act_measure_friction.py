@@ -145,8 +145,9 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
                 if slp > 0:
                     time.sleep(slp)
 
-            hw.limp()
-            time.sleep(0.3)
+            # ★limp 하지 않는다 — thigh 는 여기서 146dps 로 자유낙하했다(brake 주석).
+            #   파단 판정은 이미 끝났고, 다음 시행의 arm() 이 현재각을 다시 래치한다.
+            hw.brake(ch, kp, kd, 0.3, tau_ff_fn=ff)
             if jammed:
                 log(f"    ⚠ {'+' if direction > 0 else '−'}dir trial{trial}: "
                     f"중력 대비 초과토크가 상한 {cap:.2f}Nm 에 걸려 중단 — **막힘**이다"
@@ -219,8 +220,9 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             time.sleep(0.3)
             q_start = q_center - d * half
             s = hw.run(ch, lambda t, a=q_start, d=d: a + d * v * t, T, kp, kd, tau_ff_fn=ff)
-            hw.limp()
-            time.sleep(0.25)
+            # ★limp 하지 않는다 — 120dps 에서 21.8° 관성주행해 상자를 넘었다(brake 주석).
+            #   샘플은 이미 s 에 다 들어 있다. 브레이크 구간은 분석에 안 쓴다.
+            hw.brake(ch, kp, kd, 0.25, tau_ff_fn=ff)
 
             a = samples_to_arrays(s)
             # 가감속 구간을 빼고 중앙 dwell 만 사용.
@@ -341,7 +343,24 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #     → 스윕 [0, +40]. 그 +40 에서 기구 스톱을 밀며 스톨(초과 2.06Nm, -1.5dps).
     #   ⇒ 양끝 MARGIN 을 비우고, 그래도 안 들어가면 **스트로크를 줄인다.**
     #     조용히 줄이지 않는다 — 줄인 사실과 실제 구간을 로그에 찍는다.
-    MARGIN = 3.0
+    # ★여유폭 = 기본 3° + **제어정지 거리**. 상수로 두면 최고속도를 올릴 때 또 터진다
+    #   (2026-08-12: MARGIN 3° 로 calf 를 +37 까지 보냈고 거기서 넘어갔다).
+    #   속도계단 v0 를 kp·kd 로 세울 때의 최대 변위 = (v0/ω_n)·exp(−ζ·φ/√(1−ζ²)).
+    #     thigh 120dps → 3.2° · calf 120dps → 2.3° · foot 60dps → 1.1° · hip 10dps → 0.2°
+    _I = next((float(x["I_total_pred"]) for x in spec["joints"]
+               if int(x["ch"]) == ch and "I_total_pred" in x), None)
+    _vmax = max(float(v) for v in fr["sweep"]["speeds_dps"])
+    if _I:
+        _wn, _z = np.sqrt(kp / _I), kd / (2.0 * np.sqrt(kp * _I))
+        _d = np.deg2rad(_vmax) / _wn
+        if _z < 1.0:
+            _d *= np.exp(-_z / np.sqrt(1 - _z ** 2)
+                         * np.arctan2(np.sqrt(1 - _z ** 2), _z))
+        MARGIN = 3.0 + float(np.rad2deg(_d))
+    else:
+        MARGIN = 6.0                       # I 를 모르면 보수적으로
+    log(f"    상자 여유 {MARGIN:.1f}° (기본 3.0 + 최고 {_vmax:.0f}dps 제어정지 "
+        f"{MARGIN - 3.0:.1f}°)")
     lo_b, hi_b = joint["q_min"] + MARGIN, joint["q_max"] - MARGIN
     half = fr["sweep"]["stroke_deg"] / 2
     if 2 * half > hi_b - lo_b:

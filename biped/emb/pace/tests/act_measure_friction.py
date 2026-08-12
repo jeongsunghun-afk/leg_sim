@@ -76,7 +76,8 @@ TEMPLATE = Template("""
 
 
 # ── (A) 정지마찰 ────────────────────────────────────────────────────────────
-def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[float], list]:
+def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
+               q_ref0=None) -> tuple[list[float], list[float], list]:
     """목표각을 ramp_dps 로 밀며 |dq|>thresh 가 되는 순간의 토크를 기록.
 
     ★ff 는 **인자로 받는다** (2026-08-12 실기에서 NameError 로 터진 뒤).
@@ -99,7 +100,6 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
     #     limp 로 되돌릴 수는 없다 — thigh 가 146dps 로 자유낙하한다(hwio.brake 주석).
     #   ⇒ 기준자리를 명시적으로 잡고 매 시행 전에 되돌아온다. 정착은 마찰 데드밴드
     #     (τ_s/kp) 안이므로 thigh 기준 ±0.7° = ±0.07 Nm — 종전 ±0.8 Nm 의 1/10 이다.
-    q_ref0 = None
     for direction in (+1.0, -1.0):
         for trial in range(int(cfg["trials"])):
             if q_ref0 is None:
@@ -178,6 +178,65 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
             log(f"    {'+' if direction > 0 else '−'}dir trial{trial}: "
                 f"breakaway tau={tau_at_move:+.4f}")
     return pos, neg, traces
+
+
+def _free_reference(hw, ch, kp, kd, ff, log, tau_s_hint=0.8, probe_deg=2.0,
+                    step_deg=6.0, tries=4, q_hi=None) -> float:
+    """파단을 **양방향 다 움직이는 자리**에서 시작하도록 기준점을 고른다.
+
+    ★왜 필요한가 (2026-08-12 HL_thigh) — 파단은 ±방향 차로 중력을 상쇄하므로
+      **한쪽만 막혀도 값이 통째로 안 나온다.** 실기에서 정확히 그랬다:
+        +dir 3시행 정상(파단 −2.60, 마찰 0.25) · −dir 3시행 전부 상한 2.5Nm 에 걸림
+      중력모델은 무죄로 확인됐다 — FF −2.791 vs MuJoCo(실제 foot +60° 반영) −2.847,
+      **0.056Nm 차이**다. 필요한 −dir 힘은 0.30Nm 인데 2.5 에서 막혔으니 진짜 간섭이다.
+      가장 유력한 정체: 홈 근처로 내려오면 **늘어진 발이 바닥/스탠드에 닿아** 다리가
+      버팀대가 된다. 아래로는 막히고 위로는 자유롭다 — 관측된 비대칭과 일치한다.
+    ⇒ 지금 자리에서 ±probe_deg 를 짧게 밀어 보고, 막힌 쪽이 있으면 **반대로 step_deg
+      옮겨서** 다시 본다. 마찰 측정은 자리를 안 가린다(±상쇄) — 자유로운 데면 된다.
+    ⚠아무 데서도 양방향이 안 열리면 중단한다. 그때는 사람이 볼 문제다.
+    """
+    cap = max(0.8, 2.0 * float(tau_s_hint))
+    q = float(hw.read(ch)[0])
+    with hw.intentional_push():
+        for k in range(tries):
+            blocked = 0
+            for d in (+1.0, -1.0):
+                hw.arm(ch, kp, kd)
+                q0 = float(hw.read(ch)[0])
+                t0, moved, since = time.monotonic(), False, None
+                while time.monotonic() - t0 < probe_deg / 0.6 + 1.0:
+                    t = time.monotonic() - t0
+                    fv = ff(float(hw._q[ch]))
+                    smp = hw.step(ch, q0 + d * min(0.6 * t, probe_deg), kp, kd, tau_ff=fv)
+                    if (smp.q_deg - q0) * d > 0.25:
+                        moved = True
+                        break
+                    if abs(smp.tau - fv) > cap:
+                        since = since or time.monotonic()
+                        if (time.monotonic() - since) * 1e3 > 200:
+                            break
+                    else:
+                        since = None
+                    time.sleep(hw.dt)
+                hw.brake(ch, kp, kd, 0.2, tau_ff_fn=ff)
+                if not moved:
+                    blocked += int(d)          # +1 이면 위쪽이, −1 이면 아래쪽이 막힘
+            if blocked == 0:
+                log(f"    기준자리 {q:+.2f}° — 양방향 자유(±{probe_deg}° 확인)")
+                return q
+            away = -1.0 if blocked > 0 else +1.0
+            q_new = q + away * step_deg
+            if q_hi is not None and not (q_hi[0] <= q_new <= q_hi[1]):
+                break
+            log(f"    ⚠{q:+.2f}° 에서 {'위' if blocked > 0 else '아래'}쪽이 막혔다 — "
+                f"{q_new:+.2f}° 로 옮겨 다시 본다 ({k + 1}/{tries})")
+            hw.goto(ch, q_new, kp, kd, speed_dps=10.0, tau_ff_fn=ff)
+            q = float(hw.read(ch)[0])
+    raise RuntimeError(
+        f"양방향이 다 열리는 자리를 {tries}번 시도해도 못 찾았다 (마지막 {q:+.2f}°).\n"
+        f"  파단은 ±상쇄가 전제라 한쪽만 막혀도 값이 안 나온다.\n"
+        f"  **기구를 볼 것** — 늘어진 발이 바닥·스탠드에 닿아 다리가 버팀대가 되면\n"
+        f"  아래로만 막힌다(2026-08-12 HL_thigh 가 그랬다). 다리를 살짝 들어 줄 것.")
 
 
 # ── (A½) 스윕 전 **범위 확인** ──────────────────────────────────────────────
@@ -426,8 +485,14 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # ★스톨 감지는 여기서만 끈다 — "안 움직이는 축에 토크를 키운다" 가 측정법 자체다.
     #   대신 _breakaway 안의 tau_cap_nm 이 상한을 쥔다(그 주석 참조). 둘은 한 쌍이다:
     #   cap 없이 이 with 만 쓰면 hip 보호가 통째로 사라진다.
+    # ★파단 전에 **양방향이 열리는 자리**를 고른다 (_free_reference 주석).
+    _q0 = _free_reference(hw, ch, kp, kd, _ff, log,
+                          tau_s_hint=max(0.8, 2.0 * float(fr["breakaway"].get(
+                              "tau_cap_nm", 2.5)) / 2.5),
+                          q_hi=(joint["q_min"] + 3.0, joint["q_max"] - 3.0))
     with hw.intentional_push():
-        pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log, ff=_ff)
+        pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log,
+                                       ff=_ff, q_ref0=_q0)
     if not pos or not neg:
         raise RuntimeError("breakaway 양방향 데이터 부족 — 축이 막혔거나 게인 부족")
     tp, tn = float(np.mean(pos)), float(np.mean(neg))

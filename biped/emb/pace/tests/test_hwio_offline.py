@@ -341,6 +341,14 @@ def t_friction_full():
 
     fake = FakeLib(n, q_init=home, dt=1 / 500.)
     hw = _make_hw(fake, spec, hold=[], align=False)          # solo 와 동일 조건
+    # ★**실기와 같은 조건**으로 건다 (2026-08-12). grav_fn/tau_ff_fn 을 안 꽂으면
+    #   measure_actuator_friction 이 표 경로로 빠져 실기와 다른 코드를 밟는다.
+    #   실제로 그래서 `_base → hw.grav_fn → _ff → _base` **무한 재귀**를 못 잡았다.
+    #   실기는 actuator_test 가 홈복귀 전에 둘 다 걸어 놓고 들어온다.
+    _gt0 = (spec["torque_mode"].get("tau_grav_table") or {})
+    hw.grav_fn = (lambda c, q, _t=_gt0:
+                  float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"])) if c in _t else 0.0)
+    hw.tau_ff_fn = lambda c, q: float(hw.grav_fn(3, q)) if c == 3 else 0.0
     j = {"ch": 3, "name": "HL_foot", "gear": 7.0, "q_min": -27.84, "q_max": 48.0}
 
     import tests.act_measure_friction as amf  # noqa: F401

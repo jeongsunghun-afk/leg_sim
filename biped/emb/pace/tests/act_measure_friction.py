@@ -460,8 +460,13 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #     여기서 표를 새로 읽으면 그 보정이 사라진다 — 같은 값을 두 곳이 따로 만드는,
     #     오늘 여러 번 나온 그 구조다. ⇒ hw.grav_fn 이 있으면 **그걸 쓴다.**
     #     _gb 는 파단 뒤 **추가 미세보정**(더 정확한 ± 평균)만 담는다.
+    #   ⚠⚠원본을 **지금 붙들어 둔다**(_g0). `hw.grav_fn` 을 이름으로 참조하면
+    #     호출 **시점**에 조회되는데, 아래에서 hw.grav_fn 을 _ff 를 부르는 람다로
+    #     바꾸므로 _ff → _base → hw.grav_fn → _ff … **무한 재귀**가 된다.
+    #     실기에서 RecursionError 로 터졌다. 기본인자로 묶어 정의 시점 값을 고정한다.
     _gb = [0.0]
-    _base = ((lambda q: float(hw.grav_fn(ch, q))) if hw.grav_fn is not None
+    _g0 = hw.grav_fn
+    _base = ((lambda q, _f=_g0: float(_f(ch, q))) if _g0 is not None
              else (lambda q: float(np.interp(q, _gq, _gv)) if _gt else 0.0))
     def _ff(q_ch):
         return _base(q_ch) + _gb[0]
@@ -514,9 +519,8 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
                     f"(tools/gen_grav_table.py)")
         log(f"    ⚠보정이 3Nm 을 넘는다 — 자세가 표 생성 시점과 많이 다르다는 뜻이다.")
     # 스톨 감지도 **같은 값**을 보게 한다. 두 곳이 다른 중력을 쓰면 그게 곧 오진이다.
-    _prev_gfn = hw.grav_fn
-    hw.grav_fn = lambda c, qq, _o=_prev_gfn: (_ff(qq) if c == ch else
-                                              (_o(c, qq) if _o else 0.0))
+    hw.grav_fn = lambda c, qq, _o=_g0: (_ff(qq) if c == ch else
+                                        (_o(c, qq) if _o else 0.0))
     # ★상자 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
     #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 상자
     #   경계와 **정확히 일치**한다. 실기에서 그대로 터졌다:

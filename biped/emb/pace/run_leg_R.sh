@@ -24,7 +24,10 @@
 set -u
 cd "$(dirname "$0")"
 
-CHS=${1:-"7 5 6 4"}          # HR_foot · HR_thigh · HR_calf · HR_hip
+# ★`$1` 이 아니라 `$*` 다 (2026-08-12). `bash run_leg_L.sh 3 1 2` 를 실행했더니
+#   **ch3 만 돌고 "왼다리 완료" 로 끝났다** — $1 은 "3" 하나뿐이다.
+#   조용히 두 축을 건너뛰고 성공한 척 끝나는 게 제일 나쁜 실패다.
+CHS=${*:-"7 5 6 4"}          # HR_foot · HR_thigh · HR_calf · HR_hip
 NAME=(HL_hip HL_thigh HL_calf HL_foot HR_hip HR_thigh HR_calf HR_foot)
 
 echo "════════════════════════════════════════════════════════════════"

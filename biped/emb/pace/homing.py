@@ -113,12 +113,25 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     q_now = np.asarray(jm.ch_to_q_joint(
         np.array([hw.read(c)[0] for c in range(hw.n)], float)), float)
     err = q_now - homer.q_home
-    # ★only_ch 면 그 축만 본다 — 손으로 잡은 축의 모델각은 의미가 없다.
-    emax = float(abs(err[int(np.where(np.asarray(jm.ch) == only_ch)[0][0])])) \
-        if only_ch is not None \
-        else float(np.max(np.abs(err)))
-    log(f"    도착 — 최대 오차 {emax:.2f}° (모델각: "
-        f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))})")
+    # ★only_ch 면 그 축만, 그리고 **채널각**으로 본다 (2026-08-12 실기 ch3).
+    #   종전엔 모델각 오차를 썼는데, 커플링 축은 그게 추종성능이 아니다:
+    #     q_foot_model = q_ch3/(s·k) − coef·q_calf
+    #   calf 가 무여자로 −60.7° 늘어져 있으면 **foot 모터가 채널각 0 에 정확히 도착해도**
+    #   모델각은 +59.4° 로 뜬다. 실기 로그가 그랬고, 그걸 "축이 못 따라갔다" 로 찍었다.
+    #   그 뒤 시험은 R²=0.967 로 멀쩡히 돌았다 — 경고가 틀렸던 것이다.
+    #   ⇒ solo 의 추종 판정은 **우리가 명령한 그 값**(채널각)으로 한다. 모델각은 참고로만.
+    e_model = float(abs(err[int(np.where(np.asarray(jm.ch) == only_ch)[0][0])])) \
+        if only_ch is not None else 0.0
+    emax = (abs(float(hw._q_cmd[only_ch]) - float(hw.read(only_ch)[0]))
+            if only_ch is not None else float(np.max(np.abs(err))))
+    if only_ch is not None:
+        log(f"    도착 — 시험축 **채널각** 오차 {emax:.2f}° "
+            f"(모델각 오차 {e_model:.2f}° — 커플링 원천축이 무여자면 여기는 안 맞는 게 정상)")
+        log(f"      참고 모델각: "
+            f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))}")
+    else:
+        log(f"    도착 — 최대 오차 {emax:.2f}° (모델각: "
+            f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))})")
     if emax > tol_deg and only_ch is not None:
         # ★--solo 에서는 목표에 **원리적으로 못 갈 수 있다** (2026-08-12 실기).
         #   커플링 축이 그렇다: q_ch_foot = (q_foot + q_calf)·s·k 이므로 calf 가 −55° 로

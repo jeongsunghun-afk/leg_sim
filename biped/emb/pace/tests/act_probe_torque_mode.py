@@ -53,14 +53,29 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
     ramp = float(cfg.get("ramp_nm_per_s", 0.25))
     move_deg = float(cfg.get("move_thresh_deg", 0.30))
     trials = int(cfg.get("trials", 2))
-    # ★중력 바이어스 — 램프 시작점(위 주석 참조). 채널토크[Nm], 부호 포함.
-    bias = float((cfg.get("tau_bias_by_ch") or {}).get(ch, 0.0))
+    # ★중력 바이어스 — 램프 시작점. 채널토크[Nm], 부호 포함.
+    #   ★**상수가 아니라 위치의 함수**다 (2026-08-12). 게인을 놓으면 축이 자기 평형점으로
+    #     흘러가는데 거기서는 중력이 이미 다르다:
+    #       HL_hip 0° 에서 5.25 Nm → 실제로 멈춘 −11° 에서는 4.09 Nm (1.16 Nm 차이)
+    #     그 차이 때문에 τ_break 이 마찰이 아닌 값이 됐다(리포트 0.454/0.584 은 마찰이
+    #     아니라 '어긋난 bias 에서 파단까지의 거리' 였다).
+    #   ⇒ 표(tools/gen_grav_table.py 생성)를 **채널각으로** 보간한다. 런타임 변환 없음.
+    _tbl = (cfg.get("tau_grav_table") or {}).get(ch)
+    _fallback = float((cfg.get("tau_bias_by_ch") or {}).get(ch, 0.0))
+    if _tbl:
+        _qs = np.asarray(_tbl["q_ch"], float)
+        _ts = np.asarray(_tbl["tau"], float)
+    def grav_at(q):
+        """채널각 q 에서의 중력토크[Nm]. 표 밖은 끝값으로 고정(np.interp 기본)."""
+        return float(np.interp(q, _qs, _ts)) if _tbl else _fallback
     swing = float((cfg.get("swing_by_ch") or {}).get(ch, cfg.get("tau_max_nm", 1.4)))
-    swing = float(swing)                               # 바이어스 **주변** 진폭(축별 가능)
-    tau_max = abs(bias) + swing                        # 절대 상한(클립용)
+    tau_max = (float(np.max(np.abs(_ts))) if _tbl else abs(_fallback)) + swing   # 절대 상한
 
-    log(f"  [{name}] 순수 토크모드 프로브 — tau {bias:+.3f}±{swing} Nm @ {ramp} Nm/s, "
-        f"방향당 {trials}회" + (f"  (중력 바이어스 {bias:+.3f})" if bias else ""))
+    bias = grav_at(hw.read(ch)[0])          # 시작 위치의 중력. 시행마다 갱신된다.
+    log(f"  [{name}] 순수 토크모드 프로브 — tau G(q)±{swing} Nm @ {ramp} Nm/s, "
+        f"방향당 {trials}회"
+        + (f"  (중력 바이어스 {bias:+.3f} @ 현재위치 — **시행마다 갱신**)" if _tbl
+           else (f"  (중력 바이어스 {bias:+.3f} 고정)" if bias else "")))
     log(f"           (위치모드로 잰 정지마찰 τ_s 와 비교하면 교차검증이 된다)")
 
     results, raw = [], []
@@ -69,6 +84,7 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
             # ★중력이 큰 축은 **게인을 먼저 놓으면 안 된다** — 바이어스를 올리기 전에
             #   떨어진다(드라이런: hip 207dps 트립, calf 1.58° 표류).
             #   ⇒ 홀드게인으로 잡고 시작해 kp·kd→0 / τ→bias 로 **핸드오프**한다.
+            bias = grav_at(hw.read(ch)[0])     # 지금 위치의 중력
             handoff = abs(bias) > 0.05
             kp_h, kd_h = (hw._hold_gain_of(ch) if handoff else (0.0, 0.0))
             hw.arm(ch, kp_h, kd_h)
@@ -93,6 +109,24 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
                 for _ in range(int(0.10 / hw.dt)):
                     hw.step_torque(ch, bias, tau_max)
                     time.sleep(hw.dt)
+                # ★중력**추종** 홀드로 평형까지 데려간다 (2026-08-12).
+                #   매 틱 τ = G(q_now) 를 다시 계산해 실으면, 축은 중력이 아니라
+                #   **마찰 불균형만큼만** 움직이다가 스스로 선다. 상수 bias 로 두면
+                #   축이 흘러가는 내내 중력과 어긋난 채라 파단값이 오염된다.
+                #   HL_hip 시행0 이 그 사례다 — 혼자 시작각이 3.2° 달랐고(−7.81 vs −11.00)
+                #   그 흐름이 파단으로 오검출돼 f<0.084 라는 모순된 값이 나왔다.
+                t_end = time.monotonic() + 2.5
+                q_w, t_w = hw.read(ch)[0], time.monotonic()
+                while time.monotonic() < t_end:
+                    q_now = hw.read(ch)[0]
+                    hw.step_torque(ch, grav_at(q_now), tau_max)
+                    if time.monotonic() - t_w > 0.15:
+                        if abs(q_now - q_w) < 0.05:
+                            break                      # 0.15s 동안 0.05° 미만 → 정착
+                        q_w, t_w = q_now, time.monotonic()
+                    time.sleep(hw.dt)
+                bias = grav_at(hw.read(ch)[0])         # ★최종 bias = **정착 위치**의 중력
+
                 # ★판정 기준은 "**계속 흐르는가**" 지 "움직였나" 가 아니다.
                 #   핸드오프 중 축은 그 축의 정상 처짐(bias/kp_h — hip 3.0° · calf 0.58°)
                 #   만큼 내려앉는다. 그건 **무해**하다 — 끝나면 τ=bias 가 중력과 정확히

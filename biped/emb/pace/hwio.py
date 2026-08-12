@@ -605,8 +605,7 @@ class Hardware:
         for sgn in (+1.0, -1.0):
             tgt = q0 + sgn * abs(step_deg)
             for _ in range(n):
-                s = self.step(ch, tgt, kp, kd,
-                             tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0))
+                s = self.step(ch, tgt, kp, kd)
                 time.sleep(self.dt)
             settle.append(s.q_deg)
         spread = settle[0] - settle[1]          # 중력 상쇄된 순수 추종량
@@ -770,8 +769,7 @@ class Hardware:
         base = []
         n_settle = max(1, int(settle_s / self.dt))
         for _ in range(n_settle):
-            s = self.step(ch, q0, kp, kd,
-                             tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0))
+            s = self.step(ch, q0, kp, kd)
             base.append((s.tau, s.q_deg))
             time.sleep(self.dt)
         tau_b = float(np.mean([b[0] for b in base[-n_settle // 2:]]))
@@ -851,7 +849,8 @@ class Hardware:
         T = abs(dist) / max(speed_dps, 1e-6)
         if T < 1e-3:
             return
-        self.run(ch, lambda t: q0 + dist * min(t / T, 1.0), T + 0.3, kp, kd)
+        self.run(ch, lambda t: q0 + dist * min(t / T, 1.0), T + 0.3, kp, kd,
+                 tau_ff_fn=tau_ff_fn)
 
 
 def samples_to_arrays(s: list[Sample]) -> dict[str, np.ndarray]:

@@ -121,12 +121,15 @@ class Hardware:
         self._stt = np.zeros(self.n, np.int32)
 
         self._prev = None                  # stale 판정용 직전 **전 채널** 스냅샷
-        self._prev_cmd = None              # 직전 명령 — 명령이 바뀔 때만 신선도를 따진다
         self._last_change_t = 0.0
         self._last_read_t = time.monotonic()
         # 이 간격을 넘겨 read 가 끊기면 그 구간은 stale 판정에서 제외한다(위 read 주석).
         #   제어루프 주기(2ms)보다 넉넉하되, 진짜 두절을 놓칠 만큼 크지 않게.
         self.stale_gap_s = 0.05
+        # 신선도를 따지기 시작하는 **명령 누적변위**[deg]. 위 read() 4차 주석 참조.
+        # 엔코더 분해능(~0.01°)의 50배 — 이만큼 명령했는데 1LSB 도 안 변하면 동결이다.
+        self.stale_cmd_deg = 0.5
+        self._cmd_at_change = None
         self._tau_over_since = None
         self._armed = False
         # ★홀드축 목표를 **한 번만** 래치한다 (2026-08-12).
@@ -314,27 +317,26 @@ class Hardware:
         #     (오늘 실측한 진짜 동결: 494표본 10초 동안 고유 조합 1개 · IMU 변화폭 0)
         gap = now - self._last_read_t
         self._last_read_t = now
-        # ★신선도는 "**명령이 바뀌는 동안** 측정이 따라 바뀌는가" 다 (2026-08-12, 3차 수정).
-        #   가만히 있는 로봇은 (q,dq,tau,rpy) 가 전부 그대로다 — 그건 **정상**이다.
-        #   실기 --solo 에서 작업자가 다리를 잡아 완전히 정지시키자 "상태 정지 ch1 391ms"
-        #   로 트립했다. IMU 가 죽어 있어(rpy 변화폭 정확히 0) 잔여 흔들림조차 없다.
-        #   ⇒ **우리가 명령을 바꾸고 있을 때만** 신선도를 따진다. 명령이 정지해 있으면
-        #     측정이 정지한 것도 정상이므로 기준시각을 계속 갱신한다.
-        #   ⚠이러면 "홀드 중 동결" 은 못 잡는다. 그때는 명령을 안 바꾸고 있으므로
-        #     눈먼 채 움직일 위험도 없다 — 다음 명령 변화에서 곧바로 걸린다.
+        # ★신선도는 "**명령이 유의미하게 움직였는데** 측정이 안 따라오는가" 다
+        #   (2026-08-12, 4차 수정 — 3차의 '명령 바이트가 바뀌었나' 로는 부족했다).
+        #   3차: 가만히 있는 로봇은 (q,dq,tau,rpy) 가 그대로고 그건 정상이므로,
+        #        명령이 정지해 있으면 판정을 안 했다. 작업자가 다리를 잡아 세운
+        #        --solo 에서 "상태 정지 ch1 391ms" 로 트립한 걸 고친 것이다.
+        #   4차: 그래도 **파단푸시에서 오탐했다** — 실기 ch2 "상태 정지 161ms".
+        #        파단푸시는 명령을 0.6dps 로 기어가게 하므로 바이트는 매 틱 바뀐다
+        #        → 3차 기준으로는 "명령이 움직이는 중". 그런데 **축이 안 움직이는 게
+        #        측정법 자체**라 측정값도 그대로다. 즉 정상 동작이 동결로 보였다.
+        #        150ms 동안 명령은 0.09° 밖에 안 간다 — 그 정도로는 엔코더 1LSB 도
+        #        안 움직이는 게 당연하다.
+        #   ⇒ 바이트 변화가 아니라 **누적 변위**로 본다: 마지막으로 측정값이 변한
+        #     이후 명령이 stale_cmd_deg 이상 움직였을 때만 신선도를 따진다.
+        #       파단푸시 0.6dps → 0.5° 가는 데 833ms (오탐 없음)
+        #       홈복귀   15dps → 0.5° 가는 데  33ms (진짜 동결은 여전히 즉시 잡힘)
         allv = (self._q.tobytes(), self._dq.tobytes(), self._tau.tobytes(), self._rpy.tobytes())
-        cmdv = self._q_cmd.tobytes()
-        cmd_moving = (self._prev_cmd is not None and cmdv != self._prev_cmd)
-        self._prev_cmd = cmdv
-        if not cmd_moving:
+        if gap > self.stale_gap_s or self._prev is None or allv != self._prev:
             self._prev = allv
             self._last_change_t = now
-        if gap > self.stale_gap_s:
-            self._prev = allv
-            self._last_change_t = now
-        elif self._prev is None or allv != self._prev:
-            self._prev = allv
-            self._last_change_t = now
+            self._cmd_at_change = self._q_cmd.astype(np.float64).copy()
         if self.publish_fn is not None and now >= self._pub_next:
             self._pub_next = now + self.pub_period
             try:                       # 발행 실패가 시험을 멈추면 안 된다
@@ -344,6 +346,14 @@ class Hardware:
         return q, dq, tau, cur
 
     def stale_ms(self) -> float:
+        """측정이 마지막으로 변한 뒤 지난 시간[ms]. 단, **명령이 유의미하게 움직인
+        경우에만** 센다(read() 의 4차 주석 참조). 아직 안 움직였으면 0 을 낸다 —
+        판단할 근거가 없는 것이지 신선한 것은 아니다."""
+        if self._cmd_at_change is not None:
+            moved = float(np.max(np.abs(self._q_cmd.astype(np.float64)
+                                        - self._cmd_at_change)))
+            if moved < self.stale_cmd_deg:
+                return 0.0
         return (time.monotonic() - self._last_change_t) * 1e3
 
     def wait_fresh(self, timeout_s: float = 5.0, ch: int = 0) -> None:
@@ -417,10 +427,17 @@ class Hardware:
                 self._stall_since.pop(ch, None)
             elif (t_now - self._stall_since.setdefault(ch, t_now)) * 1e3 > self.stall_ms:
                 self._stall_since.pop(ch, None)
+                # ★**어디서** 멈췄는지 같이 찍는다 (2026-08-12 실기 ch1).
+                #   위치 없이 "스톨" 만 보면 기구스톱인지·손인지·간섭인지 못 가린다.
+                #   상자 끝과의 거리를 함께 주면 첫 줄만 읽고도 판별된다.
+                _d = min(q - L.q_min, L.q_max - q)
                 raise SafetyAbort(
                     f"시험축 **ch{ch}** 스톨 — 토크 {abs(tau):.2f}Nm 이 중력 {g:.2f}Nm 을 "
                     f"{abs(tau)-g:.2f}Nm 넘는데 속도 {dq:+.1f}dps 로 안 움직인다"
                     f"({self.stall_ms:.0f}ms 지속).\n"
+                    f"  위치 {q:+.2f}° · 명령 {q_cmd:+.2f}° · 상자 [{L.q_min:+.1f}, "
+                    f"{L.q_max:+.1f}]° — 가까운 상자 끝까지 {_d:+.2f}°.\n"
+                    f"  {'상자 끝이다 → **기구 스톱**을 밀고 있다.' if _d < 3.0 else '상자 한가운데다 → 기구스톱이 아니라 **간섭·손·케이블**이다.'}\n"
                     f"  기구 스톱·간섭에 밀어붙이고 있다 — **이대로 두면 과전류로 드라이버가**\n"
                     f"  **래치오프된다**(2026-08-12 에 ch0 을 10.6Nm 로 밀다 실제로 그랬다).\n"
                     f"  τ_trip({L.tau_trip}Nm)은 그 사고보다 높아서 못 잡는다 — 그래서 이 검사가 있다.")

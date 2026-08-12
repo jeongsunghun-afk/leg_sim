@@ -680,11 +680,30 @@ def main() -> int:
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).
                         #   지그가 물려 있으면 편차가 작아 즉시 끝나거나 생략된다.
                         #   궤적은 GUI 홈복귀와 **같은 구현**(control/home.py:HomeTrajectory).
-                        _homer = make_homer(_jm, _c, hw.dt)
-                        goto_home(hw, _jm, _homer, _c, q_box=box, log=_log,
-                                  speed_dps=a.home_speed,
-                                  **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
-                                     if a.solo else {}))
+                        # ★"상태 정지"(SHM 동결) 는 **한 번 재시도한다** (2026-08-12).
+                        #   실기 ch3 홈복귀 중 365ms 동결로 세션이 끝났는데, **바로 다음
+                        #   축(ch1)이 정상으로 돌았다** — 전원사이클이 필요한 OP 이탈이
+                        #   아니라 일과성 정지였다. 그걸 못 넘겨서 foot 을 못 쟀다.
+                        #   ⚠판별은 SHM 이 **스스로 돌아오는가** 다. 진짜 OP 이탈은 안 돌아온다.
+                        #     wait_fresh 가 5초 안에 성공하면 일과성, 실패하면 진짜다.
+                        #   ⚠재시도는 limp 된 **실제 위치에서 다시 계획**한다. 눈먼 채로
+                        #     이어가지 않는다 — homer 를 새로 만드는 이유가 그것이다.
+                        for _try in range(2):
+                            try:
+                                goto_home(hw, _jm, make_homer(_jm, _c, hw.dt), _c,
+                                          q_box=box, log=_log, speed_dps=a.home_speed,
+                                          **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
+                                             if a.solo else {}))
+                                break
+                            except SafetyAbort as _e:
+                                if "상태 정지" not in str(_e) or _try:
+                                    raise
+                                _log(f"  ⚠SHM 이 일시 정지했다 — {str(_e).splitlines()[0]}")
+                                _log("    SHM 이 스스로 돌아오는지 5초 기다린다"
+                                     "(돌아오면 일과성, 아니면 EtherCAT OP 이탈이다)…")
+                                hw.wait_fresh(timeout_s=5.0, ch=ch)   # 실패 시 여기서 중단
+                                _log("    ✓ 복구됨 — **실제 위치에서 다시 계획**해 재시도한다."
+                                     " 이 동결은 기록해 둘 것(원인 미제).")
                         # ★홀드 자세 (2026-08-12, 사용자 제안).
                         #   HOME 은 thigh 중력토크 −2.06Nm 이라 kp50 에서 2.36° 처진다.
                         #   thigh 를 **중력중립각**으로 옮기면 그 토크가 0 이 되어 처짐 자체가

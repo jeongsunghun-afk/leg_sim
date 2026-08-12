@@ -201,7 +201,13 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
         #   한 축의 값만 보면 원인을 못 가린다 — 커플링 때문에 어느 축의 지연이
         #   다른 축의 오차로 나타난다(q_ch_foot 는 calf 관절에도 의존한다).
         #   ⚠검사 도중 트립하면 뒤쪽 채널은 아직 안 읽었다. 그건 읽어서 채운다.
-        for c in range(len(snap), hw.n):
+        # ★**빠진 채널**을 채운다 — `range(len(snap), n)` 이 아니다 (2026-08-12).
+        #   그 식은 "snap 이 0번부터 순서대로 찼다" 를 가정하는데 --solo 는 시험축
+        #   하나만 담는다. only_ch=3 이면 len(snap)=1 → range(1,10) 이 되어
+        #   **ch0 이 통째로 빠지고 ch8·ch9(존재하지 않는 채널)가 찍혔다.**
+        #   실기 로그에 그대로 나왔다 — 진단하려고 만든 덤프가 hip 을 안 보여줬다.
+        have = {c for c, *_ in snap}
+        for c in [c for c in range(hw.n) if c not in have]:
             try:
                 q, dq, tq, _ = hw.read(c)
                 snap.append((c, float(hw._q_cmd[c]), q, dq, tq))

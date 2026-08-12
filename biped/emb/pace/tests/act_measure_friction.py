@@ -334,13 +334,35 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # 기준 중심각: breakaway 후 현재 위치
     hw.wait_fresh(ch=ch)
     q_center = hw.read(ch)[0]
+    # ★상자 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
+    #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 상자
+    #   경계와 **정확히 일치**한다. 실기에서 그대로 터졌다:
+    #     HL_thigh 상자 [-60, +40], 파단 후 위치가 +20 이상 → 중심 +20.00 으로 클립
+    #     → 스윕 [0, +40]. 그 +40 에서 기구 스톱을 밀며 스톨(초과 2.06Nm, -1.5dps).
+    #   ⇒ 양끝 MARGIN 을 비우고, 그래도 안 들어가면 **스트로크를 줄인다.**
+    #     조용히 줄이지 않는다 — 줄인 사실과 실제 구간을 로그에 찍는다.
+    MARGIN = 3.0
+    lo_b, hi_b = joint["q_min"] + MARGIN, joint["q_max"] - MARGIN
     half = fr["sweep"]["stroke_deg"] / 2
-    if not (joint["q_min"] + half <= q_center <= joint["q_max"] - half):
-        q_center = float(np.clip(q_center, joint["q_min"] + half, joint["q_max"] - half))
-        warn.append(f"스윕 중심각을 한계 안으로 이동: {q_center:.2f} deg")
+    if 2 * half > hi_b - lo_b:
+        old = fr["sweep"]["stroke_deg"]
+        fr["sweep"]["stroke_deg"] = float(hi_b - lo_b)
+        half = fr["sweep"]["stroke_deg"] / 2
+        msg = (f"스윕 스트로크 축소 {old:.1f}° → {fr['sweep']['stroke_deg']:.1f}° — "
+               f"상자 [{joint['q_min']:.1f}, {joint['q_max']:.1f}] 에 여유 {MARGIN}° 를 "
+               f"빼면 그만큼밖에 안 들어간다")
+        log(f"    ⚠{msg}"); warn.append(msg)
+    if not (lo_b + half <= q_center <= hi_b - half):
+        was = q_center
+        q_center = float(np.clip(q_center, lo_b + half, hi_b - half))
+        msg = (f"스윕 중심각 이동 {was:.2f}° → {q_center:.2f}° (상자 여유 {MARGIN}° 확보)")
+        log(f"    ⚠{msg}"); warn.append(msg)
 
     # (B) 등속 스윕
-    log(f"  (B) 등속 스윕 — 중심 {q_center:.2f}deg, ±{half:.1f}deg")
+    log(f"  (B) 등속 스윕 — 중심 {q_center:.2f}° · ±{half:.1f}° → 실제 구간 "
+        f"[{q_center - half:+.2f}, {q_center + half:+.2f}]° "
+        f"(상자 [{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°, 양끝 여유 "
+        f"{min(q_center - half - joint['q_min'], joint['q_max'] - q_center - half):+.2f}°)")
     sw = _sweeps(hw, ch, fr["sweep"], kp, kd, q_center, log, ff=_ff)
     if len(sw) < 2:
         raise RuntimeError("등속 스윕 유효 속도 2개 미만 — 측정 불가")

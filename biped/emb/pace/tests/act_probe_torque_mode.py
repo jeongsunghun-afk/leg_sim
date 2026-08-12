@@ -132,11 +132,29 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
                 #   만큼 내려앉는다. 그건 **무해**하다 — 끝나면 τ=bias 가 중력과 정확히
                 #   상쇄해 그 자리에 선다. 그걸 오류로 보면 hip·calf 를 영영 못 잰다.
                 #   바이어스가 **틀렸을 때만** 정착 후에도 계속 흐른다.
-                q_s = hw.read(ch)[0]
-                for _ in range(int(0.15 / hw.dt)):
-                    hw.step_torque(ch, bias, tau_max)
-                    time.sleep(hw.dt)
-                creep = hw.read(ch)[0] - q_s          # 정착 후 0.15s 동안의 표류
+                # ★**멈출 때까지 기다린다**. 한 번만 보고 판정하면 안 된다 (2026-08-12).
+                #   hip 은 8축 중 가장 무거워(중력 5.25Nm) 0.10s 로는 정착이 안 끝난다.
+                #   실기: 정착 뒤 0.15s 에 +0.234° 로 걸렸는데, 그건 잔여 감쇠였지
+                #   영구 표류가 아니었다. 느리게 서는 축은 정상이고, **끝내 안 서는 축**만
+                #   바이어스가 틀린 것이다.
+                #   ⇒ 창을 반복해 보다가 한 번이라도 문턱 아래면 통과. 전부 넘으면 중단.
+                #   ⚠창마다 표류가 **줄고 있는지**도 함께 본다 — 줄지 않으면 기다려도 소용없다.
+                creep, hist = None, []
+                for _w in range(int(2.0 / 0.15)):
+                    q_s = hw.read(ch)[0]
+                    for _ in range(int(0.15 / hw.dt)):
+                        hw.step_torque(ch, bias, tau_max)
+                        time.sleep(hw.dt)
+                    creep = hw.read(ch)[0] - q_s
+                    hist.append(creep)
+                    if abs(creep) <= move_deg * 0.5:
+                        break
+                    # 3창 연속 안 줄면 영구 표류로 본다(기다려도 소용없다)
+                    if len(hist) >= 3 and abs(hist[-1]) > 0.7 * abs(hist[-3]):
+                        break
+                if len(hist) > 1:
+                    log(f"    정착 대기 {len(hist)}창 — 표류 "
+                        + " → ".join(f"{v:+.3f}" for v in hist) + " °/0.15s")
                 settle = hw.read(ch)[0] - q_pre       # 핸드오프 총 이동(정보용)
                 drift = creep
                 if abs(creep) > move_deg * 0.5:
@@ -144,7 +162,8 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
                     gk = float(joint.get("gear_k", 1.0))
                     raise RuntimeError(
                         f"{name}: 중력 바이어스 {bias:+.3f} Nm 인가 후에도 축이 **계속 흐른다** "
-                        f"— 정착 뒤 0.15s 에 {creep:+.3f}° (한계 {move_deg*0.5:.2f}°). "
+                        f"— {len(hist)}창({len(hist)*0.15:.2f}s) 기다려도 표류가 안 멎는다: "
+                        f"{' → '.join(f'{v:+.3f}' for v in hist)} °/0.15s (한계 {move_deg*0.5:.2f}). "
                         f"핸드오프 총 이동은 {settle:+.3f}° (정상 처짐 "
                         f"{np.rad2deg(bias/kp_h) if kp_h else 0:+.2f}° 와 비교할 것).\n"
                         f"    **바이어스가 틀렸다** — 이 상태로 재면 파단토크가 오염된다.\n"

@@ -255,12 +255,24 @@ int main(int argc, char** argv) {
   auto actName = [](const std::string& jn) { return jn.substr(0, jn.size() - 6); };  // "..._joint" 제거
   const auto& jNames = interface.modelSettings().jointNames;  // nJ개 (12 or 16)
   std::vector<int> qadr(nJ), vadr(nJ), act(nJ);
+  vector_t qLo(nJ), qHi(nJ);   // ★조인트 각도한계(MJCF range) → WBC 제약
   for (int i = 0; i < nJ; ++i) {
     int j = mj_name2id(m, mjOBJ_JOINT, jNames[i].c_str());
     if (j < 0) { std::cerr << "관절 미발견: " << jNames[i] << "\n"; return 4; }
     qadr[i] = m->jnt_qposadr[j]; vadr[i] = m->jnt_dofadr[j];
     act[i] = mj_name2id(m, mjOBJ_ACTUATOR, actName(jNames[i]).c_str());
     if (act[i] < 0) { std::cerr << "액추에이터 미발견: " << actName(jNames[i]) << "\n"; return 4; }
+    if (m->jnt_limited[j]) { qLo(i) = m->jnt_range[2 * j]; qHi(i) = m->jnt_range[2 * j + 1]; }
+    else { qLo(i) = -1e9; qHi(i) = 1e9; }
+  }
+  // ★조인트 각도한계를 WBC에 전달(opt-in: JLIM=1). 컨트롤러가 관절을 range 밖으로 몰아 MuJoCo 클램프와 싸우던 붕괴 방지용.
+  //   ⚠기본OFF: 이득이 D1 marginal 변동에 묻혀 미검증 + 슬로프 등반(한계근처 자세) 과잉제한 위험. 극단명령 시나리오 진단/보호용.
+  if (wbcLegged && getenv("JLIM") && std::strcmp(getenv("JLIM"), "0") != 0) {
+    if (getenv("KP_LIM")) wbcL.kpLim_ = atof(getenv("KP_LIM"));
+    if (getenv("KD_LIM")) wbcL.kdLim_ = atof(getenv("KD_LIM"));
+    if (getenv("MARG_LIM")) wbcL.margLim_ = atof(getenv("MARG_LIM"));
+    wbcL.setJointLimits(qLo, qHi);
+    std::cerr << "[JLIM] 조인트 각도한계 ON (kp=" << wbcL.kpLim_ << " kd=" << wbcL.kdLim_ << ")\n";
   }
   // 제어 안 되는 발목만 0-홀드 대상(12-DOF). 16-DOF는 발목이 jNames에 있어 WBC 제어 → 홀드 없음.
   std::vector<int> holdQ, holdV, holdA;
@@ -377,7 +389,9 @@ int main(int argc, char** argv) {
     //   WBC 관절순=jointNames(FL,FR,HL,HR × hip,thigh,calf,foot) → type=j%perLeg. GEARBOX=0이면 plant도 armature 0이라 미적용.
     if (gbx && wbcLegged) { const int perLeg = nJ / 4; vector_t rotorArm(nJ);
       for (int j = 0; j < nJ; ++j) { double N = gear[j % perLeg]; rotorArm(j) = Irot * N * N; }
-      wbcL.setRotorArmature(rotorArm); } }
+      wbcL.setRotorArmature(rotorArm); }
+    fprintf(stderr, "[GBX] GEARBOX=%d ROTOR_I=%.2e(%s) JFRIC=%.3f JDAMP=%.3f | armature hip=%.4f calf=%.4f foot=%.4f\n",
+            gbx, Irot, (Irot > 5e-4 ? "PACE실측" : "placeholder"), jfrc, jdmp, Irot * 49, Irot * 10.5 * 10.5, Irot * 8.4 * 8.4); }
   const double dt = m->opt.timestep;
   // ★기본 100Hz(2026-08-10): 재계획률↑=base 회복 authority↑=고속 엔벨로프 확장(범용 레버). 저속/stance 무회귀.
   //   연산 2배지만 solve~7ms<10ms budget 여유(D1=연구·비실시간). MPC_HZ env로 override.

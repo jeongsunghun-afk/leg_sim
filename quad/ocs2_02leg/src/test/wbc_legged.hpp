@@ -75,6 +75,7 @@ class WbcLegged {
     if (ankleHard_ && perLeg_ == 4) { auto t = ankleTask(); eqA.push_back(t.first); eqb.push_back(t.second); }  // ★발목 hard PD
     { auto t = frictionEqTask(); if (t.first.rows()) { eqA.push_back(t.first); eqb.push_back(t.second); } }  // swing f=0
     { auto t = torqueLimitTask(); ineqD.push_back(t.first); ineqf.push_back(t.second); }
+    if (qLo_.size() == nJ_) { auto t = jointLimitTask(); ineqD.push_back(t.first); ineqf.push_back(t.second); }  // ★조인트 각도한계(MJCF range)
     { auto t = frictionIneqTask(); if (t.first.rows()) { ineqD.push_back(t.first); ineqf.push_back(t.second); } }
 
     int neq = 0; for (auto& a : eqA) neq += a.rows();
@@ -162,6 +163,8 @@ class WbcLegged {
   void setActualContact(const bool a[4]) { for (int i = 0; i < 4; ++i) actualContact_[i] = a[i]; useActual_ = true; }  // 실제접촉 오버라이드(1프레임)
   vector_t rotorArm_;  // ★반사관성(Irot·N², pinocchio 관절순). MuJoCo plant의 dof_armature와 정합=컨트롤러가 실제 관절관성 반영(고속 저-토크 붕괴 근본수정). 빈 벡터=미적용(하위호환).
   void setRotorArmature(const vector_t& a) { rotorArm_ = a; }
+  vector_t qLo_, qHi_; double kpLim_ = 200, kdLim_ = 20, margLim_ = 0.15;  // ★조인트 각도한계(MJCF range). 컨트롤러가 관절을 한계 밖으로 몰면 MuJoCo 클램프와 싸워 붕괴 → q̈에 PD-wall 부등식(한계 margLim_ rad 이내서만 걸림=중앙/정상자세 무간섭). 빈 벡터=미적용.
+  void setJointLimits(const vector_t& lo, const vector_t& hi) { qLo_ = lo; qHi_ = hi; }
   double reg_ = 1e-4;  // eiquadprog G positive-definite 정규화(qpOASES 불요, eiquadprog 필수)
   vector_t torqueLimits_;
   int qpFail_ = 0, lastStatus_ = 0, neq_ = 0, nineq_ = 0, dbgN_ = 0, nWsr_ = 20;
@@ -257,6 +260,15 @@ class WbcLegged {
     matrix_t d = matrix_t::Zero(2 * nJ_, nx_); int off = nv_ + 3 * nc_;
     d.block(0, off, nJ_, nJ_).setIdentity(); d.block(nJ_, off, nJ_, nJ_) = -matrix_t::Identity(nJ_, nJ_);
     vector_t f(2 * nJ_); for (int l = 0; l < 2 * nJ_ / perLeg_; ++l) f.segment(perLeg_ * l, perLeg_) = torqueLimits_;
+    return {d, f};
+  }
+  std::pair<matrix_t, vector_t> jointLimitTask() {  // ★조인트 각도한계(MJCF range): q̈에 PD-wall 부등식(d·x≤f). 중앙=완화·한계근접=강함
+    matrix_t d = matrix_t::Zero(2 * nJ_, nx_); vector_t f(2 * nJ_);
+    for (int j = 0; j < nJ_; ++j) {
+      double q = qM_(6 + j), qd = vM_(6 + j), du = qHi_(j) - q, dl = q - qLo_(j);
+      d(2 * j, 6 + j) = 1.0;       f(2 * j) = (du > margLim_) ? 1e9 : kpLim_ * du - kdLim_ * qd;      // 상한벽(한계 margLim_ 이내서만)
+      d(2 * j + 1, 6 + j) = -1.0;  f(2 * j + 1) = (dl > margLim_) ? 1e9 : kpLim_ * dl + kdLim_ * qd;  // 하한벽
+    }
     return {d, f};
   }
   std::pair<matrix_t, vector_t> frictionIneqTask() {  // 접촉발: pyramid·f ≤ 0

@@ -184,6 +184,12 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 
 **⇒ D1 연속경사(≤12°) = 온보드 x86이면 배포급 달성**(강건 envelope + 실시간 컨트롤러). 15°/rough/gap은 D1 실측물리 밖(A 또는 RL).
 
+### [정정+추가진단] 강건 envelope·PACE·조인트한계 (2026-08-12)
+- **★envelope 정정**: 반복 검증 결과 **강건 연속경사=slope8(~8°)만**(falls=0 일관). **slope12는 marginal**(초기 3/3은 운 좋은 표본, 이후 VX0.2/0.3서 낙상=D1 변동). "≤12° 강건"은 과대평가였음 → **정직 envelope=~8° 강건·10~12° marginal**.
+- **PACE 적용 확인**(사용자 지적): GUI 포함 전 실행서 `GEARBOX=1 ROTOR_I=7.4e-04(PACE실측) JFRIC0.38 JDAMP0.099` 적용됨(startup [GBX] 프린트). run_gui 미오버라이드=기본 적용. → 붕괴는 PACE 미적용 탓 아님.
+- **★조인트 각도한계=컨트롤러 부재 확인**(사용자 지적 정확): MJCF엔 17관절 range 있으나 WBC/MPC는 토크한계만·각도한계 없음 → 컨트롤러가 관절을 range 밖으로 몰면 MuJoCo 클램프와 싸워 붕괴(특히 극단 GUI 명령). **WBC에 조인트한계 PD-wall 부등식(jointLimitTask, JLIM=1 opt-in) 추가**. ⚠기본OFF: 이득이 D1 marginal 변동에 묻혀 미검증 + 슬로프 등반(한계근처 자세) 과잉제한 위험(marg/kp 튜닝 필요). WBC solve 0.254ms<1ms(계측 WBC_TIME).
+- **GUI 붕괴 종합**: D1 marginal 지형 envelope(~8°) + 조인트한계 부재 + 과속/과조작 명령 복합. 속도캡(A단계)은 경사 과속만 방지.
+
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).
 - **모델 포팅 근사(해소)**: 발목 잠금(point-foot)은 **Phase 2c에서 16-DOF 능동 발목으로 해소**(허리만 fixed 유지). 발목 능동화엔 GEARBOX(반사관성)·널스페이스 posture·앞뒤 발목 nominal이 필수.

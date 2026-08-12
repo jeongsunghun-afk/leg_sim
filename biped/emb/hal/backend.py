@@ -38,7 +38,7 @@ class Backend(ABC):
     def read(self) -> RawState: ...
 
     @abstractmethod
-    def write_pos(self, q_des_deg: np.ndarray, kp: np.ndarray, kd: np.ndarray) -> None:
+    def write_pos(self, q_des_deg: np.ndarray, kp: np.ndarray, kd: np.ndarray) -> int:
         """위치+임피던스(jog/hold)."""
 
     @abstractmethod

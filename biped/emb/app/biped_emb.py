@@ -557,6 +557,7 @@ def main():
                   extra["dt_ms_max"] = round(sdt[-1] * 1e3, 3)
                   extra["dt_ms_nom"] = round(cfg_dt * 1e3, 3)
                   hz_ema = hz_true
+              extra["write_fail"] = int(getattr(hw, "n_write_fail", 0))
               publish_state(fsm.mode, q_leg, rpy, hz_ema, fsm.mode != FSM.OFF, be_name, extra)
               last_pub = loop_t
 

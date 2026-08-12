@@ -57,7 +57,7 @@ class MockBackend(Backend):
                         connected=self.connected.copy(), status=self.status.copy(),
                         updated=UPT_POS | UPT_VEL | UPT_TOR | UPT_IMU)
 
-    def write_pos(self, q_des_deg, kp, kd) -> None:
+    def write_pos(self, q_des_deg, kp, kd) -> int:
         if self.on:
             self.q_des = np.asarray(q_des_deg, float)[: self.n_channel].copy()
             self.kp = np.asarray(kp, float)[: self.n_channel].copy()

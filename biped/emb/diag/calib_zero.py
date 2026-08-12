@@ -96,6 +96,8 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="config/biped_emb.yaml 의 offset_deg 를 실제로 갱신")
     ap.add_argument("--settle-s", type=float, default=8.0,
                     help="이 시간 동안 자세가 멈춰 있어야 채취한다[s]. 0 이면 검사 생략")
+    ap.add_argument("--max-age", type=float, default=3.0,
+                    help="상태파일 최대 허용 나이[s]. 넘으면 중단(옛 값·mock 값 방지)")
     ap.add_argument("--force", action="store_true",
                     help="변화량 게이트를 무시하고 적용(원인을 확인한 뒤에만)")
     ap.add_argument("--allow-powered", action="store_true",
@@ -133,12 +135,34 @@ def main() -> int:
     #   ★영점은 **기구(지그)** 가 정의해야 한다. 모터가 아니라.
     #     그래서 모터가 여자돼 있으면 중단한다 — 지그를 물리고 limp 로 두고 잴 것.
     st0 = read_state()
-    if st0.get("motors_on"):
-        print(f"\n  ❌ 모터가 **여자 중**이다(mode={st0.get('mode')}) — 채취를 중단한다.\n")
+    # ── 게이트 0-a: 상태가 **신선한가** ────────────────────────────────────
+    #   _age 를 계산해 놓고 **쓰지 않았다**. 제어기가 안 떠 있으면 몇 시간 전 값이나
+    #   mock 실행이 남긴 값을 그대로 읽고 offset 을 계산한다 — 2026-08-11 실제로
+    #   mock 상태파일을 읽고 "HL 이 91° 변한다" 는 허구의 표가 나왔다.
+    if st0.get("_age", 1e9) > a.max_age:
+        print(f"\n  ❌ 상태파일이 **{st0['_age']:.0f}초 전** 값이다(허용 {a.max_age:.0f}초)"
+              f" — 채취를 중단한다.\n")
+        print( "     제어기가 떠 있지 않으면 남아 있던 옛 값(또는 mock 값)을 그대로 읽는다.")
+        print(f"     ▸ 제어기를 **off(limp) 모드로** 띄운 뒤 다시 실행할 것:")
+        print(f"       cd {EMB} && python3 app/biped_emb.py --start-mode off\n")
+        return 1
+
+    # ── 게이트 0-b: 제어기가 **아무 축도 붙들고 있지 않아야** 한다 ──────────
+    #   ⚠motors_on 은 **전축 공통 플래그**다. "한쪽만 지그로 고정하고 나머지는 제어기가
+    #     잡고 있는" 상태를 못 가른다 — 2026-08-11 실제로 그렇게 잡혔다:
+    #       HL 은 지그가 정의(신뢰 가능) · **HR 은 biped_emb 홀드 위치가 그대로 박힘**
+    #     그 흔적이 HR_foot +2.13° · HR_calf +1.19° 로 다른 축보다 크게 남았다.
+    #   ⇒ mode 가 off(limp) 가 아니면 중단한다. limp 여야 **기구만이** 자세를 정한다.
+    if st0.get("mode") not in ("off", None) or st0.get("motors_on"):
+        print(f"\n  ❌ 제어기가 **축을 붙들고 있다**(mode={st0.get('mode')}, "
+              f"motors_on={st0.get('motors_on')}) — 채취를 중단한다.\n")
         print( "     제어기가 붙들고 있는 자세는 '제어기가 생각하는 홈' 이지 기준자세가 아니다.")
         print( "     홈복귀가 2° 못 맞추고 끝나면 그 2° 가 그대로 영점에 박힌다.")
         print( "     커플링 때문에 foot 은 calf 오차까지 함께 뒤집어쓴다.")
-        print( "\n  ▸ 지그를 물리고 **제어기를 off(limp) 로 둔 뒤** 다시 실행할 것.")
+        print( "     ⚠일부 축만 지그로 고정해도 **나머지 축은 제어기 위치가 박힌다** —")
+        print( "       motors_on 은 전축 공통 플래그라 그 상황을 구분하지 못한다.")
+        print( "\n  ▸ **전 축을 지그로 고정**하고 제어기를 off(limp) 로 둔 뒤 다시 실행할 것:")
+        print(f"       python3 app/biped_emb.py --start-mode off")
         print( "    (기구가 자세를 정의해야 한다 — 모터가 아니라)")
         print( "    정말 강행하려면 --allow-powered")
         if not a.allow_powered:

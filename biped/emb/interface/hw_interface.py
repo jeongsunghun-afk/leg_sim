@@ -29,6 +29,7 @@ class HwInterface:
         self.jm = jmap
         self.imu_deg = imu_deg
         self._raw = None
+        self.n_write_fail = 0   # ★SHM 쓰기 실패 누적(부분실패는 위험한 방향으로 조용하다)
 
     def init(self):
         self.be.init()
@@ -88,19 +89,34 @@ class HwInterface:
           거울처럼 뒤집혔다(HR_thigh 물리한계 2.5° 초과).
         """
         qj = self.jm.clamp_jog_joint(q_leg_joint_deg)
-        self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        if rc not in (0, None):
+            self.n_write_fail += 1
+        return rc
 
     def write_hold(self, q_leg_joint_deg):
         """현재자세 홀드: **모델각** 입력, 관절한계 클램프 후 채널각으로 변환."""
         qj = self.jm.clamp_joint(q_leg_joint_deg)
-        self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        if rc not in (0, None):
+            self.n_write_fail += 1
+        return rc
 
     def write_limp(self):
         """무여자 기록 — 위치는 **현재 측정각**을 그대로 되돌려 준다(계단 방지).
         ★enable(False) 상태에서 브리지가 kp=kd=0 으로 쓰므로 위치값 자체는 무의미하지만,
           0 을 쓰면 재무장 순간 0 으로 튀는 명령이 남는다. 측정각을 유지하는 편이 안전하다."""
         z = np.zeros(self.jm.n_channel)
-        self.be.write_pos(self._raw.q_deg.copy(), z, z)
+        rc = self.be.write_pos(self._raw.q_deg.copy(), z, z)
+        # ★limp 실패는 **가장 위험한 방향으로** 조용하다 — 남은 채널이 직전 명령을
+        #   그대로 유지해 계속 힘을 낸다(shm_backend.write_pos 주석 참조).
+        if rc not in (0, None):
+            self.n_write_fail += 1
+            if self.n_write_fail in (1, 10, 100) or self.n_write_fail % 500 == 0:
+                print(f"[hw] ⚠⚠ limp 기록 실패 {self.n_write_fail}회 — **일부 축이 안 풀렸을 수 있다**. "
+                      f"드라이버가 명령을 거부하는 상태다. 모터 전원 재투입을 검토할 것.",
+                      flush=True)
+        return rc
 
     def write_torque(self, q_ctrl_rad, dq_ctrl_rad, tau_ctrl_nm, kp_leg=0.0, kd_leg=0.0):
         """모델기반: 컨트롤러 토크(Nm) → 채널 MIT. kp/kd=0 = 순수 토크."""

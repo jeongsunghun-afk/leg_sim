@@ -60,13 +60,21 @@ class ShmBackend(Backend):
                         connected=self._conn.astype(bool), status=self._stat.astype(int),
                         updated=int(m) if m >= 0 else 0)
 
-    def write_pos(self, q_des_deg, kp, kd) -> None:
-        q = np.asarray(q_des_deg, np.float32); kp = np.asarray(kp, np.float32); kd = np.asarray(kd, np.float32)
-        self.lib.bridge_write_pos(_p(q), _p(kp), _p(kd), len(q))
+    def write_pos(self, q_des_deg, kp, kd) -> int:
+        """0=전 채널 성공, −1=**중간에 실패**.
 
-    def write_mit(self, q_des_deg, dq_des_dps, tau_ff_nm, kp, kd) -> None:
+        ⚠shm_bridge.cpp:write_mit_impl 은 한 채널이라도 SetMotorCommand16 에 실패하면
+          즉시 return −1 하고 **남은 채널을 포기한다**. ch4 에서 실패하면 HR 4축이
+          직전 명령(=홀드)을 그대로 유지한다 — 2026-08-11 "OFF 를 눌러도 HR 은 힘이
+          안 빠진다" 가 정확히 그 모양이었다(MCU 재기동으로 해소).
+          반환값을 버리면 그게 **조용히** 일어난다.
+        """
+        q = np.asarray(q_des_deg, np.float32); kp = np.asarray(kp, np.float32); kd = np.asarray(kd, np.float32)
+        return int(self.lib.bridge_write_pos(_p(q), _p(kp), _p(kd), len(q)))
+
+    def write_mit(self, q_des_deg, dq_des_dps, tau_ff_nm, kp, kd) -> int:
         a = [np.asarray(x, np.float32) for x in (q_des_deg, dq_des_dps, tau_ff_nm, kp, kd)]
-        self.lib.bridge_write_mit(_p(a[0]), _p(a[1]), _p(a[2]), _p(a[3]), _p(a[4]), len(a[0]))
+        return int(self.lib.bridge_write_mit(_p(a[0]), _p(a[1]), _p(a[2]), _p(a[3]), _p(a[4]), len(a[0])))
 
     def enable(self, on: bool) -> None:
         self.lib.bridge_enable(1 if on else 0)

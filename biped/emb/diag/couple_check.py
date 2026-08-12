@@ -30,8 +30,9 @@
     JOG 로 돌리는 편이 깨끗하다(--expect-hold 로 경고를 끈다).
 
 사용법:
-  python3 diag/couple_check.py                 # 양쪽 다리
-  python3 diag/couple_check.py --leg HL        # 한쪽만
+  python3 diag/couple_check.py                          # calf→foot, 양쪽 다리
+  python3 diag/couple_check.py --leg HL                  # 한쪽만
+  python3 diag/couple_check.py --pair thigh-calf         # ★미신고 커플링 검증
 """
 from __future__ import annotations
 import argparse
@@ -42,17 +43,24 @@ import time
 
 STATE = os.environ.get("QUAD_STATE", "/tmp/biped_state.json")
 EMB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LEGS = {"HL": (2, 3), "HR": (6, 7)}          # (calf, foot) 관절 인덱스
+LEGS = ("HL", "HR")
+# ★측정 가능한 (구동축, 종동축) 쌍 (2026-08-12 일반화).
+#   종전엔 calf→foot 만 박혀 있었다. 그런데 늘어진 자세 4표본에서
+#     calf/thigh = −1.94 ± 0.08 · foot/thigh = +1.91 ± 0.07
+#   이라는 **미신고 thigh→calf 커플링(coef ≈ +2)** 의심이 나왔다.
+#   보정하면 늘어진 자세의 calf 관절각이 전부 0 근처로 떨어진다
+#   (−0.17 / −0.02 / +2.36 / +5.06) — "늘어져도 calf 는 안 움직인다" 가 된다.
+#   그걸 재려면 이 도구가 임의 쌍을 다룰 수 있어야 한다.
+PAIRS = {"calf-foot": ("calf", "foot"), "thigh-calf": ("thigh", "calf")}
 
 
-def cfg_idx():
+def cfg_idx(pair: str):
     import yaml
     c = yaml.safe_load(open(os.path.join(EMB, "config", "biped_emb.yaml")))
     names = [j["name"] for j in c["joints"]]
-    out = {}
-    for leg in LEGS:
-        out[leg] = (names.index(f"{leg}_calf"), names.index(f"{leg}_foot"))
-    return c, out
+    drv, dvn = PAIRS[pair]
+    return c, {leg: (names.index(f"{leg}_{drv}"), names.index(f"{leg}_{dvn}"))
+               for leg in LEGS}
 
 
 def fit(x, y):
@@ -75,9 +83,12 @@ def fit(x, y):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--leg", choices=list(LEGS), help="한쪽만 측정")
+    ap.add_argument("--pair", choices=list(PAIRS), default="calf-foot",
+                    help="측정할 (구동축→종동축) 쌍. thigh-calf 는 미신고 커플링 검증용.")
     ap.add_argument("--expect-hold", action="store_true", help="hold 로 발목을 잡고 잰다(off 경고 끔)")
     a = ap.parse_args()
-    cfg, idx = cfg_idx()
+    cfg, idx = cfg_idx(a.pair)
+    drv, dvn = PAIRS[a.pair]
     legs = [a.leg] if a.leg else list(LEGS)
 
     try:
@@ -89,7 +100,7 @@ def main() -> int:
     if st0.get("mode") != "off" and not a.expect_hold:
         print(f"  ⚠ 모드가 off 가 아니다({st0.get('mode')}). 손으로 무릎을 돌리려면 off 가 맞다.")
 
-    print(f"\n  무릎(calf)만 천천히 전 구간 왕복시키세요. 발목은 잡지 마세요.")
+    print(f"\n  **{drv}** 만 천천히 전 구간 왕복시키세요. {dvn} 은 잡지 마세요.")
     print(f"  Ctrl-C 로 종료하면 계수가 나옵니다.\n")
     rec = {l: [] for l in legs}
     try:
@@ -101,8 +112,8 @@ def main() -> int:
                 rec[l].append((st["q_ch_deg"][ci], st["q_ch_deg"][fi],
                                st["q_leg_deg"][ci], st["q_leg_deg"][fi]))
                 span = max(r[0] for r in rec[l]) - min(r[0] for r in rec[l])
-                line.append(f"{l} calf_ch {st['q_ch_deg'][ci]:+7.2f} foot_ch {st['q_ch_deg'][fi]:+7.2f} "
-                            f"(무릎 범위 {span:5.1f}°)")
+                line.append(f"{l} {drv}_ch {st['q_ch_deg'][ci]:+7.2f} {dvn}_ch {st['q_ch_deg'][fi]:+7.2f} "
+                            f"({drv} 범위 {span:5.1f}°)")
             print("\r  " + " | ".join(line) + "   ", end="", flush=True)
             time.sleep(0.05)
     except KeyboardInterrupt:
@@ -115,22 +126,22 @@ def main() -> int:
         cm  = [r[2] for r in d]; fm  = [r[3] for r in d]
         span = max(cch) - min(cch)
         print("=" * 70)
-        print(f"  {l}   샘플 {len(d)}개 · 무릎 채널각 범위 {span:.1f}°")
+        print(f"  {l}   샘플 {len(d)}개 · {drv} 채널각 범위 {span:.1f}°")
         print("=" * 70)
         if span < 10.0:
-            print(f"  ✗ 무릎을 {span:.1f}° 밖에 안 움직였다 — 최소 10°, 가능하면 30° 이상 움직일 것.\n")
+            print(f"  ✗ {drv} 를 {span:.1f}° 밖에 안 움직였다 — 최소 10°, 가능하면 30° 이상 움직일 것.\n")
             rc = 1; continue
         c_ch, _, r2_ch = fit(cch, fch)
         c_m,  _, r2_m  = fit(cm,  fm)
-        print(f"  채널각 회귀 : foot_ch = {c_ch:+.4f} · calf_ch + const     R² = {r2_ch:.4f}")
-        print(f"  모델각 회귀 : foot    = {c_m:+.4f} · calf    + const     R² = {r2_m:.4f}")
+        print(f"  채널각 회귀 : {dvn}_ch = {c_ch:+.4f} · {drv}_ch + const     R² = {r2_ch:.4f}")
+        print(f"  모델각 회귀 : {dvn}    = {c_m:+.4f} · {drv}    + const     R² = {r2_m:.4f}")
         print()
         if abs(c_ch) < 0.02:
             print(f"  ⇒ **(A) 엔코더는 커플링을 보지 못한다** (기울기 ≈ 0).")
-            print(f"     엔코더가 foot 모터축에 있다는 뜻이다. 측정은 그대로 두고")
+            print(f"     엔코더가 {dvn} 모터축에 있다는 뜻이다. 측정은 그대로 두고")
             print(f"     **명령 쪽에만** 보정이 필요하다 — 계수는 눈/각도기로 따로 재야 한다.")
         else:
-            print(f"  ⇒ **(B) 엔코더가 커플링을 본다.** 무릎 1° 당 발목 채널각이 {c_ch:+.3f}° 움직인다.")
+            print(f"  ⇒ **(B) 엔코더가 커플링을 본다.** {drv} 1° 당 {dvn} 채널각이 {c_ch:+.3f}° 움직인다.")
             print(f"     측정·명령 양쪽을 보정해야 한다.")
             print(f"     모델각 기준 커플링 계수 c = {c_m:+.4f}  ← 이 값을 config 에 넣는다")
         if r2_ch is not None and r2_ch < 0.90:

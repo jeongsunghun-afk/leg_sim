@@ -670,8 +670,22 @@ def main() -> int:
                         #   thigh 를 **중력중립각**으로 옮기면 그 토크가 0 이 되어 처짐 자체가
                         #   없어진다(막는 게 아니라 없애는 쪽). foot 중력은 0.033→0.038Nm 로
                         #   사실상 그대로라 파단 측정에는 영향이 없고, 링크 간섭도 없다.
-                        _pose = _c.get("hold_pose", {}).get(f"{a.pose}_deg")
-                        if a.pose != "home" and _pose:
+                        _hp = _c.get("hold_pose", {})
+                        _pose = _hp.get(f"{a.pose}_deg")
+                        # ★시험축별 덮어쓰기 — 시험하지 않는 쪽 hip 을 바깥으로 재껴
+                        #   두 다리가 부딪히지 않게 한다(config 주석 참조).
+                        #   ⚠홀드축만 덮어쓴다. 시험축 자신을 옮기면 측정 자세가 바뀐다.
+                        _ov = {int(k): float(v) for k, v in
+                               (_hp.get("by_test_ch", {}).get(ch) or {}).items()}
+                        _ov.pop(ch, None)
+                        if _ov:
+                            _pose = list(_pose or _c["home"]["q_deg"])
+                            for _c2, _v in _ov.items():
+                                _pose[_c2] = _v
+                            _log(f"    ★시험축별 자세 — " + " · ".join(
+                                f"{_jm.names[c2]} {v:+.1f}°" for c2, v in sorted(_ov.items()))
+                                + "  (반대 다리를 바깥으로 재껴 충돌 회피)")
+                        if _pose and (a.pose != "home" or _ov):
                             _log(f"    홀드 자세 → {a.pose} "
                                  f"(thigh {_pose[1]:+.1f}° — 중력중립, 처짐 2.36°→0)")
                             goto_home(hw, _jm, make_homer(_jm, _c, hw.dt, q_deg=_pose),
@@ -679,7 +693,8 @@ def main() -> int:
                         # ★홀드 목표를 **여기서 한 번** 확정한다 → 이후 arm() 이 재사용.
                         #   안 하면 arm() 이 매번 '지금 처진 자리' 를 목표로 삼아 래칫이 된다.
                         _tgt_ch = _jm.q_joint_to_ch(np.asarray(
-                            _pose if (a.pose != "home" and _pose) else _c["home"]["q_deg"], float))
+                            _pose if (_pose and (a.pose != "home" or _ov))
+                            else _c["home"]["q_deg"], float))
                         hw.latch_hold(_tgt_ch)
                         if a.jig:
                             _jig_engage(hw, spec, hold, j)

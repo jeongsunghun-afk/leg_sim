@@ -246,6 +246,7 @@ def main():
     estop_auto_max = int(_es.get("estop_auto_max", 3))          # 창 안 허용 자동해제 횟수
     estop_auto_window_s = float(_es.get("estop_auto_window_s", 30.0))
     estop_cooldown_s = float(_es.get("estop_cooldown_s", 1.0))  # 트립 직후 연타 방지
+    vel_trip_ms = float(_es.get("vel_trip_ms", 20.0))           # 속도 트립 디바운스
     tau_frac = float(cfg["safety"]["tau_max_frac"])
     # ★토크/속도 트립(시험 하네스 emb/pace/hwio.py 에서 승격). 미설정이면 하네스 기본값.
     tau_trip_nm  = float(cfg["safety"].get("tau_trip_nm",  8.0))
@@ -326,6 +327,7 @@ def main():
     estop_reason = None        # ★래치 사유를 남긴다 — 상태로 발행해 GUI 가 보여준다
     estop_hist = []            # 최근 트립 시각들(자동해제 남용 차단용)
     estop_sticky = False       # ★반복 트립으로 **자동해제를 거둬들인** 상태(명시 OFF 필요)
+    vel_over_t0 = None         # ★속도 초과 시작시각(디바운스용)
     estop_log = []             # ★최근 트립 (t, 사유). **해제해도 지우지 않는다** —
                                #   지우면 원인을 볼 방법이 사라진다(2026-08-12 실수).
     # ★tilt E-stop 은 IMU 가 있어야 동작한다. 이 로봇은 현재 SHM IMU 가 전부 0 이라
@@ -510,10 +512,25 @@ def main():
                       estop_latched = True; estop_hist.append(loop_t); fsm.set(FSM.OFF); hw.enable(False)
               else:
                   tau_over_t0 = None                # 한 틱이라도 정상이면 타이머 리셋
-              # 속도는 즉시 트립(폭주는 지연시킬 이유가 없다)
-              if (not estop_latched) and vel_pk > vel_trip_dps:
+              # ── 속도 트립 (2026-08-12: **디바운스 추가**) ─────────────────
+              #   종전엔 "폭주는 지연시킬 이유가 없다" 며 **한 샘플**로 트립했다.
+              #   그런데 실측 속도잡음이 15dps RMS 이고, **foot 채널은 특히 취약하다**:
+              #       dq_ch_foot = (dq_foot + coef·dq_calf)·sign·k   (k=1.2)
+              #     두 축의 잡음이 합쳐진 뒤 1.2배 된다.
+              #   실제로 그렇게 걸렸다 — ch3 209dps 트립. 그런데 홈복귀의 **공칭** 첨두
+              #   채널속도는 22dps 로 한계(200)와 거리가 멀다 ⇒ 궤적이 아니라 순간 튐이다.
+              #   ⇒ 토크와 같은 방식으로 **연속 초과**만 트립한다. 진짜 폭주는 지속되고
+              #     스파이크는 안 지속된다. vel_trip_ms 는 짧게(20ms) 둬서 응답성을 지킨다.
+              if vel_pk > vel_trip_dps:
+                  if vel_over_t0 is None:
+                      vel_over_t0 = loop_t
+              else:
+                  vel_over_t0 = None
+              if ((not estop_latched) and vel_over_t0 is not None
+                      and (loop_t - vel_over_t0) * 1000.0 >= vel_trip_ms):
                   ch = int(np.argmax(np.abs(raw.dq_dps)))
-                  estop_reason = f"속도 ch{ch} {vel_pk:.0f}>{vel_trip_dps}dps"
+                  estop_reason = (f"속도 ch{ch} {vel_pk:.0f}>{vel_trip_dps}dps "
+                                  f"{vel_trip_ms:.0f}ms 연속")
                   estop_log.append((round(loop_t - t0, 2), estop_reason))
                   del estop_log[:-10]
                   print(f"[biped_emb] ⛔ E-STOP: {estop_reason} → limp·래치")
@@ -521,7 +538,7 @@ def main():
                          "OFF 를 눌러 해제할 것.")
                   estop_latched = True; estop_hist.append(loop_t); fsm.set(FSM.OFF); hw.enable(False)
           else:
-              tau_over_t0 = None
+              tau_over_t0 = None; vel_over_t0 = None
 
           if estop_latched:
               hw.enable(False)                    # 래치 동안 계속 무여자 강제

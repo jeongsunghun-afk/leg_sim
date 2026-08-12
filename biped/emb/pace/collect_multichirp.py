@@ -108,6 +108,13 @@ def main() -> int:
     Q = np.array([q_at(t, amps, f0, k, phi, ramp) for t in tt]) + home
     print("■ 궤적 설계 검사")
     print(f"  길이 {T:.0f}s · {rate:.0f}Hz · {len(tt)} 표본 · 램프 {ramp:.0f}s")
+    _kp = at._gain(mc.get("kp", {})); _kd = at._gain(mc.get("kd", {}))
+    if isinstance(_kp, dict):
+        print(f"  ★시험 전용 게인 kp " + " ".join(f"ch{c}:{_kp[c]:g}" for c in sorted(_kp)))
+        print(f"                 kd " + " ".join(f"ch{c}:{_kd[c]:g}" for c in sorted(_kd)))
+    print(f"  ★시험 전용 한계  τ_trip {mc.get('tau_trip_nm', spec['safety']['tau_trip_nm'])} Nm"
+          f" · err_max {mc.get('err_max_deg', spec['safety']['err_max_deg'])}°"
+          f"   (배포값 {spec['safety']['tau_trip_nm']} / {spec['safety']['err_max_deg']})")
     print(f"  {'축':<10}{'진폭[°]':>8}{'f0':>6}{'f1':>6}{'위상[°]':>8}{'범위[°]':>18}{'한계':>18}")
     bad = []
     for i in range(n):
@@ -140,12 +147,17 @@ def main() -> int:
     box = at._mech_limit_box()
     ch_all = sorted(box)
     lim = Limits(q_min=min(box[c][0] for c in ch_all), q_max=max(box[c][1] for c in ch_all),
-                 tau_trip=float(sf["tau_trip_nm"]), tau_trip_ms=float(sf["tau_trip_ms"]),
-                 vel_trip=float(sf["vel_trip_dps"]), err_max=float(sf["err_max_deg"]),
+                 tau_trip=float(mc.get("tau_trip_nm", sf["tau_trip_nm"])),
+                 tau_trip_ms=float(sf["tau_trip_ms"]),
+                 vel_trip=float(sf["vel_trip_dps"]),
+                 err_max=float(mc.get("err_max_deg", sf["err_max_deg"])),
                  stale_ms=float(sf["stale_ms"]),
                  kp_max=float(g["kp_max"]), kd_max=float(g["kd_max"]))
-    kp = at._gain(sf.get("hold_kp", 40.0))
-    kd = at._gain(sf.get("hold_kd", 2.0))
+    # ★게인·한계는 **이 시험 전용**을 쓴다(spec.pace_multi). 배포값을 쓰면
+    #   ① kp 가 높아 궤적이 q_cmd 에 붙고 파라미터 정보가 사라지고
+    #   ② 중력이 τ_trip 을 먹어 hip 동적여유가 0.35Nm 밖에 안 남는다.
+    kp = at._gain(mc.get("kp", sf.get("hold_kp", 40.0)))
+    kd = at._gain(mc.get("kd", sf.get("hold_kd", 2.0)))
     at.preflight(spec)
 
     with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], rate, lim,
@@ -192,6 +204,7 @@ def main() -> int:
     #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
     kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
     kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
+    # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
     np.savez(path, t=np.array(T_), q=np.array(Qm), q_cmd=np.array(QC),
              dq=np.array(DQ), tau_ch=np.array(TAU),
              kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(

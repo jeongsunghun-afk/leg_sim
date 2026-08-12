@@ -22,6 +22,7 @@ import sys
 import time
 
 import numpy as np
+from dataclasses import replace
 
 EMB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for _p in (os.path.join(EMB, "control"), os.path.join(EMB, "interface")):
@@ -76,13 +77,13 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
         #   궤적이 빨리감기 되어 v/a 한계가 무의미해진다(control/home.py 주석 참조).
         q_cmd_leg = homer.step(dt_meas)
         _write_leg(hw, jm, q_cmd_leg, q_box)
-        _trip_check(hw)
+        _trip_check(hw, q_box)
         time.sleep(hw.dt)
 
     t_settle = time.perf_counter()                       # 정착
     while time.perf_counter() - t_settle < 0.5:
         _write_leg(hw, jm, homer.q_cmd_leg, q_box)
-        _trip_check(hw)
+        _trip_check(hw, q_box)
         time.sleep(hw.dt)
 
     q_now = np.asarray(jm.ch_to_q_joint(
@@ -106,7 +107,24 @@ def _write_leg(hw, jm, q_leg_deg, q_box) -> None:
     hw._raw_write_all(q_ch, hw.hold_kp, hw.hold_kd, q_box)
 
 
-def _trip_check(hw) -> None:
-    for c in range(hw.n):
-        q, dq, tq, _ = hw.read(c)
-        hw._check(c, q, dq, tq, float(hw._q_cmd[c]))
+def _trip_check(hw, q_box=None) -> None:
+    """전 채널 트립 감시. ★위치한계만은 **채널별**로 본다.
+
+    ⚠hw.lim 은 **시험축** 한계다. 그걸 전 채널에 적용하면 다른 축이 자기 범위 안인데도
+      트립한다 — 2026-08-11 오프라인 테스트가 잡았다(HR_calf 76.01° 가 HL_foot 상자
+      [−180, 75.97] 에 걸렸다). _raw_write_all 은 이미 채널별 상자를 쓰는데
+      여기만 안 고쳐져 있었다. 종전 영점에서는 우연히 안 걸렸을 뿐이다.
+    ⚠속도·토크·stale·추종오차는 축과 무관한 물리량이라 그대로 hw.lim 을 쓴다.
+    """
+    saved = hw.lim
+    try:
+        for c in range(hw.n):
+            q, dq, tq, _ = hw.read(c)
+            if q_box is not None and c in q_box:
+                lo, hi = q_box[c]
+                hw.lim = replace(saved, q_min=lo, q_max=hi)
+            else:
+                hw.lim = saved
+            hw._check(c, q, dq, tq, float(hw._q_cmd[c]))
+    finally:
+        hw.lim = saved

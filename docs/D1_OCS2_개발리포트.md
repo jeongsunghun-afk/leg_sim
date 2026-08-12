@@ -176,6 +176,14 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 ### 실접촉 기반 제어(CONTACT_ACTUAL) — MPC-WBC 정합 문제 (2026-08-10, negative·revert)
 사용자 요청②(발접촉상태 기반 움직임). WBC에 실접촉 오버라이드 훅(`setActualContact`, `d->ncon`→발별 감지)은 있으나 결함(기본 off). **falling-edge 디바운스·pure-actual 정식(motionC=forceC=touch·swingC=!touch) 둘 다 시도했으나 저속조차 붕괴**(trot0.3 falls>2000). **근본=MPC가 스케줄로 힘·base 피드포워드(aBaseFF)를 계획** → WBC가 실접촉으로 접촉집합을 바꾸면 **늦은착지 구간에 스케줄이 기대한 지지발이 실제 미접촉→지지 부족→base 침하→붕괴**. 스케줄 모드가 작동하는 건 낙관적 "닿았다" 가정+soft-contact가 미세 타이밍 흡수 덕. ⇒ **WBC 토글이 아니라 이벤트-기반 게이트**(실접촉→gait schedule 앞당김→MPC 재계획, OCS2 reference manager 온라인 갱신)가 필요=research-scope. tight-coupled NMPC의 구조적 한계([[controller-balance-mechanisms]] capture 이식 실패와 동형). **실험은 revert**(현 커밋 클린 유지).
 
+### 연속지형 배포급 A·B·C (2026-08-12)
+사용자 목표=D1 연속경사 배포급. 험지비교(A제어기 대비)서 D1이 경사서 낙상한 근본=**과속**(VX0.3이 지형서 과속, VX≤0.2면 slope8/12 강건 완주·등반). 3단계:
+- **A. 지형 속도정책(TERRAIN_CAP, 커밋4f799f8)** ✅: perceptive 참조빌딩에 국소 경사/거칠기(현재 실제 base 위치서 전방1.0m SDF 샘플) 기반 전진속도 자동캡(경사>3.4°→0.2·거칠기>2cm→0.15). **과속명령 VX=0.3이 slope8/12서 자동감속(vxEff→0.15)→2/2 falls=0 완주·등반**. 평지 무영향. rough는 미해결(bump 시작부터+본질 마진 VX~0.15).
+- **B. slope15°** ❌: 전 속도 실패=**균형 한계**(램프 오르며 tilt 성장 후 tips, 속도로 안 고쳐짐). steep-slope CoM/pitch 튜닝 필요·불확실 → **≤12° 수용**.
+- **C. 실시간성** ✅(컨트롤러): **측정(i7-13700H, OMP=1) MPC solve 5.85ms<10ms(100Hz)·WBC 0.254ms<1ms(1kHz)=여유롭게 실시간**. "sim 0.15×"는 MuJoCo 1kHz스텝+단일스레드 직렬루프 아티팩트이지 컨트롤러 아님(실기=플랜트가 실로봇). **배포 실시간=타깃HW: x86 RT-PC 가능·Pi 과중(A가 Pi용)**. 옵션=호라이즌 다이어트(dt0.015→0.025, N67→40, ~40%경량).
+
+**⇒ D1 연속경사(≤12°) = 온보드 x86이면 배포급 달성**(강건 envelope + 실시간 컨트롤러). 15°/rough/gap은 D1 실측물리 밖(A 또는 RL).
+
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).
 - **모델 포팅 근사(해소)**: 발목 잠금(point-foot)은 **Phase 2c에서 16-DOF 능동 발목으로 해소**(허리만 fixed 유지). 발목 능동화엔 GEARBOX(반사관성)·널스페이스 posture·앞뒤 발목 nominal이 필수.

@@ -549,7 +549,11 @@ int main(int argc, char** argv) {
       // ★legged_control 충실 이식 WBC: (xDes,uDes,rbd_s,mode,dt)→관절토크(내부서 전부 처리).
       // CONTACT_ACTUAL=1: 접촉력 분배를 스케줄 대신 실제접촉 기준(접촉전환 과지지 방지).
       if (getenv("CONTACT_ACTUAL")) wbcL.setActualContact(actC);
+      static double wbcTsum = 0; static long wbcN = 0;
+      auto tw0 = std::chrono::steady_clock::now();
       vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
+      wbcTsum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw0).count(); wbcN++;
+      if (getenv("WBC_TIME") && wbcN % 3000 == 0) fprintf(stderr, "[WBCT] WBC avg=%.3f ms (n=%ld, 1kHz budget=1ms)\n", wbcTsum / wbcN, wbcN);
       // ★표준 저수준(Bellicoso2016·legged_control): τ = τ_ff + τ_pd
       //   τ_ff = τ_wbc(WBC 전신 역동역학 피드포워드), τ_pd = kp(q_des−q)+kd(q̇_des−q̇) 관절추종.
       //   legged: LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. velDes=MPC 관절속도(uDes 후반 nJ).

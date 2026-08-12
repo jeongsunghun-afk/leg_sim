@@ -92,13 +92,28 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
             #   (그래서 초기 구현은 τ_s < τ_c 라는 물리적으로 불가능한 값을 냈다).
             #   위치 노이즈는 ~0.01 deg 이므로 0.25 deg 면 25배 여유.
             thr_deg = float(cfg.get("move_thresh_deg", 0.25))
+            # ★푸시 **토크 상한** (2026-08-12). 파단푸시는 스톨 감지를 끄고 도는데
+            #   (안 움직이는 축에 토크를 키우는 게 측정법 자체다), 그러면 상한이
+            #   max_push_deg×kp 라는 **변위 상한 하나뿐**이 된다. hip 이 그게 위험하다:
+            #     2.5° × kp 100Nm/rad = 4.36Nm, 중력 4.85 를 더해 피크 9.2Nm 을
+            #     최대 4.2초(=2.5/0.6dps) 동안 문다. 실제로 2026-08-12 에 10.6Nm 로
+            #     밀다 드라이버 파워단을 잃었다.
+            #   ⇒ 중력 대비 초과분이 이 값을 넘으면 **그 시행만** 버리고 나온다.
+            #     마찰의 몇 배로 잡으면 정상 파단은 절대 못 건드린다(hip 0.88 vs 상한 2.5).
+            cap = cfg.get("tau_cap_nm")
+            cap = float(cap) if cap is not None else None
+            jammed = False
             q_ref = None
             t0 = time.monotonic()
             k = 0
             while time.monotonic() - t0 < t_max:
                 t = time.monotonic() - t0
-                s = hw.step(ch, qcmd(t), kp, kd, tau_ff=_ff(float(hw._q[ch])))
+                ff = _ff(float(hw._q[ch]))
+                s = hw.step(ch, qcmd(t), kp, kd, tau_ff=ff)
                 samples.append(s)
+                if cap is not None and (s.tau - ff) * direction > cap:
+                    jammed = True
+                    break
                 if t > 0.3 and q_ref is None:
                     q_ref = s.q_deg                      # 인가 정착 후의 기준 위치
                     t_ref = s.t                          # ★peak-hold 시작 시각도 함께 래치
@@ -120,6 +135,11 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
 
             hw.limp()
             time.sleep(0.3)
+            if jammed:
+                log(f"    ⚠ {'+' if direction > 0 else '−'}dir trial{trial}: "
+                    f"중력 대비 초과토크가 상한 {cap:.2f}Nm 에 걸려 중단 — **막힘**이다"
+                    f"(파단이면 마찰 근처에서 풀렸어야 한다). 이 시행 제외.")
+                continue
             if tau_at_move is None:
                 log(f"    ⚠ {'+' if direction > 0 else '−'}dir trial{trial}: "
                     f"{cfg['max_push_deg']}deg 밀어도 미동 — 막힘/한계 의심(제외)")
@@ -267,7 +287,11 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
 
     # (A) 정지마찰
     log("  (A) breakaway — 목표각 저속 램프")
-    pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log)
+    # ★스톨 감지는 여기서만 끈다 — "안 움직이는 축에 토크를 키운다" 가 측정법 자체다.
+    #   대신 _breakaway 안의 tau_cap_nm 이 상한을 쥔다(그 주석 참조). 둘은 한 쌍이다:
+    #   cap 없이 이 with 만 쓰면 hip 보호가 통째로 사라진다.
+    with hw.intentional_push():
+        pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log)
     if not pos or not neg:
         raise RuntimeError("breakaway 양방향 데이터 부족 — 축이 막혔거나 게인 부족")
     tp, tn = float(np.mean(pos)), float(np.mean(neg))

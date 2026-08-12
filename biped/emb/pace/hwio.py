@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import ctypes as C
 import math
 import signal
@@ -155,6 +156,16 @@ class Hardware:
         self.stall_vel_dps = 5.0        # 그런데 이보다 느리면 스톨
         self.stall_ms = 300.0           # 이 시간 지속되면 중단
         self._stall_since: dict = {}
+        # ★스톨 감지는 **시험축에도** 건다 (2026-08-12 늦게 발견).
+        #   위 검사는 check_hold() 안에 있고 그건 hold_ch 만 돈다. 그런데 --solo 는
+        #   hold_ch 가 **빈 리스트**다 → 스톨·파워단 검사가 통째로 안 돈다.
+        #   그 상태에서 시험축을 지키는 건 τ_trip(hip 12Nm)·err_max(12°) 뿐인데,
+        #   2026-08-12 에 드라이버가 죽은 건 **10.6 Nm** 였다 — 문턱 아래다.
+        #   즉 solo 로 hip 을 재는 동안 죽음의 경로가 열려 있었다.
+        #   ⇒ _check_impl 에서도 본다. 다만 판정식이 다르다:
+        #     홀드축은 kp·err(명령토크)로, 시험축은 **보고토크 τ** 로 본다.
+        #     시험축은 τ_ff(중력)+kp·err 로 굴러서 kp·err 만으로는 총량이 안 나온다.
+        self.stall_watch = True
         # 파워단 사망 판별 — 이만큼 명령했는데 보고 토크가 이 비율 미만이면 죽은 것이다.
         self.dead_cmd_nm = 3.0
         self.dead_ratio = 0.15
@@ -392,6 +403,28 @@ class Hardware:
         else:
             self._tau_over_since = None
 
+        # ★시험축 스톨 — τ_trip 보다 **훨씬 아래**에서 잡는다 (위 self.stall_watch 주석).
+        #   오탐하지 않는 이유:
+        #     · 등속 스윕 2dps — |dq|<5 는 맞지만 초과토크가 마찰(~0.6Nm) 뿐 → margin 2.0 미만
+        #     · 가속 구간 120dps — 초과토크 I·α 가 2.4Nm 까지 가지만 **빠르게 움직인다** → 제외
+        #     · 정상 처짐 — kp·err 가 중력과 균형이라 초과토크가 0 근처
+        #   ⇒ "중력보다 2Nm 넘게 내면서 안 움직인다" 는 조합은 막힘밖에 없다.
+        #   ⚠**의도적 정지압박**(토크램프·파단푸시)에서는 꺼야 한다 — intentional_push() 참조.
+        if self.stall_watch and self.grav_fn is not None:
+            g = abs(float(self.grav_fn(ch, q)))
+            t_now = time.monotonic()
+            if not (abs(tau) - g > self.stall_margin_nm and abs(dq) < self.stall_vel_dps):
+                self._stall_since.pop(ch, None)
+            elif (t_now - self._stall_since.setdefault(ch, t_now)) * 1e3 > self.stall_ms:
+                self._stall_since.pop(ch, None)
+                raise SafetyAbort(
+                    f"시험축 **ch{ch}** 스톨 — 토크 {abs(tau):.2f}Nm 이 중력 {g:.2f}Nm 을 "
+                    f"{abs(tau)-g:.2f}Nm 넘는데 속도 {dq:+.1f}dps 로 안 움직인다"
+                    f"({self.stall_ms:.0f}ms 지속).\n"
+                    f"  기구 스톱·간섭에 밀어붙이고 있다 — **이대로 두면 과전류로 드라이버가**\n"
+                    f"  **래치오프된다**(2026-08-12 에 ch0 을 10.6Nm 로 밀다 실제로 그랬다).\n"
+                    f"  τ_trip({L.tau_trip}Nm)은 그 사고보다 높아서 못 잡는다 — 그래서 이 검사가 있다.")
+
     # ── 쓰기 ────────────────────────────────────────────────────────────────
     def latch_hold(self, q_ch=None) -> np.ndarray:
         """홀드축 목표를 확정한다. 이후 arm() 은 **이 값을 재사용**한다(래칫 방지).
@@ -486,6 +519,27 @@ class Hardware:
         kp_v, kd_v = self._hold_gains(ch, hold_scale)
         kp_v[ch] = kp; kd_v[ch] = kd
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
+
+    @contextlib.contextmanager
+    def intentional_push(self):
+        """이 블록 안에서는 **시험축 스톨 감지를 끈다.**
+
+        토크램프(순수토크 프로브)와 파단푸시는 "안 움직이는 축에 토크를 키워 간다"
+        그 자체가 측정법이라, 스톨 감지가 켜져 있으면 **측정을 성공시킬 때마다** 튄다.
+        ⚠끄는 대신 그 두 경로는 **자체 상한**이 있어야 한다:
+            토크램프 → step_torque 의 tau_max 클램프
+            파단푸시 → breakaway 의 tau_cap_nm(중력 대비 초과분 상한)
+          상한 없이 이 블록을 쓰면 스톨 보호가 통째로 사라진다.
+        """
+        prev = self.stall_watch
+        self.stall_watch = False
+        try:
+            yield
+        finally:
+            self.stall_watch = prev
+            # 블록 안에서 쌓인 후보 시각을 버린다. 안 버리면 블록을 빠져나온 직후
+            # **옛 t0** 로 즉시 stall_ms 를 초과해 오탐한다.
+            self._stall_since.clear()
 
     def check_hold(self) -> None:
         """홀드축이 실제로 잡혀 있는지 확인. 밀려나면 측정이 무효이므로 중단.
@@ -705,26 +759,30 @@ class Hardware:
         q0 = self.read(ch)[0]
         t0 = time.monotonic()
         k = 0
+        # ★스톨 감지를 끈다 — 여기서 "안 움직이는데 토크가 크다" 는 **정상**이다
+        #   (파단 직전이 정확히 그 상태다). 상한은 step_torque 의 tau_max 가 쥔다.
         try:
-            while True:
-                t = time.monotonic() - t0
-                if t >= duration_s:
-                    break
-                smp = self.step_torque(ch, float(tau_fn(t)), tau_max)
-                out.append(smp)
-                if abs(smp.q_deg - q0) > drift_max_deg:
-                    self.limp()
-                    raise SafetyAbort(
-                        f"ch{ch} 위치 드리프트 {smp.q_deg - q0:+.2f}° > {drift_max_deg}° "
-                        f"— τ_ff 가 중력을 못 이기거나 부호가 반대다. limp 함")
-                k += 1
-                if progress and k % max(1, int(1.0 / self.dt)) == 0:
-                    print(f"    {progress} {t:5.1f}/{duration_s:.0f}s "
-                          f"q={smp.q_deg:7.2f}(Δ{smp.q_deg-q0:+5.2f}) tau={smp.tau:6.3f}", flush=True)
-                nxt = t0 + k * self.dt
-                slp = nxt - time.monotonic()
-                if slp > 0:
-                    time.sleep(slp)
+            with self.intentional_push():
+                while True:
+                    t = time.monotonic() - t0
+                    if t >= duration_s:
+                        break
+                    smp = self.step_torque(ch, float(tau_fn(t)), tau_max)
+                    out.append(smp)
+                    if abs(smp.q_deg - q0) > drift_max_deg:
+                        self.limp()
+                        raise SafetyAbort(
+                            f"ch{ch} 위치 드리프트 {smp.q_deg - q0:+.2f}° > {drift_max_deg}° "
+                            f"— τ_ff 가 중력을 못 이기거나 부호가 반대다. limp 함")
+                    k += 1
+                    if progress and k % max(1, int(1.0 / self.dt)) == 0:
+                        print(f"    {progress} {t:5.1f}/{duration_s:.0f}s "
+                              f"q={smp.q_deg:7.2f}(Δ{smp.q_deg-q0:+5.2f}) "
+                              f"tau={smp.tau:6.3f}", flush=True)
+                    nxt = t0 + k * self.dt
+                    slp = nxt - time.monotonic()
+                    if slp > 0:
+                        time.sleep(slp)
         except SafetyAbort:
             raise
         except Exception:

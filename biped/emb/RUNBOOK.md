@@ -51,21 +51,28 @@ cd ~/simulation/biped/emb && diag/emb_ctl.sh start
 
 중복 가드 + 신선도(`MotorStatus16`) 확인까지 한다. `✓ MotorStatus16 신선` 이 떠야 성공.
 
-<details><summary>직접 띄우고 싶다면</summary>
+### 또는 — 터미널에 직접 띄운다 (★로그를 눈으로 보려면 이쪽)
 
 ```bash
 pgrep -cx RobotEmbedded          # ★반드시 먼저. 0 이 아니면 띄우지 말 것
 cd ~/ZSource/RobotEmbedded/build && ./src/RobotEmbedded    # sudo 없이
+
+# 다른 터미널에서 신선도 확인
+cd ~/simulation/biped/emb && diag/emb_ctl.sh fresh
 ```
 
-⚠ 이 방식은 **중복을 막아주지 않는다.** 위 `pgrep` 을 잊으면 그대로 중복된다
-(2026-08-12 에 4개까지 늘어 전 채널이 얼어붙었다).
+터미널에 직접 띄우면 stdout 이 **줄단위 버퍼링**이라 로그가 실시간으로 보인다.
+EtherCAT 동결의 원인이 아직 미제이므로, **동결 순간에 뭐라고 찍는지 직접 보는 것**이
+지금 가장 값어치 있다. Ctrl+C 도 즉시 듣는다(sudo 래퍼가 없으므로).
+
+⚠ 대신 `start` 가 해주던 두 가지가 빠진다:
+  ① **중복 가드** — 위 `pgrep` 을 잊으면 그대로 중복된다(2026-08-12 에 4개까지 늘어
+     전 채널이 얼어붙었다). ② **신선도 확인** — `emb_ctl.sh fresh` 로 대신한다.
 
 ⚠ **`sudo` 를 붙이지 말 것.** `setcap cap_net_admin,cap_net_raw=eip` 가 적용돼 있고
 SHM perms 가 666 이라 비루트로 충분하다. sudo 로 띄우면 래퍼가 2개 끼어
 **Ctrl+C 가 실제 프로세스에 도달하지 않는다** — 죽은 줄 알고 다시 띄우면 중복 writer 가
 되고 root 소유라 kill 도 어렵다(실측: sudo → SIGINT 무시 · 직접실행 → 0.11초 종료).
-</details>
 
 ---
 

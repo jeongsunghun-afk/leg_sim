@@ -6,6 +6,7 @@
 #   ./emb_ctl.sh stop    # 종료
 #   ./emb_ctl.sh log     # EtherCAT 요약(슬레이브/OP/WKC) + 마지막 로그
 #   ./emb_ctl.sh reset   # **싹 종료** — writer·Emb·되살리는 래퍼 셸까지 전부
+#   ./emb_ctl.sh fresh   # 신선도만 확인 — Emb 를 터미널에 직접 띄웠을 때
 #   ./emb_ctl.sh status  # 프로세스·SHM·프레임 유통 상태
 #
 # ★Emb 는 EtherCAT 이 OP 를 잃으면 스스로 복구하지 못한다(commEtherCATm.cpp:520 이 조기 return
@@ -169,6 +170,25 @@ log)
     grep -aE "EtherCAT|slave|Slave|WKC|OP|SAFEOP|mismatch|Failed|failure|lost|recover" "$LOG" 2>/dev/null | head -40
     echo "=== 마지막 15줄 ==="
     tail -15 "$LOG" 2>/dev/null
+    ;;
+fresh)
+    # ★신선도만 확인한다 — Emb 를 **터미널에 직접 띄웠을 때** 쓴다.
+    #   직접 띄우면 로그가 줄단위 버퍼링이라 눈앞에 실시간으로 보인다(동결 원인 규명에
+    #   그게 제일 값어치 있다). 대신 start 가 해주던 신선도 확인이 빠지므로 이걸 쓴다.
+    #   ⚠플래그·프로세스 존재로는 판별 불가 — Emb 는 EtherCAT OP 를 잃어도 마지막 버퍼를
+    #     재발행하고 IsUpdated 까지 1 로 세운다. **값이 실제로 변하는지**를 봐야 한다.
+    if ! running; then echo "✗ Emb 가 안 떠 있다."; exit 1; fi
+    _n=$(pgrep -x RobotEmbedded 2>/dev/null | wc -l)
+    [ "$_n" -gt 1 ] && { echo "✗ Emb 가 $_n 개 — reset 후 하나만 띄울 것."; exit 1; }
+    for i in $(seq 1 20); do
+        if "$DIAG/stt_probe" 6 2>/dev/null | grep -q "값이 갱신됨"; then
+            echo "✓ MotorStatus16 신선 — EtherCAT 생존 (${i}s)"; exit 0
+        fi
+        sleep 1
+    done
+    echo "✗ 20s 내 신선한 MotorStatus16 미수신 — EtherCAT OP 이탈."
+    echo "  ① reset  ② 모터 전원 OFF → 3초 → ON  ③ 다시 기동"
+    exit 2
     ;;
 status)
     running && echo "Emb: 실행 중 (pid $(pgrep -x RobotEmbedded | tr '\n' ' '))" || echo "Emb: 정지"

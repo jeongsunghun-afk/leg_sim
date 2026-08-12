@@ -162,6 +162,32 @@ def _trip_check(hw, q_box=None) -> None:
                 snap.append((c, float(hw._q_cmd[c]), q, dq, tq))
             except Exception:
                 break
+        # ★먼저 **전원이 들어와 있는지** 본다 (2026-08-12).
+        #   2026-08-12 실기: 전 축이 무여자인데 "ch2 추종오차 12.02 — 막힘·게인부족·
+        #   기계간섭 의심" 으로 떴다. 원인을 셋으로 흩고, 심지어 **엉뚱한 축**을 지목한다.
+        #   판별은 간단하다: 유의미한 오차가 있는 축들이 **전부** 무토크면 전원 문제다.
+        #     실측 — ch2 오차 12.02° kp80 → 기대 16.78Nm · 보고 0.070Nm (비 0.004)
+        #            6축 전부 비 0.002~0.013
+        #   한 축만 그러면 그 드라이버 사망, 전부면 전원/enable 이다. 구분해서 말한다.
+        try:
+            live = dead = 0
+            for c, cmd, q, dq, tq in snap:
+                kp_c, _ = hw._hold_gain_of(c) if c in hw.hold_ch else (0.0, 0.0)
+                exp = kp_c * abs(cmd - q) * np.pi / 180.0
+                if exp > 0.5:
+                    dead += abs(tq) < exp * 0.15
+                    live += 1
+            if live >= 3 and dead == live:
+                hw.limp()
+                raise SafetyAbort(
+                    f"**전 축 무여자** — 유의미한 오차가 있는 {live}축이 전부 무토크다.\n"
+                    f"  한 드라이버 사망이 아니라 **모터 전원이 꺼져 있거나 enable 이 안 먹은**\n"
+                    f"  상태다. 모터 전원을 확인하고, 켜져 있다면 Emb 를 재기동할 것.\n"
+                    f"  (원 증상: {e})") from None
+        except SafetyAbort:
+            raise
+        except Exception:
+            pass                          # 진단이 실패해도 원래 예외는 살린다
         rows = "\n".join(
             f"    ch{c}  명령 {cmd:+9.2f}  측정 {q:+9.2f}  오차 {cmd - q:+7.2f}"
             f"  속도 {dq:+8.1f}  토크 {tq:+7.3f}" for c, cmd, q, dq, tq in snap)

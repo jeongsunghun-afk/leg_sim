@@ -229,9 +229,9 @@ def main() -> int:
                     help="f_start 배율. <1 이면 저속 구간이 길어진다(쿨롱↔점성 분리용)")
     ap.add_argument("--f1scale", type=float, default=1.0,
                     help="f_end 배율. PACE 논문은 10Hz 까지 쓴다(우리 1.55Hz)")
-    ap.add_argument("--mirror", action="store_true",
-                    help="★원문 방식 — 좌우 대칭 명령으로 base net wrench 를 상쇄한다. "
-                         "우리 기본 파라미터화가 이미 좌우 공유(kind별)라 손해가 없다")
+    ap.add_argument("--mirror", choices=["neg", "hip"], default=None,
+                    help="★원문 방식 — 좌우 대칭 명령으로 base net wrench 상쇄. "
+                         "neg=전축 역위상 · hip=hip만 역위상")
     ap.add_argument("--dual", default=None, metavar="비율,f_slow",
                     help="느린 대진폭 성분을 겹친다 (예: 0.35,0.12). JDAMP↔JFRIC 분리용")
     a = ap.parse_args()
@@ -252,19 +252,26 @@ def main() -> int:
         mc["f_start_hz"] = list(np.array(mc["f_start_hz"], float) * a.f0scale)
         mc["f_end_hz"] = list(np.array(mc["f_end_hz"], float) * a.f1scale)
     tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate, dual)
+    names = list(jm.names)
     if a.mirror:
         # ★원문 §3.2.2 "symmetric trajectory commands to cancel net wrenches".
-        #   좌우 다리를 **역위상**으로 두면 시상면 반력이 상쇄되고, hip(내전/외전)은
-        #   부호를 뒤집어야 측방 반력이 상쇄된다.
-        #   ⚠좌우가 완전 종속이 되므로 --per-axis(좌우 분리) 식별과는 양립하지 않는다.
-        #     우리 기본 파라미터화는 kind별 공유(ROTOR_I 1 + 4 + 4)라 손해가 없다.
+        #   ⚠처프는 순시주파수가 변하므로 **시간 이동으로는 역위상이 안 된다**(초기 구현 오류).
+        #     sin(θ+π) = −sin(θ) 이므로 **부호 반전**이 곧 역위상이다.
+        #   방식 둘을 고를 수 있게 둔다 — 어느 쪽이 반력을 더 죽이는지는 기구에 달렸다:
+        #     neg : 전 축 역위상   q_R = −q_L   → 시상면 힘이 상쇄
+        #     hip : hip 만 역위상               → 측방 힘이 상쇄(기하 거울)
+        #   ⚠좌우가 종속이 되므로 --per-axis(좌우 분리) 식별과는 양립하지 않는다.
+        #     우리 기본 파라미터화는 kind별 공유(1+4+4)라 손해가 없다.
         half = jm.n_leg // 2
-        dev = q_cmd - home
-        sign = np.array([-1.0 if "hip" in names[i] else 1.0 for i in range(half)])
-        N = len(tt); shift = N // 2
+        dev = (q_cmd - home)[:, :half]
+        if a.mirror == "neg":
+            sg = -np.ones(half)
+        elif a.mirror == "hip":
+            sg = np.array([-1.0 if "hip" in names[i] else 1.0 for i in range(half)])
+        else:
+            raise SystemExit("--mirror 는 neg 또는 hip")
         q_cmd = q_cmd.copy()
-        q_cmd[:, half:] = home[half:] + sign * np.roll(dev[:, :half], shift, axis=0)
-    names = list(jm.names)
+        q_cmd[:, half:] = home[half:] + sg * dev
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
     #   (kp_joint = kp_ch·k²). 여기서 갈리면 감도가 통째로 틀린다.

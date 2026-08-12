@@ -35,11 +35,26 @@ start)
     fi
     echo "[emb_ctl] 기동 → $LOG"
     echo "⚠ 기동 직후 Emb 가 자체적으로 전 관절을 4.5초에 걸쳐 0°로 램프한다(Kp=20/Kd=5). 주변 확인!"
-    # ★sudoers 규칙은 "정확히 이 바이너리 경로"만 NOPASSWD 이므로 sh -c 로 감싸지 말 것.
-    #   리다이렉션은 호출측(비root) 셸이 수행 → 로그 파일 소유자는 rpetubt.
-    ( cd "$EMB_DIR" && sudo "$EMB_BIN" > "$LOG" 2>&1 & )
+    # ★**sudo 없이 먼저 시도한다** (2026-08-12).
+    #   바이너리에 capabilities 가 박혀 있어 root 가 필요 없다:
+    #       getcap → cap_net_admin,cap_net_raw=eip   (EtherCAT 원시소켓)
+    #       /dev/spidev0.0,0.1 은 dialout 그룹 rw, 사용자가 dialout 소속
+    #   ⇒ sudo 를 쓰면 얻는 게 없고 잃는 게 크다: root 셸이 고아로 남아 Emb 를 되살리고
+    #     EtherCAT 마스터가 중복된다(2026-08-12 4개까지 늘어 전 채널이 얼어붙었다).
+    #   ⚠/dev/gpiomem*·/dev/mem 은 여전히 root 전용이다. 그걸 쓴다면 무권한 기동이
+    #     실패하므로 **그때만** sudo 로 재시도한다.
+    #   ★sudoers 규칙은 "정확히 이 바이너리 경로"만 NOPASSWD 이므로 sh -c 로 감싸지 말 것.
+    #     리다이렉션은 호출측(비root) 셸이 수행 → 로그 파일 소유자는 rpetubt.
+    ( cd "$EMB_DIR" && "$EMB_BIN" > "$LOG" 2>&1 & )
     sleep 2
+    if ! running; then
+        echo "  무권한 기동 실패 → sudo 로 재시도(gpiomem/mem 접근이 필요한 듯):"
+        tail -5 "$LOG" 2>/dev/null | sed 's/^/    /'
+        ( cd "$EMB_DIR" && sudo "$EMB_BIN" > "$LOG" 2>&1 & )
+        sleep 2
+    fi
     if ! running; then echo "✗ 기동 실패:"; tail -30 "$LOG" 2>/dev/null; exit 1; fi
+    echo "[emb_ctl] 권한: $(ps -o user= -p "$(pgrep -x RobotEmbedded | head -1)" 2>/dev/null)"
     echo "[emb_ctl] pid $(pgrep -x RobotEmbedded | tr '\n' ' ') — halGait 초기화 대기(≈5s)"
     # ★플래그만으로는 부족하다. stt_probe 의 "값이 갱신됨" 판정(신선도)까지 확인한다.
     for i in $(seq 1 20); do

@@ -310,6 +310,52 @@ def t_torque_loop():
     check("드리프트 워치독이 중단시킴", tripped)
 
 
+def t_friction_full():
+    """★마찰 시험 **전 경로**를 스텁 위에서 끝까지 밟는다 (2026-08-12 추가).
+
+    왜 필요했나 — `_breakaway` 가 `_ff` 라는 **클로저 이름을 모듈 수준에서** 참조하고
+    있었다. `_ff` 는 measure_actuator_friction 안에 있으니 안 보인다 → NameError.
+    3커밋 동안 안 걸린 이유는 오프라인 테스트가 (A)breakaway·(C)사인 을 **한 번도
+    안 밟았기** 때문이다. 같은 부류가 (C) 에도 하나 더 있었다(goto 의 tau_ff_fn=ff).
+    ⇒ 이제 A·B·C 를 다 밟는다. 물리값은 안 본다 — **NameError·KeyError·시그니처
+      불일치**를 실기 전에 잡는 게 목적이다.
+
+    ⚠spec 을 **줄여서** 돌린다. 실기값 그대로면 breakaway 만 80초다. 줄여도 밟는
+      코드줄은 같다. 줄인 값은 아래 SHRINK 한 곳에만 있다.
+    """
+    print("\n[3b] measure_actuator_friction — A·B·C 전 경로 (실기 실행 전 관문)")
+    import copy, tempfile
+    spec = copy.deepcopy(_load_spec())
+    n = int(spec["shm"]["n_channel"])
+    home, _ = _home_targets()
+
+    fr = spec["friction"]                                    # ── SHRINK ──
+    fr.pop("by_ch", None)
+    # 파단이 **일어나도록** 잡는다: 스텁 마찰 0.65Nm ÷ kp 30Nm/rad = 1.24° 가 필요하다.
+    # 램프도 느려야 한다 — q_ref 는 t>0.3s 에 래치되므로 그 전에 풀리면 검출을 못 한다
+    # (1.24° ÷ 2dps = 0.62s > 0.3s ✓). 종전 0.6°/6dps 는 0.31Nm 이라 영영 안 풀렸다.
+    fr["breakaway"].update(max_push_deg=4.0, ramp_dps=2.0, trials=1)
+    fr["sweep"].update(stroke_deg=4.0, speeds_dps=[5, 10, 20],
+                       accel_skip_s=0.05, min_dwell_samples=10)
+    fr["sine"].update(amplitude_deg=2.0, frequency_hz=1.0, cycles=1.0)
+
+    fake = FakeLib(n, q_init=home, dt=1 / 500.)
+    hw = _make_hw(fake, spec, hold=[], align=False)          # solo 와 동일 조건
+    j = {"ch": 3, "name": "HL_foot", "gear": 7.0, "q_min": -27.84, "q_max": 48.0}
+
+    import tests.act_measure_friction as amf  # noqa: F401
+    from act_measure_friction import measure_actuator_friction, swing_str
+    check("swing_str 환산", swing_str(40.0, 80.0) == "±20°·1Hz", swing_str(40.0, 80.0))
+    with tempfile.TemporaryDirectory() as td:
+        html, res = measure_actuator_friction(hw, spec, j, td, log=lambda *a: None)
+    # ⚠물리값은 **보지 않는다**. 스텁의 마찰모형은 실기와 다르므로 jfric/jdamp 가
+    #   실기값과 맞을 이유가 없다(여기서 jdamp 는 14 로 나온다 — 스텁 특성이다).
+    #   이 시험이 지키는 건 "끝까지 돈다" 뿐이다.
+    check("A·B·C 전부 완주", isinstance(html, str) and len(html) > 200)
+    for k in ("tau_static", "jfric", "jdamp"):
+        check(f"결과 키 {k}", k in res, f"{res.get(k)}")
+
+
 def t_limp_and_signal():
     """종료 경로 — limp 가 실제로 kp=kd=0 을 쓰는지."""
     print("\n[4] limp")
@@ -367,8 +413,8 @@ if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
-    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_limp_and_signal,
-               t_hold_no_ratchet):
+    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_friction_full,
+               t_limp_and_signal, t_hold_no_ratchet):
         try:
             fn()
         except Exception as e:

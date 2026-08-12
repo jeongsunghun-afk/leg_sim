@@ -76,8 +76,18 @@ TEMPLATE = Template("""
 
 
 # ── (A) 정지마찰 ────────────────────────────────────────────────────────────
-def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list]:
-    """목표각을 ramp_dps 로 밀며 |dq|>thresh 가 되는 순간의 토크를 기록."""
+def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[float], list]:
+    """목표각을 ramp_dps 로 밀며 |dq|>thresh 가 되는 순간의 토크를 기록.
+
+    ★ff 는 **인자로 받는다** (2026-08-12 실기에서 NameError 로 터진 뒤).
+      중력 FF 를 넣을 때 `_ff` 를 여기서 그냥 호출하게 뒀는데, `_ff` 는
+      measure_actuator_friction 안의 클로저이고 이 함수는 모듈 수준이라 **안 보인다.**
+      _sweeps 는 처음부터 `ff=` 로 받고 있었다 — 같은 값을 두 함수가 다른 방식으로
+      집어오던 구조였고, 한쪽만 틀렸다. 이제 둘 다 인자로 받는다.
+      ⚠오프라인 테스트가 _breakaway 를 안 밟아서 3커밋 동안 안 걸렸다. 아래
+        test_hwio_offline.py 에 이 경로를 넣었다.
+    """
+    ff = ff or (lambda q: 0.0)
     pos, neg, traces = [], [], []
     for direction in (+1.0, -1.0):
         for trial in range(int(cfg["trials"])):
@@ -110,10 +120,10 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
             k = 0
             while time.monotonic() - t0 < t_max:
                 t = time.monotonic() - t0
-                ff = _ff(float(hw._q[ch]))
-                s = hw.step(ch, qcmd(t), kp, kd, tau_ff=ff)
+                ff_now = ff(float(hw._q[ch]))
+                s = hw.step(ch, qcmd(t), kp, kd, tau_ff=ff_now)
                 samples.append(s)
-                if cap is not None and (s.tau - ff) * direction > cap:
+                if cap is not None and (s.tau - ff_now) * direction > cap:
                     jammed = True
                     break
                 if t > 0.3 and q_ref is None:
@@ -314,7 +324,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #   대신 _breakaway 안의 tau_cap_nm 이 상한을 쥔다(그 주석 참조). 둘은 한 쌍이다:
     #   cap 없이 이 with 만 쓰면 hip 보호가 통째로 사라진다.
     with hw.intentional_push():
-        pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log)
+        pos, neg, btraces = _breakaway(hw, ch, fr["breakaway"], kp, kd, log, ff=_ff)
     if not pos or not neg:
         raise RuntimeError("breakaway 양방향 데이터 부족 — 축이 막혔거나 게인 부족")
     tp, tn = float(np.mean(pos)), float(np.mean(neg))
@@ -374,7 +384,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     amp, f_hz = sn["amplitude_deg"], sn["frequency_hz"]
     amp = min(amp, (joint["q_max"] - joint["q_min"]) / 2 - 1.0)
     hw.arm(ch, kp, kd)
-    hw.goto(ch, q_center, kp, kd, tau_ff_fn=ff)
+    hw.goto(ch, q_center, kp, kd, tau_ff_fn=_ff)   # ★`ff` 아니다 — 클로저 이름은 _ff
     T = sn["cycles"] / f_hz
     s_sine = hw.run(ch, lambda t: q_center + amp * np.sin(2 * np.pi * f_hz * t),
                     T, kp, kd, progress="sine", tau_ff_fn=_ff)

@@ -125,6 +125,9 @@ def main() -> int:
     ap.add_argument("--config", default=os.path.join(EMB, "config", "biped_emb.yaml"))
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--T", type=float, default=None, help="수집 길이[s] (기본 spec)")
+    ap.add_argument("--gains", choices=["id", "validate"], default="id",
+                    help="★id=식별용(기본) · validate=검증용 게인셋. "
+                         "원문의 'unseen PD gains' 검증 — 다른 게인에서 같은 θ 가 나오는지 본다")
     ap.add_argument("--dry", action="store_true",
                     help="하드웨어 없이 궤적만 설계·검사(상관·한계·충돌 여유)")
     a = ap.parse_args()
@@ -148,9 +151,12 @@ def main() -> int:
                   for t in tt]) + home
     print("■ 궤적 설계 검사")
     print(f"  길이 {T:.0f}s · {rate:.0f}Hz · {len(tt)} 표본 · 램프 {ramp:.0f}s")
+    print(f"  ★게인셋: {a.gains}" + ("  (검증용 — 다른 게인에서 같은 θ 가 나오는지 본다)"
+                                        if a.gains == "validate" else ""))
     print(f"  ★좌우 대칭(net wrench 상쇄, PACE §3.2.2): "
           f"{mirror or '없음 — 반력이 크레인을 흔든다'}")
-    _kp = at._gain(mc.get("kp", {})); _kd = at._gain(mc.get("kd", {}))
+    _kp = at._gain(mc.get("kp" if a.gains == "id" else "kp_validate", {}))
+    _kd = at._gain(mc.get("kd" if a.gains == "id" else "kd_validate", {}))
     if isinstance(_kp, dict):
         print(f"  ★시험 전용 게인 kp " + " ".join(f"ch{c}:{_kp[c]:g}" for c in sorted(_kp)))
         print(f"                 kd " + " ".join(f"ch{c}:{_kd[c]:g}" for c in sorted(_kd)))
@@ -209,8 +215,11 @@ def main() -> int:
     # ★게인·한계는 **이 시험 전용**을 쓴다(spec.pace_multi). 배포값을 쓰면
     #   ① kp 가 높아 궤적이 q_cmd 에 붙고 파라미터 정보가 사라지고
     #   ② 중력이 τ_trip 을 먹어 hip 동적여유가 0.35Nm 밖에 안 남는다.
-    kp = at._gain(mc.get("kp", sf.get("hold_kp", 40.0)))
-    kd = at._gain(mc.get("kd", sf.get("hold_kd", 2.0)))
+    _gk = "kp" if a.gains == "id" else "kp_validate"
+    _gd = "kd" if a.gains == "id" else "kd_validate"
+    if _gk not in mc:
+        raise SystemExit(f"✗ spec.pace_multi.{_gk} 가 없다")
+    kp = at._gain(mc[_gk]); kd = at._gain(mc[_gd])
     at.preflight(spec)
 
     with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], rate, lim,
@@ -252,7 +261,8 @@ def main() -> int:
                   log=lambda m: print(f"  [multichirp]{m}"))
 
     os.makedirs(a.out, exist_ok=True)
-    path = os.path.join(a.out, "pace_multichirp.npz")
+    path = os.path.join(a.out, "pace_multichirp.npz" if a.gains == "id"
+                        else "pace_multichirp_val.npz")
     # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
     #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
     kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])

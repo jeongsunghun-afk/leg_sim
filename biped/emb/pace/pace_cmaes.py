@@ -151,23 +151,36 @@ def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
     return True
 
 
-def rollout(m, d, idx, q_real, dq_real, q_cmd, kp, kd, dt, win_steps):
-    """창 단위 재초기화 롤아웃. 실기와 **같은 제어법칙**을 시뮬 안에서 돌린다."""
+def rollout(m, d, idx, q_real, dq_real, q_cmd, kp, kd, dt, win_steps,
+            bias=None, delay_s=0.0):
+    """창 단위 재초기화 롤아웃. 실기와 **같은 제어법칙**을 시뮬 안에서 돌린다.
+
+    ★bias·delay 는 PACE 원문 파라미터다 (arXiv:2509.06342, p = [I_a, d, τ_f, q̃_b, T_d]).
+      · bias q̃_b [deg] — 엔코더 영점 오차. 실기는 `q_enc = q_true + bias` 를 읽으므로
+        시뮬이 맞춰야 할 진짜 각은 **q_real − bias** 다. 재초기화·비교 둘 다 그 값을 쓴다.
+        ⚠지그 영점 후에도 모델각 기준 0.5~2.3° 가 남아 있었다(2026-08-11) — 무시 못 한다.
+      · delay T_d [s] — 명령이 늦게 도달한다. 시각 t 의 유효명령은 q_cmd[t − T_d/dt].
+        실측 왕복지연 8.39±0.79 ms 를 초기값·경계의 근거로 쓴다.
+    ⚠안 넣으면 이 둘의 오차가 **armature/마찰로 흡수된다** — 잘 맞는데 물리적으로 틀린 값.
+    """
     import mujoco
     N, n = q_real.shape
     q_sim = np.empty_like(q_real)
+    q_ref = q_real if bias is None else (q_real - bias)      # 진짜 관절각
+    sh = int(round(float(delay_s) / dt))                     # 지연[샘플]
     m.opt.timestep = dt
     for s in range(0, N, win_steps):
         e = min(s + win_steps, N)
         # ★창 시작마다 실측 상태로 재초기화 — 개루프 적분 발산과 모델오차를 분리한다
         for i, (_, qa, dofa, _) in enumerate(idx):
-            d.qpos[qa] = q_real[s, i] * DEG
+            d.qpos[qa] = q_ref[s, i] * DEG
             d.qvel[dofa] = dq_real[s, i] * DEG
         mujoco.mj_forward(m, d)
         for t in range(s, e):
+            tc = t - sh if t - sh >= 0 else 0                # 지연된 명령
             for i, (_, qa, dofa, aid) in enumerate(idx):
                 q_sim[t, i] = d.qpos[qa] / DEG
-                err = (q_cmd[t, i] - d.qpos[qa] / DEG) * DEG
+                err = (q_cmd[tc, i] - d.qpos[qa] / DEG) * DEG
                 d.ctrl[aid] = kp[i] * err - kd[i] * d.qvel[dofa]
             mujoco.mj_step(m, d)
     return q_sim
@@ -199,9 +212,45 @@ def init_bounds(spec_path, names, per_axis):
                              [f0[kind_of(x)] for x in names]])
     else:
         x0 = np.concatenate([[rot0], [d0[k] for k in KINDS], [f0[k] for k in KINDS]])
+    # ★PACE 원문 파라미터를 마저 넣는다: 관절 bias q̃_b(축별) + 전역 지연 T_d.
+    #   원문은 4n+1. 우리는 8축이 **같은 모터**라 ROTOR_I 를 공유하고 마찰·감쇠를
+    #   kind별로 묶으므로 (1+4+4) + n(bias) + 1(delay) = 18 이다.
+    #   ⚠bias 는 축별이어야 한다 — 엔코더 영점은 물리량이 아니라 축마다 따로다.
     lo = x0 * 0.3
     hi = x0 * 3.0
+    nb = len(names)
+    x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
+    lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO]])
+    hi = np.concatenate([hi, np.full(nb, +BIAS_MAX), [DELAY_HI]])
     return x0, lo, hi
+
+
+# bias·delay 경계 — 실측 근거로 잡는다(임의값이 아니다)
+BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° 였다(2026-08-11)
+DELAY0, DELAY_LO, DELAY_HI = 0.00839, 0.002, 0.016   # 실측 8.39±0.79 ms
+
+
+def to_z(x, lo, hi):
+    """★탐색을 z∈[0,1] 로 정규화한다.
+
+    CMA-ES 는 sigma **하나**를 전 차원에 쓴다. 그런데 우리 파라미터는
+    ROTOR_I 7e−4 · JFRIC 0.44 · bias ±3.0 · delay 0.008 로 스케일이 4자리 넘게 벌어진다.
+    원공간에서 sigma 0.3 을 쓰면 ROTOR_I 는 400배 과도, delay 는 37배 과도로 흔들린다.
+    ⇒ 경계로 정규화해 전 차원을 같은 크기로 만든다. (bias 는 초기값이 0 이라
+      종전의 '초기값 비율' 방식 자체가 성립하지 않기도 한다.)
+    """
+    return (np.asarray(x, float) - lo) / np.where(hi - lo > 0, hi - lo, 1.0)
+
+
+def from_z(z, lo, hi):
+    return lo + np.clip(np.asarray(z, float), 0.0, 1.0) * (hi - lo)
+
+
+def split_params(p, n, per_axis):
+    """탐색벡터 → (동역학, bias[deg], delay[s]). 순서는 init_bounds 와 짝이다."""
+    nd = 1 + 2 * n if per_axis else 9
+    p = np.asarray(p, float)
+    return p[:nd], p[nd:nd + n], float(p[nd + n])
 
 
 def report(names, x, per_axis, log=print):
@@ -218,6 +267,12 @@ def report(names, x, per_axis, log=print):
             log(f"  {'JDAMP.'+k:<16}{x[1+i]:>12.4f}")
         for i, k in enumerate(KINDS):
             log(f"  {'JFRIC.'+k:<16}{x[5+i]:>12.4f}")
+    n = len(names)
+    nd = 1 + 2 * n if per_axis else 9
+    if len(x) >= nd + n + 1:                       # bias·delay 가 있으면 같이 찍는다
+        b = np.asarray(x[nd:nd + n], float)
+        log(f"  {'bias[deg]':<16}" + " ".join(f"{v:+.3f}" for v in b))
+        log(f"  {'delay[ms]':<16}{float(x[nd+n])*1e3:>12.2f}   (실측 8.39±0.79)")
 
 
 def main() -> int:
@@ -231,6 +286,10 @@ def main() -> int:
     ap.add_argument("--popsize", type=int, default=10)
     ap.add_argument("--holdout", type=float, default=0.3,
                     help="뒤쪽 이 비율은 **적합에 안 쓰고** 검증에만 쓴다")
+    ap.add_argument("--validate", default=None, metavar="npz",
+                    help="★unseen PD gains 검증 (PACE arXiv:2509.06342). 다른 게인으로 수집한 "
+                         "npz 를 주면, 적합된 θ 를 **그 데이터**에 걸어 RMS 를 낸다. "
+                         "게인이 바뀌어도 같은 θ 가 맞으면 순환·과적합이 아니다")
     ap.add_argument("--eval-only", action="store_true", help="초기값만 평가(CMA-ES 생략)")
     ap.add_argument("--st-T", type=float, default=4.0, help="셀프테스트 길이[s]")
     ap.add_argument("--st-dt", type=float, default=0.002,
@@ -264,14 +323,17 @@ def main() -> int:
     print(f"  적합 구간 0~{ncut} · **hold-out {ncut}~{N}** ({a.holdout:.0%})")
 
     x0, lo, hi = init_bounds(a.spec, D["names"], a.per_axis)
-    print(f"■ 초기값(축별 측정 유래) — {len(x0)} 모수, 범위 ×0.3~×3.0")
+    print(f"■ 초기값 — {len(x0)} 모수 "
+          f"(동역학 {len(x0)-len(D['names'])-1} + bias {len(D['names'])} + delay 1). "
+          f"동역학 ×0.3~3.0 · bias ±{BIAS_MAX}° · delay {DELAY_LO*1e3:.0f}~{DELAY_HI*1e3:.0f}ms")
     report(D["names"], x0, a.per_axis)
 
     def evaluate(p, s, e):
-        apply_params(m, idx, D["gear_n"], np.asarray(p, float), a.per_axis, D["names"])
+        dyn, bias, dly = split_params(p, len(D["names"]), a.per_axis)
+        apply_params(m, idx, D["gear_n"], dyn, a.per_axis, D["names"])
         qs = rollout(m, d, idx, D["q"][s:e], D["dq"][s:e], D["q_cmd"][s:e],
-                     D["kp"], D["kd"], D["dt"], win)
-        return cost_of(qs, D["q"][s:e]), qs
+                     D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly)
+        return cost_of(qs, D["q"][s:e] - bias), qs      # ★진짜 각(q_enc − bias)과 비교
 
     c0, _ = evaluate(x0, 0, ncut)
     h0, _ = evaluate(x0, ncut, N)
@@ -283,17 +345,18 @@ def main() -> int:
         import cma
     except ImportError:
         raise SystemExit("✗ cma 가 없다: ~/.venv-mujoco/bin/pip install cma")
-    es = cma.CMAEvolutionStrategy(list(x0), 0.3, {
+    # ★z∈[0,1] 정규화 공간에서 탐색한다(to_z 주석 참조). 원공간은 스케일이 4자리 벌어진다.
+    es = cma.CMAEvolutionStrategy(list(to_z(x0, lo, hi)), 0.25, {
         "popsize": a.popsize, "maxiter": a.iters,
-        "bounds": [list(lo), list(hi)],
-        "CMA_stds": list(x0 * 0.5), "verbose": -9})
-    print(f"\n■ CMA-ES — popsize {a.popsize} · 최대 {a.iters} 세대")
+        "bounds": [0.0, 1.0], "verbose": -9})       # ★z 공간이므로 경계도 [0,1] 이다
+    print(f"\n■ CMA-ES — popsize {a.popsize} · 최대 {a.iters} 세대 (z∈[0,1] 정규화 탐색)")
     best, bestc = np.array(x0), c0
     it = 0
     while not es.stop():
-        X = es.ask()
+        Z = es.ask()
+        X = [from_z(z, lo, hi) for z in Z]
         F = [evaluate(x, 0, ncut)[0] for x in X]
-        es.tell(X, F)
+        es.tell(Z, F)
         it += 1
         if min(F) < bestc:
             bestc = float(min(F)); best = np.array(X[int(np.argmin(F))])
@@ -307,6 +370,40 @@ def main() -> int:
         print("  ⚠hold-out 이 적합보다 크게 나쁘다 — **과적합**이다. 모수를 줄이거나"
               " 데이터를 늘릴 것")
     report(D["names"], best, a.per_axis)
+
+    # ── ★unseen PD gains 검증 (원문의 주 검증) ──────────────────────────────
+    #   hold-out 궤적보다 강하다: 게인이 바뀌면 kp·err 순환이나 과적합이 바로 드러난다.
+    #   ⚠게인은 **그 데이터셋의 것**을 쓴다(npz 에 kp_joint/kd_joint 가 들어 있다).
+    if a.validate:
+        V = load_data(a.validate)
+        if list(V["names"]) != list(D["names"]):
+            raise SystemExit("✗ 검증셋의 축 순서가 다르다")
+        vi = joint_index(m, V["names"])
+        vw = max(1, int(round(a.window / V["dt"])))
+        print(f"\n■ unseen PD gains 검증 — {os.path.basename(a.validate)}")
+        print(f"  적합셋 kp {np.round(D['kp'], 1)}")
+        print(f"  검증셋 kp {np.round(V['kp'], 1)}   ← 다른 게인이어야 의미가 있다")
+        if np.allclose(D["kp"], V["kp"]):
+            print("  ⚠게인이 같다 — 이건 unseen gains 검증이 아니다(궤적 hold-out 일 뿐)")
+        rows = []
+        for lab, px in (("초기값", x0), ("적합 θ", best)):
+            dyn, bias, dly = split_params(px, len(V["names"]), a.per_axis)
+            apply_params(m, idx, V["gear_n"], dyn, a.per_axis, V["names"])
+            qs = rollout(m, d, vi, V["q"], V["dq"], V["q_cmd"], V["kp"], V["kd"],
+                         V["dt"], vw, bias=bias, delay_s=dly)
+            rows.append((lab, cost_of(qs, V["q"] - bias)))
+        for lab, c in rows:
+            print(f"    {lab:<8}RMS {c:.4f}°")
+        imp = (1 - rows[1][1] / rows[0][1]) * 100
+        print(f"  개선 {imp:+.1f}%")
+        if rows[1][1] > bestc * 2.0:
+            print("  ★검증 RMS 가 적합의 2배를 넘는다 — **게인을 바꾸면 안 맞는다**."
+                  " θ 가 게인에 얹혀 있다는 뜻이라 그대로 배포하면 안 된다")
+        elif imp < 0:
+            print("  ★적합 θ 가 초기값보다 **나쁘다** — 과적합이다")
+        else:
+            print("  ✅게인을 바꿔도 개선이 유지된다")
+
     out = os.path.splitext(a.npz)[0] + "_cmaes.npz"
     np.savez(out, x=best, x0=x0, rms_fit=bestc, rms_holdout=hb,
              per_axis=a.per_axis, names=np.array(D["names"]))
@@ -345,22 +442,29 @@ def selftest(m, a) -> int:
     q_cmd = np.array([amps * np.sin(2 * np.pi * (f0 * t + 0.5 * k_ * t * t) + phi)
                       for t in tt])
 
+    # ★bias·delay 도 **0 이 아닌 참값**을 심는다. 0 으로 두면 "안 움직였다" 와
+    #   "되찾았다" 가 구분되지 않아 검증이 되지 않는다.
+    bias_true = np.array([0.8, -1.2, 0.5, -0.3, -0.6, 0.9, -0.4, 0.7])
+    delay_true = 0.010
     x_true = np.concatenate([[7.327e-4], [0.11, 0.07, 0.13, 0.025],
-                             [0.42, 0.31, 0.50, 0.44]])
-    apply_params(m, idx, gear_n, x_true, False, names)
+                             [0.42, 0.31, 0.50, 0.44], bias_true, [delay_true]])
+    apply_params(m, idx, gear_n, split_params(x_true, len(names), False)[0], False, names)
     win = max(1, int(round(a.window / dt)))
     # 참 궤적: 실측 자리에 시뮬을 넣고 창 재초기화 없이 한 번에 굴린다
     q0 = np.zeros((len(tt), 8)); dq0 = np.zeros_like(q0)
-    q_true = rollout(m, d, idx, q0, dq0, q_cmd, kp, kd, dt, len(tt))
+    q_true = rollout(m, d, idx, q0, dq0, q_cmd, kp, kd, dt, len(tt), delay_s=delay_true)
     dq_true = np.vstack([np.zeros(8), np.diff(q_true, axis=0) / dt])
     rng = np.random.default_rng(0)
-    q_meas = q_true + rng.normal(0, 0.02, q_true.shape)      # 엔코더 잡음 0.02°
+    # ★엔코더는 q_true + bias 를 읽는다 — 추정기는 이 bias 를 되찾아야 한다
+    q_meas = q_true + bias_true + rng.normal(0, 0.02, q_true.shape)
     print(f"■ 셀프테스트 — 합성 {T:.0f}s · dt {dt*1000:.0f}ms · 측정잡음 0.02°")
 
     def ev(p):
-        apply_params(m, idx, gear_n, np.asarray(p, float), False, names)
-        qs = rollout(m, d, idx, q_meas, dq_true, q_cmd, kp, kd, dt, win)
-        return cost_of(qs, q_meas)
+        dyn, bias, dly = split_params(p, len(names), False)
+        apply_params(m, idx, gear_n, dyn, False, names)
+        qs = rollout(m, d, idx, q_meas, dq_true, q_cmd, kp, kd, dt, win,
+                     bias=bias, delay_s=dly)
+        return cost_of(qs, q_meas - bias)
 
     x0, lo, hi = init_bounds(a.spec, names, False)
     print(f"  초기 RMS {ev(x0):.4f}°  ·  참값 RMS {ev(x_true):.4f}°")
@@ -368,13 +472,14 @@ def selftest(m, a) -> int:
         import cma
     except ImportError:
         raise SystemExit("✗ cma 가 없다: ~/.venv-mujoco/bin/pip install cma")
-    es = cma.CMAEvolutionStrategy(list(x0), 0.3, {
-        "popsize": a.popsize, "maxiter": a.iters, "bounds": [list(lo), list(hi)],
-        "CMA_stds": list(x0 * 0.5), "verbose": -9})
+    # ★z∈[0,1] 정규화 공간에서 탐색한다(to_z 주석 참조). 원공간은 스케일이 4자리 벌어진다.
+    es = cma.CMAEvolutionStrategy(list(to_z(x0, lo, hi)), 0.25, {
+        "popsize": a.popsize, "maxiter": a.iters, "bounds": [0.0, 1.0], "verbose": -9})
     best, bestc = np.array(x0), ev(x0)
     it = 0
     while not es.stop():
-        X = es.ask(); F = [ev(x) for x in X]; es.tell(X, F); it += 1
+        Z = es.ask(); X = [from_z(z, lo, hi) for z in Z]
+        F = [ev(x) for x in X]; es.tell(Z, F); it += 1
         if min(F) < bestc:
             bestc = float(min(F)); best = np.array(X[int(np.argmin(F))])
         if it % 10 == 0:
@@ -388,6 +493,16 @@ def selftest(m, a) -> int:
         ok &= good
         print(f"  {l:<16}{x_true[i]:>12.4g}{best[i]:>12.4g}{e:>9.1f}%"
               + ("" if good else "  ★"))
+    # ★bias·delay 는 **절대오차**로 본다 — 참값이 0 근처일 수 있어 비율이 무의미하다
+    nb = len(names)
+    be = np.abs(best[9:9 + nb] - x_true[9:9 + nb])
+    de = abs(best[9 + nb] - x_true[9 + nb]) * 1e3
+    bg, dg = be.max() < 0.3, de < 2.0                 # 0.3° · 2ms 이내면 통과
+    ok &= bool(bg and dg)
+    print(f"  {'bias[deg] 최대오차':<16}{'':>12}{be.max():>12.3f}{'':>9}"
+          + ("" if bg else "  ★(0.3° 초과)"))
+    print(f"  {'delay[ms] 오차':<16}{x_true[9+nb]*1e3:>12.2f}{best[9+nb]*1e3:>12.2f}"
+          f"{de:>8.2f}ms" + ("" if dg else "  ★(2ms 초과)"))
     print(f"\n  RMS {bestc:.4f}° · 셀프테스트 {'통과' if ok else '실패(30% 초과 항목)'}")
     return 0 if ok else 1
 

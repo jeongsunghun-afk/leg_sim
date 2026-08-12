@@ -687,11 +687,31 @@ def main() -> int:
                         #   ⚠파단 뒤에 보정하는 것으로는 늦다 — 홈복귀부터 필요하다.
                         #   ⚠MuJoCo 확인: 이 오차는 축 각도에 거의 무관하다
                         #     (thigh 0~32° 에서 −1.30~−0.92). 상수 오프셋으로 충분하다.
+                        # ★정렬 상자를 **현재 측정각까지 늘린다** (2026-08-12 실기 HR_calf).
+                        #   goto_home 은 box_eff 로 그렇게 하는데 **arm() 의 _check 는
+                        #   안 늘린다** — 같은 값을 두 곳에서 다르게 다루던 자리다.
+                        #   HR_calf 가 −95.38 로 늘어져 상자 −93.0 밖이라 arm 에서 죽었다.
+                        #   ⚠보호는 유지된다: 현재 자리는 허용하되 더 바깥으로는 못 간다.
+                        #     정렬의 목적 자체가 상자 밖 자세를 안으로 데려오는 것이다.
+                        _q_arm = float(hw.read(ch)[0])
+                        _La = hw.limits_for(ch)
+                        if not (_La.q_min <= _q_arm <= _La.q_max):
+                            hw.lim_ch[ch] = replace(_La, q_min=min(_La.q_min, _q_arm),
+                                                    q_max=max(_La.q_max, _q_arm))
+                            _log(f"  ⚠정렬 상자를 현재각까지 확장 {_q_arm:+.2f}° "
+                                 f"(원래 [{_La.q_min:+.1f}, {_La.q_max:+.1f}]) — "
+                                 f"무여자 늘어짐이 관절한계 밖이다. config 한계를 볼 것.")
                         if a.solo and ch in _gt:
                             _q_now = float(hw.read(ch)[0])
                             _g_tbl = float(np.interp(_q_now, _gt[ch]["q_ch"], _gt[ch]["tau"]))
                             _g_meas = hw.measure_gravity(ch, _kp_ch, _kd_ch,
                                                          ff_fn=lambda q: hw.grav_fn(ch, q))
+                            if _g_meas != _g_meas:      # nan — 상자 여유 부족
+                                _log(f"  ⚠중력 실측 생략 — {_q_now:+.2f}° 가 상자 "
+                                     f"[{hw.limits_for(ch).q_min:+.1f}, "
+                                     f"{hw.limits_for(ch).q_max:+.1f}] 끝이라 움직일 자리가"
+                                     f" 없다. **표 값을 그대로 쓴다**(오차가 남을 수 있다).")
+                                _g_meas = _g_tbl
                             _gbias[ch] = _g_meas - _g_tbl
                             _log(f"  중력 실측 {_g_meas:+.3f} vs 표 {_g_tbl:+.3f} Nm "
                                  f"@ {_q_now:+.2f}° → 보정 {_gbias[ch]:+.3f} Nm")

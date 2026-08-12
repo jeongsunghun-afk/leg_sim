@@ -30,6 +30,36 @@
   armature/damping/friction 으로 흡수해 "잘 맞는데 물리적으로 틀린" 값을 낸다.
   → 그래서 축별로 I_link 를 먼저 검증했다(foot 예측 대비 −1.0%, 2026-08-11).
 
+═══ 2026-08-12 검증 기록 — 원문 파라미터(bias·delay)를 넣은 뒤 ═══════════════
+
+원문 PACE(arXiv:2509.06342)는 p=[I_a, d, τ_f, q̃_b, T_d] 를 **한꺼번에** 탐색한다.
+우리도 그렇게 바꿨다(9 → 18 모수: 1+4+4 에 축별 bias 8 + 전역 지연 1).
+셀프테스트(합성·참값 기지)로 실제로 되찾는지 확인한 결과:
+
+  ★새로 넣은 둘은 **잘 복원된다**
+      bias  최대오차 **0.024~0.031°**  (기준 0.3°)      — 전 조건에서 일관
+      delay 오차     **0.54 ms**       (기준 2 ms, 경계를 실측으로 묶은 뒤)
+
+  ★★그러나 **모수를 늘린 대가가 있다** — 같은 조건(T=4·120세대) 대조:
+      | | 9모수(종전) | 18모수 |
+      | 최종 RMS   | **0.0207°**(참값 수준) | 0.0449~0.0615° |
+      | ROTOR_I    | −0.0%  | +1.5 ~ −6.7% |
+      | JFRIC      | ≤0.6%  | −2.4 ~ −63% |
+    120세대에서 RMS 가 **아직 내려가는 중**이다(0.0607→0.0515→0.0449).
+    ⇒ **미수렴이지 버그가 아니다.** 원문은 N=4096 병렬환경을 쓰는데 우리는 popsize 10 이다.
+      그래서 위 미수렴 가드를 넣었다 — 이 경고가 뜨면 그 값을 결론으로 쓰지 말 것.
+
+  ★지연을 자유변수로 두면 **모델오차를 흡수한다** — 이게 결정적이었다
+      경계 2~16ms  → 추정 **12.83 ms**(실측 8.39±0.79 **밖**) · RMS 0.0615 · ROTOR_I −6.7%
+      경계 6.8~10ms → 추정 **9.46 ms** · RMS **0.0449**(−27%) · ROTOR_I **+1.5%**(4.5배 개선)
+    ⇒ 원문이 T_d 를 자유롭게 두는 건 그 값을 따로 재지 않아서다. **우리는 쟀으니 묶는다.**
+      실측이 있는 값을 자유변수로 두면 나머지가 그리로 흘러간다.
+
+  ★남은 약한 방향은 여전히 JDAMP·JFRIC 다 (−66 ~ +64%).
+    design_excitation.py 가 설계 단계에서 이미 짚었다: JDAMP 감도가 ROTOR_I 의 1/16~1/87,
+    JDAMP.foot↔JFRIC.foot r=+0.93. **궤적으로는 못 고친다**(dual·f0scale·f1scale 전부 실패).
+    ⇒ 한쪽을 축별 마찰-속도 곡선으로 못박고 고정하는 것이 정공법이다(NEXT_HW §B).
+
 사용:
     ~/.venv-mujoco/bin/python pace_cmaes.py results/pace_multichirp.npz
     ~/.venv-mujoco/bin/python pace_cmaes.py --selftest        # 하드웨어·실측 불필요
@@ -357,6 +387,7 @@ def main() -> int:
         "bounds": [0.0, 1.0], "verbose": -9})       # ★z 공간이므로 경계도 [0,1] 이다
     print(f"\n■ CMA-ES — popsize {a.popsize} · 최대 {a.iters} 세대 (z∈[0,1] 정규화 탐색)")
     best, bestc = np.array(x0), c0
+    hist = []
     it = 0
     while not es.stop():
         Z = es.ask()
@@ -366,8 +397,16 @@ def main() -> int:
         it += 1
         if min(F) < bestc:
             bestc = float(min(F)); best = np.array(X[int(np.argmin(F))])
+        hist.append(bestc)
         if it % 10 == 0 or it == 1:
             print(f"    세대 {it:>3}  최량 RMS {bestc:.4f}°")
+    # ★미수렴 가드 — 마지막 20% 구간에서도 계속 좋아지고 있으면 **아직 안 끝난 것**이다.
+    #   모수를 9→18 로 늘리면서 기본 120세대로는 부족해졌다(아래 docstring 검증 기록 참조).
+    if len(hist) >= 10:
+        tail_gain = 1.0 - hist[-1] / hist[max(0, int(len(hist) * 0.8))]
+        if tail_gain > 0.05:
+            print(f"  ★**미수렴** — 마지막 20% 세대에서 RMS 가 {tail_gain*100:.0f}% 더 내려갔다."
+                  f" --iters 를 올릴 것(현재 {a.iters}). 이 값을 결론으로 쓰지 말 것")
     hb, qs = evaluate(best, ncut, N)
     print(f"\n■ 결과 — 적합 RMS {bestc:.4f}° · **hold-out RMS {hb:.4f}°** "
           f"(초기 {c0:.4f}/{h0:.4f})")

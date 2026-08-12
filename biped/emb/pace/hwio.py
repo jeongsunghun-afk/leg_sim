@@ -120,6 +120,7 @@ class Hardware:
         self._stt = np.zeros(self.n, np.int32)
 
         self._prev = None                  # stale 판정용 직전 **전 채널** 스냅샷
+        self._prev_cmd = None              # 직전 명령 — 명령이 바뀔 때만 신선도를 따진다
         self._last_change_t = 0.0
         self._last_read_t = time.monotonic()
         # 이 간격을 넘겨 read 가 끊기면 그 구간은 stale 판정에서 제외한다(위 read 주석).
@@ -302,7 +303,21 @@ class Hardware:
         #     (오늘 실측한 진짜 동결: 494표본 10초 동안 고유 조합 1개 · IMU 변화폭 0)
         gap = now - self._last_read_t
         self._last_read_t = now
+        # ★신선도는 "**명령이 바뀌는 동안** 측정이 따라 바뀌는가" 다 (2026-08-12, 3차 수정).
+        #   가만히 있는 로봇은 (q,dq,tau,rpy) 가 전부 그대로다 — 그건 **정상**이다.
+        #   실기 --solo 에서 작업자가 다리를 잡아 완전히 정지시키자 "상태 정지 ch1 391ms"
+        #   로 트립했다. IMU 가 죽어 있어(rpy 변화폭 정확히 0) 잔여 흔들림조차 없다.
+        #   ⇒ **우리가 명령을 바꾸고 있을 때만** 신선도를 따진다. 명령이 정지해 있으면
+        #     측정이 정지한 것도 정상이므로 기준시각을 계속 갱신한다.
+        #   ⚠이러면 "홀드 중 동결" 은 못 잡는다. 그때는 명령을 안 바꾸고 있으므로
+        #     눈먼 채 움직일 위험도 없다 — 다음 명령 변화에서 곧바로 걸린다.
         allv = (self._q.tobytes(), self._dq.tobytes(), self._tau.tobytes(), self._rpy.tobytes())
+        cmdv = self._q_cmd.tobytes()
+        cmd_moving = (self._prev_cmd is not None and cmdv != self._prev_cmd)
+        self._prev_cmd = cmdv
+        if not cmd_moving:
+            self._prev = allv
+            self._last_change_t = now
         if gap > self.stale_gap_s:
             self._prev = allv
             self._last_change_t = now
@@ -435,6 +450,21 @@ class Hardware:
             self._check(ch, q, dq, tau, q0)
             time.sleep(self.dt)
         return q0
+
+    def _raw_write_ff(self, ch: int, q_cmd_deg: float, kp: float, kd: float,
+                      tau_ff: float) -> None:
+        """_raw_write 와 같되 **tau_ff 를 함께** 보낸다(write_mit 경로)."""
+        kp = min(max(kp, 0.0), self.lim.kp_max)
+        kd = min(max(kd, 0.0), self.lim.kd_max)
+        L = self.limits_for(ch)
+        q_cmd_deg = min(max(q_cmd_deg, L.q_min), L.q_max)
+        self._q_cmd[ch] = q_cmd_deg
+        kp_v, kd_v = self._hold_gains(ch)
+        kp_v[ch] = kp; kd_v[ch] = kd
+        z = np.zeros(self.n, np.float32)
+        tv = np.zeros(self.n, np.float32)
+        tv[ch] = float(np.clip(tau_ff, -self.lim.tau_trip, self.lim.tau_trip))
+        self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(kp_v), _p(kd_v), self.n)
 
     def _hold_gains(self, ch: int, scale: float = 1.0):
         """홀드축 kp/kd 벡터. 시험축 자리는 호출측이 덮어쓴다."""
@@ -575,7 +605,8 @@ class Hardware:
         for sgn in (+1.0, -1.0):
             tgt = q0 + sgn * abs(step_deg)
             for _ in range(n):
-                s = self.step(ch, tgt, kp, kd)
+                s = self.step(ch, tgt, kp, kd,
+                             tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0))
                 time.sleep(self.dt)
             settle.append(s.q_deg)
         spread = settle[0] - settle[1]          # 중력 상쇄된 순수 추종량
@@ -630,11 +661,23 @@ class Hardware:
         return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]),
                       float(kp), float(kd))
 
-    def step(self, ch: int, q_cmd_deg: float, kp: float, kd: float) -> Sample:
-        """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort."""
+    def step(self, ch: int, q_cmd_deg: float, kp: float, kd: float,
+             tau_ff: float = 0.0) -> Sample:
+        """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort.
+
+        ★tau_ff — **중력 피드포워드** (2026-08-12). 중력이 큰 축은 kp 가 그걸 혼자
+          감당하느라 정작 축을 밀 여력이 없다:
+              hip  max_push 2.5° × kp100 = 4.4Nm   그 자리 중력 4.2Nm → 남는 0.2Nm
+              마찰 0.8Nm 을 못 넘어 **6시행 전부 미동**했다(2026-08-12 실기).
+          τ_ff = G(q) 를 실으면 kp 는 잔차만 맡는다. 처짐도 같이 사라져 스트로크가 는다.
+          ⚠tau_ff 가 0 이면 종전대로 write_pos 를 쓴다(경로를 안 바꾼다).
+        """
         if not self._armed:
             raise RuntimeError("arm() 을 먼저 호출할 것")
-        self._raw_write(ch, q_cmd_deg, kp, kd)
+        if tau_ff:
+            self._raw_write_ff(ch, q_cmd_deg, kp, kd, float(tau_ff))
+        else:
+            self._raw_write(ch, q_cmd_deg, kp, kd)
         q, dq, tau, cur = self.read(ch)
         self._check(ch, q, dq, tau, self._q_cmd[ch])      # 위반 시 내부에서 limp 후 raise
         self.check_hold()                                 # 홀드축이 밀리면 측정 무효
@@ -691,7 +734,7 @@ class Hardware:
         return out
 
     def run(self, ch: int, qcmd_fn, duration_s: float, kp: float, kd: float,
-            progress: str | None = None) -> list[Sample]:
+            progress: str | None = None, tau_ff_fn=None) -> list[Sample]:
         """qcmd_fn(t)->목표각[deg] 를 duration_s 동안 실행하며 샘플을 모은다.
         절대시각 스케줄러(누적 드리프트 없음)."""
         out: list[Sample] = []
@@ -701,7 +744,8 @@ class Hardware:
             t = time.monotonic() - t0
             if t >= duration_s:
                 break
-            out.append(self.step(ch, float(qcmd_fn(t)), kp, kd))
+            out.append(self.step(ch, float(qcmd_fn(t)), kp, kd,
+                             tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0)))
             k += 1
             if progress and k % max(1, int(1.0 / self.dt)) == 0:
                 print(f"    {progress} {t:5.1f}/{duration_s:.0f}s "
@@ -726,7 +770,8 @@ class Hardware:
         base = []
         n_settle = max(1, int(settle_s / self.dt))
         for _ in range(n_settle):
-            s = self.step(ch, q0, kp, kd)
+            s = self.step(ch, q0, kp, kd,
+                             tau_ff=(tau_ff_fn(float(self._q[ch])) if tau_ff_fn else 0.0))
             base.append((s.tau, s.q_deg))
             time.sleep(self.dt)
         tau_b = float(np.mean([b[0] for b in base[-n_settle // 2:]]))
@@ -799,7 +844,7 @@ class Hardware:
     #     · jog 한계 클램프·"잘렸다" 보고 없음
     #   _raw_write_all 은 남는다 — goto_home 이 그걸 쓴다.
     def goto(self, ch: int, q_target_deg: float, kp: float, kd: float,
-             speed_dps: float = 8.0) -> None:
+             speed_dps: float = 8.0, tau_ff_fn=None) -> None:
         """현재 위치에서 목표각까지 등속 램프(안전 이동)."""
         q0 = self.read(ch)[0]
         dist = q_target_deg - q0

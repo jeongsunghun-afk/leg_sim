@@ -97,7 +97,7 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
             k = 0
             while time.monotonic() - t0 < t_max:
                 t = time.monotonic() - t0
-                s = hw.step(ch, qcmd(t), kp, kd)
+                s = hw.step(ch, qcmd(t), kp, kd, tau_ff=_ff(float(hw._q[ch])))
                 samples.append(s)
                 if t > 0.3 and q_ref is None:
                     q_ref = s.q_deg                      # 인가 정착 후의 기준 위치
@@ -132,7 +132,7 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
 
 
 # ── (B) 등속 스윕 ───────────────────────────────────────────────────────────
-def _sweeps(hw, ch, cfg, kp, kd, q_center, log) -> dict[float, tuple[float, float, float, float]]:
+def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[float, float, float, float]]:
     """속도별 (tau_plus, tau_minus, dq_plus, dq_minus). 양방향 상쇄용."""
     half = cfg["stroke_deg"] / 2.0
     frac = cfg["dwell_frac"]
@@ -164,10 +164,10 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log) -> dict[float, tuple[float, floa
         res = {}
         for d in (+1.0, -1.0):
             hw.arm(ch, kp, kd)
-            hw.goto(ch, q_center - d * half, kp, kd, speed_dps=min(20.0, 3 * v))
+            hw.goto(ch, q_center - d * half, kp, kd, speed_dps=min(20.0, 3 * v), tau_ff_fn=ff)
             time.sleep(0.3)
             q_start = q_center - d * half
-            s = hw.run(ch, lambda t, a=q_start, d=d: a + d * v * t, T, kp, kd)
+            s = hw.run(ch, lambda t, a=q_start, d=d: a + d * v * t, T, kp, kd, tau_ff_fn=ff)
             hw.limp()
             time.sleep(0.25)
 
@@ -242,6 +242,18 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # ★축별 축소값을 병합한다 (2026-08-12). hip 은 크게 움직이면 두 다리가 부딪힌다 —
     #   스톨 → 과전류 → 드라이버 보호 → EtherCAT OP 이탈로 이어진다(오늘 3회 동결).
     #   ⚠MuJoCo 충돌 판정에는 발 구 4개만 들어 있어 이 간섭을 못 본다. 값은 실물 기준이다.
+    # ★중력 피드포워드 (2026-08-12) — hip 처럼 중력이 큰 축은 kp 가 중력을 감당하느라
+    #   축을 밀 여력이 없다(실기: hip 6시행 전부 미동). τ_ff=G(q) 를 실어 kp 를 해방한다.
+    #   ⚠표가 없으면 0 이 되어 종전 동작 그대로다(하위호환).
+    _gt = (spec.get("torque_mode", {}).get("tau_grav_table") or {}).get(ch)
+    _gq = np.asarray(_gt["q_ch"], float) if _gt else None
+    _gv = np.asarray(_gt["tau"], float) if _gt else None
+    def _ff(q_ch):
+        return float(np.interp(q_ch, _gq, _gv)) if _gt else 0.0
+    if _gt:
+        log(f"  [{name}] ★중력 피드포워드 켜짐 — 현재 위치 G={_ff(hw.read(ch)[0]):+.3f} Nm "
+            f"(kp 가 중력을 감당할 필요가 없어져 push 여력이 그만큼 는다)")
+
     fr = {k: (dict(v) if isinstance(v, dict) else v) for k, v in spec["friction"].items()}
     _ov = (fr.pop("by_ch", None) or {}).get(ch, {})
     for _sec, _kv in _ov.items():
@@ -272,7 +284,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
 
     # (B) 등속 스윕
     log(f"  (B) 등속 스윕 — 중심 {q_center:.2f}deg, ±{half:.1f}deg")
-    sw = _sweeps(hw, ch, fr["sweep"], kp, kd, q_center, log)
+    sw = _sweeps(hw, ch, fr["sweep"], kp, kd, q_center, log, ff=_ff)
     if len(sw) < 2:
         raise RuntimeError("등속 스윕 유효 속도 2개 미만 — 측정 불가")
 
@@ -315,10 +327,10 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     amp, f_hz = sn["amplitude_deg"], sn["frequency_hz"]
     amp = min(amp, (joint["q_max"] - joint["q_min"]) / 2 - 1.0)
     hw.arm(ch, kp, kd)
-    hw.goto(ch, q_center, kp, kd)
+    hw.goto(ch, q_center, kp, kd, tau_ff_fn=ff)
     T = sn["cycles"] / f_hz
     s_sine = hw.run(ch, lambda t: q_center + amp * np.sin(2 * np.pi * f_hz * t),
-                    T, kp, kd, progress="sine")
+                    T, kp, kd, progress="sine", tau_ff_fn=_ff)
     hw.limp()
     A = samples_to_arrays(s_sine)
 

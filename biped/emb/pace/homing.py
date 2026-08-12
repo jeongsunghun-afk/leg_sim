@@ -119,6 +119,27 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
         else float(np.max(np.abs(err)))
     log(f"    도착 — 최대 오차 {emax:.2f}° (모델각: "
         f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))})")
+    if emax > tol_deg and only_ch is not None:
+        # ★--solo 에서는 목표에 **원리적으로 못 갈 수 있다** (2026-08-12 실기).
+        #   커플링 축이 그렇다: q_ch_foot = (q_foot + q_calf)·s·k 이므로 calf 가 −55° 로
+        #   늘어져 있으면 foot **모델각** 0 을 만들려면 채널각 +66 이 필요한데
+        #   상자가 [−27.8, +48.0] 이라 닿지 못한다. ch3 이 55.16° 오차로 중단했다.
+        #   ⇒ solo 는 **자세를 맞추는 게 목적이 아니다** — 마찰 시험은 그 자리를 중심으로
+        #     ±stroke 만 움직이면 되고, 중심이 어디든 ±방향 차로 중력이 상쇄된다.
+        #   ⇒ 경고만 하고 진행한다. 대신 **왜 못 갔는지**를 숫자로 남긴다.
+        cmd_ch = float(hw._q_cmd[only_ch])
+        at_edge = (q_box is not None and only_ch in q_box
+                   and (abs(cmd_ch - q_box[only_ch][0]) < 0.05
+                        or abs(cmd_ch - q_box[only_ch][1]) < 0.05))
+        log(f"    ⚠목표 미달 {emax:.2f}° > {tol_deg}° — **진행한다**(solo 는 자세가 목적이 아니다).")
+        if at_edge:
+            lo, hi = q_box[only_ch]
+            log(f"      명령이 상자 끝({cmd_ch:+.2f} ∈ [{lo:+.2f}, {hi:+.2f}])에 붙었다 —"
+                f" **도달 불가능한 목표**다. 커플링 축이면 원천축을 먼저 0 으로 보낼 것.")
+        else:
+            log(f"      명령 {cmd_ch:+.2f} 는 상자 안이다 — 축이 못 따라간 것이다"
+                f"(마찰·중력·간섭). 시험은 이 자리를 중심으로 돈다.")
+        return T
     if emax > tol_deg:
         # ★limp 가 아니라 **제자리 정지**. limp 하면 매단 다리가 떨어져 좌우 발이
         #   겹친 자세로 착지하고, 다음 실행이 거기서 시작해 또 트립한다

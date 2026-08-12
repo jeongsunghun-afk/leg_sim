@@ -238,8 +238,15 @@ def param_labels(names, per_axis: bool) -> list:
       그러면 (a) plabels[9] 에서 IndexError 로 죽거나 (b) 더 나쁘게, 라벨이 밀려
       **엉뚱한 파라미터 이름으로 보고**된다. 라벨과 벡터는 같은 곳에서 나와야 한다.
     """
-    dyn = ([f"ROTOR_I.{k}" for k in KINDS] if per_axis else ["ROTOR_I"]) \
-        + [f"JDAMP.{k}" for k in KINDS] + [f"JFRIC.{k}" for k in KINDS]
+    # ★per_axis=True 가 **깨져 있었다** (2026-08-12). 이 함수는 21개를 냈는데
+    #   init_bounds 는 26개, split_params 는 nd=1+2n=17 을 가정했다. apply_params 도
+    #   `rot = p[0:1]` 로 ROTOR_I 를 **하나만** 쓴다 — 라벨만 kind별 4개로 적혀 있었다.
+    #   바로 위 독스트링이 경고한 그 사고를 per_axis 경로에서 다시 낸 것이다
+    #   (non-per_axis 만 고치고 per_axis 는 안 봤다).
+    #   ⇒ apply_params/split_params 에 맞춘다: ROTOR_I 1개 + JDAMP·JFRIC 축별 n개씩.
+    dyn = (["ROTOR_I"] + [f"JDAMP.{x}" for x in names] + [f"JFRIC.{x}" for x in names]
+           if per_axis else
+           ["ROTOR_I"] + [f"JDAMP.{k}" for k in KINDS] + [f"JFRIC.{k}" for k in KINDS])
     return dyn + [f"bias.{n}" for n in names] + ["delay"]
 
 
@@ -249,7 +256,26 @@ def init_bounds(spec_path, names, per_axis):
     sp = yaml.safe_load(open(spec_path, encoding="utf-8"))
     rot0 = 7.327e-4          # 2026-08-11 τ_ff 경로 실측(foot 좌우 평균)
     d0 = {"hip": 0.09, "thigh": 0.09, "calf": 0.09, "foot": 0.02}   # JDAMP (hip 외삽/foot 실측)
-    f0 = {"hip": 0.38, "thigh": 0.38, "calf": 0.38, "foot": 0.44}   # JFRIC (foot 은 절편 실측)
+    # ★JFRIC 은 **실측을 읽어 못박는다** (2026-08-12). 이 파일이 스스로 적어 둔 결론이다:
+    #   "JDAMP↔JFRIC r=+0.93 — 궤적으로는 못 고친다. 한쪽을 축별 마찰-속도 곡선으로
+    #    못박는 게 정공법". 지연 T_d 를 실측해 묶었더니 ROTOR_I 오차가 4.5배 좋아진 것과
+    #   같은 처방이다 — **실측이 있는 값을 자유변수로 두면 나머지가 그리로 흘러간다.**
+    #   ⚠spec 값은 **채널토크**다. dof_frictionloss 는 관절토크라 × gear_k 한다.
+    #     이 변환은 여기 한 곳에서만 한다 — 두 곳에서 하면 반드시 갈라진다.
+    _mc = (sp.get("friction") or {}).get("measured_coulomb_ch")
+    if _mc:
+        _gk = {int(j["ch"]): float(j.get("gear_k", 1.0)) for j in sp["joints"]}
+        _by_kind = {}
+        for c, v in _mc.items():
+            c = int(c)
+            if c < len(names):
+                _by_kind.setdefault(kind_of(names[c]), []).append(
+                    float(v) * _gk.get(c, 1.0))
+        f0 = {k: float(np.mean(v)) for k, v in _by_kind.items()}
+        JFRIC_SPAN[0] = 0.20        # 실측이 있으니 ±20% 로 조인다(종전 ×[0.3,3.0])
+    else:
+        f0 = {"hip": 0.38, "thigh": 0.38, "calf": 0.38, "foot": 0.44}   # 구 추정치
+        JFRIC_SPAN[0] = None
     if per_axis:
         x0 = np.concatenate([[rot0], [d0[kind_of(x)] for x in names],
                              [f0[kind_of(x)] for x in names]])
@@ -261,6 +287,12 @@ def init_bounds(spec_path, names, per_axis):
     #   ⚠bias 는 축별이어야 한다 — 엔코더 영점은 물리량이 아니라 축마다 따로다.
     lo = x0 * 0.3
     hi = x0 * 3.0
+    # JFRIC 구간만 실측 기반으로 조인다. 벡터 순서는 [ROTOR_I, JDAMP…, JFRIC…] 이다.
+    if JFRIC_SPAN[0] is not None:
+        nj = len(names) if per_axis else len(KINDS)
+        sl = slice(1 + nj, 1 + 2 * nj)
+        lo[sl] = x0[sl] * (1.0 - JFRIC_SPAN[0])
+        hi[sl] = x0[sl] * (1.0 + JFRIC_SPAN[0])
     nb = len(names)
     x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
     lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO]])
@@ -269,6 +301,7 @@ def init_bounds(spec_path, names, per_axis):
 
 
 # bias·delay 경계 — 실측 근거로 잡는다(임의값이 아니다)
+JFRIC_SPAN = [None]   # init_bounds 가 채운다(실측 있으면 ±비율)
 BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° 였다(2026-08-11)
 # ★지연은 **직접 실측**했다: 8.39 ± 0.79 ms (act_measure_latency.py).
 #   원문(PACE)은 T_d 를 자유롭게 탐색하는데, 그건 그 값을 따로 재지 않았기 때문이다.

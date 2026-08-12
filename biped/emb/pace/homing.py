@@ -107,7 +107,10 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     log(f"    도착 — 최대 오차 {emax:.2f}° (모델각: "
         f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))})")
     if emax > tol_deg:
-        hw.limp()
+        # ★limp 가 아니라 **제자리 정지**. limp 하면 매단 다리가 떨어져 좌우 발이
+        #   겹친 자세로 착지하고, 다음 실행이 거기서 시작해 또 트립한다
+        #   (실측: 늘어진 시작자세에서 발 간격 **−27mm**). 위치는 알고 있으니 잡는다.
+        hw.safe_hold()
         raise SafetyAbort(
             f"홈 복귀 실패 — 최대 오차 {emax:.2f}° > {tol_deg}°. limp 함.\n"
             f"  ({', '.join(f'{jm.names[i]}{err[i]:+.2f}' for i in range(jm.n_leg))})\n"

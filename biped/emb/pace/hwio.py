@@ -205,6 +205,44 @@ class Hardware:
         """채널 ch 에 적용할 Limits. 등록된 게 없으면 시험축 한계(self.lim)."""
         return self.lim_ch.get(int(ch), self.lim)
 
+    def safe_hold(self, n_write: int = 25) -> int:
+        """★트립 시 **제자리 정지**. limp 대신 쓴다 (2026-08-12, 사용자 지적).
+
+        limp 는 8축 전부 kp=kd=0 이라 **매단 다리가 통째로 떨어진다.** 그러면 발이
+        서로 겹친 자세로 착지하고, 다음 실행이 그 자세에서 시작해 또 트립한다 —
+        오늘 하루 이 고리를 돌았다(실측: 늘어진 시작자세에서 좌우 발이 **−27mm 침투**).
+        ⇒ 위치를 믿을 수 있는 트립(토크·속도·추종오차·스톨)에서는 **현재 측정각을
+          명령으로 삼아 그 자리에 세운다.** 오차 0 에서 시작하므로 충격이 없다.
+        ⚠stale·동결처럼 **위치를 못 믿는** 경우에는 쓰면 안 된다. 얼어붙은 값을 목표로
+          잡으면 실제와 무관한 곳을 향해 밀게 된다. 그때는 limp 가 맞다.
+        """
+        self._armed = True
+        ok = 0
+        # ★**전 축**을 잡는다 — _hold_gains 는 hold_ch 만 채우므로 시험축이 빠진다.
+        #   시험축을 놓으면 그 다리만 떨어져 결국 같은 충돌 자세가 된다.
+        kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
+        for c in range(self.n):
+            try:
+                _kp, _kd = self._hold_gain_of(c)
+            except KeyError:
+                continue                            # 게인이 정의 안 된 채널(미실장)은 건너뛴다
+            kp_v[c] = min(_kp, self.lim.kp_max)
+            kd_v[c] = min(_kd, self.lim.kd_max)
+        for c in range(self.n):
+            self._q_cmd[c] = float(self._q[c])     # ★지금 있는 자리
+        for _ in range(n_write):
+            try:
+                self.lib.bridge_enable(1)
+                if self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n) == 0:
+                    ok += 1
+                time.sleep(self.dt)
+            except Exception:
+                pass
+        if ok == 0:
+            print("\n!! safe_hold 실패 — limp 로 전환한다", file=sys.stderr, flush=True)
+            return self.limp()
+        return ok
+
     def limp(self, n_write: int = 25) -> int:
         """Kp=Kd=0 을 반복 기록해 확실히 무여자로 만든다. 어떤 경로로든 마지막에 호출.
 
@@ -307,8 +345,10 @@ class Hardware:
         인가된 채로 예외가 올라갔다 → 여기서 일원화한다."""
         try:
             self._check_impl(ch, q, dq, tau, q_cmd)
-        except SafetyAbort:
-            self.limp()
+        except SafetyAbort as e:
+            # ★위치를 믿을 수 있으면 **제자리 정지**, 못 믿으면 limp (safe_hold 주석 참조).
+            #   stale 은 값이 얼어붙은 것이라 그 위치를 목표로 잡으면 안 된다.
+            (self.limp if "상태 정지" in str(e) else self.safe_hold)()
             raise
 
     def _check_impl(self, ch: int, q: float, dq: float, tau: float, q_cmd: float) -> None:
@@ -444,7 +484,7 @@ class Hardware:
             kp_h0, _ = self._hold_gain_of(hc)
             cmd_t = kp_h0 * abs(err) * math.pi / 180.0
             if cmd_t > self.dead_cmd_nm and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio:
-                self.limp()
+                self.limp()      # 죽은 축은 잡을 수 없다 — 나머지도 놓는 게 안전하다
                 raise SafetyAbort(
                     f"홀드축 ch{hc} **파워단 사망** — kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
                     f"보고 토크가 {self._tau[hc]:+.3f}Nm 뿐이다(비 "
@@ -453,7 +493,7 @@ class Hardware:
                     f"  EtherCAT·텔레메트리는 정상인데 드라이버 파워단만 래치오프된 상태다.\n"
                     f"  **모터 전원 OFF → 3초 → ON** 후 Emb 재기동. Emb 만 재기동하면 안 풀린다.")
             if err > Lh.err_max:
-                self.limp()
+                self.safe_hold()
                 raise SafetyAbort(
                     f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
                     f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
@@ -472,7 +512,7 @@ class Hardware:
                 else:
                     t0 = self._stall_since.setdefault(hc, t_now)
                     if (t_now - t0) * 1e3 > self.stall_ms:
-                        self.limp()
+                        self.safe_hold()
                         raise SafetyAbort(
                             f"홀드축 ch{hc} **스톨** — 명령토크 {cmd_tau:.2f}Nm 이 중력 "
                             f"{g:.2f}Nm 을 {cmd_tau-g:.2f}Nm 넘는데 속도 "
@@ -481,7 +521,7 @@ class Hardware:
                             f"  **래치오프된다**(2026-08-12 ch7·ch4 에서 실제로 그랬다).\n"
                             f"  목표각을 스톱 안쪽으로 옮길 것(config hold_pose.by_test_ch).")
             if abs(float(self._dq[hc])) > Lh.vel_trip:
-                self.limp()
+                self.safe_hold()
                 raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "
                                   f"{Lh.vel_trip} — 잡혀 있지 않다")
 

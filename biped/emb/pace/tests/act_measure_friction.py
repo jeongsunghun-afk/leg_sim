@@ -451,9 +451,29 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             if v_sd > max(0.35 * v, 8.0):
                 log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)}: dwell 속도 산포 "
                     f"{v_sd:.1f} deg/s 과대 — 등속 미도달")
+            # ★q 와 τ 사이의 **지연**을 직접 잰다 (2026-08-12).
+            #   보고 τ 가 보고 q 보다 Δt 늦으면 그 τ 는 더 이른 위치의 값이고,
+            #     f_meas = f − G'·v·Δt   ← **속도에 비례해 줄어든다**
+            #   실기 thigh 가 정확히 그랬다(기울기 −0.0047 Nm/dps ÷ G' 0.11 → Δt 43ms).
+            #   ⚠이건 점성감쇠와 **수학적으로 구분이 안 된다** — 둘 다 v 에 비례한다.
+            #     +b·v(점성) vs −G'Δt·v(지연). G' 이 큰 축(thigh)은 지연이 점성을 덮는다.
+            #   ⇒ Δt 를 **따로** 재야 갈린다. 등속 구간에서 τ(t) 는 G(q(t)) 를 따라가므로
+            #     둘의 상호상관 최대점이 곧 Δt 다. 여기서는 **재서 찍기만** 한다 —
+            #     보정은 값이 재현되는 걸 확인한 뒤에 할 일이다.
+            _lag = np.nan
+            if ff is not None and m.sum() > 40:
+                _g = np.array([ff(x) for x in a["q"][m]])
+                _t = a["tau"][m]
+                if np.std(_g) > 1e-3 and np.std(_t) > 1e-3:
+                    _g = (_g - _g.mean()) / np.std(_g)
+                    _t = (_t - _t.mean()) / np.std(_t)
+                    _k = min(int(0.25 / hw.dt), len(_g) // 3)
+                    if _k > 1:
+                        _cc = [float(np.mean(_g[:len(_g) - i] * _t[i:])) for i in range(_k)]
+                        _lag = float(np.argmax(_cc)) * hw.dt
             res[d] = (float(np.mean(a["tau"][m])), float(np.mean(a["dq"][m])),
                       float(np.mean(a["tau"][_m1])), float(np.mean(a["tau"][_m2])),
-                      float(np.mean(a["cur"][m])), w, float(np.mean(a["q"][m])))
+                      float(np.mean(a["cur"][m])), w, float(np.mean(a["q"][m])), _lag)
         if len(res) == 2:
             f = (res[+1.0][0] - res[-1.0][0]) / 2
             g = (res[+1.0][0] + res[-1.0][0]) / 2
@@ -474,7 +494,9 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             #     (가속은 +pass 앞쪽에만 실리므로 두 짝이 I·α 만큼 갈린다).
             f1 = (res[+1.0][2] - res[-1.0][3]) / 2
             f2 = (res[+1.0][3] - res[-1.0][2]) / 2
-            if abs(f1 - f2) > 0.25 * max(abs(f), 1e-6):
+            # 문턱 30% + 절대하한 0.10Nm — 25% 는 잡음에 걸린다(thigh 20dps 26% 로
+            # 멀쩡한 점이 버려졌고, 짝1<짝2 와 짝1>짝2 가 속도마다 뒤집혀 계통이 아니었다).
+            if abs(f1 - f2) > max(0.30 * abs(f), 0.10):
                 log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)} ({v:.0f}dps): 위치짝1 "
                     f"{f1:+.4f} vs 짝2 {f2:+.4f} — {abs(f1-f2)/max(abs(f),1e-6)*100:.0f}% "
                     f"차이. **등속 미도달, 이 점 제외**(가속토크가 마찰로 둔갑한다)")
@@ -484,7 +506,8 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
                 f"({v:5.1f}→{(abs(res[+1.0][1]) + abs(res[-1.0][1])) / 2:5.1f}dps): "
                 f"tau+={res[+1.0][0]:+.4f} tau−={res[-1.0][0]:+.4f} "
                 f"→ 마찰 {f:+.4f} (짝{f1:+.3f}/{f2:+.3f}) · 중력+bias {g:+.4f}"
-                f"  [띠±{res[+1.0][5]:.1f}° 평균위치 {res[+1.0][6]:+.2f}/{res[-1.0][6]:+.2f}]"
+                f"  [띠±{res[+1.0][5]:.1f}° 위치 {res[+1.0][6]:+.2f}/{res[-1.0][6]:+.2f}"
+                f" · τ지연 {res[+1.0][7] * 1e3:.0f}/{res[-1.0][7] * 1e3:.0f}ms]"
                 + _kt_note(cfg.get("_kt"), res))
     return out
 

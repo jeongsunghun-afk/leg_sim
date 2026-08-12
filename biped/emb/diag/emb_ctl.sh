@@ -45,11 +45,20 @@ start)
     #     실패하므로 **그때만** sudo 로 재시도한다.
     #   ★sudoers 규칙은 "정확히 이 바이너리 경로"만 NOPASSWD 이므로 sh -c 로 감싸지 말 것.
     #     리다이렉션은 호출측(비root) 셸이 수행 → 로그 파일 소유자는 rpetubt.
-    ( cd "$EMB_DIR" && "$EMB_BIN" > "$LOG" 2>&1 & )
+    # ★stdbuf -oL — **줄단위 버퍼링 강제** (2026-08-12).
+    #   터미널로 직접 띄우면 로그가 콸콸 올라오는데 파일로 넘기면 0바이트였다.
+    #   stdout 이 파이프·파일이면 libc 가 **블록 버퍼링**(4~8KB)으로 바꾸고,
+    #   Emb 는 영원히 도니 버퍼가 flush 되지 않는다. pkill 로 죽이면 **통째로 버려진다.**
+    #   ⇒ "RobotEmbedded 는 stdout 에 안 쓴다" 는 오판이었다. 실은 쓰는데 안 보였다.
+    #     그 오판 때문에 EtherCAT 동결 원인 규명이 하루 막혔다.
+    ( cd "$EMB_DIR" && stdbuf -oL -eL "$EMB_BIN" > "$LOG" 2>&1 & )
     sleep 2
     if ! running; then
         echo "  무권한 기동 실패 → sudo 로 재시도(gpiomem/mem 접근이 필요한 듯):"
         tail -5 "$LOG" 2>/dev/null | sed 's/^/    /'
+        # ⚠sudo 경로는 stdbuf 로 감쌀 수 없다 — sudoers 규칙이 "정확히 이 바이너리
+        #   경로"만 NOPASSWD 라 stdbuf 를 끼우면 암호를 묻는다. 이 경로로 떨어지면
+        #   로그가 블록 버퍼링된다(위 주석). 무권한 기동이 되는 한 이 경로는 안 쓴다.
         ( cd "$EMB_DIR" && sudo "$EMB_BIN" > "$LOG" 2>&1 & )
         sleep 2
     fi

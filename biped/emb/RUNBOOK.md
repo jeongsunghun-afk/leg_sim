@@ -171,5 +171,17 @@ EOF
 살아 있으면 IMU rpy 가 늘 미세하게 흔들린다. 변화폭이 정확히 0 이면 동결이다.
 `diag/shm_dump` 는 갱신을 기다리며 막혀 표본이 1개만 모이므로 이 판별에 쓸 수 없다.
 
-`/tmp/emb.log` 는 **0바이트다** — RobotEmbedded 는 stdout 에 아무것도 안 쓴다.
-`emb_ctl.sh log` 의 EtherCAT 요약이 늘 비어 있는 이유이고, 로그 기반 진단은 불가능하다.
+### 로그가 비어 있다면 — **버퍼링이다**
+
+`/tmp/emb.log` 가 0바이트여도 RobotEmbedded 가 안 쓰는 게 아니다. stdout 이 파일·파이프면
+libc 가 **블록 버퍼링**(4~8KB)으로 바꾸는데, Emb 는 영원히 도니 flush 가 안 되고
+`pkill` 로 죽이면 버퍼가 **통째로 버려진다**. 터미널로 직접 띄우면(줄단위 버퍼링) 콸콸 보인다.
+
+⇒ `emb_ctl.sh start` 는 `stdbuf -oL -eL` 로 줄단위를 강제한다. 이제 로그가 실시간으로 쌓인다.
+
+```bash
+tail -f /tmp/emb.log        # 다른 터미널에서 실시간 확인
+```
+
+⚠sudo 폴백 경로만은 stdbuf 로 감쌀 수 없다(sudoers 가 정확한 바이너리 경로만 허용).
+그 경로로 떨어지면 로그가 다시 안 보인다 — 무권한 기동이 되는 한 쓰이지 않는다.

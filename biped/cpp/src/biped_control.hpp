@@ -31,7 +31,14 @@ struct BipedControl {
   //   leg-odom 야코비안 편향(구중심 vs 접촉점)을 제거하자 기존 튜닝이 성립하지 않았다 —
   //   기존 값은 그 편향을 전제로 맞춰져 있었다. 실측 센서노이즈까지 넣고 재스윕한 결과다.
   //   상세: cpp/STABILITY_MAP.md
-  double T_STEP=0.38, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
+  // ★2026-08-12 재스윕 0.38 → **0.34** (새 CAD 몸통). 위 "0.32→0.38"은 **구 CAD 기준**이다.
+  //   실측 몸통(2.8kg, CoM x=−0.0727)·고관절 26cm 이동 후 0.38 은 후진이 6.5초에 깨진다.
+  //   Q_HOME 재산출 후 15s 스윕(biped_from_quad 점발):
+  //       0.38  vx −0.10 = 6.54s 낙상 · 0.20 = 2.13s 낙상 (전진 0~0.15 만 생존)
+  //       0.42  vx −0.10 = 5.45s · 0.15 = 2.56s 낙상
+  //       0.34  **−0.15/−0.05/0/0.05/0.10/0.15/0.20 전부 15s 무낙상, tilt 0.2~1.9°**
+  //   ⚠Q_HOME 을 먼저 고쳐야 이 값이 산다(아래 Qhome8 주석). 순서를 바꾸면 안 된다.
+  double T_STEP=0.34, DS_FRAC=0.10, STEP_H=0.06, K_CAP=1.0, CAP_CLAMP=0.22;
   double SW_KP=800, SW_KD=60, K_RETURN=0.15, K_RET_LAT=0.0, K_LAT=0.5, SPREAD=1.0, GAP_MIN=0.14, GAP_MAX=0.34;
   double SS_NOMINAL=0.16, SS_MIN=0.10, SS_MAX=0.45, TRIG_Y=0.03, GVEC=9.81;
   double FLAT_KCAP=0.6;               // ★평발 전후 capture 게인(발목ZMP가 주 균형, 약한 보조)
@@ -55,7 +62,7 @@ struct BipedControl {
   //   기준: nominal_off_x=+0.02 · 다리높이 0.4651(구와 동일). 상세는 biped_wbic.py Q_HOME 주석.
   //   검증: 15s × 8조건(정지·전진 0.05~0.20·후진·측방·선회) 8/8 무낙상, tilt 3.0~4.1°.
   //   ★T_STEP 은 배포값 0.38 그대로다 — 바뀐 것은 자세뿐이다.
-  double Qhome8[8]={0,0.207075,-0.645974,0, 0,0.207075,-0.645974,0};
+  double Qhome8[8]={0,0.203054,-0.671148,0, 0,0.203054,-0.671148,0};
   int ankle_idx[2]={3,7};
   // ── 액추에이터 물리 — ★2026-08-05 실기 실측 (emb/pace/RESULTS.md) ──
   //   HL_hip·HR_hip 을 PACE 처프로 식별. 전 관절이 동일 모터+7:1 이고 관절별 추가

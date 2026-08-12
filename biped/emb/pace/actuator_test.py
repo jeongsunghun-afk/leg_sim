@@ -426,9 +426,16 @@ def _sweep_hold_kp(hw, spec, j, gains_csv: str, cfg):
         그것 자체가 "탄성" 쪽 증거다(마찰이면 0.64 에서 진작 움직였어야 한다).
     """
     from act_probe_torque_mode import probe_torque_mode
-    src = j.get("couple_from")
+    # ★커플링 정보는 **spec.yaml 이 아니라 biped_emb.yaml** 에 있다 (2026-08-12).
+    #   j 는 spec.joints 항목이라 couple_from 이 없다 — j.get("couple_from") 은 항상 None 이다.
+    #   ⚠드라이런은 통과했는데 실기가 "couple_from 이 없다" 로 빠졌다. 테스트에 config 에서
+    #     뽑은 j 를 먹였기 때문이다 — **생산 경로와 다른 데이터로 검증한** 전형적 실패다.
+    #   ⇒ 이름으로 config 를 조회한다. 커플링·gear_k 의 단일 출처는 biped_emb.yaml 이다.
+    ent = next((x for x in cfg["joints"] if x["name"] == j["name"]), {})
+    src = ent.get("couple_from")
     if not src:
-        print(f"  [{j['name']}] ⚠couple_from 이 없다 — 스윕할 원천축이 없어 1회만 돈다.")
+        print(f"  [{j['name']}] ⚠biped_emb.yaml 에 couple_from 이 없다 — "
+              f"스윕할 원천축이 없어 1회만 돈다.")
         return probe_torque_mode(hw, spec, j)
     src_ch = next(int(x["channel"]) for x in cfg["joints"] if x["name"] == src)
     if not isinstance(hw.hold_kp, dict):
@@ -442,7 +449,7 @@ def _sweep_hold_kp(hw, spec, j, gains_csv: str, cfg):
         print(f"  [{j['name']}] ⚠kp_max {kp_max} 초과 {over} — **그대로 두면 클램프되어 "
               f"판정이 오염된다**. 제외하고 진행한다.")
         gains = [g for g in gains if g <= kp_max]
-    kf = float(j.get("gear_k", 1.0))
+    kf = float(ent.get("gear_k", j.get("gear_k", 1.0)))
     kc = float(next(x for x in cfg["joints"] if x["name"] == src).get("gear_k", 1.0))
     thr = float(spec.get("torque_mode", {}).get("move_thresh_deg", 0.30)) * 1.04  # 양자화 여유
     kp0 = float(hw.hold_kp[src_ch])

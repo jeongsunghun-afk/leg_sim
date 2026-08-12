@@ -242,6 +242,10 @@ def main():
     settle = float(cfg["jog"]["settle_deg"])
     tilt_estop = float(cfg["safety"]["tilt_estop_deg"])
     watchdog_s = float(cfg["safety"]["watchdog_ms"]) / 1000.0
+    _es = cfg["safety"]
+    estop_auto_max = int(_es.get("estop_auto_max", 3))          # 창 안 허용 자동해제 횟수
+    estop_auto_window_s = float(_es.get("estop_auto_window_s", 30.0))
+    estop_cooldown_s = float(_es.get("estop_cooldown_s", 1.0))  # 트립 직후 연타 방지
     tau_frac = float(cfg["safety"]["tau_max_frac"])
     # ★토크/속도 트립(시험 하네스 emb/pace/hwio.py 에서 승격). 미설정이면 하네스 기본값.
     tau_trip_nm  = float(cfg["safety"].get("tau_trip_nm",  8.0))
@@ -320,6 +324,8 @@ def main():
     estop_latched = False
     wd_tripped = False
     estop_reason = None        # ★래치 사유를 남긴다 — 상태로 발행해 GUI 가 보여준다
+    estop_hist = []            # 최근 트립 시각들(자동해제 남용 차단용)
+    estop_sticky = False       # ★반복 트립으로 **자동해제를 거둬들인** 상태(명시 OFF 필요)
     # ★tilt E-stop 은 IMU 가 있어야 동작한다. 이 로봇은 현재 SHM IMU 가 전부 0 이라
     #   tilt 가 항상 0 으로 계산되어 **E-stop 이 사실상 비활성**이다. 조용히 넘어가면
     #   보호장치가 있다고 착각하게 되므로 기동 시 명시적으로 경고한다.
@@ -377,20 +383,54 @@ def main():
                   elif new_mode != FSM.HOLD:
                       model_warned = False        # 다른 모드로 갔다 오면 다시 한 번 알린다
                   # ★E-stop 래치 해제는 명시적 off 명령으로만. 그 전까지 모드변경 무시.
+                  # ── ★래치 해제 정책 (2026-08-12, 사용자 결정: "②로 진행") ─────
+                  #   종전: **명시적 OFF 로만** 해제. 그래서 트립이 한 번 걸리면
+                  #     off↔home 을 두 번 눌러야 했고, 그 사실이 어디에도 안 보였다.
+                  #   지금: **조건이 실제로 사라졌으면** 다음 모드명령에서 자동 해제한다.
+                  #     "OFF 를 눌렀다" 는 사실보다 "결함이 없다" 를 확인하는 쪽이 맞다.
+                  #   ⚠단 **반복 트립은 막는다** — 결함이 계속 재발하는데 사람이 계속
+                  #     누르면 여자/무여자를 반복하며 다리가 떨린다. 창 안에서 N회를
+                  #     넘기면 자동해제를 거둬들이고(sticky) 명시적 OFF 를 요구한다.
                   if estop_latched:
+                      _now = loop_t
+                      estop_hist[:] = [t_ for t_ in estop_hist
+                                       if _now - t_ <= estop_auto_window_s]
                       if new_mode == FSM.OFF:
-                          estop_latched = False
+                          estop_latched = False; estop_sticky = False
                           print(f"[biped_emb] E-stop 래치 해제(off 수신) — 재무장 가능"
                                 + (f"  [사유였던 것: {estop_reason}]" if estop_reason else ""))
                           estop_reason = None
-                      else:
-                          # ★무시한다는 사실을 알린다. 종전엔 조용히 OFF 로 되돌려서
-                          #   사용자에겐 "버튼이 안 먹는다" 로만 보였다.
+                      elif estop_sticky:
                           if new_mode != fsm.mode:
-                              print(f"[biped_emb] ⚠ '{new_mode}' 요구를 무시한다 — "
-                                    f"**E-stop 래치 중**({estop_reason}). OFF 를 눌러 해제할 것.",
-                                    flush=True)
+                              print(f"[biped_emb] ⚠ '{new_mode}' 무시 — **반복 트립으로 자동해제가 "
+                                    f"꺼졌다**({len(estop_hist)}회/{estop_auto_window_s:.0f}s). "
+                                    f"원인({estop_reason})을 확인하고 OFF 를 누를 것.", flush=True)
                           new_mode = FSM.OFF
+                      else:
+                          # 조건이 지금도 살아 있는가 — 여자 전이므로 토크는 볼 수 없고
+                          # **속도**만 유효하다. 정지해 있으면 재무장을 허용한다.
+                          _v = float(np.max(np.abs(raw.dq_dps))) if raw.dq_dps.size else 0.0
+                          _cool = (_now - estop_hist[-1]) if estop_hist else 1e9
+                          if _v > vel_trip_dps * 0.25:
+                              if new_mode != fsm.mode:
+                                  print(f"[biped_emb] ⚠ '{new_mode}' 보류 — 아직 움직인다"
+                                        f"({_v:.0f}dps). 멈춘 뒤 다시 누를 것.", flush=True)
+                              new_mode = FSM.OFF
+                          elif _cool < estop_cooldown_s:
+                              new_mode = FSM.OFF        # 트립 직후 연타 방지(조용히)
+                          else:
+                              estop_latched = False
+                              print(f"[biped_emb] E-stop 자동해제 — 결함조건 소멸"
+                                  f"(속도 {_v:.0f}dps, 트립 후 {_cool:.1f}s). "
+                                  f"[사유였던 것: {estop_reason}]  누적 {len(estop_hist)}"
+                                  f"/{estop_auto_max}회", flush=True)
+                              estop_reason = None
+                              if len(estop_hist) >= estop_auto_max:
+                                  estop_sticky = True
+                                  print(f"[biped_emb] ⛔ {estop_auto_window_s:.0f}초 안에 "
+                                        f"{len(estop_hist)}회 트립 — **자동해제를 끈다**. "
+                                        f"다음부터는 OFF 를 눌러야 풀린다. 원인을 볼 것.",
+                                        flush=True)
                   changed = fsm.set(new_mode)
                   jog_goal = np.asarray(cmd.get("jog_deg", jog_goal), float)[: jm.n_leg]
                   for key in ("v", "vy", "w", "body_h"):
@@ -465,7 +505,7 @@ def main():
                       print(f"[biped_emb] ⛔ E-STOP: {estop_reason} → limp·래치")
                       print( "            ★래치 중에는 OFF 외의 모드요구가 전부 무시된다. "
                              "OFF 를 눌러 해제할 것.")
-                      estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
+                      estop_latched = True; estop_hist.append(loop_t); fsm.set(FSM.OFF); hw.enable(False)
               else:
                   tau_over_t0 = None                # 한 틱이라도 정상이면 타이머 리셋
               # 속도는 즉시 트립(폭주는 지연시킬 이유가 없다)
@@ -475,7 +515,7 @@ def main():
                   print(f"[biped_emb] ⛔ E-STOP: {estop_reason} → limp·래치")
                   print( "            ★래치 중에는 OFF 외의 모드요구가 전부 무시된다. "
                          "OFF 를 눌러 해제할 것.")
-                  estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
+                  estop_latched = True; estop_hist.append(loop_t); fsm.set(FSM.OFF); hw.enable(False)
           else:
               tau_over_t0 = None
 
@@ -580,6 +620,8 @@ def main():
               extra["estop_latched"] = bool(estop_latched)
               extra["estop_reason"] = estop_reason
               extra["wd_trip"] = bool(wd_tripped)
+              extra["estop_sticky"] = bool(estop_sticky)
+              extra["estop_recent"] = len(estop_hist)
               publish_state(fsm.mode, q_leg, rpy, hz_ema, fsm.mode != FSM.OFF, be_name, extra)
               last_pub = loop_t
 

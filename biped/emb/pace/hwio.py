@@ -121,6 +121,10 @@ class Hardware:
 
         self._prev = None                  # stale 판정용 직전 (q,dq,tau)
         self._last_change_t = 0.0
+        self._last_read_t = time.monotonic()
+        # 이 간격을 넘겨 read 가 끊기면 그 구간은 stale 판정에서 제외한다(위 read 주석).
+        #   제어루프 주기(2ms)보다 넉넉하되, 진짜 두절을 놓칠 만큼 크지 않게.
+        self.stale_gap_s = 0.05
         self._tau_over_since = None
         self._armed = False
         self._q_cmd = np.zeros(self.n, np.float32)
@@ -209,7 +213,20 @@ class Hardware:
 
         now = time.monotonic()
         cur3 = (q, dq, tau)
-        if self._prev is None or cur3 != self._prev:
+        # ★stale 은 "**보고 있었는데** 안 변했다" 여야 한다. "안 보고 있던 시간" 을
+        #   세면 안 된다 — 2026-08-12 실기에서 그렇게 오탐했다:
+        #     시행 사이 time.sleep(0.4) 동안 read() 를 안 하는데, 그때 축은 무여자로
+        #     정지해 있어 (q,dq,tau) 가 그대로다 → 재개 첫 read 에서
+        #     "상태 정지 396ms > 150ms — EtherCAT OP 이탈 의심" 으로 시험이 중단됐다.
+        #     396ms 가 sleep 0.4s 와 일치하는 게 증거다.
+        #   ⇒ 직전 read 로부터 오래 지났으면 **판정을 유예**하고 기준시각을 새로 잡는다.
+        #     샘플링을 안 한 구간은 신선도를 판단할 근거가 아니다.
+        gap = now - self._last_read_t
+        self._last_read_t = now
+        if gap > self.stale_gap_s:
+            self._prev = cur3
+            self._last_change_t = now
+        elif self._prev is None or cur3 != self._prev:
             self._prev = cur3
             self._last_change_t = now
         if self.publish_fn is not None and now >= self._pub_next:

@@ -335,7 +335,9 @@ def t_friction_full():
     # 램프도 느려야 한다 — q_ref 는 t>0.3s 에 래치되므로 그 전에 풀리면 검출을 못 한다
     # (1.24° ÷ 2dps = 0.62s > 0.3s ✓). 종전 0.6°/6dps 는 0.31Nm 이라 영영 안 풀렸다.
     fr["breakaway"].update(max_push_deg=4.0, ramp_dps=2.0, trials=1)
-    fr["sweep"].update(stroke_deg=4.0, speeds_dps=[5, 10, 20],
+    # ★스트로크를 넉넉히 준다 — 정착시간이 이제 **폐루프 3τ**(foot 0.163s)라
+    #   4° 로는 12dps 가 상한이고 스텁의 stick-slip 이 그마저 등속검사에 걸린다.
+    fr["sweep"].update(stroke_deg=16.0, speeds_dps=[5, 10, 20],
                        accel_skip_s=0.05, min_dwell_samples=10)
     fr["sine"].update(amplitude_deg=2.0, frequency_hz=1.0, cycles=1.0)
 

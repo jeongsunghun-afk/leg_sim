@@ -239,6 +239,26 @@ def _free_reference(hw, ch, kp, kd, ff, log, tau_s_hint=0.8, probe_deg=2.0,
         f"  아래로만 막힌다(2026-08-12 HL_thigh 가 그랬다). 다리를 살짝 들어 줄 것.")
 
 
+def _kt_note(kt, res) -> str:
+    """보고 토크가 **전류와 맞는지** 한 줄로 덧붙인다 (2026-08-12, 사용자 질문).
+
+    ★"고속에서 튀는 게 전류공급 같은 하드웨어 문제일 수 있나?" 를 데이터로 가른다.
+      드라이버가 돌려주는 τ 가 실제 전류에서 나온 것이라면 τ/(kt·I) 가 **속도와 무관하게
+      일정**해야 한다. 특정 속도에서만 그 비가 깨지면 보고 토크가 물리량이 아니라
+      드라이버 내부 모델(kp·err 등)이라는 뜻이고, 그때는 마찰값 자체를 못 믿는다.
+    ⚠kt 는 데이터시트 추정치(RO100 0.2Nm/A × N × η=0.9)라 **절대값은 못 믿는다.**
+      우리가 보는 건 속도에 따라 비가 **변하는가** 뿐이다.
+    """
+    if not kt:
+        return ""
+    cp, cm = res[+1.0][4], res[-1.0][4]
+    tp, tm = res[+1.0][0], res[-1.0][0]
+    den = kt * (abs(cp) + abs(cm)) / 2.0
+    if den < 1e-6:
+        return "  [I≈0]"
+    return f"  [τ/kt·I {(abs(tp) + abs(tm)) / 2.0 / den:.2f}]"
+
+
 # ── (A½) 스윕 전 **범위 확인** ──────────────────────────────────────────────
 def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log, tau_s,
                 speed_dps=10.0, stuck_ms=250.0) -> tuple[float, float]:
@@ -336,8 +356,26 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
     #   JDAMP 를 3.08(hip 기대값의 30배)로 만들었다. 물리적으로 불가능한 값이다.
     #   ⚠손으로 속도를 빼면 다음에 스트로크를 또 바꿀 때 같은 일이 난다. 계산으로 건다.
     #   ★뺀 속도는 **반드시 찍는다** — 조용히 줄이면 "다 쟀다" 로 읽힌다.
+    # ★정착시간을 **상수가 아니라 폐루프에서** 뽑는다 (2026-08-12).
+    #   accel_skip_s=0.15 는 축과 무관한 상수였는데, 실제 정착은 게인·관성이 정한다:
+    #     τ = 1/(ζ·ω_n),  ω_n = √(kp/I),  ζ = kd/(2√(kp·I))
+    #     thigh 3τ=0.253s · hip 0.209 · calf 0.193 · foot 0.163  (전부 0.15 보다 크다)
+    #   ⇒ 등속에 도달할 수 있는 최고속도 = stroke/(2·3τ + 최소정착)
+    #     thigh 56 · calf 96 · foot 67 dps
+    #   실측이 정확히 그 선을 따른다 — **초과배율이 클수록 튄다**:
+    #     thigh 80dps(1.43배) **+304%** · calf 120dps(1.25배) +8% · foot 60dps(0.89배) +6%
+    #   ⚠이건 드라이버(MD80) 특성이 아니다. 드라이버 탓이면 **속도 자체**에 의존해야
+    #     하는데, foot 은 60dps 가 멀쩡하고 thigh 는 80dps 가 4배로 튄다. 축마다 다른
+    #     건 폐루프 대역뿐이다.
     _rate = 1.0 / hw.dt
-    _need = 2.0 * cfg["accel_skip_s"] + cfg["min_dwell_samples"] / _rate
+    _I = float(cfg.get("_I_total") or 0.0)
+    _t3 = float(cfg["accel_skip_s"])
+    if _I > 0 and kp > 0:
+        _wn, _z = np.sqrt(kp / _I), kd / (2.0 * np.sqrt(kp * _I))
+        _t3 = max(_t3, 3.0 / (_z * _wn))
+    _need = 2.0 * _t3 + cfg["min_dwell_samples"] / _rate
+    log(f"    정착 대기 {_t3:.3f}s (폐루프 3τ · 설정 {cfg['accel_skip_s']:.2f}s 중 큰 값)"
+        f" → 등속 가능 최고속 {cfg['stroke_deg'] / _need:.0f} dps")
     _use, _drop = [], []
     for v in cfg["speeds_dps"]:
         (_use if cfg["stroke_deg"] / float(v) > _need else _drop).append(float(v))
@@ -384,8 +422,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             #     같은 6° 어긋남이 0.01Nm 밖에 안 된다. **thigh 에서만 드러나는 버그**였다.
             #   ⇒ 앞을 자른 만큼 뒤도 자른다.
             lo = (1 - frac) / 2
-            t_settle = float(cfg.get("accel_skip_s", 0.15))
-            t_lo = max(lo * T, t_settle)
+            t_lo = max(lo * T, _t3)          # ★위에서 뽑은 폐루프 정착시간과 **같은 값**
             m = (a["t"] > t_lo) & (a["t"] < T - t_lo)
             need = int(cfg.get("min_dwell_samples", 15))
             if m.sum() < need:
@@ -395,17 +432,41 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
                 break
             # 등속 도달 확인: dwell 구간 속도의 변동이 크면 아직 과도상태다
             v_sd = float(np.std(a["dq"][m]))
+            v_avg = float(np.mean(np.abs(a["dq"][m])))
+            # ★창을 **반으로 갈라** 각각의 평균을 남긴다. 등속이면 두 반쪽이 같은 마찰을
+            #   내야 한다 — 아직 가속 중이면 앞 반쪽에 관성토크가 더 실린다.
+            #   ⚠"명령속도의 90% 도달" 같은 검사는 쓰지 않는다. 저속 stick-slip 에서
+            #     평균속도가 낮게 나와 **가장 값진 저속 점을 버린다**(스텁에서 재현됨).
+            #     반쪽 비교는 그런 가정이 필요 없다.
+            _h = a["t"][m][len(a["t"][m]) // 2]
+            _m1, _m2 = m & (a["t"] <= _h), m & (a["t"] > _h)
             if v_sd > max(0.35 * v, 8.0):
                 log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)}: dwell 속도 산포 "
                     f"{v_sd:.1f} deg/s 과대 — 등속 미도달")
-            res[d] = (float(np.mean(a["tau"][m])), float(np.mean(a["dq"][m])))
+            res[d] = (float(np.mean(a["tau"][m])), float(np.mean(a["dq"][m])),
+                      float(np.mean(a["tau"][_m1])), float(np.mean(a["tau"][_m2])),
+                      float(np.mean(a["cur"][m])))
         if len(res) == 2:
-            out[v] = (res[+1.0][0], res[-1.0][0], res[+1.0][1], res[-1.0][1])
             f = (res[+1.0][0] - res[-1.0][0]) / 2
             g = (res[+1.0][0] + res[-1.0][0]) / 2
-            log(f"    {swing_str(cfg['stroke_deg'], v):>16} ({v:5.1f}dps): "
+            # ★**등속 확인** — 창의 앞·뒤 반쪽이 같은 마찰을 내는가 (위 _m1/_m2 주석).
+            #   아직 가속 중이면 관성토크 I·α 가 ±양쪽에 **같은 부호**로 실려 방향차에서
+            #   안 지워지고 가짜 마찰이 된다. 실기 HL_thigh 80dps 가 그렇게 0.36 → 1.47
+            #   (+304%) 로 튀었다. 창을 앞당겼더니 **더 커진 것**이 결정적 증거였다 —
+            #   정착된 구간을 덜 담을수록 나빠진다는 뜻이다.
+            f1 = (res[+1.0][2] - res[-1.0][2]) / 2
+            f2 = (res[+1.0][3] - res[-1.0][3]) / 2
+            if abs(f1 - f2) > 0.25 * max(abs(f), 1e-6):
+                log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)} ({v:.0f}dps): 창 앞반쪽 "
+                    f"{f1:+.4f} vs 뒤반쪽 {f2:+.4f} — {abs(f1-f2)/max(abs(f),1e-6)*100:.0f}% "
+                    f"차이. **등속 미도달, 이 점 제외**(가속토크가 마찰로 둔갑한다)")
+                continue
+            out[v] = (res[+1.0][0], res[-1.0][0], res[+1.0][1], res[-1.0][1])
+            log(f"    {swing_str(cfg['stroke_deg'], v):>16} "
+                f"({v:5.1f}→{(abs(res[+1.0][1]) + abs(res[-1.0][1])) / 2:5.1f}dps): "
                 f"tau+={res[+1.0][0]:+.4f} tau−={res[-1.0][0]:+.4f} "
-                f"→ 마찰 {f:+.4f} · 중력+bias {g:+.4f}")
+                f"→ 마찰 {f:+.4f} (앞{f1:+.3f}/뒤{f2:+.3f}) · 중력+bias {g:+.4f}"
+                + _kt_note(cfg.get("_kt"), res))
     return out
 
 
@@ -605,6 +666,10 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
         f"[{q_center - half:+.2f}, {q_center + half:+.2f}]° "
         f"(상자 [{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°, 양끝 여유 "
         f"{min(q_center - half - joint['q_min'], joint['q_max'] - q_center - half):+.2f}°)")
+    fr["sweep"]["_kt"] = next((float(x["kt_nm_per_a"]) for x in spec["joints"]
+                               if int(x["ch"]) == ch and "kt_nm_per_a" in x), None)
+    fr["sweep"]["_I_total"] = next((float(x["I_total_pred"]) for x in spec["joints"]
+                                    if int(x["ch"]) == ch and "I_total_pred" in x), 0.0)
     sw = _sweeps(hw, ch, fr["sweep"], kp, kd, q_center, log, ff=_ff)
     if len(sw) < 2:
         raise RuntimeError("등속 스윕 유효 속도 2개 미만 — 측정 불가")

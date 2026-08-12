@@ -41,6 +41,23 @@ LEGACY_RANGE = {
     "foot":  (-1.396, 0.698),
 }
 SPHERE_R = 0.036          # 접촉구 반경(종전 MJCF 승계)
+
+# ★기구 커플링 (calf → foot). emb/config/biped_emb.yaml 의 couple_from/couple_coef 와 같은 값.
+#   실기 확정: "calf 관절이 30° 돌면 foot 관절도 30° 돈다" ⇒ coef = +1 (2026-08-10).
+#
+#   raw_foot = 모델각_foot + coef·모델각_calf      (raw = 모터측, 커플링 풀기 **전**)
+#   foot 로터는 모델각이 아니라 이 raw 각으로 돈다. 따라서 로터 운동에너지가
+#       KE = ½·I_rot·N²·(q̇_foot + coef·q̇_calf)²
+#   이고, 반사관성이 (calf, foot) **비대각**으로 걸린다:
+#       M += I_rot·N²·[[coef², coef], [coef, 1]]
+#   ⚠`dof_armature` 는 M 의 **대각뿐**이라 이 비대각 항을 표현할 수 없다.
+#     → fixed tendon 의 `armature` 로 넣는다(MuJoCo 3.9.0·3.11.0 둘 다 지원 확인).
+#   ⚠`<equality>` 는 쓰면 안 된다 — 발목 DOF 를 없애 버린다(검증됨). tendon 은 안 없앤다.
+#
+#   ★축별 측정에서는 이 항이 죽어 있었다(타축 고정 ⇒ q̇_calf=0). 전축 동시 가진에서만
+#     살아나므로 PACE(전축 동시 처프)로 넘어가면서 새로 필요해진 항이다.
+#   armature **값**은 여기 적지 않는다 — 런타임(setup_gearbox)이 주입한다(아래 헤더 주석 참조).
+COUPLE_COEF = 1.0
 CONTACT = dict(friction="1.6 0.05 0.001", condim="3",
                solref="0.004 1", solimp="0.95 0.99 0.001")
 
@@ -239,6 +256,12 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat",
                        f'file="{m}" />' for m in names)
     act = "\n".join(f'    <motor joint="{n}" name="{n[:-6]}" />'
                     for n in joints if joints[n]["type"] != "fixed")
+    # ★calf→foot 커플링 tendon — 구조(joint·coef)만. armature 값은 런타임 주입(COUPLE_COEF 주석).
+    tendon = "\n".join(
+        f'    <fixed name="{s}_foot_rotor">\n'
+        f'      <joint joint="{s}_calf_joint" coef="{COUPLE_COEF:g}" />\n'
+        f'      <joint joint="{s}_foot_joint" coef="1" />\n'
+        f'    </fixed>' for s in ("HL", "HR"))
     foot_note = {"flat": "평발 — 링크메시는 시각 전용, 접촉은 발목(heel)+발끝(toe) **2점 구**",
                  "point": "점발(배포) — 링크메시가 **충돌체**, 접촉은 발끝 **1점 구**"}[foot]
     rng_note = {"urdf": "새 URDF 값 그대로",
@@ -256,8 +279,9 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat",
 
     ⚠발 구성: {foot_note}
     ⚠관절범위: {rng_note}
-    ⚠armature/damping/frictionloss 는 **의도적으로 없다** — 런타임(apply_gearbox)이 주입한다.
-      여기 적으면 이중적용된다.
+    ⚠armature/damping/frictionloss 는 **의도적으로 없다** — 런타임(setup_gearbox)이 주입한다.
+      여기 적으면 이중적용된다. **tendon 의 armature 도 같다** — 구조(joint·coef)만 여기 있고
+      값은 런타임이 넣는다. foot 의 `dof_armature` 는 tendon 으로 **옮겨 갔다**(0 이어야 정상).
     ⚠**MuJoCo 로드 검증 미실시** — 생성 환경(Pi)에 mujoco 가 없다. 노트북에서 반드시 확인할 것.
   -->
   <compiler angle="radian" meshdir="{rel}" />
@@ -282,6 +306,12 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat",
     <geom friction="1.3 0.02 0.001" condim="3" />
     <motor ctrllimited="true" ctrlrange="-200 200" />
   </default>
+  <!-- ★calf→foot 기구 커플링(실기 coef=+1). foot 로터가 raw 각(=foot+coef·calf)으로 돌아
+       반사관성이 (calf,foot) 비대각으로 걸린다 — dof_armature 로는 표현 불가.
+       armature 값은 여기 적지 않는다(런타임 setup_gearbox 주입. 여기 적으면 이중적용). -->
+  <tendon>
+{tendon}
+  </tendon>
   <actuator>
 {act}
   </actuator>

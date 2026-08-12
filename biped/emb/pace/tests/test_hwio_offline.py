@@ -208,8 +208,10 @@ def t_goto_all_home():
     #  복귀용 상자가 왜 기구한계여야 하는지가 여기서 드러난다.)
     hw.arm(3, 30.0, 2.0)
     homer = make_homer(jm, cfg, hw.dt)
-    # 실기 설정속도지만 테스트 시간을 줄이려 60dps 로 올린다(스텁이 따라올 수 있는 상한).
-    T = goto_home(hw, jm, homer, cfg, q_box=box, speed_dps=60.0)
+    # ★속도를 30dps 로 둔다. 실기는 15dps 다. 60dps 로 올렸더니 스텁이 못 따라가
+    #   추종오차 13.9°>12° 로 트립했다 — **실기 사양이 아니라 스텁 한계**다
+    #   (영점 재교정으로 이동량이 최대 101° 로 커지면서 드러났다).
+    T = goto_home(hw, jm, homer, cfg, q_box=box, speed_dps=30.0)
     err = np.array([hw.read(c)[0] for c in range(n)]) - np.asarray(tgt, float)
     drv = sorted(kp) if isinstance(kp, dict) else list(range(n))
     check("예외 없이 완주", True, f"T={T:.2f}s")

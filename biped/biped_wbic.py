@@ -101,6 +101,38 @@ class BipedWBIC:
             m.dof_armature[dof] = ROTOR_I * N * N
             m.dof_damping[dof] = JDAMP
             m.dof_frictionloss[dof] = JFRIC
+        self._foot_rotor_to_tendon()
+
+    def _foot_rotor_to_tendon(self):
+        """★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 커플링).
+
+        foot 로터는 관절각이 아니라 raw 각으로 돈다(실기 coef=+1, biped_emb.yaml):
+            raw_foot = q_foot + coef·q_calf
+        ⇒ 로터 KE = ½·I_rot·N²·(q̇_foot + coef·q̇_calf)² 이라 반사관성이
+          (calf, foot) **비대각**으로 걸린다:  M += a·[[coef², coef], [coef, 1]]
+        ⚠`dof_armature` 는 M 의 **대각뿐**이라 이 항을 표현할 수 없다. fixed tendon 의
+          `armature` 가 정확히 위 형태를 만든다(MuJoCo 3.9.0·3.11.0 지원 확인).
+        ⚠**옮기는** 것이지 더하는 게 아니다 — dof_armature[foot] 을 0 으로 두지 않으면
+          이중 계상된다.
+        ⚠축별 측정에서는 이 항이 죽어 있었다(타축 고정 ⇒ q̇_calf=0). 전축 동시 가진
+          (PACE 다축 처프)에서만 살아난다.
+
+        검증(2026-08-12, HOME 자세):
+            M[foot,foot] 0.05434 → 0.05434 (불변)   M[calf,calf] 0.11258 → 0.16480 (+46%)
+            M[calf,foot] 0.00448 → 0.05669           hip·thigh 블록 변화 0
+        """
+        m = self.m
+        tid = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_TENDON, f'{s}_foot_rotor')
+               for s in ('HL', 'HR')]
+        if any(t < 0 for t in tid):
+            # 구 MJCF(tendon 없음) 호환 — 대각 armature 를 그대로 둔다. 커플링은 누락된 채다.
+            print('  ⚠MJCF 에 *_foot_rotor tendon 이 없다 — calf↔foot 커플 반사관성 누락 상태로 돈다')
+            return
+        for j in range(self.nu):
+            if j % 4 == 3:                                # foot 축
+                m.dof_armature[6 + j] = 0.0               # ★대각에서 뺀다(tendon 으로 이전)
+        for t in tid:
+            m.tendon_armature[t] = ROTOR_I * GEAR[3] ** 2
 
     # ── 초기화: home pose 스폰 + 발 착지 높이 + com_ref = 지지중심 ──
     def reset_stand(self):

@@ -49,12 +49,31 @@ def _f(s):
     return [float(x) for x in s.split()]
 
 
+# ★MJCF body 이름은 컨트롤러와의 **계약**이다 — 아래 이름으로 mj_name2id 조회한다.
+#   biped_wbic.py:74 · cpp/src/biped_control.hpp:95 (양쪽 동일)
+REQUIRED_BODIES = ("HL_foot_contact_link", "HR_foot_contact_link")
+
+
+def _norm(name):
+    """링크명 정규화 — CAD 익스포터가 붙인 `_collision` 접미사를 뗀다.
+
+    ⚠2026-08-12 실측: SolidWorks URDF 익스포터가 파트명에 `_collision` 을 붙여 내보내
+      body 이름이 `HL_foot_contact_link_collision` 이 됐다. 컨트롤러의 조회가 **−1** 이
+      되어 발 자코비안이 통째로 틀렸고 **15.00s 무낙상 → 0.32s 낙상**했다.
+      C++·Python 이 같은 이름을 쓰므로 양쪽이 함께 죽었다.
+    ⚠생성 시 이름 대조(551d7da)가 **관절·geom·actuator·sensor 만** 보고 body 를 안 봤다.
+      → 아래 REQUIRED_BODIES 검증을 추가했다.
+    CAD 파트명은 사람이 언제든 바꾼다. 이름 계약은 여기서 고정한다.
+    """
+    return name[:-len("_collision")] if name.endswith("_collision") else name
+
+
 def load_urdf(path):
     r = ET.parse(path).getroot()
     links, joints = {}, {}
     for l in r.findall("link"):
         i = l.find("inertial")
-        d = {"name": l.get("name"), "meshes": []}
+        d = {"name": _norm(l.get("name")), "meshes": []}
         if i is not None:
             n = i.find("inertia")
             d.update(mass=float(i.find("mass").get("value")),
@@ -71,7 +90,8 @@ def load_urdf(path):
         o, a, lm = j.find("origin"), j.find("axis"), j.find("limit")
         joints[j.get("name")] = {
             "name": j.get("name"), "type": j.get("type"),
-            "parent": j.find("parent").get("link"), "child": j.find("child").get("link"),
+            "parent": _norm(j.find("parent").get("link")),
+            "child": _norm(j.find("child").get("link")),
             "pos": _f(o.get("xyz")), "rpy": _f(o.get("rpy")),
             "axis": _f(a.get("xyz")) if a is not None else None,
             "range": (float(lm.get("lower")), float(lm.get("upper"))) if lm is not None else None,

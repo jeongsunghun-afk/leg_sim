@@ -82,17 +82,19 @@ class HwInterface:
 
     # ── 명령 ────────────────────────────────────────────────────────────────
     #   미배선 모터는 통신이 없어 명령이 무효 → 별도 enable 게이팅 없이 전 채널 명령(임베디드가 흡수).
-    def write_home(self, q_leg_joint_deg, q_meas_joint_deg):
-        """홈복귀 전용 기록 — **현재 위치보다 더 바깥으로는 안 보내되, 계단은 안 만든다.**
+    def write_ramped(self, q_leg_joint_deg, q_meas_joint_deg):
+        """궤적 기록 — **현재 위치보다 더 바깥으로는 안 보내되, 계단은 안 만든다.** — **현재 위치보다 더 바깥으로는 안 보내되, 계단은 안 만든다.**
 
-        ★왜 write_jog 를 못 쓰나 (2026-08-12 실기 사고)
+        ★왜 단순 클램프를 못 쓰나 (2026-08-12 실기 사고)
           늘어진 자세에서 HL_foot 모델각이 **+60°** 였다(커플링: q_foot = raw − q_calf,
           calf 가 −61° 로 처지면 raw 가 그대로여도 모델각이 +61° 로 읽힌다).
           jog 한계는 +25.2° 라 write_jog 가 명령을 거기서 잘랐고,
           **첫 틱에 34.8° 계단**이 나갔다 → kp 30 × 34.8° = 18 Nm → 발이 튕겨
           426dps 로 폭주 → E-stop.
-          ⚠HomeTrajectory 는 바로 이걸 막으려고 q0 를 **일부러 클램프 안 한다**
-            (home.py 주석). 그 방어를 하류 클램프가 무효화하고 있었다.
+          ⚠HomeTrajectory 도 Jogger.reset 도 바로 이걸 막으려고 시작점을 **일부러
+            클램프 안 한다**(home.py·jog.py 주석). 그 방어를 하류 클램프가 두 경로 모두에서
+            무효화하고 있었다 — HOME 을 고친 뒤 사용자가 "JOG 는 off 에서 바로 안 되고
+            HOME 뒤에야 된다" 고 보고해 같은 뿌리임이 드러났다.
 
         ⇒ 한계를 **현재 측정각까지 늘려서** 적용한다:
               lo_eff = min(lo, q_meas)   ·   hi_eff = max(hi, q_meas)
@@ -110,12 +112,17 @@ class HwInterface:
             self.n_write_fail += 1
         return rc
 
-    def write_jog(self, q_leg_joint_deg):
+    def write_jog(self, q_leg_joint_deg, q_meas_joint_deg=None):
         """각축 검증: **모델각**을 받아 jog 안전한계로 클램프 후 채널각으로 변환해 기록.
 
         ★한계를 **모델각에서** 건다. 종전엔 채널각에 걸어서 sign=−1 축의 허용범위가
           거울처럼 뒤집혔다(HR_thigh 물리한계 2.5° 초과).
+        ★q_meas 를 주면 **계단 없는 클램프**를 쓴다(write_ramped). 안 주면 종전 동작.
+          늘어진 자세에서 JOG 로 바로 들어가면 foot 모델각이 +60° 라 jog 한계 +25.2° 에서
+          잘려 34.8° 계단이 나갔다 — HOME 과 같은 사고다(2026-08-12).
         """
+        if q_meas_joint_deg is not None:
+            return self.write_ramped(q_leg_joint_deg, q_meas_joint_deg)
         qj = self.jm.clamp_jog_joint(q_leg_joint_deg)
         rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
         if rc not in (0, None):

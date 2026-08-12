@@ -567,7 +567,8 @@ def main():
           if fsm.mode == FSM.OFF:
               hw.write_limp()          # enable=False → 브리지가 kp=kd=0 기록. 위치는 측정각 유지
           elif fsm.mode == FSM.JOG:
-              hw.write_jog(jogger.step(jog_goal, dt_meas))
+              # ★q_leg 를 함께 넘긴다 — 늘어진 자세(범위 밖)에서 진입해도 계단이 안 나간다
+              hw.write_jog(jogger.step(jog_goal, dt_meas), q_leg)
               extra["jog_at_goal"] = jogger.at_goal(jog_goal, settle)
           elif fsm.mode == FSM.HOME:
               # ★워치독 트립 중에는 궤적을 현재 측정각으로 계속 재기준한다.
@@ -578,7 +579,7 @@ def main():
               if wd_trip:
                   homer.start(q_leg)
               # ★write_jog 가 아니라 write_home — jog 클램프가 계단을 만든다(2026-08-12)
-              hw.write_home(homer.step(dt_meas), q_leg)
+              hw.write_ramped(homer.step(dt_meas), q_leg)
               extra["home_progress"] = round(homer.progress, 3)
               extra["home_done"] = homer.done
               _at = homer.at_goal(q_leg, home_settle)

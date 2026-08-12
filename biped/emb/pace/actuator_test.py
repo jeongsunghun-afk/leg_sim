@@ -406,6 +406,84 @@ def _ch_limit_box(spec: dict, pin_home: bool = False) -> dict:
     return box
 
 
+
+def _sweep_hold_kp(hw, spec, j, gains_csv: str, cfg):
+    """커플링 원천축의 홀드게인을 바꿔가며 토크프로브를 반복해 **마찰 vs 강성**을 가른다.
+
+    ★왜 필요한가 (2026-08-12)
+      foot 벨트가 calf 관절을 지난다(=couple_from). foot 토크의 반작용이 calf 를 밀고,
+      우리는 **foot 채널각**으로 움직임을 판정하는데 q_ch_foot=(q_foot+q_calf)·s·k 라
+      calf 변형이 그대로 섞인다. calf 는 모터로 잡혀 있고 모터 홀드는 **스프링**이다.
+          Δq_ch_foot = τ · k_f²/(k_c²·kp_src)
+      판정문턱 0.312° 를 순전히 탄성으로 채우는 토크가 kp_src=80 에서 0.681 Nm 인데
+      실측 파단이 0.64~0.73 Nm 이라 **구분이 안 된다**(kp 80 이 하필 축퇴점이다).
+
+    ⇒ kp_src 를 바꾸면 갈린다:
+        탄성이면  τ_break ∝ kp_src   (40→0.34 · 80→0.68 · 160→1.36)
+        마찰이면  τ_break 불변       (전부 ~0.64)
+      ★내려가는 쪽이 특히 깨끗하다 — 40 에서 0.34 vs 0.64 는 2배 차이라 못 헷갈린다.
+      ⚠160 의 탄성예측 1.36 은 tau_max 1.4 에 거의 닿는다. 안 움직이고 끝나면
+        그것 자체가 "탄성" 쪽 증거다(마찰이면 0.64 에서 진작 움직였어야 한다).
+    """
+    from act_probe_torque_mode import probe_torque_mode
+    src = j.get("couple_from")
+    if not src:
+        print(f"  [{j['name']}] ⚠couple_from 이 없다 — 스윕할 원천축이 없어 1회만 돈다.")
+        return probe_torque_mode(hw, spec, j)
+    src_ch = next(int(x["channel"]) for x in cfg["joints"] if x["name"] == src)
+    if not isinstance(hw.hold_kp, dict):
+        print(f"  [{j['name']}] ⚠홀드게인이 스칼라다 — 축별 스윕 불가. 1회만 돈다.")
+        return probe_torque_mode(hw, spec, j)
+    gains = [float(g) for g in gains_csv.split(",") if g.strip()]
+    kp_max = float(spec["gains"]["kp_max"])
+    over = [g for g in gains if g > kp_max]
+    if over:
+        # ★조용히 클램프하면 "게인을 올렸는데 값이 안 변한다" 를 마찰이라 오독한다.
+        print(f"  [{j['name']}] ⚠kp_max {kp_max} 초과 {over} — **그대로 두면 클램프되어 "
+              f"판정이 오염된다**. 제외하고 진행한다.")
+        gains = [g for g in gains if g <= kp_max]
+    kf = float(j.get("gear_k", 1.0))
+    kc = float(next(x for x in cfg["joints"] if x["name"] == src).get("gear_k", 1.0))
+    thr = float(spec.get("torque_mode", {}).get("move_thresh_deg", 0.30)) * 1.04  # 양자화 여유
+    kp0 = float(hw.hold_kp[src_ch])
+    print(f"\n  [{j['name']}] ★홀드게인 스윕 — 원천축 {src}(ch{src_ch}) kp {gains} "
+          f"(현재 {kp0:.0f})")
+    print(f"           탄성이면 τ_break ∝ kp, 마찰이면 불변. k_f={kf} k_c={kc}")
+    rows, out = [], None
+    try:
+        for g in gains:
+            hw.hold_kp[src_ch] = g
+            pred = np.deg2rad(thr) * kc ** 2 * g / kf ** 2
+            print(f"\n  ── {src} kp={g:.0f} — 탄성 예측 τ_break = {pred:.3f} Nm ──")
+            r = probe_torque_mode(hw, spec, j)
+            tb = r.get("tau_break_mean")
+            rows.append((g, pred, tb, r))
+            if abs(g - kp0) < 1e-9:
+                out = r
+    finally:
+        hw.hold_kp[src_ch] = kp0        # ★어떤 경로로 끝나도 원상복구
+    out = out or (rows[-1][3] if rows else None)
+
+    print(f"\n{'='*70}\n  판정 — {j['name']} 파단토크가 마찰인가 강성인가\n{'='*70}")
+    print(f"  {'kp_src':>7}{'탄성예측':>10}{'실측':>9}{'실측/예측':>11}")
+    for g, pred, tb, _ in rows:
+        print(f"  {g:>7.0f}{pred:>10.3f}"
+              + (f"{tb:>9.3f}{tb/pred:>11.2f}" if tb else f"{'미동':>9}{'':>11}"))
+    got = [(g, tb) for g, pred, tb, _ in rows if tb]
+    if len(got) >= 2:
+        (g1, t1), (g2, t2) = got[0], got[-1]
+        slope = (t2 - t1) / (g2 - g1) * (g1 + g2) / (t1 + t2)     # 무차원 탄력도
+        print(f"\n  게인 {g1:.0f}→{g2:.0f} 에서 τ_break {t1:.3f}→{t2:.3f} · 탄력도 {slope:+.2f}")
+        print("  " + ("⇒ **탄성이 지배한다** — 잰 것은 마찰이 아니라 직렬 강성이다. "
+                      "판정문턱·측정방식을 고쳐야 한다." if slope > 0.5 else
+                      "⇒ **마찰이 지배한다** — τ_break 을 정지마찰로 써도 된다." if slope < 0.2 else
+                      "⇒ **혼재** — 마찰과 탄성이 섞였다. τ_break 은 마찰의 상한으로만 쓸 것."))
+    else:
+        print("\n  ⚠유효 표본이 부족하다 — 판정 불가.")
+    if out is not None:
+        out["_sweep"] = [(g, pred, tb) for g, pred, tb, _ in rows]
+    return out
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="액추에이터 마찰/PACE 자동시험")
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
@@ -423,6 +501,11 @@ def main() -> int:
                 help="friction,torque,inertia,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
+    ap.add_argument("--sweep-hold-kp", default=None, metavar="G1,G2,...",
+                    help="★파단토크가 마찰인지 **직렬 강성**인지 가르는 시험. 시험축의 "
+                         "커플링 원천축(couple_from, foot→calf)의 홀드게인을 이 값들로 "
+                         "바꿔가며 토크프로브를 반복한다. τ_break 이 게인에 비례하면 "
+                         "탄성(=강성을 잰 것), 안 변하면 마찰이다. 예: --sweep-hold-kp 40,80,160")
     ap.add_argument("--pose", choices=("home", "neutral"), default="home",
                     help="시험 중 홀드 자세. neutral = **thigh 중력중립각**(+21.7°)으로 "
                          "옮겨 잡는다 — 그 자세에서 thigh 중력토크가 0 이라 처지지 않는다 "
@@ -627,7 +710,10 @@ def main() -> int:
                     # ★fragments.append 가 빠져 있었다(2026-08-11) — 터미널에만 찍히고
                     #   리포트에는 안 남았다. 다른 시험은 전부 (html, res) 를 돌려주는데
                     #   이것만 res 만 돌려주는 비대칭이 원인이었다.
-                    res = probe_torque_mode(hw, spec, j)
+                    if a.sweep_hold_kp:
+                        res = _sweep_hold_kp(hw, spec, j, a.sweep_hold_kp, _jointmap()[1])
+                    else:
+                        res = probe_torque_mode(hw, spec, j)
                     # ★파단토크를 관성시험에 넘긴다 — 준위를 축별로 자동설계하려면
                     #   그 축 자신의 파단값이 필요하다(HL 0.674 · HR 0.753 로 다르다).
                     j["_tau_break"] = res.get("tau_break_mean")

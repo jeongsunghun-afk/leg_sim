@@ -251,7 +251,13 @@ def _lost_motion(A: dict, dq_thresh: float = 1.5) -> tuple[float | None, float, 
 def measure_latency_and_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     ch = int(joint["ch"])
     name = joint["name"]
-    kp, kd = spec["gains"]["kp"], spec["gains"]["kd"]
+    # ★축별 배포게인 (2026-08-12). spec.gains.kp 는 **없어진 키**다 — 게인이 스칼라
+    #   하나였던 시절의 잔재이고, 축별 dict(safety.hold_kp)로 옮겨가며 지워졌다.
+    #   단일 출처는 safety.hold_kp/hold_kd, 없으면 gains 의 스칼라로 떨어진다.
+    _kp = spec.get("safety", {}).get("hold_kp", spec["gains"].get("kp"))
+    _kd = spec.get("safety", {}).get("hold_kd", spec["gains"].get("kd"))
+    kp = float(_kp[ch] if isinstance(_kp, dict) else _kp)
+    kd = float(_kd[ch] if isinstance(_kd, dict) else _kd)
     warn: list[str] = []
     log(f"  [{name}] 지연·로스트모션 측정")
 

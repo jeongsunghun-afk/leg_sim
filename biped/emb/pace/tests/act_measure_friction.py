@@ -209,7 +209,15 @@ def _fit_friction(v_rad, f_meas, tau_s_hint):
 def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     ch = int(joint["ch"])
     name, gear = joint["name"], joint["gear"]
-    kp, kd = spec["gains"]["kp"], spec["gains"]["kd"]
+    # ★축별 배포게인을 쓴다 (2026-08-12). spec.gains.kp 는 **없어진 키**다 —
+    #   게인이 스칼라 하나였던 시절의 잔재이고, 축별 dict(safety.hold_kp)로 바뀌면서
+    #   지워졌는데 이 시험만 옛 키를 보고 있어 KeyError 로 죽었다.
+    #   ⚠오늘 세 번째 같은 부류다(actuator_test·probe 는 이미 고쳤다). 게인의 단일 출처는
+    #     safety.hold_kp/hold_kd 이며, 없으면 gains 의 스칼라로 떨어진다.
+    _kp = spec.get("safety", {}).get("hold_kp", spec["gains"].get("kp"))
+    _kd = spec.get("safety", {}).get("hold_kd", spec["gains"].get("kd"))
+    kp = float(_kp[ch] if isinstance(_kp, dict) else _kp)
+    kd = float(_kd[ch] if isinstance(_kd, dict) else _kd)
     fr = spec["friction"]
     warn: list[str] = []
 

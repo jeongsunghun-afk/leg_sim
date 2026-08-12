@@ -49,8 +49,18 @@ def make_homer(jm, cfg: dict, dt: float, q_deg=None) -> HomeTrajectory:
 
 
 def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
-              speed_dps: float | None = None, tol_deg: float = 5.0) -> float:
+              speed_dps: float | None = None, tol_deg: float = 5.0,
+              only_ch: int | None = None, kp: float = 0.0, kd: float = 0.0) -> float:
     """측정각에서 HOME 까지 S-curve 복귀. 소요시간[s] 반환. 도달 실패면 SafetyAbort.
+
+    ★only_ch: **그 채널만** 움직이고 나머지는 손도 대지 않는다 (2026-08-12, 사용자 요청).
+      "측정축 외에 제어는 하지 마라 — 반대편은 작업자가 손으로 잡는다."
+      · 명령·게인을 그 채널에만 쓴다(나머지는 kp=kd=0 그대로).
+      · 트립 검사도 **그 채널만** 본다 — 손으로 잡은 축은 위치오차가 크게 나는 게 정상이고,
+        그걸로 시험이 꺼지면 안 된다.
+      · 도달 판정도 그 채널만. 다른 축의 모델각은 손 위치라 의미가 없다.
+      ⚠하위 관절이 무여자가 되므로 I_link 의 강체가정이 깨진다. 관성·처프 시험에는
+        쓰면 안 된다. **마찰·파단은 ±방향 차로 중력이 상쇄되므로** 영향이 작다.
 
     ★arm 이 되어 있어야 한다 — enable 없이 쓰면 SHM 에 kp=kd=0 이 나가
       (shm_bridge.cpp:112) 모터가 전혀 안 움직이는데 그게 조용히 지나간다.
@@ -90,20 +100,23 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
         # ★경과시간 기준으로 진행한다. 호출 횟수 기준이면 루프가 밀렸다 몰아 돌 때
         #   궤적이 빨리감기 되어 v/a 한계가 무의미해진다(control/home.py 주석 참조).
         q_cmd_leg = homer.step(dt_meas)
-        _write_leg(hw, jm, q_cmd_leg, box_eff)
-        _trip_check(hw, box_eff)
+        _write_leg(hw, jm, q_cmd_leg, box_eff, only_ch, kp, kd)
+        _trip_check(hw, box_eff, only_ch)
         time.sleep(hw.dt)
 
     t_settle = time.perf_counter()                       # 정착
     while time.perf_counter() - t_settle < 0.5:
-        _write_leg(hw, jm, homer.q_cmd_leg, box_eff)
-        _trip_check(hw, box_eff)
+        _write_leg(hw, jm, homer.q_cmd_leg, box_eff, only_ch, kp, kd)
+        _trip_check(hw, box_eff, only_ch)
         time.sleep(hw.dt)
 
     q_now = np.asarray(jm.ch_to_q_joint(
         np.array([hw.read(c)[0] for c in range(hw.n)], float)), float)
     err = q_now - homer.q_home
-    emax = float(np.max(np.abs(err)))
+    # ★only_ch 면 그 축만 본다 — 손으로 잡은 축의 모델각은 의미가 없다.
+    emax = float(abs(err[int(np.where(np.asarray(jm.ch) == only_ch)[0][0])])) \
+        if only_ch is not None \
+        else float(np.max(np.abs(err)))
     log(f"    도착 — 최대 오차 {emax:.2f}° (모델각: "
         f"{', '.join(f'{jm.names[i]}{err[i]:+.1f}' for i in range(jm.n_leg))})")
     if emax > tol_deg:
@@ -118,7 +131,7 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     return T
 
 
-def _write_leg(hw, jm, q_leg_deg, q_box) -> None:
+def _write_leg(hw, jm, q_leg_deg, q_box, only_ch=None, kp=0.0, kd=0.0) -> None:
     """모델각 → 채널각 → SHM. 변환은 **JointMap 이 전담**한다(수식 복사 금지).
 
     ★상자를 **현재 측정각까지 늘려서** 적용한다 — 안 그러면 계단이 나간다.
@@ -130,10 +143,18 @@ def _write_leg(hw, jm, q_leg_deg, q_box) -> None:
       상자 안이므로 궤적이 상자 쪽으로만 데려간다.
     """
     q_ch = jm.q_joint_to_ch(np.asarray(q_leg_deg, float))
+    if only_ch is not None:
+        # ★그 채널만 쓴다. hold_ch 가 비어 있으므로 나머지는 kp=kd=0 으로 나간다.
+        v = float(q_ch[only_ch])
+        if q_box is not None and only_ch in q_box:
+            lo, hi = q_box[only_ch]
+            v = min(max(v, lo), hi)
+        hw._raw_write(only_ch, v, kp, kd)
+        return
     hw._raw_write_all(q_ch, hw.hold_kp, hw.hold_kd, q_box)
 
 
-def _trip_check(hw, q_box=None) -> None:
+def _trip_check(hw, q_box=None, only_ch=None) -> None:
     """전 채널 트립 감시. ★위치한계만은 **채널별**로 본다.
 
     ⚠hw.lim 은 **시험축** 한계다. 그걸 전 채널에 적용하면 다른 축이 자기 범위 안인데도
@@ -145,7 +166,7 @@ def _trip_check(hw, q_box=None) -> None:
     saved = hw.lim
     snap = []
     try:
-        for c in range(hw.n):
+        for c in (range(hw.n) if only_ch is None else (only_ch,)):
             q, dq, tq, _ = hw.read(c)
             snap.append((c, float(hw._q_cmd[c]), q, dq, tq))
             if q_box is not None and c in q_box:

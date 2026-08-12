@@ -39,6 +39,7 @@ import os
 import sys
 import time
 
+from dataclasses import replace
 import numpy as np
 import yaml
 
@@ -177,6 +178,15 @@ def main() -> int:
     if bad:
         raise SystemExit(f"✗ 궤적이 jog 한계 밖이다: {bad} — spec.pace_multi.amp_deg 를 줄일 것")
 
+    # ★속도 여유 — 처프는 30초를 계속 돈다. 한 번만 넘어도 트립이다.
+    vmax = np.abs(np.diff(Q, axis=0)).max(axis=0) * rate
+    vlim = float(spec["safety"]["vel_trip_dps"])
+    print(f"\n  최대 |q̇| (명령) " + " ".join(f"{v:.0f}" for v in vmax)
+          + f" dps   상한 {vlim:.0f} · 여유 {(1 - vmax.max()/vlim)*100:.0f}%")
+    if vmax.max() > vlim * 0.85:
+        print(f"    ⚠여유가 {(1-vmax.max()/vlim)*100:.0f}% 뿐이다 — 실측은 명령보다 크다"
+              f"(추종 지연·오버슛). amp_deg 나 f_end_hz 를 줄이거나 vel_trip 을 올릴 것.")
+
     # ★상관 — 이게 크면 파라미터를 못 가른다. 설계 단계에서 잡아야 한다.
     #   ⚠mirror 를 켜면 좌우가 **의도적으로** 종속(r=1)이 된다 — 그건 결함이 아니다.
     #     그래서 좌우 짝은 검사에서 빼고 **한쪽 다리 안에서만** 본다.
@@ -205,7 +215,12 @@ def main() -> int:
     sf, g = spec["safety"], spec["gains"]
     box = at._mech_limit_box()
     ch_all = sorted(box)
-    lim = Limits(q_min=min(box[c][0] for c in ch_all), q_max=max(box[c][1] for c in ch_all),
+    # ★기본 lim 은 **가장 좁은** 축 기준으로 잡는다 — 채널별 상자를 못 찾은 채널이
+    #   느슨한 값으로 새는 것을 막는다. 실제 판정은 아래 hw.lim_ch(채널별)가 한다.
+    #   ⚠종전엔 **합집합**(min of mins, max of maxes)이었다: hip 실한계가 ±14.9° 인데
+    #     상자가 ±176° 가 되어 **위치 트립이 사실상 없었다.** 30초를 도는 시험에서
+    #     어떤 축이 폭주해도 안 걸린다.
+    lim = Limits(q_min=max(box[c][0] for c in ch_all), q_max=min(box[c][1] for c in ch_all),
                  tau_trip=float(mc.get("tau_trip_nm", sf["tau_trip_nm"])),
                  tau_trip_ms=float(sf["tau_trip_ms"]),
                  vel_trip=float(sf["vel_trip_dps"]),
@@ -228,6 +243,19 @@ def main() -> int:
         hw.publish_fn = lambda q_ch, rpy, on: publish_state(
             "pace:multichirp", jm.ch_to_q_joint(np.asarray(q_ch, float)),
             np.asarray(rpy, float), rate, on, "pace")
+        # ★오늘(2026-08-12) 만든 안전장치를 **여기에도** 건다. 이 시험이 가장 오래 돈다
+        #   (30초 연속 가진). 정작 여기에 안 걸려 있었다.
+        #   ㆍlim_ch  : 채널별 위치·토크 한계 (위 합집합 사고 참조)
+        #   ㆍgrav_fn : 스톨 감지용 중력 조회 — 없으면 그 검사가 꺼진다
+        _tt = float(mc.get("tau_trip_nm", sf["tau_trip_nm"]))
+        _tb = {int(c): float(v) for c, v in (sf.get("tau_trip_by_ch") or {}).items()}
+        hw.lim_ch = {c: replace(lim, q_min=box[c][0], q_max=box[c][1],
+                                tau_trip=_tb.get(c, _tt)) for c in ch_all}
+        _gt = spec["torque_mode"].get("tau_grav_table") or {}
+        hw.grav_fn = (lambda c, q, _t=_gt:
+                      float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"])) if c in _t else 0.0)
+        print(f"  ★채널별 한계 적용 — 위치는 축마다, τ_trip "
+              + " ".join(f"ch{c}:{hw.lim_ch[c].tau_trip:g}" for c in ch_all))
         hw.arm(ch_all[0], kp[ch_all[0]], kd[ch_all[0]])
         goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,
                   log=lambda m: print(f"  [multichirp]{m}"))
@@ -246,6 +274,9 @@ def main() -> int:
             for c in ch_all:
                 hw._check(c, q_m[c], float(hw._dq[c]), float(hw._tau[c]),
                           float(hw._q_cmd[c]))
+            # ★파워단 사망·스톨은 check_hold 에만 있다 — _check 로는 못 잡는다.
+            #   오늘 다섯 번 겪은 그 고장을 30초 가진 중에 놓치면 안 된다.
+            hw.check_hold()
             T_.append(t); QC.append(q_leg)
             Qm.append(jm.ch_to_q_joint(q_m))
             DQ.append(jm.ch_to_dq_ctrl(np.array(hw._dq, float)))   # 채널 dps → 모델각 dps

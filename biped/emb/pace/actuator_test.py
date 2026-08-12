@@ -508,6 +508,11 @@ def main() -> int:
                 help="friction,torque,inertia,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
+    ap.add_argument("--solo", action="store_true",
+                    help="★**측정축만 제어**한다. 나머지 축은 kp=kd=0 으로 완전히 놓는다 — "
+                         "작업자가 손으로 잡는 전제(2026-08-12 사용자 결정). "
+                         "홈복귀도 측정축만 움직이고, 트립 검사도 측정축만 본다. "
+                         "⚠하위 관절이 무여자라 I_link 강체가정이 깨진다 — inertia·pace 에는 쓰지 말 것.")
     ap.add_argument("--sweep-hold-kp", default=None, metavar="G1,G2,...",
                     help="★파단토크가 마찰인지 **직렬 강성**인지 가르는 시험. 시험축의 "
                          "커플링 원천축(couple_from, foot→calf)의 홀드게인을 이 값들로 "
@@ -596,7 +601,14 @@ def main() -> int:
               f"→ **채널각**∈[{lo:.2f},{hi:.2f}]deg  τ_trip={sf['tau_trip_nm']}Nm\n{'='*70}")
 
         # ★시험축 외 홀드 대상 = 실장된 채널 − 시험축. 다리 조립 후 필수(spec.safety 주석 참조).
-        hold = sorted(installed - {ch}) if bool(sf.get("hold_others", False)) else []
+        # ★--solo 면 홀드축이 **없다**. 작업자가 손으로 잡으므로 모터로 잡지 않는다.
+        #   hold_ch 가 비면 check_hold 가 아무것도 검사하지 않으므로 "홀드축이 밀렸다"
+        #   같은 트립이 원천적으로 안 난다 — 손 위치는 오차가 크게 나는 게 정상이다.
+        hold = ([] if a.solo
+                else sorted(installed - {ch}) if bool(sf.get("hold_others", False)) else [])
+        if a.solo:
+            print(f"  [{j['name']}] ★--solo — **이 축만 제어**한다. 나머지 7축은 무여자다."
+                  f"\n            반대편 다리는 작업자가 손으로 잡을 것. 홈복귀도 이 축만 움직인다.")
         # ★hold 가 비어도 정의해 둔다 — HOME 정렬이 이 값을 쓴다(예전엔 if 안에 있어서
         #   hold_others=false 면 NameError 였다).
         _kp, _kd = _gain(sf.get("hold_kp", 40.0)), _gain(sf.get("hold_kd", 2.0))
@@ -670,13 +682,16 @@ def main() -> int:
                         #   궤적은 GUI 홈복귀와 **같은 구현**(control/home.py:HomeTrajectory).
                         _homer = make_homer(_jm, _c, hw.dt)
                         goto_home(hw, _jm, _homer, _c, q_box=box, log=_log,
-                                  speed_dps=a.home_speed)
+                                  speed_dps=a.home_speed,
+                                  **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
+                                     if a.solo else {}))
                         # ★홀드 자세 (2026-08-12, 사용자 제안).
                         #   HOME 은 thigh 중력토크 −2.06Nm 이라 kp50 에서 2.36° 처진다.
                         #   thigh 를 **중력중립각**으로 옮기면 그 토크가 0 이 되어 처짐 자체가
                         #   없어진다(막는 게 아니라 없애는 쪽). foot 중력은 0.033→0.038Nm 로
                         #   사실상 그대로라 파단 측정에는 영향이 없고, 링크 간섭도 없다.
-                        _hp = _c.get("hold_pose", {})
+                        # ★--solo 면 다른 축을 못 움직이므로 자세 덮어쓰기가 무의미하다.
+                        _hp = {} if a.solo else _c.get("hold_pose", {})
                         _pose = _hp.get(f"{a.pose}_deg")
                         # ★시험축별 덮어쓰기 — 시험하지 않는 쪽 hip 을 바깥으로 재껴
                         #   두 다리가 부딪히지 않게 한다(config 주석 참조).
@@ -695,7 +710,9 @@ def main() -> int:
                             _log(f"    홀드 자세 → {a.pose} "
                                  f"(thigh {_pose[1]:+.1f}° — 중력중립, 처짐 2.36°→0)")
                             goto_home(hw, _jm, make_homer(_jm, _c, hw.dt, q_deg=_pose),
-                                      _c, q_box=box, log=_log, speed_dps=a.home_speed)
+                                      _c, q_box=box, log=_log, speed_dps=a.home_speed,
+                                      **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
+                                         if a.solo else {}))
                         # ★홀드 목표를 **여기서 한 번** 확정한다 → 이후 arm() 이 재사용.
                         #   안 하면 arm() 이 매번 '지금 처진 자리' 를 목표로 삼아 래칫이 된다.
                         _tgt_ch = _jm.q_joint_to_ch(np.asarray(

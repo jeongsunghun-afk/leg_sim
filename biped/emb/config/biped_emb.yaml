@@ -196,11 +196,26 @@ joints:
   #     들어오는 게 그 실측이 맞다는 방증이다.
   #   ⚠하드스톱 자체는 −62 이므로 여유가 1.2° 뿐이다. 여기까지 몰지 말 것.
   - {name: HL_calf,  channel: 2, sign: -1, offset_deg: 0.0, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 0.0, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  # ★foot max_deg +25.2 → **+67.0** (2026-08-12). calf 와 **같은 종류의 사고**다.
+  #   URDF(CAD) 값 +25.2 는 무여자 정지자세를 담지 못한다 — 실측 늘어짐이 그 밖이다:
+  #     2026-08-12 관측 최대  HR_foot **+65.08°** · HL_foot +60.41°  (+25.2 를 40° 초과)
+  #   ⚠이것도 되돌린 값이다. jog.range_frac 주석에 "calf·foot 은 실측으로 −62/+62 로
+  #     넓혔다" 가 남아 있다 — URDF 로 갈아끼우며 그 실측 하드스톱이 CAD 값에 덮였다.
+  #     실측이 +62 도 넘었으므로(+65.08) 여유를 봐 **+67.0** 으로 잡는다.
+  #   ⚠무엇이 실제로 깨졌었나: **foot 자신의** 중력값이다.
+  #     ① tau_grav_table 이 한계의 0.90 배까지만 만들어져 모델각 +22.7° 에서 끊긴다.
+  #        실기 foot 은 늘 +60° 근처라 표 밖이고, np.interp 가 끝값으로 **고정(clamp)**
+  #        한다 — foot 시험 내내 엉뚱한 자리의 중력을 FF 로 쓰고 있었다.
+  #     ② 그 자세를 MuJoCo 로 풀면 한계 구속반력이 섞여 τ_foot 이 **+41.58 Nm** 로 튄다
+  #        (정상 −0.17). 늘어진 자세를 모델로 평가하면 조용히 쓰레기가 나온다.
+  #     ⚠thigh 는 영향이 작았다(−2.810 vs −2.847, 0.04Nm) — 구속반력이 foot 관절에
+  #       걸리기 때문이다. foot 의 중력이 워낙 작아 시험 결과는 안 틀어졌다.
+  #   ⚠**바꾸면 tau_grav_table 을 반드시 재생성**할 것(tools/gen_grav_table.py --apply).
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 0.0, min_deg: -84.8, max_deg:  67.0, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.0, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 0.0, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 0.0, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 0.0, min_deg: -84.8, max_deg:  67.0, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

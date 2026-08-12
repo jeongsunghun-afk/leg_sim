@@ -687,7 +687,6 @@ def main() -> int:
                         #   ⚠파단 뒤에 보정하는 것으로는 늦다 — 홈복귀부터 필요하다.
                         #   ⚠MuJoCo 확인: 이 오차는 축 각도에 거의 무관하다
                         #     (thigh 0~32° 에서 −1.30~−0.92). 상수 오프셋으로 충분하다.
-                        _ffn = None
                         if a.solo and ch in _gt:
                             _q_now = float(hw.read(ch)[0])
                             _g_tbl = float(np.interp(_q_now, _gt[ch]["q_ch"], _gt[ch]["tau"]))
@@ -699,7 +698,12 @@ def main() -> int:
                             if abs(_gbias[ch]) > 3.0:
                                 _log(f"  ⚠보정이 3Nm 을 넘는다 — 표를 다시 뽑을 것"
                                      f"(tools/gen_grav_table.py). 일단 진행한다.")
-                            _ffn = lambda q, _c=ch: hw.grav_fn(_c, q)
+                            # ★기본 FF 로 건다 — 이 뒤 **모든 쓰기**가 자동으로 태운다
+                            #   (홈복귀·arm·verify_driver_live·파단·스윕 전부).
+                            #   호출부마다 꿰다가 verify_driver_live 를 빠뜨려 thigh 가
+                            #   17.5° 튀었다. grav_fn 이 갱신되면 여기도 따라간다.
+                            hw.tau_ff_fn = (lambda c, q, _c=ch:
+                                            float(hw.grav_fn(_c, q)) if c == _c else 0.0)
                             hw.arm(ch, _kp_ch, _kd_ch)
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).
                         #   지그가 물려 있으면 편차가 작아 즉시 끝나거나 생략된다.
@@ -716,8 +720,8 @@ def main() -> int:
                             try:
                                 goto_home(hw, _jm, make_homer(_jm, _c, hw.dt), _c,
                                           q_box=box, log=_log, speed_dps=a.home_speed,
-                                          **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch,
-                                              "tau_ff_fn": _ffn} if a.solo else {}))
+                                          **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
+                                             if a.solo else {}))
                                 break
                             except SafetyAbort as _e:
                                 if "상태 정지" not in str(_e) or _try:

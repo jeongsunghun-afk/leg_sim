@@ -155,6 +155,16 @@ class Hardware:
         #     스톨이면 kp·err 가 중력+마찰을 넘는데도 안 움직인다.
         #   grav_fn(ch, q_ch) -> Nm 를 꽂으면 켜진다(없으면 검사 안 함 — 하위호환).
         self.grav_fn = None
+        # ★**기본 중력 피드포워드** — tau_ff_fn(ch, q) -> Nm (2026-08-12).
+        #   왜 이게 필요한가: FF 를 호출부마다 손으로 꿰다가 실기에서 터졌다.
+        #   goto_home 에 FF 를 넣었더니 **그 다음 단계(verify_driver_live)가 FF 없이**
+        #   이어받아, 인계 순간 중력 2.85Nm 이 사라지며 HL_thigh 가 486deg/s² 로
+        #   **17.5° 튀어올랐다**(명령 1.50 · 측정 19.02 → 추종오차 트립).
+        #   오늘만 여섯 번 나온 "같은 값을 여러 곳에서 따로 다룬다" 그 구조다.
+        #   ⇒ 쓰기 원시함수 한 곳에서 결정한다. 명시 인자가 있으면 그게 이긴다.
+        #   ⚠시험축만 대상이다. 홀드축까지 걸려면 채널별 표가 필요한데 지금은 없다 —
+        #     호출부가 ch 를 보고 0 을 돌려주면 종전 동작 그대로다.
+        self.tau_ff_fn = None
         self.stall_margin_nm = 2.0      # 중력 대비 이만큼 초과하면 후보
         self.stall_vel_dps = 5.0        # 그런데 이보다 느리면 스톨
         self.stall_ms = 300.0           # 이 시간 지속되면 중단
@@ -546,6 +556,12 @@ class Hardware:
 
     def _raw_write(self, ch: int, q_cmd_deg: float, kp: float, kd: float,
                    hold_scale: float = 1.0) -> None:
+        # ★기본 FF 가 걸려 있으면 **모든 쓰기가** 그걸 태운다(위 tau_ff_fn 주석).
+        #   hold_scale 은 홀드축 게인 배율이라 FF 와 무관하다 — 1.0 일 때만 위임한다.
+        if self.tau_ff_fn is not None and hold_scale == 1.0:
+            v = float(self.tau_ff_fn(ch, float(self._q[ch])))
+            if v:
+                return self._raw_write_ff(ch, q_cmd_deg, kp, kd, v)
         kp = min(max(kp, 0.0), self.lim.kp_max)      # 스케일 오류가 그대로 드라이버로 가지 않게
         kd = min(max(kd, 0.0), self.lim.kd_max)
         q_cmd_deg = min(max(q_cmd_deg, self.lim.q_min), self.lim.q_max)
@@ -813,7 +829,7 @@ class Hardware:
                       float(kp), float(kd))
 
     def step(self, ch: int, q_cmd_deg: float, kp: float, kd: float,
-             tau_ff: float = 0.0) -> Sample:
+             tau_ff: float | None = None) -> Sample:
         """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort.
 
         ★tau_ff — **중력 피드포워드** (2026-08-12). 중력이 큰 축은 kp 가 그걸 혼자
@@ -821,7 +837,8 @@ class Hardware:
               hip  max_push 2.5° × kp100 = 4.4Nm   그 자리 중력 4.2Nm → 남는 0.2Nm
               마찰 0.8Nm 을 못 넘어 **6시행 전부 미동**했다(2026-08-12 실기).
           τ_ff = G(q) 를 실으면 kp 는 잔차만 맡는다. 처짐도 같이 사라져 스트로크가 는다.
-          ⚠tau_ff 가 0 이면 종전대로 write_pos 를 쓴다(경로를 안 바꾼다).
+          ⚠tau_ff=None 이면 **self.tau_ff_fn(기본 FF)** 이 쓰인다(_raw_write 가 처리).
+            명시 값을 주면 그게 이긴다. 0.0 을 주면 FF 없이 간다 — 구분이 필요하다.
         """
         if not self._armed:
             raise RuntimeError("arm() 을 먼저 호출할 것")

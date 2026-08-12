@@ -140,14 +140,31 @@ def _trip_check(hw, q_box=None) -> None:
     ⚠속도·토크·stale·추종오차는 축과 무관한 물리량이라 그대로 hw.lim 을 쓴다.
     """
     saved = hw.lim
+    snap = []
     try:
         for c in range(hw.n):
             q, dq, tq, _ = hw.read(c)
+            snap.append((c, float(hw._q_cmd[c]), q, dq, tq))
             if q_box is not None and c in q_box:
                 lo, hi = q_box[c]
                 hw.lim = replace(saved, q_min=lo, q_max=hi)
             else:
                 hw.lim = saved
             hw._check(c, q, dq, tq, float(hw._q_cmd[c]))
+    except SafetyAbort as e:
+        # ★트립 순간의 **전 채널 상태**를 같이 찍는다 (2026-08-12).
+        #   한 축의 값만 보면 원인을 못 가린다 — 커플링 때문에 어느 축의 지연이
+        #   다른 축의 오차로 나타난다(q_ch_foot 는 calf 관절에도 의존한다).
+        #   ⚠검사 도중 트립하면 뒤쪽 채널은 아직 안 읽었다. 그건 읽어서 채운다.
+        for c in range(len(snap), hw.n):
+            try:
+                q, dq, tq, _ = hw.read(c)
+                snap.append((c, float(hw._q_cmd[c]), q, dq, tq))
+            except Exception:
+                break
+        rows = "\n".join(
+            f"    ch{c}  명령 {cmd:+9.2f}  측정 {q:+9.2f}  오차 {cmd - q:+7.2f}"
+            f"  속도 {dq:+8.1f}  토크 {tq:+7.3f}" for c, cmd, q, dq, tq in snap)
+        raise SafetyAbort(f"{e}\n  트립 순간 전 채널(채널각):\n{rows}") from None
     finally:
         hw.lim = saved

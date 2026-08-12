@@ -291,20 +291,25 @@ class Hardware:
     def _check_impl(self, ch: int, q: float, dq: float, tau: float, q_cmd: float) -> None:
         L = self.limits_for(ch)          # ★채널별 상한(등록 없으면 시험축 self.lim)
         if self.stale_ms() > L.stale_ms:
-            raise SafetyAbort(f"상태 정지 {self.stale_ms():.0f}ms > {L.stale_ms}ms "
+            raise SafetyAbort(f"상태 정지 **ch{ch}** {self.stale_ms():.0f}ms > {L.stale_ms}ms "
                               f"— 위치를 신뢰할 수 없어 중단(EtherCAT OP 이탈 의심)")
+        # ★어느 채널인지 반드시 찍는다 (2026-08-12). 종전엔 값만 있어서
+        #   "추종오차 |12.10| > 12.0" 만 보고는 **어느 축인지 알 수 없었다** —
+        #   8축을 손으로 추정하다 시간을 버렸다. 진단에 필요한 건 값이 아니라 축이다.
         if not (L.q_min <= q <= L.q_max):
-            raise SafetyAbort(f"위치 한계 이탈 q={q:.2f}deg ∉ [{L.q_min}, {L.q_max}]")
+            raise SafetyAbort(f"위치 한계 이탈 **ch{ch}** q={q:.2f}deg "
+                              f"∉ [{L.q_min:.2f}, {L.q_max:.2f}]")
         if abs(dq) > L.vel_trip:
-            raise SafetyAbort(f"속도 한계 |{dq:.1f}| > {L.vel_trip} deg/s")
+            raise SafetyAbort(f"속도 한계 **ch{ch}** |{dq:.1f}| > {L.vel_trip} deg/s")
         if abs(q_cmd - q) > L.err_max:
-            raise SafetyAbort(f"추종오차 한계 |{q_cmd - q:.2f}| > {L.err_max} deg "
-                              f"(막힘·게인부족·기계간섭 의심)")
+            raise SafetyAbort(f"추종오차 한계 **ch{ch}** |{q_cmd - q:.2f}| > {L.err_max} deg "
+                              f"(명령 {q_cmd:.2f} · 측정 {q:.2f}) "
+                              f"— 막힘·게인부족·기계간섭 의심")
         now = time.monotonic()
         if abs(tau) > L.tau_trip:
             self._tau_over_since = self._tau_over_since or now
             if (now - self._tau_over_since) * 1e3 > L.tau_trip_ms:
-                raise SafetyAbort(f"토크 한계 |{tau:.2f}| > {L.tau_trip} 이 "
+                raise SafetyAbort(f"토크 한계 **ch{ch}** |{tau:.2f}| > {L.tau_trip} 이 "
                                   f"{L.tau_trip_ms}ms 지속")
         else:
             self._tau_over_since = None

@@ -119,16 +119,37 @@ def main() -> int:
             "  #   채널각[deg] → 채널토크[Nm]. 프로브가 그때그때 위치를 읽어 보간해 bias 로 쓴다.\n"
             "  #   자세는 hold_pose.neutral_deg 고정, 해당 축만 쓸었다. 자세를 바꾸면 재생성할 것.\n"
             "  #   유래·필요성은 tools/gen_grav_table.py 의 독스트링 참조.\n")
+    # ★기존 블록 제거는 **줄 단위**로 한다 (2026-08-12).
+    #   종전엔 정규식 `# ★중력토크 표.*?(?=\n  [a-z_]+:)` 를 썼는데, 그 lookahead 가
+    #   **블록 자신의 키 `  tau_grav_table:`** 에 먼저 걸려 주석만 지우고 표는 남겼다.
+    #   그래서 새 표가 **추가**되고 키가 2개가 됐다 — YAML 은 뒤엣것(옛 표)을 쓴다.
+    #   ⇒ 프로브가 offset 변경 전 표로 bias 를 계산했다. ch3 에서 MuJoCo 직접값
+    #     −0.034 대신 표 상한 **+0.142** 를 썼다(부호까지 반대).
+    lines, out, skip = s.split("\n"), [], False
+    for ln in lines:
+        if ln.startswith("  # ★중력토크 표") or ln.startswith("  tau_grav_table:"):
+            skip = True
+            continue
+        if skip:
+            # 블록에 속한 줄 = 더 깊게 들여썼거나 주석. 그 외를 만나면 블록 끝.
+            if ln.strip() == "" or ln.startswith("   ") or ln.startswith("  #"):
+                continue
+            skip = False
+        out.append(ln)
+    s = "\n".join(out)
+
     import re
-    pat = re.compile(r"\n  # ★중력토크 표.*?(?=\n  [a-z_]+:|\Z)", re.S)
-    new = "\n" + head + blob
-    s = pat.sub("", s)
     m = re.search(r"^torque_mode:\s*\n", s, re.M)
     assert m, "spec.yaml 에 torque_mode: 가 없다"
-    s = s[:m.end()] + new.lstrip("\n") + s[m.end():]
+    s = s[:m.end()] + head + blob + s[m.end():]
     open(p, "w").write(s)
+    # ★검증 — 키가 **정확히 1개**인지까지 본다. 중복이면 YAML 이 조용히 뒤엣것을 쓴다.
+    n_key = sum(1 for ln in open(p) if ln.startswith("  tau_grav_table:"))
+    assert n_key == 1, f"tau_grav_table 키가 {n_key}개 — 중복이면 옛 표가 쓰인다"
     got = yaml.safe_load(open(p))["torque_mode"]["tau_grav_table"]
     assert set(got) == set(tbl), "기록 후 재파싱 불일치"
+    for ch in tbl:
+        assert got[ch]["q_ch"] == tbl[ch]["q_ch"], f"ch{ch} q_ch 불일치 — 옛 표가 남았다"
     print(f"\n  ✓ {p} 기록 — {len(got)}축")
     return 0
 

@@ -164,6 +164,62 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
     return pos, neg, traces
 
 
+# ── (A½) 스윕 전 **범위 확인** ──────────────────────────────────────────────
+def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log,
+                speed_dps=10.0, cap_nm=1.2, stuck_ms=250.0) -> tuple[float, float]:
+    """[q_lo, q_hi] 를 실제로 갈 수 있는지 저속으로 확인하고 **도달 가능한 구간**을 낸다.
+
+    ★왜 필요한가 (2026-08-12 HL_thigh) — **상자 안인데 못 가는 자리가 있다.**
+      무여자로 늘어진 하위 링크(calf·foot)가 바닥·프레임·반대 다리에 닿으면 거기서
+      막힌다. 관절한계(상자)로는 절대 알 수 없고, 자세가 바뀔 때마다 위치도 바뀐다.
+      실기: 상자 [-60,+40] **한가운데인 +6.71°** 에서 중력 대비 2.17Nm 를 넘기며 스톨.
+      상자를 아무리 정확히 적어도 이건 안 잡힌다 — 실제로 가 보는 수밖에 없다.
+    ⇒ 스윕 전에 양끝을 **저속으로 한 번 다녀온다.** 막히면 그 자리를 기록하고 구간을
+      줄인다. 시험을 죽이지 않는다 — 막힘은 실패가 아니라 **정보**다.
+    ⚠전역 스톨 감지는 끄고(임계가 달라서) 여기서 자체 판정한다. 임계 cap_nm 은
+      실측 마찰 최대(hip 0.88Nm)보다 위, 스톨 감지 2.0Nm 보다 아래로 잡는다 —
+      전역 감지가 터지기 **전에** 우리가 먼저 알아채고 물러나야 하기 때문이다.
+    """
+    out = [q_lo, q_hi]
+    q_now = float(hw.read(ch)[0])
+    # 가까운 끝부터 — 멀리 있는 끝으로 먼저 가면 지나가며 막힐 자리를 두 번 지난다
+    ends = sorted(((abs(q_now - q), q, i) for i, q in enumerate((q_lo, q_hi))))
+    with hw.intentional_push():
+        for _, tgt, idx in ends:
+            hw.arm(ch, kp, kd)
+            q0 = float(hw.read(ch)[0])
+            d = 1.0 if tgt > q0 else -1.0
+            t0, k, since = time.monotonic(), 0, None
+            while True:
+                t = time.monotonic() - t0
+                cmd = q0 + d * min(speed_dps * t, abs(tgt - q0))
+                fv = ff(float(hw._q[ch]))
+                smp = hw.step(ch, cmd, kp, kd, tau_ff=fv)
+                if (smp.q_deg - tgt) * d >= -0.5:               # 도달
+                    break
+                if abs(smp.tau - fv) > cap_nm and abs(smp.dq_dps) < 3.0:
+                    since = since or time.monotonic()
+                    if (time.monotonic() - since) * 1e3 > stuck_ms:
+                        out[idx] = float(smp.q_deg) - d * 2.0    # 2° 물러선 자리
+                        log(f"    ⚠{'+' if d > 0 else '−'}쪽 {tgt:+.2f}° 로 못 간다 — "
+                            f"{smp.q_deg:+.2f}° 에서 막혔다(중력 대비 "
+                            f"{abs(smp.tau - fv):.2f}Nm > {cap_nm}Nm, {smp.dq_dps:+.1f}dps). "
+                            f"상자가 아니라 **간섭**이다. 여기까지만 쓴다: {out[idx]:+.2f}°")
+                        break
+                else:
+                    since = None
+                if t > abs(tgt - q0) / speed_dps + 3.0:          # 시간 초과
+                    out[idx] = float(smp.q_deg) - d * 2.0
+                    log(f"    ⚠{tgt:+.2f}° 도달 실패(시간 초과) — {out[idx]:+.2f}° 까지만 쓴다")
+                    break
+                k += 1
+                slp = t0 + k * hw.dt - time.monotonic()
+                if slp > 0:
+                    time.sleep(slp)
+            hw.brake(ch, kp, kd, 0.2, tau_ff_fn=ff)
+    return out[0], out[1]
+
+
 # ── (B) 등속 스윕 ───────────────────────────────────────────────────────────
 def swing_str(stroke_deg: float, v_dps: float) -> str:
     """등속 스윕 속도를 **±각도 · Hz** 로 바꿔 적는다 (2026-08-12, 사용자 요청:
@@ -374,8 +430,35 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     if not (lo_b + half <= q_center <= hi_b - half):
         was = q_center
         q_center = float(np.clip(q_center, lo_b + half, hi_b - half))
-        msg = (f"스윕 중심각 이동 {was:.2f}° → {q_center:.2f}° (상자 여유 {MARGIN}° 확보)")
+        msg = (f"스윕 중심각 이동 {was:.2f}° → {q_center:.2f}° "
+               f"(상자 여유 {MARGIN:.1f}° 확보)")
         log(f"    ⚠{msg}"); warn.append(msg)
+
+    # ★상자만 믿지 않고 **실제로 가 본다** (_probe_span 주석 참조).
+    log(f"    범위 확인 — [{q_center - half:+.2f}, {q_center + half:+.2f}]° 를 "
+        f"저속으로 다녀온다")
+    # ★임계는 **방금 잰 그 축의 마찰**에서 뽑는다 — 고정값은 축마다 틀린다.
+    #   "정지마찰의 2.5배를 넘겨도 안 움직이면 그건 마찰이 아니다."
+    #   고정 1.2Nm 였다면 hip(τ_s 0.72)에서 여유가 0.5Nm 뿐이라 중력모델 오차만으로도
+    #   '간섭' 으로 오탐했을 것이다. 축별로 hip 1.80 · calf 1.88 · foot 1.71 · thigh 1.0.
+    _cap = max(1.0, 2.5 * tau_static)
+    log(f"    (막힘 판정 임계 {_cap:.2f}Nm = 정지마찰 {tau_static:.2f}Nm 의 2.5배)")
+    r_lo, r_hi = _probe_span(hw, ch, kp, kd, q_center - half, q_center + half,
+                             _ff, log, cap_nm=_cap)
+    if (r_hi - r_lo) < 2 * half - 0.5:
+        half = (r_hi - r_lo) / 2.0
+        q_center = (r_hi + r_lo) / 2.0
+        fr["sweep"]["stroke_deg"] = float(2 * half)
+        msg = (f"간섭으로 스윕 축소 → 중심 {q_center:+.2f}° · ±{half:.1f}° "
+               f"(스트로크 {2 * half:.1f}°)")
+        log(f"    ⚠{msg}"); warn.append(msg)
+        if 2 * half < 3.0:
+            raise RuntimeError(
+                f"쓸 수 있는 구간이 {2 * half:.1f}° 뿐이다 — 축이 거의 갇혀 있다.\n"
+                f"  도달 가능 [{r_lo:+.2f}, {r_hi:+.2f}]° · 상자 "
+                f"[{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°.\n"
+                f"  **기구를 눈으로 볼 것** — 늘어진 하위 링크가 바닥·프레임·반대 다리에\n"
+                f"  닿아 있을 가능성이 높다. 그 다리를 살짝 들어 주고 다시 실행할 것.")
 
     # (B) 등속 스윕
     log(f"  (B) 등속 스윕 — 중심 {q_center:.2f}° · ±{half:.1f}° → 실제 구간 "

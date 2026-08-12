@@ -113,6 +113,42 @@ def apply_params(m, idx, gear_n, p, per_axis: bool, names):
         m.dof_armature[dof] = max(rot[i], 1e-9) * gear_n[i] ** 2
         m.dof_damping[dof] = max(dmp[i], 0.0)
         m.dof_frictionloss[dof] = max(frc[i], 0.0)
+    foot_rotor_to_tendon(m, idx, gear_n, rot, names)
+
+
+_TENDON_WARNED = []
+
+
+def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
+    """★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 커플링).
+
+    foot 로터는 관절각이 아니라 raw 각으로 돈다(실기 coef=+1, biped_emb.yaml):
+        raw_foot = q_foot + coef·q_calf
+    ⇒ 로터 KE = ½·I_rot·N²·(q̇_foot + coef·q̇_calf)² 라 반사관성이 (calf,foot) **비대각**이다.
+      `dof_armature` 는 M 의 대각뿐이라 표현할 수 없다 → fixed tendon 의 armature.
+
+    ★**PACE 에서 특히 중요하다.** 축별 측정에서는 이 항이 죽어 있었다(타축 고정 ⇒ q̇_calf=0).
+      전축 동시 처프는 calf·foot 이 같이 움직이므로 살아난다. 이게 없으면 CMA-ES 가
+      실기에 있고 시뮬에 없는 관성(calf 대각 기준 +46%)을 armature/damping 으로 흡수하려
+      들고, 구조가 다르니 깨끗하게 흡수되지 않는다.
+    ⚠CMA-ES 가 매 평가마다 ROTOR_I 를 흔들므로 tendon_armature 도 **같이** 갱신해야 한다.
+      한 번만 넣어 두면 탐색이 foot 로터를 못 흔든다.
+    ⚠**옮기는** 것이지 더하는 게 아니다 — dof_armature[foot] 을 0 으로 안 두면 이중 계상.
+    """
+    import mujoco
+    tid = {s: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_TENDON, f'{s}_foot_rotor')
+           for s in ('HL', 'HR')}
+    if any(t < 0 for t in tid.values()):
+        if not _TENDON_WARNED:                       # 매 평가 호출이라 1회만 경고한다
+            _TENDON_WARNED.append(1)
+            print('  ⚠MJCF 에 *_foot_rotor tendon 이 없다 — calf↔foot 커플 반사관성 누락 상태로 적합한다')
+        return False
+    for i, (_, _, dof, _) in enumerate(idx):
+        if kind_of(names[i]) != 'foot':
+            continue
+        m.tendon_armature[tid[names[i][:2]]] = max(rot[i], 1e-9) * gear_n[i] ** 2
+        m.dof_armature[dof] = 0.0                    # ★대각에서 뺀다(tendon 으로 이전)
+    return True
 
 
 def rollout(m, d, idx, q_real, dq_real, q_cmd, kp, kd, dt, win_steps):

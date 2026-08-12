@@ -124,7 +124,26 @@ struct BipedControl {
     if(const char* e=getenv("JFRIC"))   JFRIC  =atof(e);
     if(const char* e=getenv("GEAR_FOOT")) GEAR[3]=atof(e);
     for(int j=0;j<nu;j++){ double N=GEAR[j%4]; int dof=6+j;
-      m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP; m->dof_frictionloss[dof]=JFRIC; } }
+      m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP; m->dof_frictionloss[dof]=JFRIC; }
+    foot_rotor_to_tendon(); }
+
+  // ★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 기구 커플링).
+  //   foot 로터는 관절각이 아니라 raw 각으로 돈다(실기 coef=+1, biped_emb.yaml):
+  //       raw_foot = q_foot + coef*q_calf
+  //   ⇒ 로터 KE = ½·I_rot·N²·(q̇_foot + coef·q̇_calf)² 라 반사관성이 (calf,foot) **비대각**이다:
+  //       M += a*[[coef², coef],[coef, 1]]
+  //   ⚠dof_armature 는 M 의 **대각뿐**이라 표현 불가. fixed tendon 의 armature 가 위 형태를 만든다.
+  //   ⚠**옮기는** 것이지 더하는 게 아니다 — dof_armature[foot] 을 0 으로 안 두면 이중 계상.
+  //   ⚠축별 측정에선 이 항이 죽어 있었다(타축 고정). 전축 동시 가진에서만 살아난다.
+  //   검증(2026-08-12 HOME): M[foot,foot] 불변 · M[calf,calf] +46% · M[calf,foot] 0.0045→0.0567
+  void foot_rotor_to_tendon(){
+    int t[2]={mj_name2id(m,mjOBJ_TENDON,"HL_foot_rotor"),
+              mj_name2id(m,mjOBJ_TENDON,"HR_foot_rotor")};
+    if(t[0]<0||t[1]<0){   // 구 MJCF(tendon 없음) 호환 — 커플링 누락 상태로 돈다
+      fprintf(stderr,"  ⚠MJCF 에 *_foot_rotor tendon 이 없다 — calf↔foot 커플 반사관성 누락\n");
+      return; }
+    for(int j=0;j<nu;j++) if(j%4==3) m->dof_armature[6+j]=0.0;   // ★대각에서 뺀다
+    for(int k=0;k<2;k++) m->tendon_armature[t[k]]=ROTOR_I*GEAR[3]*GEAR[3]; }
 
   double footz(int leg){ return d->geom_xpos[sph[leg]*3+2]; }
   Vector3d spos(int leg){ return Vector3d(d->geom_xpos[sph[leg]*3],d->geom_xpos[sph[leg]*3+1],d->geom_xpos[sph[leg]*3+2]); }

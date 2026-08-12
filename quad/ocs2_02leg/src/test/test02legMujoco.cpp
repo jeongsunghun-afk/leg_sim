@@ -760,6 +760,14 @@ int main(int argc, char** argv) {
                 << "   " << std::setprecision(1) << tilt << "   " << std::setprecision(3) << d->qpos[0]
                 << "   " << (replan ? "o" : "") << "\n";
     }
+    if (getenv("JL_DBG") && step % int(0.25 / dt) == 0) {  // ★조인트 한계 근접도(정상 운용서 관절이 한계에 얼마나 붙나 = JLIM 마진 튜닝용)
+      double minMarg = 1e9, minLeg = 1e9; int mjid = -1, mleg = -1; const int pl = nJ / 4;
+      for (int i = 0; i < nJ; ++i) { double q = d->qpos[qadr[i]], mm = std::min(q - qLo(i), qHi(i) - q);
+        if (mm < minMarg) { minMarg = mm; mjid = i; }
+        if (i % pl != pl - 1 && mm < minLeg) { minLeg = mm; mleg = i; } }  // 발목(j%pl==pl-1) 제외 = 다리관절만
+      fprintf(stderr, "  [JLM] t=%.2f allMin=%.3f(%s) legMin=%.3f(%s)\n", t, minMarg, mjid >= 0 ? jNames[mjid].c_str() : "?",
+              minLeg, mleg >= 0 ? jNames[mleg].c_str() : "?");
+    }
   }
 
   mpcAlive = false;

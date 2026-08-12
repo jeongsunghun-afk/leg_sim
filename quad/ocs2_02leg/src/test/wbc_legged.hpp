@@ -265,9 +265,11 @@ class WbcLegged {
   std::pair<matrix_t, vector_t> jointLimitTask() {  // ★조인트 각도한계(MJCF range): q̈에 PD-wall 부등식(d·x≤f). 중앙=완화·한계근접=강함
     matrix_t d = matrix_t::Zero(2 * nJ_, nx_); vector_t f(2 * nJ_);
     for (int j = 0; j < nJ_; ++j) {
+      d(2 * j, 6 + j) = 1.0; d(2 * j + 1, 6 + j) = -1.0;
+      if (perLeg_ == 4 && j % perLeg_ == perLeg_ - 1) { f(2 * j) = 1e9; f(2 * j + 1) = 1e9; continue; }  // ★발목 제외(정상 운용서 한계 근처=null-space 소프트규제, MuJoCo 클램프 benign)
       double q = qM_(6 + j), qd = vM_(6 + j), du = qHi_(j) - q, dl = q - qLo_(j);
-      d(2 * j, 6 + j) = 1.0;       f(2 * j) = (du > margLim_) ? 1e9 : kpLim_ * du - kdLim_ * qd;      // 상한벽(한계 margLim_ 이내서만)
-      d(2 * j + 1, 6 + j) = -1.0;  f(2 * j + 1) = (dl > margLim_) ? 1e9 : kpLim_ * dl + kdLim_ * qd;  // 하한벽
+      f(2 * j) = (du > margLim_) ? 1e9 : kpLim_ * du - kdLim_ * qd;      // 상한벽(한계 margLim_ 이내서만)
+      f(2 * j + 1) = (dl > margLim_) ? 1e9 : kpLim_ * dl + kdLim_ * qd;  // 하한벽
     }
     return {d, f};
   }

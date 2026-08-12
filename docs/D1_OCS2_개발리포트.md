@@ -189,6 +189,7 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 - **PACE 적용 확인**(사용자 지적): GUI 포함 전 실행서 `GEARBOX=1 ROTOR_I=7.4e-04(PACE실측) JFRIC0.38 JDAMP0.099` 적용됨(startup [GBX] 프린트). run_gui 미오버라이드=기본 적용. → 붕괴는 PACE 미적용 탓 아님.
 - **★조인트 각도한계=컨트롤러 부재 확인**(사용자 지적 정확): MJCF엔 17관절 range 있으나 WBC/MPC는 토크한계만·각도한계 없음 → 컨트롤러가 관절을 range 밖으로 몰면 MuJoCo 클램프와 싸워 붕괴(특히 극단 GUI 명령). **WBC에 조인트한계 PD-wall 부등식(jointLimitTask, JLIM=1 opt-in) 추가**. ⚠기본OFF: 이득이 D1 marginal 변동에 묻혀 미검증 + 슬로프 등반(한계근처 자세) 과잉제한 위험(marg/kp 튜닝 필요). WBC solve 0.254ms<1ms(계측 WBC_TIME).
 - **GUI 붕괴 종합**: D1 marginal 지형 envelope(~8°) + 조인트한계 부재 + 과속/과조작 명령 복합. 속도캡(A단계)은 경사 과속만 방지.
+- **★JLIM 튜닝 결과=하드벽 부적합 확정(2026-08-12)**: JL_DBG 계측서 **정상 운용도 관절이 MJCF 한계를 넘어감**(slope8: 발목 −0.089·calf −0.031rad 초과, MuJoCo 클램프). 즉 D1 등반 자세가 관절 한계에 걸쳐 있어 **하드 JLIM 벽은 등반을 못 만들게 막아 슬로프 붕괴**(발목 제외해도 calf가 넘어 slope8 falls=3373). 마진/게인/발목제외 튜닝으로 해결 불가. **⇒ WBC 하드벽은 이 로봇 부적합**(관절이 한계서 동작). 정도(正道)=①MJCF range가 실측보다 타이트하면 넓힘(JLIM 불요) 또는 ②MPC/OCP 계획단서 joint position limit 준수(reference가 한계 밖 자세 미명령, WBC 반응형벽보다 근본). JLIM=1 opt-in(발목제외)으로 잔존. 다음=실기 관절 range 스펙 대조.
 
 ## 3. 리스크 (정직)
 - **OCS2 빌드=관문(해결)**: ROS2 의존·rosdep·conda pinocchio 충돌 → Phase 0에서 처리됨(BUILD.md에 재현 노트).

@@ -58,6 +58,15 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
 
     q_ch = np.array([hw.read(c)[0] for c in range(hw.n)], float)
     q_ch0 = q_ch.copy()                # ★출발 채널각 — 상자를 여기까지 늘린다(계단 방지)
+    # ★확장 상자를 **한 번만** 만들어 쓰기·검사에 **같은 것**을 쓴다.
+    #   2026-08-12: _write_leg 만 확장하고 _trip_check 는 원래 상자를 쓰게 뒀더니,
+    #   명령은 계단이 없는데 **검사가 트립**했다(ch2 20.34° ∉ [−145.58, 18.52]).
+    #   늘어진 calf 모델각이 −60.8° 로 관절한계 −59.6° 밖이라 생긴 일이다.
+    #   ⇒ 같은 값을 두 곳에서 다르게 다루면 반드시 어긋난다. 하나로 만든다.
+    box_eff = None
+    if q_box is not None:
+        box_eff = {c: (min(lo, float(q_ch0[c])), max(hi, float(q_ch0[c])))
+                   for c, (lo, hi) in q_box.items()}
     q_leg = np.asarray(jm.ch_to_q_joint(q_ch), float)      # ★측정각(모델각)에서 출발
     T = homer.start(q_leg)
     for nm, want, got in homer.clamped:
@@ -77,14 +86,14 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
         # ★경과시간 기준으로 진행한다. 호출 횟수 기준이면 루프가 밀렸다 몰아 돌 때
         #   궤적이 빨리감기 되어 v/a 한계가 무의미해진다(control/home.py 주석 참조).
         q_cmd_leg = homer.step(dt_meas)
-        _write_leg(hw, jm, q_cmd_leg, q_box, q_ch0)
-        _trip_check(hw, q_box)
+        _write_leg(hw, jm, q_cmd_leg, box_eff)
+        _trip_check(hw, box_eff)
         time.sleep(hw.dt)
 
     t_settle = time.perf_counter()                       # 정착
     while time.perf_counter() - t_settle < 0.5:
-        _write_leg(hw, jm, homer.q_cmd_leg, q_box, q_ch0)
-        _trip_check(hw, q_box)
+        _write_leg(hw, jm, homer.q_cmd_leg, box_eff)
+        _trip_check(hw, box_eff)
         time.sleep(hw.dt)
 
     q_now = np.asarray(jm.ch_to_q_joint(
@@ -102,7 +111,7 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     return T
 
 
-def _write_leg(hw, jm, q_leg_deg, q_box, q_meas_ch=None) -> None:
+def _write_leg(hw, jm, q_leg_deg, q_box) -> None:
     """모델각 → 채널각 → SHM. 변환은 **JointMap 이 전담**한다(수식 복사 금지).
 
     ★상자를 **현재 측정각까지 늘려서** 적용한다 — 안 그러면 계단이 나간다.
@@ -114,11 +123,7 @@ def _write_leg(hw, jm, q_leg_deg, q_box, q_meas_ch=None) -> None:
       상자 안이므로 궤적이 상자 쪽으로만 데려간다.
     """
     q_ch = jm.q_joint_to_ch(np.asarray(q_leg_deg, float))
-    box = q_box
-    if q_box is not None and q_meas_ch is not None:
-        box = {c: (min(lo, float(q_meas_ch[c])), max(hi, float(q_meas_ch[c])))
-               for c, (lo, hi) in q_box.items()}
-    hw._raw_write_all(q_ch, hw.hold_kp, hw.hold_kd, box)
+    hw._raw_write_all(q_ch, hw.hold_kp, hw.hold_kd, q_box)
 
 
 def _trip_check(hw, q_box=None) -> None:

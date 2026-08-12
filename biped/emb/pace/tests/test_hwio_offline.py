@@ -320,11 +320,49 @@ def t_limp_and_signal():
     check("enable 해제", fake.enabled == 0)
 
 
+def t_hold_no_ratchet():
+    """홀드 목표가 시행마다 **재래치되지 않는지** — 처짐 래칫 회귀시험.
+
+    ★2026-08-12 실기: 지그 없이 --tests torque 를 돌리면 thigh 가 눈에 띄게 주저앉았다.
+      원인은 arm() 이 홀드 목표를 "지금 측정각" 으로 잡은 것이다:
+        arm → 오차 0 → 중력이 kp·err 균형까지 끌어내림 → **다음 arm 이 그 자리를 목표로**
+      토크프로브는 시행마다 arm 하므로(4회) 처짐이 선형 누적된다. 실측 1회 3.0° →
+      4시행 12.0° = err_max 12.0°, 즉 'ch1 홀드축이 밀렸다' 트립 지점과 정확히 같다.
+      지그를 물리면 기구가 잡아서 **가려질 뿐** 버그는 남는다.
+    """
+    print("\n[5] 홀드 목표 래칫")
+    spec = _load_spec()
+    n = int(spec["shm"]["n_channel"])
+    g = np.zeros(n)
+    g[1], g[5] = -2.06, -2.01                 # MJCF 에서 뽑은 thigh 중력토크
+    fake = FakeLib(n, tau_grav=g, dt=1 / 500.)
+    hw = _make_hw(fake, spec, hold=[0, 1, 2, 4, 5, 6, 7])
+    tgt = hw.latch_hold(np.zeros(n))
+    pos = []
+    for _ in range(6):                         # 토크프로브보다 넉넉히
+        hw.arm(3, 0.0, 0.0)
+        for _ in range(600):
+            hw._raw_write(3, float(fake.q[3]), 0.0, 0.0)
+        hw.release_test_axis(3)
+        pos.append(float(fake.q[1]))
+    check("홀드 목표가 arm 마다 안 바뀐다",
+          float(np.max(np.abs(hw._hold_target - tgt))) == 0.0)
+    # 처짐은 한 번 일어나고 **수렴**해야 한다. 누적이면 뒤로 갈수록 계속 커진다.
+    late = abs(pos[-1] - pos[-2])
+    check("처짐이 누적되지 않고 수렴", late < 0.05, f"마지막 증분 {late:.3f}°")
+    check("총 처짐이 err_max 안", abs(pos[-1]) < spec["safety"]["err_max_deg"],
+          f"{abs(pos[-1]):.2f}° < {spec['safety']['err_max_deg']}°")
+    drift = hw.hold_drift()
+    check("hold_drift 가 처짐을 보고한다", abs(drift.get(1, 0.0)) > 0.5,
+          f"ch1 {drift.get(1, 0.0):+.2f}°")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
-    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_limp_and_signal):
+    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_limp_and_signal,
+               t_hold_no_ratchet):
         try:
             fn()
         except Exception as e:

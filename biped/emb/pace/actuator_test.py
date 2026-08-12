@@ -422,6 +422,10 @@ def main() -> int:
                 help="friction,torque,inertia,backlash,frf,latency,pace 중 콤마구분")
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 추정기만 검증")
+    ap.add_argument("--pose", choices=("home", "neutral"), default="home",
+                    help="시험 중 홀드 자세. neutral = **thigh 중력중립각**(+21.7°)으로 "
+                         "옮겨 잡는다 — 그 자세에서 thigh 중력토크가 0 이라 처지지 않는다 "
+                         "(HOME 은 2.36° 처짐). 지그 없이 돌릴 때 권장.")
     ap.add_argument("--jig", action="store_true",
                     help="지그로 홀드축을 **기구적으로** 고정하고 측정축만 푼다(권장). "
                          "HOME 정렬 후 지그 설치를 기다렸다가 홀드게인을 낮춘다.")
@@ -560,6 +564,22 @@ def main() -> int:
                         _homer = make_homer(_jm, _c, hw.dt)
                         goto_home(hw, _jm, _homer, _c, q_box=box, log=_log,
                                   speed_dps=a.home_speed)
+                        # ★홀드 자세 (2026-08-12, 사용자 제안).
+                        #   HOME 은 thigh 중력토크 −2.06Nm 이라 kp50 에서 2.36° 처진다.
+                        #   thigh 를 **중력중립각**으로 옮기면 그 토크가 0 이 되어 처짐 자체가
+                        #   없어진다(막는 게 아니라 없애는 쪽). foot 중력은 0.033→0.038Nm 로
+                        #   사실상 그대로라 파단 측정에는 영향이 없고, 링크 간섭도 없다.
+                        _pose = _c.get("hold_pose", {}).get(f"{a.pose}_deg")
+                        if a.pose != "home" and _pose:
+                            _log(f"    홀드 자세 → {a.pose} "
+                                 f"(thigh {_pose[1]:+.1f}° — 중력중립, 처짐 2.36°→0)")
+                            goto_home(hw, _jm, make_homer(_jm, _c, hw.dt, q_deg=_pose),
+                                      _c, q_box=box, log=_log, speed_dps=a.home_speed)
+                        # ★홀드 목표를 **여기서 한 번** 확정한다 → 이후 arm() 이 재사용.
+                        #   안 하면 arm() 이 매번 '지금 처진 자리' 를 목표로 삼아 래칫이 된다.
+                        _tgt_ch = _jm.q_joint_to_ch(np.asarray(
+                            _pose if (a.pose != "home" and _pose) else _c["home"]["q_deg"], float))
+                        hw.latch_hold(_tgt_ch)
                         if a.jig:
                             _jig_engage(hw, spec, hold, j)
                         # ★정렬이 끝났으니 한계를 **시험용(좁은)** 으로 조인다.

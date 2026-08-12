@@ -34,11 +34,15 @@ from home import HomeTrajectory          # noqa: E402  (control/home.py — GUI 
 from hwio import SafetyAbort             # noqa: E402
 
 
-def make_homer(jm, cfg: dict, dt: float) -> HomeTrajectory:
-    """biped_emb.py 와 **같은 파라미터**로 궤적기를 만든다(app/biped_emb.py:244 참조)."""
+def make_homer(jm, cfg: dict, dt: float, q_deg=None) -> HomeTrajectory:
+    """biped_emb.py 와 **같은 파라미터**로 궤적기를 만든다(app/biped_emb.py:244 참조).
+
+    q_deg 를 주면 홈 대신 그 자세를 목표로 쓴다(속도·가속도 한계는 동일).
+    시험용 홀드 자세(--pose neutral)로 옮길 때 쓴다.
+    """
     h = cfg.get("home", {})
     return HomeTrajectory(jm, dt,
-                          h.get("q_deg", [0.0] * jm.n_leg),
+                          q_deg if q_deg is not None else h.get("q_deg", [0.0] * jm.n_leg),
                           float(h.get("max_speed_dps", 15.0)),
                           float(h.get("max_acc_dps2", 30.0)),
                           float(h.get("min_time_s", 0.6)))

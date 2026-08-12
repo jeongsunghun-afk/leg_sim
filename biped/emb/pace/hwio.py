@@ -127,6 +127,14 @@ class Hardware:
         self.stale_gap_s = 0.05
         self._tau_over_since = None
         self._armed = False
+        # ★홀드축 목표를 **한 번만** 래치한다 (2026-08-12).
+        #   종전엔 arm() 이 매번 "지금 측정각" 을 홀드 목표로 삼았다. 그게 래칫이 된다:
+        #     arm → 오차 0 → 중력이 kp·err 균형(thigh 실측 3.0°)까지 끌어내림
+        #     → 다음 arm 이 **내려간 자리**를 다시 목표로 → 또 3.0° …
+        #   토크프로브는 시행마다 arm 하므로(act_probe_torque_mode.py:47) 4시행 = 12.0°,
+        #   err_max 12.0° 와 정확히 같다 → "홀드축 ch1 가 밀렸다" + 눈에 보이는 주저앉음.
+        #   ⚠지그를 물리면 기구가 잡아서 **버그가 가려질 뿐** 사라지지 않는다.
+        self._hold_target = None
         self._q_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
@@ -291,6 +299,23 @@ class Hardware:
             self._tau_over_since = None
 
     # ── 쓰기 ────────────────────────────────────────────────────────────────
+    def latch_hold(self, q_ch=None) -> np.ndarray:
+        """홀드축 목표를 확정한다. 이후 arm() 은 **이 값을 재사용**한다(래칫 방지).
+
+        q_ch=None 이면 현재 측정각으로 잡는다. 하니스는 HOME 정렬 직후 **홈 채널각**을
+        넘겨 쓴다 — 그러면 처짐이 누적 대신 '홈 대비 일정 오차' 로 고정된다.
+        """
+        self._hold_target = (np.array([self.read(c)[0] for c in range(self.n)], float)
+                             if q_ch is None else np.asarray(q_ch, float).copy())
+        return self._hold_target
+
+    def hold_drift(self) -> dict:
+        """홀드 목표 대비 현재 측정각 편차[deg]. 처짐이 **보이게** 만든다."""
+        if self._hold_target is None:
+            return {}
+        return {hc: float(self._q[hc]) - float(self._hold_target[hc])
+                for hc in self.hold_ch if hc < self.n}
+
     def arm(self, ch: int, kp: float, kd: float) -> float:
         """측정각을 래치하고 게인을 0→목표로 램프해 인가. 래치된 각을 반환.
 
@@ -303,9 +328,12 @@ class Hardware:
         self._q_cmd[ch] = q0
         # ★홀드축은 "0" 이 아니라 **지금 있는 자리**에 잡는다. 0 으로 잡으면 인가 순간
         #   현재각만큼의 오차가 그대로 토크가 되어 다리가 홱 움직인다.
+        # ★목표는 **첫 래치값 고정**이다. 매번 측정각을 다시 잡으면 래칫이 된다(위 주석).
+        if self._hold_target is None:
+            self.latch_hold()
         for hc in self.hold_ch:
             if hc != ch and hc < self.n:
-                self._q_cmd[hc] = float(self._q[hc])
+                self._q_cmd[hc] = float(self._hold_target[hc])
         # ★enable 이전에 kp=kd=0 을 먼저 기록한다. bridge_enable 은 g_enabled 플래그만
         #   건드리고 SHM 버퍼는 안 쓰므로(shm_bridge.cpp:115), 이 전에 enable 하면
         #   죽은 writer 가 남긴 임의 게인·setpoint 가 순간 authoritative 가 된다.

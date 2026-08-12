@@ -137,7 +137,28 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log) -> dict[float, tuple[float, floa
     half = cfg["stroke_deg"] / 2.0
     frac = cfg["dwell_frac"]
     out = {}
+    # ★스트로크에 안 맞는 속도는 **자동으로 뺀다** (2026-08-12).
+    #   통과시간 T=stroke/v 에서 양끝 accel_skip 을 빼면 정착구간이 남아야 한다.
+    #   2026-08-12 hip: 스트로크를 16→8° 로 줄이자 35dps 가 0.229s 만에 지나가는데
+    #   양끝 accel_skip 0.30s 라 **정착이 음수**가 됐다. 그 점의 '마찰 1.364' 는
+    #   가속토크였고, 직선적합의 기울기를 끌어올려 절편 JFRIC 을 **−0.35(음수)** 로,
+    #   JDAMP 를 3.08(hip 기대값의 30배)로 만들었다. 물리적으로 불가능한 값이다.
+    #   ⚠손으로 속도를 빼면 다음에 스트로크를 또 바꿀 때 같은 일이 난다. 계산으로 건다.
+    #   ★뺀 속도는 **반드시 찍는다** — 조용히 줄이면 "다 쟀다" 로 읽힌다.
+    _rate = 1.0 / hw.dt
+    _need = 2.0 * cfg["accel_skip_s"] + cfg["min_dwell_samples"] / _rate
+    _use, _drop = [], []
     for v in cfg["speeds_dps"]:
+        (_use if cfg["stroke_deg"] / float(v) > _need else _drop).append(float(v))
+    if _drop:
+        log(f"    ⚠속도 {_drop} 제외 — 스트로크 {cfg['stroke_deg']}° 로는 통과시간이 "
+            f"{_need:.3f}s(가속 {2*cfg['accel_skip_s']:.2f} + 최소정착 "
+            f"{cfg['min_dwell_samples']/_rate:.3f})보다 짧아 정착 데이터가 안 남는다.")
+    if len(_use) < 2:
+        raise RuntimeError(
+            f"스윕 가능한 속도가 {len(_use)}개뿐이다({_use}) — 회귀가 안 된다. "
+            f"stroke_deg 를 키우거나 speeds_dps 에 더 느린 속도를 넣을 것.")
+    for v in _use:
         v = float(v)
         T = cfg["stroke_deg"] / v
         res = {}
@@ -218,7 +239,16 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     _kd = spec.get("safety", {}).get("hold_kd", spec["gains"].get("kd"))
     kp = float(_kp[ch] if isinstance(_kp, dict) else _kp)
     kd = float(_kd[ch] if isinstance(_kd, dict) else _kd)
-    fr = spec["friction"]
+    # ★축별 축소값을 병합한다 (2026-08-12). hip 은 크게 움직이면 두 다리가 부딪힌다 —
+    #   스톨 → 과전류 → 드라이버 보호 → EtherCAT OP 이탈로 이어진다(오늘 3회 동결).
+    #   ⚠MuJoCo 충돌 판정에는 발 구 4개만 들어 있어 이 간섭을 못 본다. 값은 실물 기준이다.
+    fr = {k: (dict(v) if isinstance(v, dict) else v) for k, v in spec["friction"].items()}
+    _ov = (fr.pop("by_ch", None) or {}).get(ch, {})
+    for _sec, _kv in _ov.items():
+        fr.setdefault(_sec, {}).update(_kv)
+    if _ov:
+        log(f"  [{name}] ★축별 축소 적용: " + " · ".join(
+            f"{a}.{b}={c}" for a, d in _ov.items() for b, c in d.items()))
     warn: list[str] = []
 
     log(f"  [{name}] 마찰 측정 시작 (ch{ch}, Kp={kp} Kd={kd})")

@@ -230,6 +230,19 @@ def load_data(path):
                 names=[str(x) for x in z["names"]], dt=float(z["dt"]))
 
 
+def param_labels(names, per_axis: bool) -> list:
+    """탐색벡터의 **라벨**. init_bounds 와 짝이며 길이가 반드시 같다.
+
+    ★단일 출처로 두는 이유 (2026-08-12): design_excitation 이 라벨을 자기가 만들고 있었는데,
+      init_bounds 에 bias·delay 를 추가하자 **x0 18개 vs 라벨 9개**로 어긋났다.
+      그러면 (a) plabels[9] 에서 IndexError 로 죽거나 (b) 더 나쁘게, 라벨이 밀려
+      **엉뚱한 파라미터 이름으로 보고**된다. 라벨과 벡터는 같은 곳에서 나와야 한다.
+    """
+    dyn = ([f"ROTOR_I.{k}" for k in KINDS] if per_axis else ["ROTOR_I"]) \
+        + [f"JDAMP.{k}" for k in KINDS] + [f"JFRIC.{k}" for k in KINDS]
+    return dyn + [f"bias.{n}" for n in names] + ["delay"]
+
+
 def init_bounds(spec_path, names, per_axis):
     """초기값·탐색범위 — **축별 측정값**에서 온다. 이게 sloppy 를 줄이는 핵심이다."""
     import yaml

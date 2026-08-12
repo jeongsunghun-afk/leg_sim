@@ -273,7 +273,10 @@ def main() -> int:
     d = mujoco.MjData(m)
     idx = P.joint_index(m, names)
     x0, lo, hi = P.init_bounds(a.spec, names, False)
-    plabels = ["ROTOR_I"] + [f"JDAMP.{k}" for k in P.KINDS] + [f"JFRIC.{k}" for k in P.KINDS]
+    # ★라벨은 pace_cmaes 가 만든다 — 여기서 만들면 갈린다 (2026-08-12 실제로 갈렸다:
+    #   init_bounds 에 bias·delay 가 추가됐는데 여기 라벨은 9개 그대로여서 x0 18개와 어긋났다).
+    plabels = P.param_labels(names, False)
+    assert len(plabels) == len(x0), f"라벨 {len(plabels)} vs x0 {len(x0)} — 짝이 안 맞는다"
 
     print("■ 가진 궤적 식별가능성 (하드웨어 미접촉)")
     print(f"  {os.path.basename(a.mjcf)} · {T:.0f}s · {rate:.0f}Hz · dt {dt*1e3:.1f}ms "
@@ -291,7 +294,11 @@ def main() -> int:
     if bad:
         print(f"  ❌ jog 한계 밖: {bad} — 이 궤적은 실기에 걸 수 없다")
 
-    P.apply_params(m, idx, gear_n, x0, False, names)
+    # ★탐색벡터는 (동역학 | bias | delay) 다. apply_params 는 **동역학 부분만** 읽는다.
+    #   통째로 넘기면 bias·delay 를 섭동해도 모델이 안 바뀌어 그 열이 0 이 되고,
+    #   SᵀS 가 특이해져 **전 파라미터가 '식별 불가'** 로 보고된다(원인은 그게 아닌데).
+    _dyn0, _bias0, _dly0 = P.split_params(x0, len(names), False)
+    P.apply_params(m, idx, gear_n, _dyn0, False, names)
     Fw, Mw, mtot = base_wrench(m, d, idx, q_cmd, kp, kd, dt, home)
     fr = np.sqrt(np.mean(Fw[:, :2] ** 2, axis=0)); fz = np.sqrt(np.mean((Fw[:, 2] - mtot*9.81) ** 2))
     mr = np.sqrt(np.mean(Mw ** 2, axis=0))
@@ -310,11 +317,17 @@ def main() -> int:
     for p in range(len(x0)):
         col = []
         for sgn in (+1, -1):
-            xp = x0.copy(); xp[p] = x0[p] * (1.0 + sgn * a.pert)
-            P.apply_params(m, idx, gear_n, xp, False, names)
-            col.append(P.rollout(m, d, idx, q_nom, dq_nom, q_cmd, kp, kd, dt, win))
+            xp = x0.copy()
+            # ★초기값이 0 인 파라미터(bias 는 0 에서 출발한다)는 **비율 섭동이 안 먹는다**
+            #   (0×1.1 = 0). 그런 축은 경계폭 기준 절대섭동으로 흔든다.
+            xp[p] = (x0[p] * (1.0 + sgn * a.pert) if abs(x0[p]) > 1e-12
+                     else sgn * a.pert * (hi[p] - lo[p]))
+            _dyn, _bias, _dly = P.split_params(xp, len(names), False)
+            P.apply_params(m, idx, gear_n, _dyn, False, names)
+            col.append(P.rollout(m, d, idx, q_nom, dq_nom, q_cmd, kp, kd, dt, win,
+                                 bias=_bias, delay_s=_dly))
         S[:, p] = ((col[0] - col[1]) * 0.5).ravel()        # +pert 1단위당 궤적변화[°]
-    P.apply_params(m, idx, gear_n, x0, False, names)       # 원복
+    P.apply_params(m, idx, gear_n, _dyn0, False, names)    # 원복
 
     rms = np.sqrt(np.mean(S ** 2, axis=0))
     snr = rms / a.noise
@@ -376,7 +389,9 @@ def main() -> int:
         print(f"  ★혼동(|r|>0.9): {', '.join(conf)}")
         print(f"     → 위상·주파수 배치를 바꾸거나, 한쪽을 축별 측정으로 고정할 것")
     if not weak and not conf:
-        print("  ✅ 전 파라미터 SNR≥2 · 혼동쌍 없음")
+        # ★검사한 것을 그대로 말한다. 종전 문구는 "SNR≥2" 였는데 판정은 분해능(<15%)으로
+        #   했다 — 재지 않은 기준을 보고하면 통과를 잘못 읽게 된다.
+        print(f"  ✅ 전 파라미터 분해능 <15% · 혼동쌍(|r|>0.9) 없음")
     return 0
 
 

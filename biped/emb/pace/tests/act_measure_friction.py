@@ -165,8 +165,8 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
 
 
 # ── (A½) 스윕 전 **범위 확인** ──────────────────────────────────────────────
-def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log,
-                speed_dps=10.0, cap_nm=1.2, stuck_ms=250.0) -> tuple[float, float]:
+def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log, tau_s,
+                speed_dps=10.0, stuck_ms=250.0) -> tuple[float, float]:
     """[q_lo, q_hi] 를 실제로 갈 수 있는지 저속으로 확인하고 **도달 가능한 구간**을 낸다.
 
     ★왜 필요한가 (2026-08-12 HL_thigh) — **상자 안인데 못 가는 자리가 있다.**
@@ -180,6 +180,15 @@ def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log,
       실측 마찰 최대(hip 0.88Nm)보다 위, 스톨 감지 2.0Nm 보다 아래로 잡는다 —
       전역 감지가 터지기 **전에** 우리가 먼저 알아채고 물러나야 하기 때문이다.
     """
+    # ★"도달" 문턱은 **정지마찰 데드밴드**보다 넉넉해야 한다 (2026-08-12).
+    #   위치제어는 kp·err = τ_s 에서 멈춘다 — 그게 물리다. 그 밖으로는 원래 못 간다.
+    #     foot τ_s 0.59 ÷ kp 30 = 1.13° · thigh 0.60 ÷ 50 = 0.69° · calf 0.75 ÷ 80 = 0.54°
+    #   0.5° 를 요구하면 **막히지 않았는데도 전부 '도달 실패'** 가 된다(오프라인에서 재현).
+    #   ⇒ 데드밴드의 1.5배 + 0.5°. 이건 정밀 위치확인이 아니라 **간섭 탐지**다.
+    cap_nm = max(1.0, 2.5 * float(tau_s))
+    tol = float(np.rad2deg(float(tau_s) / kp) * 1.5 + 0.5)
+    log(f"    (막힘 임계 {cap_nm:.2f}Nm = 정지마찰 {tau_s:.2f} 의 2.5배 · "
+        f"도달 문턱 {tol:.2f}° = 데드밴드 {np.rad2deg(tau_s / kp):.2f}° 의 1.5배 +0.5)")
     out = [q_lo, q_hi]
     q_now = float(hw.read(ch)[0])
     # 가까운 끝부터 — 멀리 있는 끝으로 먼저 가면 지나가며 막힐 자리를 두 번 지난다
@@ -195,7 +204,7 @@ def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log,
                 cmd = q0 + d * min(speed_dps * t, abs(tgt - q0))
                 fv = ff(float(hw._q[ch]))
                 smp = hw.step(ch, cmd, kp, kd, tau_ff=fv)
-                if (smp.q_deg - tgt) * d >= -0.5:               # 도달
+                if (smp.q_deg - tgt) * d >= -tol:              # 도달(데드밴드 감안)
                     break
                 if abs(smp.tau - fv) > cap_nm and abs(smp.dq_dps) < 3.0:
                     since = since or time.monotonic()
@@ -208,9 +217,12 @@ def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log,
                         break
                 else:
                     since = None
-                if t > abs(tgt - q0) / speed_dps + 3.0:          # 시간 초과
-                    out[idx] = float(smp.q_deg) - d * 2.0
-                    log(f"    ⚠{tgt:+.2f}° 도달 실패(시간 초과) — {out[idx]:+.2f}° 까지만 쓴다")
+                if t > abs(tgt - q0) / speed_dps + 5.0:          # 시간 초과
+                    # ⚠시간 초과는 **막힘이 아니다** — 느리게라도 가고 있을 수 있다.
+                    #   물러나는 폭을 막힘(2°)보다 작게 준다.
+                    out[idx] = float(smp.q_deg) - d * 0.5
+                    log(f"    ⚠{tgt:+.2f}° 도달 실패(시간 초과, {smp.q_deg:+.2f}° 까지) — "
+                        f"{out[idx]:+.2f}° 로 잡는다")
                     break
                 k += 1
                 slp = t0 + k * hw.dt - time.monotonic()
@@ -359,8 +371,19 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     _gt = (spec.get("torque_mode", {}).get("tau_grav_table") or {}).get(ch)
     _gq = np.asarray(_gt["q_ch"], float) if _gt else None
     _gv = np.asarray(_gt["tau"], float) if _gt else None
+    # ★표에 **실측 보정**을 얹는다 (2026-08-12 HL_thigh 오진).
+    #   표는 gen_grav_table.py 가 "다른 관절 = hold_pose.neutral_deg" 로 뽑은 것이다
+    #   (그 독스트링이 "자세를 바꾸면 다시 뽑아야 한다" 고 이미 경고하고 있다).
+    #   그런데 --solo 는 하위 관절이 **무여자로 늘어져** 있다 — calf −61°·foot +60°.
+    #   thigh 는 다리 전체를 드는 축이라 여기에 가장 민감하다: 표 1.05 vs 실측 1.90 Nm.
+    #   그 0.85Nm 오차가 스톨 감지에서 **가짜 초과토크**가 되어 시험을 세 번 죽였다.
+    #   ⇒ 파단이 끝나면 (τ⁺+τ⁻)/2 로 **그 자리의 진짜 중력**을 알 수 있다(마찰이 상쇄됨).
+    #     표와의 차이를 상수 오프셋으로 얹는다. 곡선 모양은 표를, 높이는 실측을 믿는다.
+    #   ⚠마찰 값 자체는 이 보정과 무관하다 — (τ⁺−τ⁻)/2 에서 중력은 어차피 빠진다.
+    #     보정이 고치는 것은 **FF 여력과 스톨 판정**이다.
+    _gb = [0.0]
     def _ff(q_ch):
-        return float(np.interp(q_ch, _gq, _gv)) if _gt else 0.0
+        return (float(np.interp(q_ch, _gq, _gv)) if _gt else 0.0) + _gb[0]
     if _gt:
         log(f"  [{name}] ★중력 피드포워드 켜짐 — 현재 위치 G={_ff(hw.read(ch)[0]):+.3f} Nm "
             f"(kp 가 중력을 감당할 필요가 없어져 push 여력이 그만큼 는다)")
@@ -392,6 +415,21 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # 기준 중심각: breakaway 후 현재 위치
     hw.wait_fresh(ch=ch)
     q_center = hw.read(ch)[0]
+
+    # ★중력 실측 보정 (위 _gb 주석). 파단 ± 평균이 그 자리의 중력이다.
+    _g_meas = (tp + tn) / 2.0
+    _g_tbl = _ff(q_center) - _gb[0]
+    _gb[0] = _g_meas - _g_tbl
+    log(f"    중력 실측보정 {_gb[0]:+.3f} Nm — 표 {_g_tbl:+.3f} vs 파단 실측 "
+        f"{_g_meas:+.3f} Nm @ {q_center:+.2f}°")
+    if abs(_gb[0]) > 3.0:
+        warn.append(f"중력 보정이 {_gb[0]:+.2f} Nm 로 크다 — 표를 다시 뽑을 것"
+                    f"(tools/gen_grav_table.py)")
+        log(f"    ⚠보정이 3Nm 을 넘는다 — 자세가 표 생성 시점과 많이 다르다는 뜻이다.")
+    # 스톨 감지도 **같은 값**을 보게 한다. 두 곳이 다른 중력을 쓰면 그게 곧 오진이다.
+    _prev_gfn = hw.grav_fn
+    hw.grav_fn = lambda c, qq, _o=_prev_gfn: (_ff(qq) if c == ch else
+                                              (_o(c, qq) if _o else 0.0))
     # ★상자 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
     #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 상자
     #   경계와 **정확히 일치**한다. 실기에서 그대로 터졌다:
@@ -441,10 +479,8 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #   "정지마찰의 2.5배를 넘겨도 안 움직이면 그건 마찰이 아니다."
     #   고정 1.2Nm 였다면 hip(τ_s 0.72)에서 여유가 0.5Nm 뿐이라 중력모델 오차만으로도
     #   '간섭' 으로 오탐했을 것이다. 축별로 hip 1.80 · calf 1.88 · foot 1.71 · thigh 1.0.
-    _cap = max(1.0, 2.5 * tau_static)
-    log(f"    (막힘 판정 임계 {_cap:.2f}Nm = 정지마찰 {tau_static:.2f}Nm 의 2.5배)")
     r_lo, r_hi = _probe_span(hw, ch, kp, kd, q_center - half, q_center + half,
-                             _ff, log, cap_nm=_cap)
+                             _ff, log, tau_s=tau_static)
     if (r_hi - r_lo) < 2 * half - 0.5:
         half = (r_hi - r_lo) / 2.0
         q_center = (r_hi + r_lo) / 2.0

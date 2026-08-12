@@ -169,6 +169,16 @@ class Hardware:
         #     홀드축은 kp·err(명령토크)로, 시험축은 **보고토크 τ** 로 본다.
         #     시험축은 τ_ff(중력)+kp·err 로 굴러서 kp·err 만으로는 총량이 안 나온다.
         self.stall_watch = True
+        # ★스톨 판정은 **위치 변위**로 한다 — 순간 속도로 하면 안 된다 (2026-08-12).
+        #   이 로봇의 속도 노이즈는 ±15dps 다. act_measure_friction._breakaway 는
+        #   그걸 알고 이미 위치 기준으로 바꿔 놨는데(그 주석 참조), 스톨 감지만
+        #   stall_vel_dps=5.0 으로 **순간 속도**를 보고 있었다 — 같은 함정을 다시 밟았다.
+        #   실기 HL_thigh: dq=+4.1dps 로 "안 움직인다" 판정. 노이즈 안이고 심지어
+        #   명령과 **반대 방향**이었다. 위치는 실제로 움직이고 있었다.
+        #   ⇒ 후보가 뜬 시점의 위치를 기억했다가, stall_ms 뒤에도 이만큼 못 갔으면 스톨.
+        #     최저속 스윕 2dps 도 300ms 면 0.6° 가므로 0.5° 문턱을 넘는다(오탐 없음).
+        self.stall_move_deg = 0.5
+        self._stall_test: dict = {}
         # 파워단 사망 판별 — 이만큼 명령했는데 보고 토크가 이 비율 미만이면 죽은 것이다.
         self.dead_cmd_nm = 3.0
         self.dead_ratio = 0.15
@@ -423,24 +433,31 @@ class Hardware:
         if self.stall_watch and self.grav_fn is not None:
             g = abs(float(self.grav_fn(ch, q)))
             t_now = time.monotonic()
-            if not (abs(tau) - g > self.stall_margin_nm and abs(dq) < self.stall_vel_dps):
-                self._stall_since.pop(ch, None)
-            elif (t_now - self._stall_since.setdefault(ch, t_now)) * 1e3 > self.stall_ms:
-                self._stall_since.pop(ch, None)
-                # ★**어디서** 멈췄는지 같이 찍는다 (2026-08-12 실기 ch1).
-                #   위치 없이 "스톨" 만 보면 기구스톱인지·손인지·간섭인지 못 가린다.
-                #   상자 끝과의 거리를 함께 주면 첫 줄만 읽고도 판별된다.
-                _d = min(q - L.q_min, L.q_max - q)
-                raise SafetyAbort(
-                    f"시험축 **ch{ch}** 스톨 — 토크 {abs(tau):.2f}Nm 이 중력 {g:.2f}Nm 을 "
-                    f"{abs(tau)-g:.2f}Nm 넘는데 속도 {dq:+.1f}dps 로 안 움직인다"
-                    f"({self.stall_ms:.0f}ms 지속).\n"
-                    f"  위치 {q:+.2f}° · 명령 {q_cmd:+.2f}° · 상자 [{L.q_min:+.1f}, "
-                    f"{L.q_max:+.1f}]° — 가까운 상자 끝까지 {_d:+.2f}°.\n"
-                    f"  {'상자 끝이다 → **기구 스톱**을 밀고 있다.' if _d < 3.0 else '상자 한가운데다 → 기구스톱이 아니라 **간섭·손·케이블**이다.'}\n"
-                    f"  기구 스톱·간섭에 밀어붙이고 있다 — **이대로 두면 과전류로 드라이버가**\n"
-                    f"  **래치오프된다**(2026-08-12 에 ch0 을 10.6Nm 로 밀다 실제로 그랬다).\n"
-                    f"  τ_trip({L.tau_trip}Nm)은 그 사고보다 높아서 못 잡는다 — 그래서 이 검사가 있다.")
+            if abs(tau) - g <= self.stall_margin_nm:
+                self._stall_test.pop(ch, None)          # 토크가 정상이면 후보 해제
+            else:
+                t0, q0 = self._stall_test.setdefault(ch, (t_now, q))
+                moved = abs(q - q0)
+                if moved >= self.stall_move_deg:
+                    self._stall_test[ch] = (t_now, q)   # 움직이고 있다 — 시계 재시작
+                elif (t_now - t0) * 1e3 > self.stall_ms:
+                    self._stall_test.pop(ch, None)
+                    # ★**어디서** 멈췄는지 같이 찍는다 (2026-08-12 실기 ch1).
+                    #   위치 없이 "스톨" 만 보면 기구스톱인지·손인지·간섭인지 못 가린다.
+                    #   상자 끝과의 거리를 함께 주면 첫 줄만 읽고도 판별된다.
+                    _d = min(q - L.q_min, L.q_max - q)
+                    raise SafetyAbort(
+                        f"시험축 **ch{ch}** 스톨 — 토크 {abs(tau):.2f}Nm 이 중력 {g:.2f}Nm 을 "
+                        f"{abs(tau)-g:.2f}Nm 넘는데 {self.stall_ms:.0f}ms 동안 "
+                        f"{moved:.2f}° 밖에 못 갔다(문턱 {self.stall_move_deg}°).\n"
+                        f"  위치 {q:+.2f}° · 명령 {q_cmd:+.2f}° · 상자 [{L.q_min:+.1f}, "
+                        f"{L.q_max:+.1f}]° — 가까운 상자 끝까지 {_d:+.2f}°.\n"
+                        f"  {'상자 끝이다 → **기구 스톱**을 밀고 있다.' if _d < 3.0 else '상자 한가운데다 → 기구스톱이 아니라 **간섭·중력모델오차·케이블**이다.'}\n"
+                        f"  ⚠중력 {g:.2f}Nm 은 **모델값**이다. 하위 관절이 무여자로 늘어져 있으면\n"
+                        f"    표(neutral 자세 기준)와 어긋난다 — 그 어긋남이 곧 가짜 초과토크다.\n"
+                        f"  기구 스톱·간섭에 밀어붙이고 있다 — **이대로 두면 과전류로 드라이버가**\n"
+                        f"  **래치오프된다**(2026-08-12 에 ch0 을 10.6Nm 로 밀다 실제로 그랬다).\n"
+                        f"  τ_trip({L.tau_trip}Nm)은 그 사고보다 높아서 못 잡는다 — 그래서 이 검사가 있다.")
 
     # ── 쓰기 ────────────────────────────────────────────────────────────────
     def latch_hold(self, q_ch=None) -> np.ndarray:
@@ -557,6 +574,7 @@ class Hardware:
             # 블록 안에서 쌓인 후보 시각을 버린다. 안 버리면 블록을 빠져나온 직후
             # **옛 t0** 로 즉시 stall_ms 를 초과해 오탐한다.
             self._stall_since.clear()
+            self._stall_test.clear()
 
     def check_hold(self) -> None:
         """홀드축이 실제로 잡혀 있는지 확인. 밀려나면 측정이 무효이므로 중단.

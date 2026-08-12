@@ -89,8 +89,24 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None) -> tuple[list[float], list[flo
     """
     ff = ff or (lambda q: 0.0)
     pos, neg, traces = [], [], []
+    # ★모든 시행을 **같은 자리에서** 시작한다 (2026-08-12).
+    #   파단토크는 중력을 포함한 생값이다. 시행마다 자리가 옮겨가면 그만큼 밀린다.
+    #     HL_thigh 중력 기울기 **+0.10 Nm/°**, 파단푸시가 최대 8° 옮긴다 → 0.83 Nm.
+    #     실기 +dir 3시행이 −2.35 → −1.77 → −1.16 으로 **한 방향으로 밀렸다**
+    #     (증분 +0.578, +0.609 — 위 계산과 일치). 산포가 아니라 드리프트다.
+    #   ⚠이건 brake 도입의 부작용이다. limp 시절엔 매번 같은 처짐자리로 떨어져
+    #     기준점이 저절로 생겼는데, brake 는 멈춘 자리에 그대로 붙든다.
+    #     limp 로 되돌릴 수는 없다 — thigh 가 146dps 로 자유낙하한다(hwio.brake 주석).
+    #   ⇒ 기준자리를 명시적으로 잡고 매 시행 전에 되돌아온다. 정착은 마찰 데드밴드
+    #     (τ_s/kp) 안이므로 thigh 기준 ±0.7° = ±0.07 Nm — 종전 ±0.8 Nm 의 1/10 이다.
+    q_ref0 = None
     for direction in (+1.0, -1.0):
         for trial in range(int(cfg["trials"])):
+            if q_ref0 is None:
+                q_ref0 = float(hw.read(ch)[0])
+                log(f"    기준자리 {q_ref0:+.2f}° — 모든 시행을 여기서 시작한다")
+            else:
+                hw.goto(ch, q_ref0, kp, kd, speed_dps=10.0, tau_ff_fn=ff)
             q0 = hw.arm(ch, kp, kd)
             time.sleep(0.2)
             tau_at_move, samples, t_ref = None, [], None

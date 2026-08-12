@@ -167,6 +167,35 @@ def build_traj(mc, jm, cfg_all, T, rate, dual=None):
                                           dual=(ratio, f_slow))
 
 
+def base_wrench(m, d, idx, q_cmd, kp, kd, dt, q0):
+    """★고정 base 가 받는 net wrench 를 잰다 (원문의 '대칭으로 상쇄' 대상).
+
+    base 를 world 에 붙여 뒀으므로 반력은 전체 운동량의 시간변화로 나온다:
+        F = m_tot·(dv_com/dt) − m_tot·g ,   M = d(L_com)/dt
+    ⚠**실기에서 이게 크면 크레인이 흔들린다.** 시뮬은 base 고정이라 안 보이지만
+      실기에는 있고, 그 흔들림은 모델에 없으므로 통째로 식별오차가 된다.
+    """
+    import mujoco
+    N = len(q_cmd)
+    m.opt.timestep = dt
+    d.qpos[:] = 0; d.qvel[:] = 0
+    for i, (_, qa, dofa, _) in enumerate(idx):
+        d.qpos[qa] = q0[i] * DEG
+    mujoco.mj_forward(m, d)
+    P = np.empty((N, 3)); L = np.empty((N, 3))
+    mtot = float(m.body_mass.sum())
+    for t in range(N):
+        mujoco.mj_subtreeVel(m, d)
+        P[t] = d.subtree_linvel[0] * mtot
+        L[t] = d.subtree_angmom[0]
+        for i, (_, qa, dofa, aid) in enumerate(idx):
+            d.ctrl[aid] = kp[i] * (q_cmd[t, i] - d.qpos[qa] / DEG) * DEG - kd[i] * d.qvel[dofa]
+        mujoco.mj_step(m, d)
+    F = np.gradient(P, dt, axis=0); F[:, 2] += mtot * 9.81      # 중력 반력 포함
+    M = np.gradient(L, dt, axis=0)
+    return F, M, mtot
+
+
 def rollout_free(m, d, idx, q_cmd, kp, kd, dt, q0):
     """공칭 롤아웃 — 재초기화 없이 끝까지. q·dq 를 함께 돌려준다(섭동 롤아웃의 기준상태)."""
     import mujoco
@@ -200,6 +229,9 @@ def main() -> int:
                     help="f_start 배율. <1 이면 저속 구간이 길어진다(쿨롱↔점성 분리용)")
     ap.add_argument("--f1scale", type=float, default=1.0,
                     help="f_end 배율. PACE 논문은 10Hz 까지 쓴다(우리 1.55Hz)")
+    ap.add_argument("--mirror", action="store_true",
+                    help="★원문 방식 — 좌우 대칭 명령으로 base net wrench 를 상쇄한다. "
+                         "우리 기본 파라미터화가 이미 좌우 공유(kind별)라 손해가 없다")
     ap.add_argument("--dual", default=None, metavar="비율,f_slow",
                     help="느린 대진폭 성분을 겹친다 (예: 0.35,0.12). JDAMP↔JFRIC 분리용")
     a = ap.parse_args()
@@ -220,6 +252,18 @@ def main() -> int:
         mc["f_start_hz"] = list(np.array(mc["f_start_hz"], float) * a.f0scale)
         mc["f_end_hz"] = list(np.array(mc["f_end_hz"], float) * a.f1scale)
     tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate, dual)
+    if a.mirror:
+        # ★원문 §3.2.2 "symmetric trajectory commands to cancel net wrenches".
+        #   좌우 다리를 **역위상**으로 두면 시상면 반력이 상쇄되고, hip(내전/외전)은
+        #   부호를 뒤집어야 측방 반력이 상쇄된다.
+        #   ⚠좌우가 완전 종속이 되므로 --per-axis(좌우 분리) 식별과는 양립하지 않는다.
+        #     우리 기본 파라미터화는 kind별 공유(ROTOR_I 1 + 4 + 4)라 손해가 없다.
+        half = jm.n_leg // 2
+        dev = q_cmd - home
+        sign = np.array([-1.0 if "hip" in names[i] else 1.0 for i in range(half)])
+        N = len(tt); shift = N // 2
+        q_cmd = q_cmd.copy()
+        q_cmd[:, half:] = home[half:] + sign * np.roll(dev[:, :half], shift, axis=0)
     names = list(jm.names)
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
@@ -254,8 +298,17 @@ def main() -> int:
     if bad:
         print(f"  ❌ jog 한계 밖: {bad} — 이 궤적은 실기에 걸 수 없다")
 
-    win = max(1, int(round(a.window / dt)))
     P.apply_params(m, idx, gear_n, x0, False, names)
+    Fw, Mw, mtot = base_wrench(m, d, idx, q_cmd, kp, kd, dt, home)
+    fr = np.sqrt(np.mean(Fw[:, :2] ** 2, axis=0)); fz = np.sqrt(np.mean((Fw[:, 2] - mtot*9.81) ** 2))
+    mr = np.sqrt(np.mean(Mw ** 2, axis=0))
+    print(f"\n  ── base net wrench (원문 §3.2.2 '대칭으로 상쇄' 대상) ──")
+    print(f"    수평력 RMS  x {fr[0]:7.2f}  y {fr[1]:7.2f} N   (체중 {mtot*9.81:.0f} N 대비 "
+          f"{100*max(fr)/(mtot*9.81):.1f}%)")
+    print(f"    모멘트 RMS  {np.round(mr,2)} Nm")
+    print(f"    ⚠실기는 크레인에 매달려 있다 — 이 반력이 base 를 흔들고, 그 흔들림은 모델에 없다")
+
+    win = max(1, int(round(a.window / dt)))
     q_nom, dq_nom = rollout_free(m, d, idx, q_cmd, kp, kd, dt, home)
 
     # ── 감도행렬 S: 열 하나가 파라미터 하나 ────────────────────────────────

@@ -18,6 +18,14 @@ DIAG=$(cd "$(dirname "$0")" && pwd)
 
 running(){ pgrep -x RobotEmbedded >/dev/null 2>&1; }
 
+# ★중복 기동은 EtherCAT 버스를 깬다. 어떤 명령이든 먼저 알린다.
+_n=$(pgrep -cx RobotEmbedded 2>/dev/null || echo 0)
+if [ "$_n" -gt 1 ] 2>/dev/null; then
+    echo "⚠⚠ RobotEmbedded 가 **$_n 개** 떠 있다 — EtherCAT 마스터가 여럿이면 버스가 깨진다."
+    echo "   pid: $(pgrep -x RobotEmbedded | tr '\n' ' ')"
+    echo "   'diag/emb_ctl.sh stop' 으로 전부 정리한 뒤 다시 시작할 것."
+fi
+
 case "${1:-status}" in
 start)
     if running; then echo "이미 실행 중 (pid $(pgrep -x RobotEmbedded | tr '\n' ' ')) — 모터 명령 writer 는 하나만."; exit 1; fi
@@ -39,7 +47,23 @@ start)
             echo "✓ MotorStatus16 신선 — EtherCAT 생존 + Emb 가 SHM 명령을 읽는 상태 (${i}s)"; exit 0
         fi
     done
-    echo "✗ 20s 내 신선한 MotorStatus16 미수신 — EtherCAT 확인:"; "$0" log; exit 2
+    # ★실패했으면 **띄운 것을 반드시 정리한다** (2026-08-12).
+    #   종전엔 그냥 exit 2 라 죽은 Emb 가 계속 떠 있었다. 사용자가 수동으로 다시 띄우면
+    #   **EtherCAT 마스터가 둘**이 되어 버스를 서로 물어뜯는다 — 실제로 4개까지 늘어나
+    #   전 채널이 얼어붙었다. 신선하지 않은 Emb 는 남겨둘 가치가 없다(모터 명령은 계속
+    #   재전송하면서 상태는 못 읽는 상태다).
+    echo "✗ 20s 내 신선한 MotorStatus16 미수신."
+    echo "  → 띄운 Emb 를 정리한다(그냥 두면 재시도 시 EtherCAT 마스터가 둘이 된다)."
+    sudo pkill -x RobotEmbedded 2>/dev/null; sleep 1
+    n=$(pgrep -cx RobotEmbedded 2>/dev/null || echo 0)
+    echo "  남은 RobotEmbedded: $n"
+    "$0" log
+    echo
+    echo "  다음 순서로 복구할 것:"
+    echo "    ① 모터 전원 OFF → 3초 → ON   (EtherCAT 슬레이브 초기화. Emb 재기동만으론 부족)"
+    echo "    ② diag/emb_ctl.sh start"
+    echo "  ⚠수동으로 RobotEmbedded 를 따로 띄우지 말 것 — 중복 기동이 버스를 깬다."
+    exit 2
     ;;
 stop)
     sudo pkill -x RobotEmbedded 2>/dev/null

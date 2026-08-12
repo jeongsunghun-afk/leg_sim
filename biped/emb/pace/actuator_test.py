@@ -40,6 +40,7 @@ import os
 import sys
 import time
 
+from dataclasses import replace
 import numpy as np
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -492,6 +493,15 @@ def main() -> int:
         lim_align = _mk(*box[ch])                 # 정렬용(기구 한계)
         lim_test = _mk(lo, hi)                    # 시험용(spec 여유폭, 홀드축 HOME 고정 기준)
         lim = lim_align                           # ★정렬을 먼저 하므로 느슨한 쪽으로 시작
+        # ★채널별 τ_trip (2026-08-12). 시험축 문턱(foot 8.0Nm)을 전 채널에 쓰면 hip 이
+        #   상시 5.25Nm 라 문턱의 66% 를 점유한다 — hip 지그 해제로 실재 위험이 됐다.
+        #   위치한계는 채널별 상자로 이미 갈라놨는데 토크만 안 갈라져 있었다.
+        _tb = {int(k): float(v) for k, v in (sf.get("tau_trip_by_ch") or {}).items()}
+        lim_ch = {c: replace(_mk(*box[c]), tau_trip=_tb[c]) for c in _tb if c in box}
+        if lim_ch:
+            print(f"  채널별 τ_trip: " + " ".join(
+                f"ch{c}:{v.tau_trip:.0f}Nm" for c, v in sorted(lim_ch.items()))
+                + f"  (나머지 {sf['tau_trip_nm']}Nm)")
         print(f"\n{'='*70}\n{j['name']} (ch{ch})  한계 모델각∈[{j['q_min']},{j['q_max']}] "
               f"→ **채널각**∈[{lo:.2f},{hi:.2f}]deg  τ_trip={sf['tau_trip_nm']}Nm\n{'='*70}")
 
@@ -556,6 +566,7 @@ def main() -> int:
                             _m, _j.ch_to_q_joint(np.asarray(q_ch, float)),
                             np.asarray(rpy, float), 1.0 / hw.dt, on, "pace")
                         # 자세 보고 + 영점 검증(모델각은 0 이어야 한다). 판정과 무관하게 찍는다.
+                        hw.lim_ch = lim_ch            # ★채널별 트립 상한 적용
                         _jig_precheck(hw, _jm, _tgt, spec, log=_log, tol_override=a.home_tol)
                         hw.arm(ch, _kp_ch, _kd_ch)
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).

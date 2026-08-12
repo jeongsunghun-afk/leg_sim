@@ -135,6 +135,13 @@ class Hardware:
         #   err_max 12.0° 와 정확히 같다 → "홀드축 ch1 가 밀렸다" + 눈에 보이는 주저앉음.
         #   ⚠지그를 물리면 기구가 잡아서 **버그가 가려질 뿐** 사라지지 않는다.
         self._hold_target = None
+        # ★채널별 트립 상한 (2026-08-12). 없으면 self.lim(=시험축 값)을 쓴다.
+        #   ⚠종전엔 위치한계만 채널별이고 토크·속도·추종오차는 **시험축 값을 전 채널에**
+        #     그대로 적용했다. foot 시험이면 τ_trip 이 foot 크기 8.0Nm 인데,
+        #     hip 은 자세와 무관하게 **상시 5.25 Nm**(모델)을 문다 → 문턱의 66% 점유.
+        #     hip 지그를 해제한 2026-08-12 부터 이게 실재 위험이 됐다.
+        #   ⇒ 채널별로 준다. 같은 값을 두 곳에서 다르게 다루던 구조를 하나 더 없앤다.
+        self.lim_ch: dict = {}
         self._q_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
@@ -178,6 +185,10 @@ class Hardware:
     def _on_signal(self, *_):
         self.limp()
         raise SystemExit(130)
+
+    def limits_for(self, ch: int):
+        """채널 ch 에 적용할 Limits. 등록된 게 없으면 시험축 한계(self.lim)."""
+        return self.lim_ch.get(int(ch), self.lim)
 
     def limp(self, n_write: int = 25) -> int:
         """Kp=Kd=0 을 반복 기록해 확실히 무여자로 만든다. 어떤 경로로든 마지막에 호출.
@@ -278,7 +289,7 @@ class Hardware:
             raise
 
     def _check_impl(self, ch: int, q: float, dq: float, tau: float, q_cmd: float) -> None:
-        L = self.lim
+        L = self.limits_for(ch)          # ★채널별 상한(등록 없으면 시험축 self.lim)
         if self.stale_ms() > L.stale_ms:
             raise SafetyAbort(f"상태 정지 {self.stale_ms():.0f}ms > {L.stale_ms}ms "
                               f"— 위치를 신뢰할 수 없어 중단(EtherCAT OP 이탈 의심)")
@@ -381,17 +392,18 @@ class Hardware:
         for hc in self.hold_ch:
             if hc >= self.n:
                 continue
+            Lh = self.limits_for(hc)
             err = abs(float(self._q_cmd[hc]) - float(self._q[hc]))
-            if err > self.lim.err_max:
+            if err > Lh.err_max:
                 self.limp()
                 raise SafetyAbort(
-                    f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {self.lim.err_max}°.\n"
+                    f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
                     f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
                     f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
-            if abs(float(self._dq[hc])) > self.lim.vel_trip:
+            if abs(float(self._dq[hc])) > Lh.vel_trip:
                 self.limp()
                 raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "
-                                  f"{self.lim.vel_trip} — 잡혀 있지 않다")
+                                  f"{Lh.vel_trip} — 잡혀 있지 않다")
 
     def release_test_axis(self, ch: int, n_write: int = 5) -> None:
         """**시험축만** 무여자로. 홀드축은 계속 잡아둔다.

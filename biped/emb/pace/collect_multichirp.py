@@ -172,13 +172,24 @@ def main() -> int:
         raise SystemExit(f"✗ 궤적이 jog 한계 밖이다: {bad} — spec.pace_multi.amp_deg 를 줄일 것")
 
     # ★상관 — 이게 크면 파라미터를 못 가른다. 설계 단계에서 잡아야 한다.
-    C = np.corrcoef(Q.T)
-    off = np.abs(C - np.eye(n))
-    print(f"\n  축간 상관 최대 {off.max():.3f} (0.5 넘으면 분리 나쁨)")
+    #   ⚠mirror 를 켜면 좌우가 **의도적으로** 종속(r=1)이 된다 — 그건 결함이 아니다.
+    #     그래서 좌우 짝은 검사에서 빼고 **한쪽 다리 안에서만** 본다.
+    #     (좌우를 따로 식별하려면 mirror 를 끄고 수집해야 한다. apply_mirror 주석 참조)
+    m_ = n // 2 if mirror else n
+    C = np.corrcoef(Q[:, :m_].T)
+    off = np.abs(C - np.eye(m_))
+    scope = "한쪽 다리 안" if mirror else "전 축"
+    print(f"\n  축간 상관 최대 {off.max():.3f} ({scope} · 0.5 넘으면 분리 나쁨)")
     i, j = np.unravel_index(off.argmax(), off.shape)
     print(f"    최대쌍 {jm.names[i]} ↔ {jm.names[j]}")
     if off.max() > 0.5:
         print("    ⚠위상/주파수를 더 벌릴 것")
+    if mirror:
+        print(f"    ℹ좌우는 mirror='{mirror}' 로 종속(r=1)이다 — 의도된 것이다."
+              f" 파라미터가 kind별 공유라 손해가 없다.")
+    # ★진짜 기준은 축 상관이 아니라 **파라미터 감도**다 — design_excitation.py 를 볼 것.
+    print(f"    ★이건 대리지표다. 파라미터 기준 식별가능성은:"
+          f" ~/.venv-mujoco/bin/python design_excitation.py")
 
     if a.dry:
         print("\n--dry — 하드웨어 미접촉. 여기까지가 설계 검사다.")

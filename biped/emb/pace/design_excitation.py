@@ -254,24 +254,10 @@ def main() -> int:
     tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate, dual)
     names = list(jm.names)
     if a.mirror:
-        # ★원문 §3.2.2 "symmetric trajectory commands to cancel net wrenches".
-        #   ⚠처프는 순시주파수가 변하므로 **시간 이동으로는 역위상이 안 된다**(초기 구현 오류).
-        #     sin(θ+π) = −sin(θ) 이므로 **부호 반전**이 곧 역위상이다.
-        #   방식 둘을 고를 수 있게 둔다 — 어느 쪽이 반력을 더 죽이는지는 기구에 달렸다:
-        #     neg : 전 축 역위상   q_R = −q_L   → 시상면 힘이 상쇄
-        #     hip : hip 만 역위상               → 측방 힘이 상쇄(기하 거울)
-        #   ⚠좌우가 종속이 되므로 --per-axis(좌우 분리) 식별과는 양립하지 않는다.
-        #     우리 기본 파라미터화는 kind별 공유(1+4+4)라 손해가 없다.
-        half = jm.n_leg // 2
-        dev = (q_cmd - home)[:, :half]
-        if a.mirror == "neg":
-            sg = -np.ones(half)
-        elif a.mirror == "hip":
-            sg = np.array([-1.0 if "hip" in names[i] else 1.0 for i in range(half)])
-        else:
-            raise SystemExit("--mirror 는 neg 또는 hip")
-        q_cmd = q_cmd.copy()
-        q_cmd[:, half:] = home[half:] + sg * dev
+        # ★수집기와 **같은 함수**를 쓴다 (collect_multichirp.apply_mirror).
+        #   근거·실측값은 그 docstring 에 있다. 여기서 따로 구현하면 갈린다.
+        import collect_multichirp as cm
+        q_cmd = home + cm.apply_mirror(q_cmd - home, names, a.mirror)
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
     #   (kp_joint = kp_ch·k²). 여기서 갈리면 감도가 통째로 틀린다.

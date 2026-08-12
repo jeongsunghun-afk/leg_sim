@@ -142,6 +142,18 @@ class Hardware:
         #     hip 지그를 해제한 2026-08-12 부터 이게 실재 위험이 됐다.
         #   ⇒ 채널별로 준다. 같은 값을 두 곳에서 다르게 다루던 구조를 하나 더 없앤다.
         self.lim_ch: dict = {}
+        # ★홀드축 **스톨 감지** (2026-08-12). 오늘 드라이버 파워단을 두 번 잃었다(ch7·ch4).
+        #   기전: 축을 기구 스톱 쪽으로 명령하면 kp·err 가 계속 커지는데 축은 안 움직인다
+        #   → 대전류가 지속 → 과전류 보호로 래치오프. 소프트웨어가 **죽을 때까지 밀었다.**
+        #   ⚠단순한 "오차 크다" 로는 못 잡는다 — hip 은 정상 처짐이 3.5° 라 오탐한다.
+        #     구분점은 **중력 대비 초과토크**다: 정상 처짐이면 kp·err ≈ 중력(균형),
+        #     스톨이면 kp·err 가 중력+마찰을 넘는데도 안 움직인다.
+        #   grav_fn(ch, q_ch) -> Nm 를 꽂으면 켜진다(없으면 검사 안 함 — 하위호환).
+        self.grav_fn = None
+        self.stall_margin_nm = 2.0      # 중력 대비 이만큼 초과하면 후보
+        self.stall_vel_dps = 5.0        # 그런데 이보다 느리면 스톨
+        self.stall_ms = 300.0           # 이 시간 지속되면 중단
+        self._stall_since: dict = {}
         self._q_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
@@ -412,6 +424,27 @@ class Hardware:
                     f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
                     f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
                     f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
+            # ★스톨 — 중력보다 훨씬 큰 토크를 내는데 안 움직인다(위 주석)
+            if self.grav_fn is not None:
+                kp_h, _ = self._hold_gain_of(hc)
+                cmd_tau = kp_h * abs(err) * math.pi / 180.0
+                g = abs(float(self.grav_fn(hc, float(self._q[hc]))))
+                stuck = (cmd_tau - g > self.stall_margin_nm
+                         and abs(float(self._dq[hc])) < self.stall_vel_dps)
+                t_now = time.monotonic()
+                if not stuck:
+                    self._stall_since.pop(hc, None)
+                else:
+                    t0 = self._stall_since.setdefault(hc, t_now)
+                    if (t_now - t0) * 1e3 > self.stall_ms:
+                        self.limp()
+                        raise SafetyAbort(
+                            f"홀드축 ch{hc} **스톨** — 명령토크 {cmd_tau:.2f}Nm 이 중력 "
+                            f"{g:.2f}Nm 을 {cmd_tau-g:.2f}Nm 넘는데 속도 "
+                            f"{self._dq[hc]:+.1f}dps 로 안 움직인다({self.stall_ms:.0f}ms 지속).\n"
+                            f"  기구 스톱에 밀어붙이고 있다 — **이대로 두면 과전류로 드라이버가**\n"
+                            f"  **래치오프된다**(2026-08-12 ch7·ch4 에서 실제로 그랬다).\n"
+                            f"  목표각을 스톱 안쪽으로 옮길 것(config hold_pose.by_test_ch).")
             if abs(float(self._dq[hc])) > Lh.vel_trip:
                 self.limp()
                 raise SafetyAbort(f"홀드축 ch{hc} 속도 {self._dq[hc]:.0f} dps > "

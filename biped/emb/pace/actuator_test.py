@@ -657,6 +657,12 @@ def main() -> int:
                             np.asarray(rpy, float), 1.0 / hw.dt, on, "pace")
                         # 자세 보고 + 영점 검증(모델각은 0 이어야 한다). 판정과 무관하게 찍는다.
                         hw.lim_ch = lim_ch            # ★채널별 트립 상한 적용
+                        # ★스톨 감지용 중력 조회 — 표는 채널각으로 색인돼 있다.
+                        #   이게 있어야 "정상 처짐" 과 "스톱에 밀어붙임" 이 구분된다.
+                        _gt = spec["torque_mode"].get("tau_grav_table") or {}
+                        hw.grav_fn = (lambda c, q, _t=_gt:
+                                      float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"]))
+                                      if c in _t else 0.0)
                         _jig_precheck(hw, _jm, _tgt, spec, log=_log, tol_override=a.home_tol)
                         hw.arm(ch, _kp_ch, _kd_ch)
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).

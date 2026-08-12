@@ -233,6 +233,7 @@ def main():
                            float(hcfg.get("max_acc_dps2", 30.0)),
                            float(hcfg.get("min_time_s", 0.6)))
     home_settle = float(hcfg.get("settle_deg", 0.5))
+    home_warned = False        # ★HOME 도달실패 경고를 진입당 한 번만 낸다
     # ★홈 목표가 jog 안전한계에 잘렸으면 조용히 넘어가지 않는다 — "홈에 갔다" 는 보고와
     #   실제 자세가 어긋나게 되고, 그 어긋남은 다음 모드의 시작자세가 된다.
     for nm, want, got in homer.clamped:
@@ -395,6 +396,7 @@ def main():
                       if fsm.entered(FSM.JOG):
                           jogger.reset(q_leg)
                       if fsm.entered(FSM.HOME):
+                          home_warned = False
                           # ★측정각에서 궤적을 만든다(명령각이 아니라). 부하로 처진 상태에서
                           #   명령각을 기점으로 잡으면 첫 틱에 그 편차만큼 계단이 나간다.
                           T = homer.start(q_leg)
@@ -502,7 +504,23 @@ def main():
               hw.write_jog(homer.step(dt_meas))
               extra["home_progress"] = round(homer.progress, 3)
               extra["home_done"] = homer.done
-              extra["home_at_goal"] = homer.at_goal(q_leg, home_settle)
+              _at = homer.at_goal(q_leg, home_settle)
+              extra["home_at_goal"] = _at
+              # ★궤적이 끝났는데 도달 못 했으면 **한 번 크게 알린다** (2026-08-11).
+              #   종전엔 at_goal 을 계산해 발행만 하고 아무도 안 봤다. 그래서 홈복귀가
+              #   2° 못 맞추고 끝나도 조용했고, 그 자세에서 영점을 잡으면 그 오차가
+              #   그대로 offset 으로 박혔다(커플링 때문에 foot 은 calf 오차까지 함께).
+              if homer.done and not _at and not home_warned:
+                  home_warned = True
+                  _e = q_leg[:jm.n_leg] - homer.q_home
+                  _w = [f"{jm.names[i]}{_e[i]:+.2f}" for i in range(jm.n_leg)
+                        if abs(_e[i]) > home_settle]
+                  print(f"[biped_emb] ⚠ HOME 궤적 종료 — **도달 실패**(허용 {home_settle}°): "
+                        + " ".join(_w))
+                  print( "            게인 부족·마찰·기구 간섭 중 하나다. "
+                         "★이 상태로 영점을 잡으면 오차가 offset 에 박힌다.")
+              extra["home_miss"] = [round(float(v), 2) for v in
+                                    (q_leg[:jm.n_leg] - homer.q_home)]
           elif fsm.mode == FSM.HOLD:
               hw.write_hold(hold_leg)
           # ★stand/walk 디스패치는 없다 — 진입에서 hold 로 되돌린다(위 참조).

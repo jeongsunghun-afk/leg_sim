@@ -96,6 +96,12 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="config/biped_emb.yaml 의 offset_deg 를 실제로 갱신")
     ap.add_argument("--settle-s", type=float, default=8.0,
                     help="이 시간 동안 자세가 멈춰 있어야 채취한다[s]. 0 이면 검사 생략")
+    ap.add_argument("--force", action="store_true",
+                    help="변화량 게이트를 무시하고 적용(원인을 확인한 뒤에만)")
+    ap.add_argument("--allow-powered", action="store_true",
+                    help="모터가 여자된 상태에서도 강행(권장하지 않음 — 위 주석 참조)")
+    ap.add_argument("--max-shift", type=float, default=3.0,
+                    help="새 offset 이 이만큼[deg] 넘게 바뀌면 확인을 요구한다")
     ap.add_argument("--settle-tol", type=float, default=0.2,
                     help="정지 판정 허용 변동폭[deg]")
     a = ap.parse_args()
@@ -116,6 +122,28 @@ def main() -> int:
         ref = [float(x) for x in ref]
     if len(ref) != n:
         sys.exit(f"✗ 기준자세 길이 {len(ref)} ≠ 관절수 {n}")
+
+    # ── ★★게이트 0: 모터가 **놓여 있어야** 한다 (2026-08-11 추가) ──────────
+    #   왜 필요한가 — 실제로 당했다. 제어기가 HOME 을 잡고 있으면 그 자세는
+    #   **"제어기가 생각하는 홈"** 이지 기준자세가 아니다. 홈복귀가 calf 를 2° 못
+    #   맞추고 끝나면 그 2° 가 그대로 offset 으로 박힌다.
+    #   ⇒ 커플링 때문에 **foot 은 그보다 더 나쁘다**: foot 채널각은 물리적 foot+calf 를
+    #     반영하므로 calf 오차가 foot offset 에도 실린다(2026-08-11 HR 에서 잔차 0.06° 로
+    #     확인된 경로다).
+    #   ★영점은 **기구(지그)** 가 정의해야 한다. 모터가 아니라.
+    #     그래서 모터가 여자돼 있으면 중단한다 — 지그를 물리고 limp 로 두고 잴 것.
+    st0 = read_state()
+    if st0.get("motors_on"):
+        print(f"\n  ❌ 모터가 **여자 중**이다(mode={st0.get('mode')}) — 채취를 중단한다.\n")
+        print( "     제어기가 붙들고 있는 자세는 '제어기가 생각하는 홈' 이지 기준자세가 아니다.")
+        print( "     홈복귀가 2° 못 맞추고 끝나면 그 2° 가 그대로 영점에 박힌다.")
+        print( "     커플링 때문에 foot 은 calf 오차까지 함께 뒤집어쓴다.")
+        print( "\n  ▸ 지그를 물리고 **제어기를 off(limp) 로 둔 뒤** 다시 실행할 것.")
+        print( "    (기구가 자세를 정의해야 한다 — 모터가 아니라)")
+        print( "    정말 강행하려면 --allow-powered")
+        if not a.allow_powered:
+            return 1
+        print( "     ⚠--allow-powered 로 강행한다. 이 영점은 제어기 오차를 포함한다.\n")
 
     # ── ★정지 게이트 (2026-08-10 추가) ──────────────────────────────────────
     #   왜 필요한가 — 실제로 당한 실수다: 로봇이 공중에 매달린 채 limp 이면 hip·thigh·foot
@@ -212,6 +240,42 @@ def main() -> int:
         print("     (매달린 상태 + limp 이면 hip·thigh·foot 은 자유 진자다. calf 는 구조적")
         print("      한계에 닿아 있어 재현된다 — 그 차이가 그대로 여기 드러난다.)")
         print("     ⇒ 지그/사람이 기준자세로 붙든 채 다시 잴 것. 그 전에는 --apply 하지 말 것.\n")
+
+    # ── ★커플링 몫 분리 (2026-08-11 추가) ──────────────────────────────────
+    #   foot 채널각은 **물리적 foot+calf** 를 반영한다. 그래서 calf 가 기준자세에서
+    #   벗어나 있으면 그 오차가 foot offset 에도 그대로 실린다.
+    #   ⇒ foot 의 offset 변화 중 **calf 로 설명되는 몫**을 갈라 보여준다. 남는 몫이
+    #     크면 그건 커플링이 아니라 **기구 변경이나 자세 오차**다.
+    #   실측 근거(2026-08-11): HR 은 calf Δ−1.09° → foot 예측 −1.09° · 실측 −1.15°
+    #     (잔차 0.06°)로 정확히 맞았고, HL 은 9.30° 가 남아 **풀리 재조임**으로 밝혀졌다.
+    cpl_note = []
+    for _d, _s, _c in zip(_jm.cpl_dst, _jm.cpl_src, _jm.cpl_coef):
+        dq_src = (new[_s] - old[_s]) / float(_jm.sk[_s])       # 소스축 변화(모델각 등가)
+        dq_dst = (new[_d] - old[_d]) / float(_jm.sk[_d])
+        expl = _c * dq_src
+        cpl_note.append((names[_d], names[_s], dq_dst, expl, dq_dst - expl))
+    if cpl_note and any(abs(o[2]) > 0.3 for o in cpl_note):
+        print("  ── 커플링 몫 분리 (모델각 등가) ──")
+        print(f"  {'축':10} {'전체변화':>9} {'커플링설명':>11} {'남는몫':>9}  판정")
+        for nm_, src_, tot, expl, res in cpl_note:
+            tag = "✓ 커플링으로 설명됨" if abs(res) < 0.5 else "★설명 안 됨 — 기구변경/자세오차 의심"
+            print(f"  {nm_:10} {tot:+9.2f} {expl:+11.2f} {res:+9.2f}  {tag}")
+        print(f"     (커플링설명 = {src_} 변화 × coef. 남는몫이 크면 그 축을 직접 확인할 것)\n")
+
+    # ── ★변화량 게이트 (2026-08-11) — 큰 이동은 **확인 없이 적용 못 한다** ──
+    #   재현성 검사는 경고만 하고 --apply 를 막지 않았다. 그래서 자세가 틀어진 채
+    #   재교정하면 그대로 박혔다(2026-08-11 HL_foot 14.06° 이동).
+    big = [(names[i], old[i], new[i]) for i in range(n)
+           if abs(new[i] - old[i]) > a.max_shift]
+    if big and a.apply and not a.force:
+        print(f"  ── ❌ offset 변화가 {a.max_shift:.1f}° 를 넘는 축이 있다 — **적용 중단** ──")
+        for nm_, o, nw in big:
+            print(f"     {nm_:10} {o:+8.2f} → {nw:+8.2f}   ({nw-o:+.2f}°)")
+        print( "     큰 이동은 셋 중 하나다: ①기구 변경(풀리·벨트) ②자세가 기준이 아님")
+        print( "                              ③지난 영점이 틀렸음")
+        print( "     ②라면 지금 적용하면 오차가 영점으로 박힌다. 원인을 확인할 것.")
+        print(f"     확인했고 그래도 적용하려면 --force (또는 --max-shift 로 문턱 조정)\n")
+        return 1
 
     # ── 안전 경고 ──────────────────────────────────────────────────────────
     warn = []

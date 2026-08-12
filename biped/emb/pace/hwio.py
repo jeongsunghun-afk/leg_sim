@@ -460,17 +460,30 @@ class Hardware:
     #     전혀 없어, 마찰(정지 0.71 Nm)을 넘는 토크는 관절을 계속 가속시킨다. 다리 미장착
     #     상태 관성이 0.0375 kg·m² 라 1 Nm 면 α=26.7 rad/s²(=1528 deg/s²) 다.
     #     반드시 tau_max 를 작게 잡고 위치·속도 한계를 매 틱 검사할 것.
-    def step_torque(self, ch: int, tau_ff: float, tau_max: float) -> Sample:
-        """Kp=Kd=0 + tau_ff 만 실어 보내는 순수 토크 명령."""
+    def step_torque(self, ch: int, tau_ff: float, tau_max: float,
+                    kp: float = 0.0, kd: float = 0.0, q_des: float | None = None) -> Sample:
+        """tau_ff 를 실어 보낸다. 기본은 Kp=Kd=0 인 **순수** 토크 명령.
+
+        ★kp/kd/q_des 는 **게인→토크 핸드오프** 전용이다 (2026-08-12).
+          중력이 큰 축(hip 5.25 · calf 0.81 Nm)은 게인을 먼저 0 으로 놓으면
+          바이어스를 올리기도 전에 떨어진다 — 드라이런에서 hip 이 207 dps 로 트립했다.
+          ⇒ kp·kd 를 홀드값에서 0 으로 내리면서 tau_ff 를 0→bias 로 올린다.
+            그동안 q_des 를 **출발점에 고정**해야 kp·err 가 실제로 버틴다
+            (기본값처럼 q_cmd=q 로 따라가면 오차가 0 이라 잡는 힘이 없다).
+        """
         if not self._armed:
             raise RuntimeError("arm() 을 먼저 호출할 것")
         t = float(np.clip(tau_ff, -abs(tau_max), abs(tau_max)))
         z = np.zeros(self.n, np.float32)
         tv = np.zeros(self.n, np.float32); tv[ch] = t
-        self._q_cmd[ch] = self._q[ch]          # 위치명령은 무의미하나 limp 복귀용으로 현재값 유지
+        # 위치명령: 순수토크(kp=0)면 무의미하나 limp 복귀용으로 현재값 유지.
+        # 핸드오프 중(kp>0)에는 **출발점 고정**이어야 버틴다 — q_des 로 준다.
+        self._q_cmd[ch] = self._q[ch] if q_des is None else float(q_des)
         # ★순수토크는 **시험축만** 이다. 홀드축은 계속 잡아둔다 — 여기서 전 채널을 0 으로
         #   두면 다리 전체가 무여자가 되어 중력으로 접힌다(다리 조립 후 특히 위험).
         kp_v, kd_v = self._hold_gains(ch)
+        kp_v[ch] = min(max(float(kp), 0.0), self.lim.kp_max)
+        kd_v[ch] = min(max(float(kd), 0.0), self.lim.kd_max)
         try:
             self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(kp_v), _p(kd_v), self.n)
             q, dq, tau, cur = self.read(ch)
@@ -478,7 +491,8 @@ class Hardware:
             self.check_hold()
         except SafetyAbort:
             raise                              # _check 내부에서 이미 limp 함
-        return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]), 0.0, 0.0)
+        return Sample(time.monotonic(), q, dq, tau, cur, float(self._q_cmd[ch]),
+                      float(kp), float(kd))
 
     def step(self, ch: int, q_cmd_deg: float, kp: float, kd: float) -> Sample:
         """1틱: 명령 → 읽기 → 안전검사 → 샘플 반환. 위반 시 limp 후 SafetyAbort."""

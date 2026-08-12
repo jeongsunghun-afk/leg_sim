@@ -106,7 +106,13 @@ class FakeLib:
     def _bridge_read(self, qp, dqp, taup, curp, rpyp, accp, gyrp, connp, sttp):
         # stale 판정은 (q,dq,tau) 무변화를 본다. 정지 시에도 갱신되는 걸 흉내내려
         # 아주 작은 디더를 tau 에 준다(실물 센서 노이즈에 해당).
-        d = 1e-4 if (self.ticks % 2) else -1e-4
+        # ★2026-08-12: 종전엔 self.ticks 패리티를 썼는데 _integrate 와 _bridge_read 가
+        #   **둘 다** ticks 를 올린다 → 한 사이클에 +2 라 패리티가 **고정**된다.
+        #   디더가 안 걸려서, 축이 완전히 멈춰 있는 구간(바이어스 정착 0.25s)에서
+        #   stale 152ms 오탐이 났다. 실기는 σ_q 0.0044° · σ_dq 2.11dps 라 매 틱 변한다 —
+        #   **스텁이 실물보다 조용하면 없는 고장을 만들어낸다.**
+        self._dither = getattr(self, "_dither", 0) + 1
+        d = 1e-4 if (self._dither % 2) else -1e-4
         for i in range(self.n):
             qp[i] = float(self.q[i])
             dqp[i] = float(self.dq[i])

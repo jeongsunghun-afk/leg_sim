@@ -754,7 +754,7 @@ class Hardware:
 
     def verify_driver_live(self, ch: int, kp: float = 40.0, kd: float = 2.0,
                            step_deg: float = 2.0, tau_floor: float = 0.15,
-                           move_floor_deg: float = 0.05) -> None:
+                           move_floor_deg: float = 1.0) -> None:
         """드라이버 파워단이 실제로 살아 있는지 확인. 죽어 있으면 SafetyAbort.
 
         ★왜 stale 검사로는 부족한가 (2026-08-05 실제 사고):
@@ -790,12 +790,24 @@ class Hardware:
             settle.append(s.q_deg)
         spread = settle[0] - settle[1]          # 중력 상쇄된 순수 추종량
         self.release_test_axis(ch)
-        if abs(s.tau) < tau_floor or spread < move_floor_deg:
+        # ★판정은 **spread 하나로** 한다 (2026-08-12 실기 HR_calf 오판).
+        #   종전엔 `|τ| < tau_floor  or  spread < move_floor` 였는데, 그 τ 조건이
+        #   **중력이 작은 축에서 멀쩡한 드라이버를 사망으로 찍었다**:
+        #     HR_calf — spread +2.946°(정상 4.0 의 74%, 즉 확실히 살아있다)인데
+        #               τ_last +0.073 < 0.15 에 걸려 중단.
+        #   τ_last 가 작은 건 정상이다: 정착 끝에서 err≈0 이라 τ ≈ 중력이고, calf 의
+        #   그 자리 중력은 0.13 Nm 다. hip 4.8 · thigh 2.9 라 큰 축에서만 안 걸렸다.
+        #   ⚠오늘 중력 FF 를 전 경로에 깔면서 τ_보고 가 더 작아져 터졌다 — 내가 만든
+        #     회귀다. "같은 판정을 두 지표로 OR" 하면 약한 쪽이 오탐을 만든다.
+        #   ⇒ spread 로만 본다. ±step 양방향이라 중력이 차분에서 상쇄되고, 죽은 축은
+        #     어느 쪽을 명령하든 중력 방향으로만 가므로 spread≈0 이다. 0 과 2·step
+        #     사이라 문턱을 넉넉히 잡아도 겹치지 않는다. τ 는 진단정보로만 싣는다.
+        if spread < move_floor_deg:
             raise SafetyAbort(
                 f"드라이버 미응답 — ±{abs(step_deg):.1f}° 명령(kp={kp:.0f})에 "
-                f"토크 {s.tau:+.3f} Nm(기준 {tau_floor}), "
-                f"양방향 정착 차이 {spread:+.3f}°(기준 {move_floor_deg}, 정상이면 "
-                f"≈{2*abs(step_deg):.1f}°).\n"
+                f"양방향 정착 차이가 {spread:+.3f}° 뿐이다"
+                f"(기준 {move_floor_deg}, 정상이면 ≈{2*abs(step_deg):.1f}°). "
+                f"참고 토크 {s.tau:+.3f} Nm.\n"
                 f"  EtherCAT·텔레메트리는 정상이나 **파워단이 래치오프**된 상태다.\n"
                 f"  복구: Emb 종료 → 모터 전원 OFF/ON → Emb 재기동.\n"
                 f"  (Emb 기동 직후 4.5초 램프에서 관절이 0°로 움직이면 복구 성공)")

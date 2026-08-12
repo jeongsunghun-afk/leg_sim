@@ -154,6 +154,9 @@ class Hardware:
         self.stall_vel_dps = 5.0        # 그런데 이보다 느리면 스톨
         self.stall_ms = 300.0           # 이 시간 지속되면 중단
         self._stall_since: dict = {}
+        # 파워단 사망 판별 — 이만큼 명령했는데 보고 토크가 이 비율 미만이면 죽은 것이다.
+        self.dead_cmd_nm = 3.0
+        self.dead_ratio = 0.15
         self._q_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
@@ -424,6 +427,26 @@ class Hardware:
                     f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
                     f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
                     f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
+            # ★파워단 사망 — 큰 토크를 **명령했는데 보고 토크가 없다** (2026-08-12).
+            #   오늘 세 번 겪었다(ch7 · ch4 두 번). 증상이 매번 다르게 위장됐다:
+            #     "추종오차 12.10°" · "상태 정지 ch0 342ms" · "홀드축이 밀렸다"
+            #   진짜 원인은 하나인데 **엉뚱한 축·엉뚱한 항목**으로 뜬다.
+            #   판별은 간단하다: kp·err 가 크면 그만한 토크가 **보고돼야** 한다.
+            #     정상 ch0: 오차 4.03° → 명령 7.03Nm · 보고 6.06Nm (비 0.86)
+            #     사망 ch4: 오차 4.96° → 명령 8.66Nm · 보고 0.065Nm (비 **0.008**)
+            #   ⚠스톨 감지로는 못 잡는다 — 죽은 축은 멈춰 있는 게 아니라 **떨어진다**(64dps).
+            kp_h0, _ = self._hold_gain_of(hc)
+            cmd_t = kp_h0 * abs(err) * math.pi / 180.0
+            if cmd_t > self.dead_cmd_nm and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio:
+                self.limp()
+                raise SafetyAbort(
+                    f"홀드축 ch{hc} **파워단 사망** — kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
+                    f"보고 토크가 {self._tau[hc]:+.3f}Nm 뿐이다(비 "
+                    f"{abs(float(self._tau[hc]))/cmd_t:.3f} < {self.dead_ratio}).\n"
+                    f"  속도 {self._dq[hc]:+.1f}dps — 명령을 무시하고 중력에 끌려간다.\n"
+                    f"  EtherCAT·텔레메트리는 정상인데 드라이버 파워단만 래치오프된 상태다.\n"
+                    f"  **모터 전원 OFF → 3초 → ON** 후 Emb 재기동. Emb 만 재기동하면 안 풀린다.")
+
             # ★스톨 — 중력보다 훨씬 큰 토크를 내는데 안 움직인다(위 주석)
             if self.grav_fn is not None:
                 kp_h, _ = self._hold_gain_of(hc)

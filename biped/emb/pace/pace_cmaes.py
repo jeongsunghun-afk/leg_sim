@@ -18,9 +18,13 @@
   `--window` 마다 **실측 상태로 재초기화**해 국소 정합도와 드리프트를 분리한다
   (pace_validate.py 와 같은 처리).
 
-★base 는 **고정**한다 — 실기가 거치 상태이기 때문이다.
-  freejoint 를 XML 에서 제거한 임시 모델을 만들어 쓴다(매 틱 qvel 을 0 으로 덮는 것보다
-  깨끗하고 빠르다: nv 14 → 8).
+★base 는 **고정**하고 **바닥을 없앤다** — 실기가 매달린(거치) 상태이기 때문이다.
+  ⚠freejoint 만 빼면 torso 가 `pos="0 0 0.5257"` 에 고정되는데, 그 높이는 **발이 바닥에
+    닿도록** 계산된 값이다. 그대로 두면 시뮬 로봇이 **바닥을 딛고 선다** —
+    2026-08-11 실제로 이걸 놓쳐서 "8축 전부 트립" 이라는 **가짜 결론**을 냈다.
+    가진 4초 내내 두 발이 100% 접촉 중이었고, 지면이 다리를 붙잡아 추종오차가
+    13~32° 로 폭증했다. 실기에는 없는 힘이다.
+  ⇒ floor geom 을 제거한다. 확인: 롤아웃 중 `d.ncon == 0` 이어야 한다.
 
 ⚠**PACE 는 강체 부분이 맞다는 걸 전제한다.** MJCF 질량·관성이 틀리면 CMA-ES 가 그 오차를
   armature/damping/friction 으로 흡수해 "잘 맞는데 물리적으로 틀린" 값을 낸다.
@@ -63,6 +67,10 @@ def load_fixed_base(mjcf_path: str):
     for parent in root.iter():
         for fj in list(parent.findall("freejoint")):
             parent.remove(fj)
+        # ★바닥 제거 — 매단 상태를 재현한다(위 주석 참조). 안 지우면 발이 지면에 눌린다.
+        for g in list(parent.findall("geom")):
+            if g.get("name") == "floor":
+                parent.remove(g)
     with tempfile.NamedTemporaryFile("w", suffix=".xml", dir=os.path.dirname(mjcf_path),
                                      delete=False) as f:
         tree.write(f, encoding="unicode")

@@ -470,13 +470,34 @@ int main(int argc, char** argv) {
           for (double dx = -SW; dx <= SW + 1e-9; dx += 0.04) for (double dy = -SW; dy <= SW + 1e-9; dy += 0.04) { s += terrainSdf->height(x + dx, y + dy); ++c; }
           return s / c; };
         const double STEP = 0.3;
+        // ★지형 속도정책(TERRAIN_CAP, 기본ON): 현재+전방 국소 경사·거칠기로 전진속도 자동캡 — 과속 낙상 방지.
+        //   경사≥임계→VXCAP_SLOPE(0.2)·거칠기≥임계→VXCAP_ROUGH(0.15). 평지/완만=무캡. (검증: VX0.3 지형 낙상↔VX0.2 완주)
+        double vxEff = vx;
+        if (!(getenv("TERRAIN_CAP") && !std::strcmp(getenv("TERRAIN_CAP"), "0"))) {
+          const double bxN = d->qpos[0], byN = d->qpos[1];   // ★현재 실제 base 위치(oX는 헤드리스서 nominal 0이라 못 씀)
+          const double cy = std::cos(z), sy = std::sin(z), h0 = hS(bxN, byN);  // z=현재 yaw
+          double slope = 0, rough = 0;
+          for (double f = 0.0; f <= 1.0 + 1e-9; f += 0.25) {   // 현재+전방 1.0m까지(bump/램프 선행 감속=가속 전 캡)
+            double px = bxN + f * cy, py = byN + f * sy;
+            double gX = (hS(px - STEP, py) - hS(px + STEP, py)) / (2 * STEP);
+            double gY = (hS(px, py - STEP) - hS(px, py + STEP)) / (2 * STEP);
+            slope = std::max(slope, std::atan2(std::hypot(gX, gY), 1.0));
+            rough = std::max(rough, std::abs(hS(px, py) - h0));
+          }
+          double cap = 1e9;
+          if (slope > 0.06) cap = std::min(cap, getenv("VXCAP_SLOPE") ? std::atof(getenv("VXCAP_SLOPE")) : 0.2);  // >3.4°
+          if (rough > 0.02) cap = std::min(cap, getenv("VXCAP_ROUGH") ? std::atof(getenv("VXCAP_ROUGH")) : 0.15); // >2cm
+          vxEff = std::max(-cap, std::min(vx, cap));
+          if (getenv("TC_DBG") && step % 500 == 0)
+            fprintf(stderr, "[TCAP] x=%.2f slope=%.3f(%.1f°) rough=%.3f vx=%.2f→vxEff=%.2f\n", bxN, slope, slope * 57.3, rough, vx, vxEff);
+        }
         const int N = 11; std::vector<scalar_t> tt(N); std::vector<vector_t> xs(N), us(N);
         for (int n = 0; n < N; ++n) {
           double tn = t + (double)n * H / (N - 1);
           vector_t xn = x0;                                                     // nominal 자세·momentum, base만 지형적응
           double yawN = oYaw + wCmd * tn;                                       // ★GUI 선회(yaw-rate 적분)
-          double bx = oX + vx * tn * std::cos(oYaw + 0.5 * wCmd * tn) - vyCmd * tn * std::sin(oYaw);
-          double by = oY + vx * tn * std::sin(oYaw + 0.5 * wCmd * tn) + vyCmd * tn * std::cos(oYaw);
+          double bx = oX + vxEff * tn * std::cos(oYaw + 0.5 * wCmd * tn) - vyCmd * tn * std::sin(oYaw);
+          double by = oY + vxEff * tn * std::sin(oYaw + 0.5 * wCmd * tn) + vyCmd * tn * std::cos(oYaw);
           double nX = (hS(bx - STEP, by) - hS(bx + STEP, by)) / (2 * STEP);      // n=[-∂h/∂x,-∂h/∂y,1]=법선(smooth·넓은차분)
           double nY = (hS(bx, by - STEP) - hS(bx, by + STEP)) / (2 * STEP);
           double vx_ = std::cos(yawN) * nX + std::sin(yawN) * nY;               // (Rz(yaw)ᵀ·n).x

@@ -148,6 +148,20 @@ def build(urdf_path, out_path, ranges_mode="urdf", base_link=None, foot="flat",
                     missing.append(m)
     log(f"  메시 {len(names)}개 · 누락 {len(missing)}" + (f" ★{missing}" if missing else " ✓"))
 
+    # ── 검증 3: ★body 이름 계약 ─────────────────────────────────────────
+    # 종전 검증은 관절·geom·actuator·sensor 만 봤다. body 가 빠져 있었고 그래서
+    # `_collision` 접미사가 조용히 통과해 보행이 죽었다(_norm 주석 참조).
+    lost = [b for b in REQUIRED_BODIES if b not in links]
+    if lost:
+        raise SystemExit(
+            f"  ✗ 컨트롤러가 찾는 body 가 URDF 에 없다: {lost}\n"
+            f"    URDF 링크명: {sorted(links)}\n"
+            f"    → CAD 파트명이 바뀌었다. _norm() 에 정규화 규칙을 추가하거나,\n"
+            f"      이름 변경이 의도된 것이면 biped_wbic.py:74 · biped_control.hpp:95 를\n"
+            f"      **함께** 고칠 것. 한쪽만 고치면 mj_name2id 가 −1 을 돌려주고\n"
+            f"      발 자코비안이 틀려 즉시 낙상한다.")
+    log(f"  body 이름 계약 {len(REQUIRED_BODIES)}개 ✓ ({', '.join(REQUIRED_BODIES)})")
+
     # ── 서기 높이 계산: 접촉구 최하점이 z=0 이 되도록 ────────────────────
     def chain_z(link, z=0.0):
         out = [z]

@@ -35,24 +35,24 @@
       <inertial pos="-0.072651 -4.4686e-05 2.7227e-06" mass="2.8" fullinertia="0.0029362 0.0016967 0.0017243 4.3897e-06 3.2284e-07 -3.3685e-10" />
       <site name="imu" pos="0 0 0.05" size="0.01" />   <!-- ★IMU 장착점(실기 반영) -->
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="base_collision" />
-        <body name="HL_hip_link_collision" pos="-0.225 0.0225 0">
+        <body name="HL_hip_link" pos="-0.225 0.0225 0">
           <inertial pos="0.026196 0.039035 -5.8825e-05" mass="1.3" fullinertia="0.0005559 0.00078767 0.00044966 1.3767e-05 2.7997e-09 -1.4339e-09" />
           <joint name="HL_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.26 0.26" actuatorfrcrange="-84 84" />
           <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_hip_link_collision" />
-          <body name="HL_thigh_link_collision" pos="0 0.115 0">
+          <body name="HL_thigh_link" pos="0 0.115 0">
             <inertial pos="0.055714 0.00033952 -0.077945" mass="3.3" fullinertia="0.005622 0.0094645 0.0040228 1.4966e-06 0.002616 -4.1319e-06" />
             <joint name="HL_thigh_joint" pos="0 0 0" axis="0 1 0" range="-1.13 2.36" actuatorfrcrange="-84 84" />
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link_collision" />
-            <body name="HL_calf_link_collision" pos="0.13192 0 -0.1884">
+            <body name="HL_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 0.000115677 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 -6.32969e-10 -0.00116384 -1.22739e-10" />
               <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.04 0.87" actuatorfrcrange="-126 126" />
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_calf_link_collision" />
-              <body name="HL_foot_link_collision" pos="-0.18768 0 -0.15748">
+              <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.39397e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
                 <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 0.44" actuatorfrcrange="-100.8 100.8" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_foot_link_collision" />
                 <geom name="HL_sphere2" type="sphere" size="0.036" pos="0 0 0" rgba="0.3 0.5 0.9 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
-                <body name="HL_foot_contact_link_collision" pos="0.025353 0 -0.14378">
+                <body name="HL_foot_contact_link" pos="0.025353 0 -0.14378">
                   <inertial pos="0.00167427 -8.03431e-09 -0.00949524" mass="0.0420009" fullinertia="1.23353e-05 1.66282e-05 1.63264e-05 -6.12961e-12 -7.26317e-07 -7.88503e-13" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_foot_contact_link_collision" />
                   <geom name="HL_sphere" type="sphere" size="0.036" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
@@ -61,24 +61,24 @@
             </body>
           </body>
         </body>
-        <body name="HR_hip_link_collision" pos="-0.225 -0.0225 0">
+        <body name="HR_hip_link" pos="-0.225 -0.0225 0">
           <inertial pos="0.044964 -0.03664 4.8852e-05" mass="1.4" fullinertia="0.00055198 0.00081827 0.00046473 -2.2357e-06 -2.7997e-09 -1.4339e-09" />
           <joint name="HR_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.26 0.26" actuatorfrcrange="-84 84" />
           <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_hip_link_collision" />
-          <body name="HR_thigh_link_collision" pos="0 -0.115 0">
+          <body name="HR_thigh_link" pos="0 -0.115 0">
             <inertial pos="0.054189 -0.00033953 -0.079013" mass="3.3" fullinertia="0.0058914 0.0094645 0.0037534 -3.3709e-06 0.002518 2.8196e-06" />
             <joint name="HR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-1.13 2.36" actuatorfrcrange="-84 84" />
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link_collision" />
-            <body name="HR_calf_link_collision" pos="0.13192 0 -0.1884">
+            <body name="HR_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 -0.000113252 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 5.2813e-10 -0.00116384 8.19537e-11" />
               <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.04 0.87" actuatorfrcrange="-126 126" />
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_calf_link_collision" />
-              <body name="HR_foot_link_collision" pos="-0.18768 0 -0.15748">
+              <body name="HR_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.394e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
                 <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 0.44" actuatorfrcrange="-100.8 100.8" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_foot_link_collision" />
                 <geom name="HR_sphere2" type="sphere" size="0.036" pos="0 0 0" rgba="0.3 0.5 0.9 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />
-                <body name="HR_foot_contact_link_collision" pos="0.025353 0 -0.14378">
+                <body name="HR_foot_contact_link" pos="0.025353 0 -0.14378">
                   <inertial pos="0.00167427 -8.03431e-09 -0.00949524" mass="0.0420009" fullinertia="1.23353e-05 1.66282e-05 1.63264e-05 -6.12961e-12 -7.26317e-07 -7.88503e-13" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_foot_contact_link_collision" />
                   <geom name="HR_sphere" type="sphere" size="0.036" pos="0 0 0" rgba="0.9 0.3 0.3 1" friction="1.6 0.05 0.001" condim="3" solref="0.004 1" solimp="0.95 0.99 0.001" />

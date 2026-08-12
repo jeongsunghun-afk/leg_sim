@@ -436,20 +436,36 @@ class Hardware:
           **완전히 틀린 결론**을 낼 뻔했다.
 
         판정: 알려진 크기의 위치오차를 걸면 살아있는 축은 (a) 마찰 수준 이상의 토크를
-        내고 (b) 목표 쪽으로 실제로 움직인다. 죽은 축은 tau≈0.02, 미동이다.
+        내고 (b) 명령을 따라간다. 죽은 축은 tau≈0.02, 미동(또는 중력으로 낙하)이다.
+
+        ★**양방향**으로 잰다 (2026-08-12). 종전엔 +step 한 방향만 보고 "목표 쪽으로
+          움직였나" 를 봤는데, **중력이 큰 축에서 오탐한다**:
+            HR_hip — +2.0° 명령의 복원력 kp·step = 100×2° = 3.49 Nm 인데
+                     중력이 5.25 Nm 라 축이 **반대로** 1.18° 밀렸다.
+                     토크는 5.512 Nm(기준 0.15의 37배)로 파워단이 멀쩡한데도
+                     "드라이버 미응답" 으로 중단했다. HL 은 중력 부호가 반대라 통과 —
+                     좌우가 갈린 게 단서였다.
+          ⇒ +step 과 −step 을 모두 명령하고 **두 정착점의 차이**를 본다.
+            중력은 양쪽에 똑같이 실려 차분에서 상쇄된다(살아있으면 ≈ 2·step).
+            죽은 축은 어느 쪽을 명령하든 중력 방향으로만 가므로 차이가 ≈ 0 이다.
         """
         q0 = self.arm(ch, kp, kd)
-        tgt = q0 + step_deg
         n = max(1, int(0.8 / self.dt))
-        for _ in range(n):
-            s = self.step(ch, tgt, kp, kd)
-            time.sleep(self.dt)
-        moved = (s.q_deg - q0) * (1 if step_deg > 0 else -1)
+        settle = []
+        for sgn in (+1.0, -1.0):
+            tgt = q0 + sgn * abs(step_deg)
+            for _ in range(n):
+                s = self.step(ch, tgt, kp, kd)
+                time.sleep(self.dt)
+            settle.append(s.q_deg)
+        spread = settle[0] - settle[1]          # 중력 상쇄된 순수 추종량
         self.release_test_axis(ch)
-        if abs(s.tau) < tau_floor or moved < move_floor_deg:
+        if abs(s.tau) < tau_floor or spread < move_floor_deg:
             raise SafetyAbort(
-                f"드라이버 미응답 — {step_deg:+.1f}° 명령(kp={kp:.0f})에 "
-                f"토크 {s.tau:+.3f} Nm(기준 {tau_floor}), 이동 {moved:+.3f}°(기준 {move_floor_deg}).\n"
+                f"드라이버 미응답 — ±{abs(step_deg):.1f}° 명령(kp={kp:.0f})에 "
+                f"토크 {s.tau:+.3f} Nm(기준 {tau_floor}), "
+                f"양방향 정착 차이 {spread:+.3f}°(기준 {move_floor_deg}, 정상이면 "
+                f"≈{2*abs(step_deg):.1f}°).\n"
                 f"  EtherCAT·텔레메트리는 정상이나 **파워단이 래치오프**된 상태다.\n"
                 f"  복구: Emb 종료 → 모터 전원 OFF/ON → Emb 재기동.\n"
                 f"  (Emb 기동 직후 4.5초 램프에서 관절이 0°로 움직이면 복구 성공)")

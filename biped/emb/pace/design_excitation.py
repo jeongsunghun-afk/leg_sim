@@ -52,16 +52,38 @@ from joint_map import JointMap                            # noqa: E402
 DEG = np.pi / 180.0
 
 
-def build_traj(mc, jm, cfg_all, T, rate):
-    """collect_multichirp 과 **같은 함수**를 쓴다 — 설계와 수집이 갈리면 분석이 무의미해진다."""
+def build_traj(mc, jm, cfg_all, T, rate, dual=None):
+    """collect_multichirp 과 **같은 함수**를 쓴다 — 설계와 수집이 갈리면 분석이 무의미해진다.
+
+    dual=(ratio, f_slow): ★JDAMP↔JFRIC 분리를 겨냥한 변형.
+      점성 `b·q̇` 와 쿨롱 `τ_c·sign(q̇)` 는 **속도 크기가 한 종류면 구분되지 않는다**
+      (한 속도에서는 둘 다 그냥 상수 토크로 보인다). 고정진폭 처프는 각 주파수에서
+      속도 분포가 비슷해 이 축퇴가 남는다.
+      ⇒ 같은 축에 **느리고 큰** 성분을 겹쳐 저속 구간(쿨롱 지배)과 고속 구간(점성 지배)을
+        **동시에** 만든다. 진폭 예산은 나눠 쓴다(합이 종전 진폭을 넘지 않게).
+    """
     import collect_multichirp as cm
     n = jm.n_leg
     amps, f0, k, phi = cm.chirp_bank(mc, n, T)
     ramp = float(mc.get("ramp_s", 2.0))
     home = np.array([float(x) for x in cfg_all["home"]["q_deg"]])[:n]
     tt = np.arange(0.0, T, 1.0 / rate)
-    q_cmd = np.array([home + cm.q_at(t, amps, f0, k, phi, ramp) for t in tt])
-    return tt, q_cmd, home, dict(amp=amps, f0=f0, f1=f0 + k * T, phi=phi)
+    if dual is None:
+        q_cmd = np.array([home + cm.q_at(t, amps, f0, k, phi, ramp) for t in tt])
+        return tt, q_cmd, home, dict(amp=amps, f0=f0, f1=f0 + k * T, phi=phi)
+    ratio, f_slow = dual
+    a_fast = amps * (1.0 - ratio)
+    a_slow = amps * ratio
+    # 느린 성분도 축마다 위상을 벌린다(황금비) — 안 그러면 8축이 같이 움직여 상관이 생긴다
+    psi = ((np.arange(n) + 0.5) * 0.6180339887) % 1.0 * 2 * np.pi
+    rows = []
+    for t in tt:
+        s = min(t / ramp, 1.0) if ramp > 0 else 1.0
+        fast = cm.q_at(t, a_fast, f0, k, phi, ramp)
+        slow = a_slow * s * np.sin(2 * np.pi * f_slow * t + psi)
+        rows.append(home + fast + slow)
+    return tt, np.array(rows), home, dict(amp=amps, f0=f0, f1=f0 + k * T, phi=phi,
+                                          dual=(ratio, f_slow))
 
 
 def rollout_free(m, d, idx, q_cmd, kp, kd, dt, q0):
@@ -93,6 +115,10 @@ def main() -> int:
     ap.add_argument("--pert", type=float, default=0.10, help="섭동 크기(상대). 감도는 이 값 기준으로 보고")
     ap.add_argument("--noise", type=float, default=0.02, help="측정 잡음[°] — SNR 기준")
     ap.add_argument("--dt", type=float, default=None, help="적분 timestep[s] (기본 1/rate)")
+    ap.add_argument("--f0scale", type=float, default=1.0,
+                    help="f_start 배율. <1 이면 저속 구간이 길어진다(쿨롱↔점성 분리용)")
+    ap.add_argument("--dual", default=None, metavar="비율,f_slow",
+                    help="느린 대진폭 성분을 겹친다 (예: 0.35,0.12). JDAMP↔JFRIC 분리용")
     a = ap.parse_args()
 
     spec = yaml.safe_load(open(a.spec, encoding="utf-8"))
@@ -103,8 +129,14 @@ def main() -> int:
     rate = float(spec["shm"]["rate_hz"])
     dt = float(a.dt or 1.0 / rate)
 
-    tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate)
+    dual = None
+    if a.dual:
+        dual = tuple(float(x) for x in a.dual.split(","))
+    if a.f0scale != 1.0:
+        mc = dict(mc); mc["f_start_hz"] = list(np.array(mc["f_start_hz"], float) * a.f0scale)
+    tt, q_cmd, home, des = build_traj(mc, jm, cfg_all, T, rate, dual)
     names = list(jm.names)
+    names0 = names
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
     #   (kp_joint = kp_ch·k²). 여기서 갈리면 감도가 통째로 틀린다.
@@ -126,7 +158,17 @@ def main() -> int:
     print(f"  {os.path.basename(a.mjcf)} · {T:.0f}s · {rate:.0f}Hz · dt {dt*1e3:.1f}ms "
           f"· 창 {a.window:.2f}s · 섭동 ±{a.pert*100:.0f}% · 잡음 {a.noise:.3f}°")
     print(f"  진폭[°] {np.round(des['amp'],1)}")
-    print(f"  f_end[Hz] {np.round(des['f1'],2)}")
+    print(f"  f_start[Hz] {np.round(des['f0'],3)}   f_end[Hz] {np.round(des['f1'],2)}")
+    if dual:
+        print(f"  ★dual — 느린성분 비율 {dual[0]:.2f} · {dual[1]:.2f}Hz "
+              f"(빠른성분 진폭은 {(1-dual[0])*100:.0f}% 로 줄여 예산을 나눈다)")
+    vmax = np.abs(np.diff(q_cmd, axis=0)).max(axis=0) / (1.0 / rate)
+    print(f"  최대 |q̇|[dps] {np.round(vmax,0)}  (속도상한 {spec['safety']['vel_trip_dps']:.0f})")
+    lo_j = np.array(jm.jog_min[:len(names)]); hi_j = np.array(jm.jog_max[:len(names)])
+    bad = [names[i] for i in range(len(names))
+           if q_cmd[:, i].min() < lo_j[i] or q_cmd[:, i].max() > hi_j[i]]
+    if bad:
+        print(f"  ❌ jog 한계 밖: {bad} — 이 궤적은 실기에 걸 수 없다")
 
     win = max(1, int(round(a.window / dt)))
     P.apply_params(m, idx, gear_n, x0, False, names)
@@ -146,11 +188,35 @@ def main() -> int:
 
     rms = np.sqrt(np.mean(S ** 2, axis=0))
     snr = rms / a.noise
-    print(f"\n  ── (1) 감도: 파라미터 +{a.pert*100:.0f}% 당 궤적변화 ──")
-    print(f"  {'파라미터':<14}{'초기값':>11}{'RMS[°]':>10}{'SNR':>8}   판정")
-    for p in np.argsort(-rms):
-        v = "식별가능" if snr[p] >= 5 else ("★경계(반복수집 필요)" if snr[p] >= 2 else "❌식별 불가")
-        print(f"  {plabels[p]:<14}{x0[p]:>11.4g}{rms[p]:>10.4f}{snr[p]:>8.1f}   {v}")
+
+    # ★판정은 **표본당 SNR 이 아니라 추정 분해능**으로 한다.
+    #   표본당 SNR 이 1 밑이어도 표본이 6만 개면 √N 로 평균되어 충분히 식별된다.
+    #   반대로 SNR 이 커도 다른 파라미터와 평행하면(r≈1) 분리가 안 된다.
+    #   둘을 한꺼번에 보는 게 공분산이다:  Σ = σ²(SᵀS)⁻¹  (Cramér–Rao, 백색잡음 가정)
+    #   S 의 열이 "pert 비율 1단위당" 이므로 √Σ_pp · pert 가 곧 **상대 분해능**이다.
+    #   ⚠백색·독립 잡음 가정이라 **낙관값**이다. 실제 잡음은 상관이 있고 모델오차도 있다.
+    #     따라서 "여유 10배" 정도를 보고 판단할 것이지 1.5배를 믿지 말 것.
+    A = S.T @ S
+    try:
+        cov = (a.noise ** 2) * np.linalg.inv(A)
+        res = np.sqrt(np.clip(np.diag(cov), 0, None)) * a.pert       # 상대 분해능(1=100%)
+    except np.linalg.LinAlgError:
+        res = np.full(len(x0), np.inf)
+    # 다른 파라미터를 **알고 있다고 가정**했을 때의 분해능 — 혼동으로 잃은 양을 드러낸다
+    res_alone = a.noise * a.pert / np.sqrt(np.clip(np.diag(A), 1e-300, None))
+    loss = res / np.where(res_alone > 0, res_alone, 1)
+
+    print(f"\n  ── (1) 감도와 분해능 (섭동 +{a.pert*100:.0f}% 기준, 표본 {S.shape[0]:,}) ──")
+    print(f"  {'파라미터':<14}{'초기값':>11}{'RMS[°]':>9}{'표본SNR':>8}"
+          f"{'분해능':>9}{'단독대비':>8}   판정")
+    for p in np.argsort(res):
+        v = ("식별가능" if res[p] < 0.05 else
+             "★경계(반복수집)" if res[p] < 0.15 else "❌식별 불가")
+        print(f"  {plabels[p]:<14}{x0[p]:>11.4g}{rms[p]:>9.4f}{snr[p]:>8.1f}"
+              f"{res[p]*100:>8.1f}%{loss[p]:>7.1f}x   {v}")
+    print(f"  분해능 = 그 파라미터를 몇 % 안에서 구분할 수 있나(작을수록 좋다).")
+    print(f"  단독대비 = 다른 파라미터를 모두 안다고 가정했을 때 대비 **몇 배 나빠졌나**"
+          f" — 혼동으로 잃은 양이다.")
 
     # ── (2) 파라미터 간 혼동 ───────────────────────────────────────────────
     Sn = S / np.where(rms > 0, rms, 1.0)
@@ -170,11 +236,11 @@ def main() -> int:
     Cq = np.corrcoef(q_cmd.T)
     print(f"  [참고] 종전 지표 '축간 상관' 최대 {np.abs(Cq-np.eye(len(names))).max():.3f}")
 
-    weak = [plabels[p] for p in range(len(x0)) if snr[p] < 2]
+    weak = [plabels[p] for p in range(len(x0)) if res[p] >= 0.15]
     conf = [f"{plabels[i]}↔{plabels[j]}" for r, i, j in pairs if r > 0.9]
     print()
     if weak:
-        print(f"  ❌ 식별 불가(SNR<2): {', '.join(weak)}")
+        print(f"  ❌ 식별 불가(분해능 ≥15%): {', '.join(weak)}")
         print(f"     → 진폭·f_end 를 올리거나(토크예산 확인), 그 파라미터를 축별 시험으로 고정할 것")
     if conf:
         print(f"  ★혼동(|r|>0.9): {', '.join(conf)}")

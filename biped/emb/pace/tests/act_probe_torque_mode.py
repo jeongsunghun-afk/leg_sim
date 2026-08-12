@@ -55,7 +55,8 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
     trials = int(cfg.get("trials", 2))
     # ★중력 바이어스 — 램프 시작점(위 주석 참조). 채널토크[Nm], 부호 포함.
     bias = float((cfg.get("tau_bias_by_ch") or {}).get(ch, 0.0))
-    swing = float(cfg.get("tau_max_nm", 1.4))          # 바이어스 **주변** 진폭
+    swing = float((cfg.get("swing_by_ch") or {}).get(ch, cfg.get("tau_max_nm", 1.4)))
+    swing = float(swing)                               # 바이어스 **주변** 진폭(축별 가능)
     tau_max = abs(bias) + swing                        # 절대 상한(클립용)
 
     log(f"  [{name}] 순수 토크모드 프로브 — tau {bias:+.3f}±{swing} Nm @ {ramp} Nm/s, "

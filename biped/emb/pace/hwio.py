@@ -360,7 +360,14 @@ class Hardware:
         n = max(1, int(self.enable_ramp_s / self.dt))
         for k in range(n):
             s = (k + 1) / n
-            self._raw_write(ch, q0, kp * s, kd * s, hold_scale=s)   # 홀드축도 같이 램프
+            # ★홀드축은 **램프하지 않는다** (2026-08-12). 종전엔 hold_scale=s 로 같이 올렸는데,
+            #   그러면 램프 0.3s 동안 홀드 게인이 0 에서 시작해 **축이 놓인다.**
+            #   중력이 작은 축은 티가 안 났지만 hip 은 5.25Nm 이라 자유낙하한다(α≈135rad/s²):
+            #     홈복귀 도착 오차 4.3° → arm 직후 **12.04°** → check_hold 트립.
+            #   ⚠홀드축은 이미 goto_home 이 잡아둔 상태다. 램프할 이유가 없다.
+            #     첫 arm(아무것도 안 잡힌 상태)에서도 홀드 명령은 **현재 측정각**이라
+            #     오차 0 → 전 게인을 즉시 걸어도 충격이 없다.
+            self._raw_write(ch, q0, kp * s, kd * s, hold_scale=1.0)
             q, dq, tau, _ = self.read(ch)
             self._check(ch, q, dq, tau, q0)
             time.sleep(self.dt)

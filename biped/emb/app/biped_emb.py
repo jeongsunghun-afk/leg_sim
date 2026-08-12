@@ -319,6 +319,7 @@ def main():
     t0 = time.perf_counter(); k = 0; last_cmd_t = t0; last_pub = 0.0
     estop_latched = False
     wd_tripped = False
+    estop_reason = None        # ★래치 사유를 남긴다 — 상태로 발행해 GUI 가 보여준다
     # ★tilt E-stop 은 IMU 가 있어야 동작한다. 이 로봇은 현재 SHM IMU 가 전부 0 이라
     #   tilt 가 항상 0 으로 계산되어 **E-stop 이 사실상 비활성**이다. 조용히 넘어가면
     #   보호장치가 있다고 착각하게 되므로 기동 시 명시적으로 경고한다.
@@ -379,8 +380,16 @@ def main():
                   if estop_latched:
                       if new_mode == FSM.OFF:
                           estop_latched = False
-                          print("[biped_emb] E-stop 래치 해제(off 수신) — 재무장 가능")
+                          print(f"[biped_emb] E-stop 래치 해제(off 수신) — 재무장 가능"
+                                + (f"  [사유였던 것: {estop_reason}]" if estop_reason else ""))
+                          estop_reason = None
                       else:
+                          # ★무시한다는 사실을 알린다. 종전엔 조용히 OFF 로 되돌려서
+                          #   사용자에겐 "버튼이 안 먹는다" 로만 보였다.
+                          if new_mode != fsm.mode:
+                              print(f"[biped_emb] ⚠ '{new_mode}' 요구를 무시한다 — "
+                                    f"**E-stop 래치 중**({estop_reason}). OFF 를 눌러 해제할 것.",
+                                    flush=True)
                           new_mode = FSM.OFF
                   changed = fsm.set(new_mode)
                   jog_goal = np.asarray(cmd.get("jog_deg", jog_goal), float)[: jm.n_leg]
@@ -451,15 +460,21 @@ def main():
                       tau_over_t0 = loop_t
                   elif (loop_t - tau_over_t0) * 1000.0 >= tau_trip_ms:
                       ch = int(np.argmax(np.abs(raw.tau_nm)))
-                      print(f"[biped_emb] ⛔ E-STOP: ch{ch} 토크 {tau_pk:.2f}Nm > {tau_trip_nm}Nm "
-                            f"가 {tau_trip_ms}ms 연속 → limp·래치")
+                      estop_reason = (f"토크 ch{ch} {tau_pk:.2f}>{tau_trip_nm}Nm "
+                                      f"{tau_trip_ms}ms 연속")
+                      print(f"[biped_emb] ⛔ E-STOP: {estop_reason} → limp·래치")
+                      print( "            ★래치 중에는 OFF 외의 모드요구가 전부 무시된다. "
+                             "OFF 를 눌러 해제할 것.")
                       estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
               else:
                   tau_over_t0 = None                # 한 틱이라도 정상이면 타이머 리셋
               # 속도는 즉시 트립(폭주는 지연시킬 이유가 없다)
               if (not estop_latched) and vel_pk > vel_trip_dps:
                   ch = int(np.argmax(np.abs(raw.dq_dps)))
-                  print(f"[biped_emb] ⛔ E-STOP: ch{ch} 속도 {vel_pk:.0f}dps > {vel_trip_dps}dps → limp·래치")
+                  estop_reason = f"속도 ch{ch} {vel_pk:.0f}>{vel_trip_dps}dps"
+                  print(f"[biped_emb] ⛔ E-STOP: {estop_reason} → limp·래치")
+                  print( "            ★래치 중에는 OFF 외의 모드요구가 전부 무시된다. "
+                         "OFF 를 눌러 해제할 것.")
                   estop_latched = True; fsm.set(FSM.OFF); hw.enable(False)
           else:
               tau_over_t0 = None
@@ -558,6 +573,13 @@ def main():
                   extra["dt_ms_nom"] = round(cfg_dt * 1e3, 3)
                   hz_ema = hz_true
               extra["write_fail"] = int(getattr(hw, "n_write_fail", 0))
+              # ★래치·워치독을 **밖으로 드러낸다** (2026-08-12).
+              #   래치되면 OFF 외의 모든 모드요구가 OFF 로 되돌려진다. 그런데 그 사실이
+              #   어디에도 안 나가서, 사용자에겐 "HOME 을 눌러도 안 바뀐다" 로만 보였다.
+              #   실제로 그 증상을 보고받았고, 원인을 찾는 데 한참 걸렸다.
+              extra["estop_latched"] = bool(estop_latched)
+              extra["estop_reason"] = estop_reason
+              extra["wd_trip"] = bool(wd_tripped)
               publish_state(fsm.mode, q_leg, rpy, hz_ema, fsm.mode != FSM.OFF, be_name, extra)
               last_pub = loop_t
 

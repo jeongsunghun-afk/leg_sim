@@ -429,12 +429,10 @@ class Hardware:
                 continue
             Lh = self.limits_for(hc)
             err = abs(float(self._q_cmd[hc]) - float(self._q[hc]))
-            if err > Lh.err_max:
-                self.limp()
-                raise SafetyAbort(
-                    f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
-                    f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
-                    f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
+            # ★검사 순서 — **원인이 구체적인 것부터**. 2026-08-12 실기에서
+            #   ch0 파워단이 죽었는데 err_max 가 먼저 걸려 "밀렸다" 로 떴다.
+            #   그 문구는 '게인 부족·파워단 사망·기계간섭 중 하나' 라 원인을 셋으로 흩는다.
+            #   사망은 kp·err 대 보고토크 비로 **단정**할 수 있으니 먼저 본다.
             # ★파워단 사망 — 큰 토크를 **명령했는데 보고 토크가 없다** (2026-08-12).
             #   오늘 세 번 겪었다(ch7 · ch4 두 번). 증상이 매번 다르게 위장됐다:
             #     "추종오차 12.10°" · "상태 정지 ch0 342ms" · "홀드축이 밀렸다"
@@ -454,6 +452,12 @@ class Hardware:
                     f"  속도 {self._dq[hc]:+.1f}dps — 명령을 무시하고 중력에 끌려간다.\n"
                     f"  EtherCAT·텔레메트리는 정상인데 드라이버 파워단만 래치오프된 상태다.\n"
                     f"  **모터 전원 OFF → 3초 → ON** 후 Emb 재기동. Emb 만 재기동하면 안 풀린다.")
+            if err > Lh.err_max:
+                self.limp()
+                raise SafetyAbort(
+                    f"홀드축 ch{hc} 가 밀렸다 — |명령−측정| {err:.2f}° > {Lh.err_max}°.\n"
+                    f"  게인 부족·파워단 사망·기계간섭 중 하나다. 이 상태의 측정은 무효"
+                    f"(하위 관절이 움직이면 I_link 의 강체 가정이 깨진다).")
 
             # ★스톨 — 중력보다 훨씬 큰 토크를 내는데 안 움직인다(위 주석)
             if self.grav_fn is not None:

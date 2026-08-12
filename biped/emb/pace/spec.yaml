@@ -402,6 +402,13 @@ pace_multi:
   #   진폭은 **관성토크 예산에서 역산**한다: τ_ch = M·A·ω²/k ≤ (0.6·τ_trip − τ_g/k)
   #   f_end 를 낮게 잡는 이유: 위상지연이 r=f/f_n 로 커지고 그게 곧 추종오차다.
   #   ★hip 은 자기충돌 때문에 8° 상한(MJCF 꼭짓점 2^8 전수 확인).
+  # ★좌우 대칭 — base net wrench 상쇄 (PACE arXiv:2509.06342 §3.2.2)
+  #   우리는 크레인에 매달아 잰다. 반력이 크면 base 가 흔들리는데 시뮬은 base 고정이라
+  #   그 흔들림이 통째로 식별오차가 된다. IMU 가 없어 검출도 못 한다.
+  #   실측(design_excitation.py 6s, 체중 136N): 수평력 x 3.69N(2.7%) → **1.76N(1.3%)**
+  #   식별력은 사실상 불변(조건수 5.4→5.5). 상세는 collect_multichirp.apply_mirror.
+  #   ⚠좌우 종속이 되므로 **좌우 분리 식별(--per-axis)과는 양립 불가.** 그때는 null 로 둘 것.
+  mirror: neg
   duration_s: 30.0
   ramp_s: 2.0
   #            hip  thigh calf foot | hip  thigh calf foot

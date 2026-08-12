@@ -347,7 +347,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
     """속도별 (tau_plus, tau_minus, dq_plus, dq_minus). 양방향 상쇄용."""
     half = cfg["stroke_deg"] / 2.0
     frac = cfg["dwell_frac"]
-    out = {}
+    out, raw = {}, []
     # ★스트로크에 안 맞는 속도는 **자동으로 뺀다** (2026-08-12).
     #   통과시간 T=stroke/v 에서 양끝 accel_skip 을 빼면 정착구간이 남아야 한다.
     #   2026-08-12 hip: 스트로크를 16→8° 로 줄이자 35dps 가 0.229s 만에 지나가는데
@@ -394,7 +394,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
     for v in _use:
         v = float(v)
         T = cfg["stroke_deg"] / v
-        res = {}
+        res, _traces = {}, []
         for d in (+1.0, -1.0):
             hw.arm(ch, kp, kd)
             hw.goto(ch, q_center - d * half, kp, kd, speed_dps=min(20.0, 3 * v), tau_ff_fn=ff)
@@ -460,6 +460,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             #   ⇒ Δt 를 **따로** 재야 갈린다. 등속 구간에서 τ(t) 는 G(q(t)) 를 따라가므로
             #     둘의 상호상관 최대점이 곧 Δt 다. 여기서는 **재서 찍기만** 한다 —
             #     보정은 값이 재현되는 걸 확인한 뒤에 할 일이다.
+            _traces.append((v, d, a, m))
             _lag = np.nan
             if ff is not None and m.sum() > 40:
                 _g = np.array([ff(x) for x in a["q"][m]])
@@ -502,6 +503,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
                     f"차이. **등속 미도달, 이 점 제외**(가속토크가 마찰로 둔갑한다)")
                 continue
             out[v] = (res[+1.0][0], res[-1.0][0], res[+1.0][1], res[-1.0][1])
+            raw.extend(_traces)
             log(f"    {swing_str(cfg['stroke_deg'], v):>16} "
                 f"({v:5.1f}→{(abs(res[+1.0][1]) + abs(res[-1.0][1])) / 2:5.1f}dps): "
                 f"tau+={res[+1.0][0]:+.4f} tau−={res[-1.0][0]:+.4f} "
@@ -509,6 +511,28 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
                 f"  [띠±{res[+1.0][5]:.1f}° 위치 {res[+1.0][6]:+.2f}/{res[-1.0][6]:+.2f}"
                 f" · τ지연 {res[+1.0][7] * 1e3:.0f}/{res[-1.0][7] * 1e3:.0f}ms]"
                 + _kt_note(cfg.get("_kt"), res))
+    # ★원시 궤적을 남긴다 (2026-08-12). 고속에서 마찰이 처지는 원인이 아직 미상이다:
+    #   지연 가설은 상호상관 0ms 로 **반증**됐고, 과도진동 위상 가설은 띠 길이와
+    #   상관은 맞지만(20dps 2.4주기 · 40dps 0.98 · 60dps 0.32) **크기가 안 맞는다**
+    #   (예측 0.11 Nm vs 실측 0.28). 추측을 더 쌓지 말고 데이터를 남긴다.
+    #   ⚠이걸로 갈라야 할 것: foot JDAMP 0.0734 도 40·60dps 점에 얹혀 있다.
+    #     그 두 점이 같은 이유로 오염됐다면 foot 값도 무효다.
+    try:
+        import os
+        _d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "results")
+        os.makedirs(_d, exist_ok=True)
+        _p = os.path.join(_d, f"sweep_ch{ch:02d}.npz")
+        np.savez(_p, cols=np.array(["t", "q", "dq", "tau", "cur"]),
+                 q_center=float(q_center), stroke=float(cfg["stroke_deg"]),
+                 kp=float(kp), kd=float(kd), t3=float(_t3),
+                 **{f"v{v:g}_d{'p' if d > 0 else 'm'}":
+                    np.column_stack([a["t"], a["q"], a["dq"], a["tau"], a["cur"]])
+                    for v, d, a, _ in raw},
+                 **{f"v{v:g}_d{'p' if d > 0 else 'm'}_mask": m for v, d, _, m in raw})
+        log(f"    원시 궤적 저장: results/sweep_ch{ch:02d}.npz ({len(raw)} 통과)")
+    except Exception as e:
+        log(f"    ⚠원시 궤적 저장 실패({type(e).__name__}: {e}) — 측정은 유효하다")
     return out
 
 

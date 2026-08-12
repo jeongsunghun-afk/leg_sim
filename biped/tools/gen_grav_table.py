@@ -47,9 +47,26 @@ def build(mjcf: str, cfg: dict) -> dict:
     js = sorted(cfg["joints"], key=lambda x: int(x["channel"]))
     pose = list(cfg["hold_pose"]["neutral_deg"])
 
+    # ★커플링 축의 **원천축**을 쓸 때는 종동 관절이 따라 움직인다 (2026-08-12).
+    #   couple_from 은 "종동 채널각이 원천 관절각에도 의존한다" 는 뜻이다:
+    #       θ_foot = (q_foot + coef·q_calf)·s·k + o
+    #   프로브에서 종동축(foot)은 **홀드축이라 채널각이 잠긴다**. 그러면 원천축(calf)이
+    #   δ 돌 때 q_foot = −coef·δ 로 **발목이 되돌아 돈다**. 표를 '다른 관절 고정' 으로
+    #   뽑으면 그 되돌아 도는 몫이 빠져 중력이 틀린다 — calf 에서 최대 0.11 Nm(15%대).
+    #   ⚠반대 방향은 문제없다. foot 을 구동할 때 calf 채널은 잠겨 있고 **calf 관절은
+    #     실제로 안 움직인다** → 고정 가정이 맞다. 그래서 원천축일 때만 보정한다.
+    driven = {}                      # {원천 ch: [(종동 ch, coef), ...]}
+    for j in js:
+        src = j.get("couple_from")
+        if src:
+            sc = next(int(x["channel"]) for x in js if x["name"] == src)
+            driven.setdefault(sc, []).append((int(j["channel"]), float(j["couple_coef"])))
+
     def tau_at(ch: int, qj: float) -> float:
         q = list(pose)
         q[ch] = qj
+        for dch, coef in driven.get(ch, []):
+            q[dch] = pose[dch] - coef * (qj - pose[ch])
         d.qpos[:] = 0
         for i, v in enumerate(q):
             d.qpos[i] = np.deg2rad(v)

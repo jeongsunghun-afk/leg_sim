@@ -174,8 +174,18 @@ joints:
   #     게인(kp40)으로 돌고 이 config 를 안 읽는다 — 충돌이 아니다. PACE 를 이 게인으로
   #     돌릴 거면 그때 kp_max 를 재검토할 것(강성 실측 상한은 41~97, quad_ctrl e780b04).
   # ═══════════════════════════════════════════════════════════════════════════════
-  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: -1.27, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: -28.88, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  # ★offset_deg 전 축 **0** (2026-08-12) — MCU 단에서 엔코더 초기값을 기준자세에 맞춰
+  #   다시 잡았다. 그러면 '기준자세에서 채널각 = 0' 이 **구조적으로 성립**하므로
+  #   offset 은 측정으로 구할 값이 아니라 정의상 0 이다(측정 잡음도 안 섞인다).
+  #   종전 값(참고): HL_hip −1.27 · HL_thigh −28.88 · HL_calf −70.88 · HL_foot −95.38
+  #                  HR_hip +1.74 · HR_thigh +33.66 · HR_calf +85.25 · HR_foot +87.75
+  #   ⚠**gear_k 문제는 그대로다.** 드라이버가 전 축 7:1 을 가정하는데 실제는
+  #     calf 10.5 · foot 8.4 다. offset 이 0 이어도 기준자세에서 멀어지면 그 배율만큼
+  #     틀어진다. 근본 해결은 드라이버 감속비 설정이다.
+  #   ⚠offset 이 바뀌면 **spec.torque_mode.tau_grav_table 을 반드시 재생성**할 것 —
+  #     그 표는 채널각으로 색인한다(tools/gen_grav_table.py --apply).
+  - {name: HL_hip,   channel: 0, sign: -1, offset_deg: 0.0, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_thigh, channel: 1, sign:  1, offset_deg: 0.0, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
   # ★calf min_deg −59.6 → **−62.0** (2026-08-12, 사용자 요청).
   #   URDF(CAD) 값 −59.6 은 **무여자 정지자세를 담지 못한다** — 실측 늘어짐이 그 밖이다:
   #     2026-08-12 ch3 실행 시작자세  HL_calf **−60.82°**  (−59.6 을 1.22° 초과)
@@ -185,12 +195,12 @@ joints:
   #     그 **실측 하드스톱**이 CAD 값에 덮였던 것이다. 오늘 관측(−60.82)이 −62 안에
   #     들어오는 게 그 실측이 맞다는 방증이다.
   #   ⚠하드스톱 자체는 −62 이므로 여유가 1.2° 뿐이다. 여기까지 몰지 말 것.
-  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: -70.88, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: -95.38, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 1.74, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 33.66, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 85.25, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
-  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 87.75, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_calf,  channel: 2, sign: -1, offset_deg: 0.0, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HL_foot,  channel: 3, sign: -1, offset_deg: 0.0, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HL_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_hip,   channel: 4, sign: -1, offset_deg: 0.0, min_deg: -14.9, max_deg:  14.9, kp: 100, kd: 6.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_thigh, channel: 5, sign: -1, offset_deg: 0.0, min_deg: -64.7, max_deg: 135.2, kp: 50, kd: 4.0, gear_k: 1}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_calf,  channel: 6, sign:  1, offset_deg: 0.0, min_deg: -62.0, max_deg:  49.8, kp: 80, kd: 3.5, gear_k: 1.5}  # ★sign 장착방향 실측확정 2026-08-10
+  - {name: HR_foot,  channel: 7, sign:   1, offset_deg: 0.0, min_deg: -84.8, max_deg:  25.2, kp: 30, kd: 2.0, gear_k: 1.2, couple_from: HR_calf, couple_coef: 1}  # ★sign 장착방향 실측확정 2026-08-10
 
 # 허리(WaR/WaP, 채널 8~9)는 biped 모델에 없음 → 고정 홀드. ★상체/허리 서브시스템 별도면 여기서 제외.
 waist:

@@ -43,7 +43,9 @@ TEMPLATE = Template("""
   <tr><td>일시</td><td>{{ datetime }}</td></tr>
   <tr><td>축</td><td>{{ joint }} (SHM ch{{ ch }}, 감속비 N={{ gear }})</td></tr>
   <tr><td>게인</td><td class="numeric">Kp={{ kp }} Kd={{ kd }}</td></tr>
-  <tr><td>스윕 속도</td><td class="numeric">{{ speeds }} deg/s</td></tr>
+  <tr><td>흔든 폭·빠르기</td><td class="numeric">{{ swings }}
+      <span class="dim">(= {{ speeds }} deg/s. 저장값은 dps 다 — 회귀변수가 속도라서.
+      Hz 는 같은 왕복을 삼각파로 돌렸을 때의 <b>등가</b> 주파수)</span></td></tr>
   <tr><td>사인</td><td class="numeric">{{ '%.1f' % sine_amp }} deg @ {{ sine_f }} Hz</td></tr>
 
   <tr><th colspan="2">측정 결과 <span class="dim">(보고 토크 단위 기준{{ frame_note }})</span></th></tr>
@@ -152,6 +154,21 @@ def _breakaway(hw, ch, cfg, kp, kd, log) -> tuple[list[float], list[float], list
 
 
 # ── (B) 등속 스윕 ───────────────────────────────────────────────────────────
+def swing_str(stroke_deg: float, v_dps: float) -> str:
+    """등속 스윕 속도를 **±각도 · Hz** 로 바꿔 적는다 (2026-08-12, 사용자 요청:
+    "dps 란 표현보다 몇 deg 를 몇 Hz 로 움직인다는 표현이 이해하기 쉽다").
+
+    ★저장값은 dps 그대로 둔다 — 바꾸지 말 것. 마찰 회귀의 **회귀변수가 속도**다
+      (f = τ_c + b·v). Hz 로 저장하면 stroke 를 건드릴 때마다 실제 속도가 조용히
+      따라 변해, "같은 값을 두 곳에서 다르게 다루는" 부류의 버그가 된다.
+      ⇒ dps 는 단일 진실원, Hz 는 **표시 전용 파생값**. 변환은 이 함수 하나뿐이다.
+
+    ⚠"등가" Hz 다. 실제 스윕은 한 방향씩 따로 돌고 사이에 goto·정착 대기가 있어
+      연속 왕복이 아니다. 같은 왕복을 삼각파로 돌렸을 때의 주파수를 적는 것이다.
+    """
+    return f"±{stroke_deg / 2:.4g}°·{v_dps / (2.0 * stroke_deg):.3g}Hz"
+
+
 def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[float, float, float, float]]:
     """속도별 (tau_plus, tau_minus, dq_plus, dq_minus). 양방향 상쇄용."""
     half = cfg["stroke_deg"] / 2.0
@@ -171,9 +188,13 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
     for v in cfg["speeds_dps"]:
         (_use if cfg["stroke_deg"] / float(v) > _need else _drop).append(float(v))
     if _drop:
-        log(f"    ⚠속도 {_drop} 제외 — 스트로크 {cfg['stroke_deg']}° 로는 통과시간이 "
+        _ds = ", ".join(f"{swing_str(cfg['stroke_deg'], v)}({v:g}dps)" for v in _drop)
+        log(f"    ⚠제외: {_ds} — 스트로크 {cfg['stroke_deg']}° 로는 통과시간이 "
             f"{_need:.3f}s(가속 {2*cfg['accel_skip_s']:.2f} + 최소정착 "
             f"{cfg['min_dwell_samples']/_rate:.3f})보다 짧아 정착 데이터가 안 남는다.")
+    log(f"    흔드는 폭·빠르기: "
+        + ", ".join(f"{swing_str(cfg['stroke_deg'], v)}" for v in _use)
+        + f"   (= {[float(v) for v in _use]} deg/s)")
     if len(_use) < 2:
         raise RuntimeError(
             f"스윕 가능한 속도가 {len(_use)}개뿐이다({_use}) — 회귀가 안 된다. "
@@ -200,20 +221,22 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             m = (a["t"] > max(lo * T, t_settle)) & (a["t"] < hi * T)
             need = int(cfg.get("min_dwell_samples", 15))
             if m.sum() < need:
-                log(f"    ⚠ v={v}: 정상구간 샘플 {m.sum()} < {need} — 제외"
-                    f"(스트로크를 늘리거나 속도를 낮출 것)")
+                log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)}: 정상구간 샘플 "
+                    f"{m.sum()} < {need} — 제외(스트로크를 늘리거나 더 천천히 흔들 것)")
                 res = {}
                 break
             # 등속 도달 확인: dwell 구간 속도의 변동이 크면 아직 과도상태다
             v_sd = float(np.std(a["dq"][m]))
             if v_sd > max(0.35 * v, 8.0):
-                log(f"    ⚠ v={v}: dwell 속도 산포 {v_sd:.1f} deg/s 과대 — 등속 미도달")
+                log(f"    ⚠ {swing_str(cfg['stroke_deg'], v)}: dwell 속도 산포 "
+                    f"{v_sd:.1f} deg/s 과대 — 등속 미도달")
             res[d] = (float(np.mean(a["tau"][m])), float(np.mean(a["dq"][m])))
         if len(res) == 2:
             out[v] = (res[+1.0][0], res[-1.0][0], res[+1.0][1], res[-1.0][1])
             f = (res[+1.0][0] - res[-1.0][0]) / 2
             g = (res[+1.0][0] + res[-1.0][0]) / 2
-            log(f"    v={v:5.1f} deg/s: tau+={res[+1.0][0]:+.4f} tau−={res[-1.0][0]:+.4f} "
+            log(f"    {swing_str(cfg['stroke_deg'], v):>16} ({v:5.1f}dps): "
+                f"tau+={res[+1.0][0]:+.4f} tau−={res[-1.0][0]:+.4f} "
                 f"→ 마찰 {f:+.4f} · 중력+bias {g:+.4f}")
     return out
 
@@ -427,7 +450,10 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     return TEMPLATE.render(
         title=f"Actuator Friction — {name}", datetime=time.strftime("%Y-%m-%d %H:%M:%S"),
         joint=name, ch=ch, gear=gear, kp=kp, kd=kd,
-        speeds=list(fr["sweep"]["speeds_dps"]), sine_amp=amp, sine_f=f_hz,
+        speeds=list(fr["sweep"]["speeds_dps"]),
+        swings=", ".join(swing_str(fr["sweep"]["stroke_deg"], float(v))
+                         for v in fr["sweep"]["speeds_dps"]),
+        sine_amp=amp, sine_f=f_hz,
         tau_static=tau_static, tau_static_sd=tau_static_sd,
         tau_break_pos=tp, tau_break_neg=tn,
         jfric=jfric, jdamp=jdamp, r2=r2,

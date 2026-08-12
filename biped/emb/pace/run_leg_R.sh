@@ -47,6 +47,21 @@ for ch in $CHS; do
     echo "     · 스톨 감지가 중력+2Nm·300ms 에서 끊습니다(τ_trip 10Nm 보다 훨씬 먼저)"
   fi
   echo "────────────────────────────────────────────────────────────────"
+  python3 - "$ch" <<'EOF'
+import sys, yaml
+sys.path[:0] = ["tests"]
+from act_measure_friction import swing_str
+ch = int(sys.argv[1]); fr = yaml.safe_load(open("spec.yaml"))["friction"]
+m = {k: (dict(v) if isinstance(v, dict) else v) for k, v in fr.items()}
+for sec, kv in (m.pop("by_ch", None) or {}).get(ch, {}).items():
+    m.setdefault(sec, {}).update(kv)
+st, sp = m["sweep"]["stroke_deg"], m["sweep"]["speeds_dps"]
+print(f"   흔드는 폭·빠르기: ±{st/2:g}° 를 "
+      + " · ".join(swing_str(st, float(v)).split("·")[1] for v in sp))
+print(f"   파단푸시: {m['breakaway']['max_push_deg']:g}° 까지 "
+      f"{m['breakaway']['ramp_dps']:g}deg/s 로 밀어 봄 "
+      f"(초과토크 상한 {m['breakaway'].get('tau_cap_nm', '없음')}Nm)")
+EOF
   read -r -p "   준비되면 Enter (건너뛰려면 s + Enter): " ans
   [ "$ans" = "s" ] && { echo "   건너뜀"; continue; }
 

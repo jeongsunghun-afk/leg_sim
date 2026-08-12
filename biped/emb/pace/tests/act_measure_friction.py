@@ -397,9 +397,15 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #     표와의 차이를 상수 오프셋으로 얹는다. 곡선 모양은 표를, 높이는 실측을 믿는다.
     #   ⚠마찰 값 자체는 이 보정과 무관하다 — (τ⁺−τ⁻)/2 에서 중력은 어차피 빠진다.
     #     보정이 고치는 것은 **FF 여력과 스톨 판정**이다.
+    #   ⚠actuator_test 가 **홈복귀 전에 이미** 실측 보정을 걸어 hw.grav_fn 에 넣어 뒀다.
+    #     여기서 표를 새로 읽으면 그 보정이 사라진다 — 같은 값을 두 곳이 따로 만드는,
+    #     오늘 여러 번 나온 그 구조다. ⇒ hw.grav_fn 이 있으면 **그걸 쓴다.**
+    #     _gb 는 파단 뒤 **추가 미세보정**(더 정확한 ± 평균)만 담는다.
     _gb = [0.0]
+    _base = ((lambda q: float(hw.grav_fn(ch, q))) if hw.grav_fn is not None
+             else (lambda q: float(np.interp(q, _gq, _gv)) if _gt else 0.0))
     def _ff(q_ch):
-        return (float(np.interp(q_ch, _gq, _gv)) if _gt else 0.0) + _gb[0]
+        return _base(q_ch) + _gb[0]
     if _gt:
         log(f"  [{name}] ★중력 피드포워드 켜짐 — 현재 위치 G={_ff(hw.read(ch)[0]):+.3f} Nm "
             f"(kp 가 중력을 감당할 필요가 없어져 push 여력이 그만큼 는다)")
@@ -434,10 +440,10 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
 
     # ★중력 실측 보정 (위 _gb 주석). 파단 ± 평균이 그 자리의 중력이다.
     _g_meas = (tp + tn) / 2.0
-    _g_tbl = _ff(q_center) - _gb[0]
-    _gb[0] = _g_meas - _g_tbl
-    log(f"    중력 실측보정 {_gb[0]:+.3f} Nm — 표 {_g_tbl:+.3f} vs 파단 실측 "
-        f"{_g_meas:+.3f} Nm @ {q_center:+.2f}°")
+    _g_cur = _ff(q_center) - _gb[0]
+    _gb[0] = _g_meas - _g_cur
+    log(f"    중력 미세보정 {_gb[0]:+.3f} Nm — 현재값 {_g_cur:+.3f} vs 파단 ± 평균 "
+        f"{_g_meas:+.3f} Nm @ {q_center:+.2f}°  (0 근처면 홈복귀 전 실측이 맞았다는 뜻)")
     if abs(_gb[0]) > 3.0:
         warn.append(f"중력 보정이 {_gb[0]:+.2f} Nm 로 크다 — 표를 다시 뽑을 것"
                     f"(tools/gen_grav_table.py)")

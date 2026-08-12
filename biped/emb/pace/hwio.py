@@ -670,6 +670,43 @@ class Hardware:
                 time.sleep(slp)
         return q_hold
 
+    def measure_gravity(self, ch: int, kp: float, kd: float, ff_fn=None,
+                        delta_deg: float = 4.0, settle_s: float = 0.7) -> float:
+        """이 자리의 **중력토크를 실측**한다. 같은 목표각을 위·아래에서 접근해 평균낸다.
+
+            아래에서 접근해 정착:  τ_a = G + f      (마찰이 아래를 받친다)
+            위에서 접근해 정착:    τ_b = G − f
+            ⇒ G = (τ_a + τ_b)/2                    마찰이 상쇄된다
+
+        ★왜 필요한가 (2026-08-12) — 중력표(tau_grav_table)는 **다른 관절이 neutral**
+          이라고 가정하고 만든 것이다. `--solo` 는 하위 관절이 무여자로 늘어져 있어
+          그 가정이 깨진다. HL_thigh 에서 표 1.63 vs 진짜 2.90 Nm — **1.27Nm 틀렸다.**
+          그 오차가 스톨 감지의 가짜 초과토크가 되어 홈복귀에서 시험을 죽였다
+          (실측 토크 3.75: 진짜 중력 대비 초과 0.85=마찰인데, 표 대비로는 2.12).
+        ★MuJoCo 로 확인해 보면 그 오차는 **축 각도에 거의 무관하다**
+          (thigh 0~32° 구간에서 −1.30 ~ −0.92 Nm). 그래서 아무 자리에서 한 번 재
+          상수 오프셋으로 쓰면 된다 — 표를 통째로 다시 뽑을 필요가 없다.
+        ⚠파단(breakaway) 전에 불러야 의미가 있다. 홈복귀부터 보호가 필요하기 때문이다.
+        """
+        # ★스톨 감지를 끈다 — 여기서 "안 움직이는데 토크가 크다" 는 **측정 대상 자체**다.
+        #   게다가 그 감지가 쓰는 중력이 바로 지금 고치려는 그 틀린 값이다(순환).
+        #   ⚠상한은 여전히 τ_trip 과 위치상자가 쥔다. 움직임도 ±delta_deg 로 묶여 있다.
+        q0 = float(self.read(ch)[0])
+        got = []
+        with self.intentional_push():
+         for d in (-1.0, +1.0):                # 아래에서 · 위에서
+             self.goto(ch, q0 + d * delta_deg, kp, kd, speed_dps=10.0, tau_ff_fn=ff_fn)
+             self.goto(ch, q0, kp, kd, speed_dps=10.0, tau_ff_fn=ff_fn)
+             t0, acc = time.monotonic(), []
+             while time.monotonic() - t0 < settle_s:
+                 s = self.step(ch, q0, kp, kd,
+                               tau_ff=(ff_fn(float(self._q[ch])) if ff_fn else 0.0))
+                 if time.monotonic() - t0 > settle_s * 0.5:
+                     acc.append(s.tau)          # 뒤쪽 절반만 — 앞은 과도구간이다
+                 time.sleep(self.dt)
+             got.append(float(np.mean(acc)) if acc else 0.0)
+        return (got[0] + got[1]) / 2.0
+
     def release_test_axis(self, ch: int, n_write: int = 5) -> None:
         """**시험축만** 무여자로. 홀드축은 계속 잡아둔다.
 

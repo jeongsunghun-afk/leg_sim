@@ -672,11 +672,35 @@ def main() -> int:
                         # ★스톨 감지용 중력 조회 — 표는 채널각으로 색인돼 있다.
                         #   이게 있어야 "정상 처짐" 과 "스톱에 밀어붙임" 이 구분된다.
                         _gt = spec["torque_mode"].get("tau_grav_table") or {}
-                        hw.grav_fn = (lambda c, q, _t=_gt:
-                                      float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"]))
-                                      if c in _t else 0.0)
+                        _gbias = {}                   # {ch: 실측−표 오프셋[Nm]}
+                        hw.grav_fn = (lambda c, q, _t=_gt, _b=_gbias:
+                                      (float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"]))
+                                       if c in _t else 0.0) + _b.get(c, 0.0))
                         _jig_precheck(hw, _jm, _tgt, spec, log=_log, tol_override=a.home_tol)
                         hw.arm(ch, _kp_ch, _kd_ch)
+                        # ★홈복귀 **전에** 중력을 실측해 표를 보정한다 (2026-08-12).
+                        #   표는 "다른 관절 = neutral" 가정으로 만든 것인데 --solo 는
+                        #   하위 관절이 늘어져 있다. HL_thigh 에서 표 1.63 vs 진짜 2.90 Nm.
+                        #   그 1.27Nm 이 홈복귀 중 스톨 감지의 가짜 초과토크가 되어
+                        #   시험을 죽였다(실측 3.75Nm: 진짜 대비 초과 0.85=마찰인데
+                        #   표 대비로는 2.12 > 2.0).
+                        #   ⚠파단 뒤에 보정하는 것으로는 늦다 — 홈복귀부터 필요하다.
+                        #   ⚠MuJoCo 확인: 이 오차는 축 각도에 거의 무관하다
+                        #     (thigh 0~32° 에서 −1.30~−0.92). 상수 오프셋으로 충분하다.
+                        _ffn = None
+                        if a.solo and ch in _gt:
+                            _q_now = float(hw.read(ch)[0])
+                            _g_tbl = float(np.interp(_q_now, _gt[ch]["q_ch"], _gt[ch]["tau"]))
+                            _g_meas = hw.measure_gravity(ch, _kp_ch, _kd_ch,
+                                                         ff_fn=lambda q: hw.grav_fn(ch, q))
+                            _gbias[ch] = _g_meas - _g_tbl
+                            _log(f"  중력 실측 {_g_meas:+.3f} vs 표 {_g_tbl:+.3f} Nm "
+                                 f"@ {_q_now:+.2f}° → 보정 {_gbias[ch]:+.3f} Nm")
+                            if abs(_gbias[ch]) > 3.0:
+                                _log(f"  ⚠보정이 3Nm 을 넘는다 — 표를 다시 뽑을 것"
+                                     f"(tools/gen_grav_table.py). 일단 진행한다.")
+                            _ffn = lambda q, _c=ch: hw.grav_fn(_c, q)
+                            hw.arm(ch, _kp_ch, _kd_ch)
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).
                         #   지그가 물려 있으면 편차가 작아 즉시 끝나거나 생략된다.
                         #   궤적은 GUI 홈복귀와 **같은 구현**(control/home.py:HomeTrajectory).
@@ -692,8 +716,8 @@ def main() -> int:
                             try:
                                 goto_home(hw, _jm, make_homer(_jm, _c, hw.dt), _c,
                                           q_box=box, log=_log, speed_dps=a.home_speed,
-                                          **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch}
-                                             if a.solo else {}))
+                                          **({"only_ch": ch, "kp": _kp_ch, "kd": _kd_ch,
+                                              "tau_ff_fn": _ffn} if a.solo else {}))
                                 break
                             except SafetyAbort as _e:
                                 if "상태 정지" not in str(_e) or _try:

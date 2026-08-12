@@ -356,6 +356,35 @@ def t_friction_full():
         check(f"결과 키 {k}", k in res, f"{res.get(k)}")
 
 
+def t_measure_gravity():
+    """★중력 실측 — 마찰이 상쇄되고 중력만 남는가 (2026-08-12 추가).
+
+    이게 없으면 --solo 가 성립하지 않는다. 중력표는 "다른 관절 = neutral" 가정으로
+    만든 것인데 solo 는 하위 관절이 늘어져 있어 HL_thigh 에서 1.27Nm 틀렸고, 그게
+    스톨 감지의 가짜 초과토크가 되어 홈복귀에서 시험을 세 번 죽였다.
+    스텁은 중력을 알고 있으므로 **정답을 아는 상태로** 검증할 수 있다.
+    """
+    print("\n[3c] measure_gravity — 위·아래 접근 평균으로 마찰을 상쇄한다")
+    spec = _load_spec()
+    n = int(spec["shm"]["n_channel"])
+    home, _ = _home_targets()
+    for g_true in (-1.5, +0.8, 0.0):
+        tg = np.zeros(n)
+        tg[3] = g_true                       # 스텁이 거는 물리 중력(부하)
+        fake = FakeLib(n, q_init=home, tau_grav=tg, dt=1 / 500.)
+        hw = _make_hw(fake, spec, hold=[], align=False)
+        # ★**실기와 같은 조건**으로 건다 — grav_fn 을 안 꽂으면 스톨 감지가 통째로
+        #   꺼져서 시험이 통과해 버린다. 처음에 그렇게 짰다가 실기에서 터질 뻔했다.
+        #   일부러 **틀린 표**(진짜의 절반)를 꽂는다. 실기의 thigh 상황 그대로다.
+        hw.grav_fn = lambda c, q, _g=g_true: (-_g * 0.5 if c == 3 else 0.0)
+        hw.arm(3, 30.0, 2.0)
+        g = hw.measure_gravity(3, 30.0, 2.0, delta_deg=4.0, settle_s=0.5)
+        hw.limp()
+        # 모터가 들어야 하는 토크 = −(물리 부하). 스텁 마찰 0.65 는 상쇄돼야 한다.
+        check(f"중력 {-g_true:+.2f}Nm 복원 (마찰 0.65 상쇄 · 표는 절반만 맞음)",
+              abs(g - (-g_true)) < 0.15, f"측정 {g:+.3f}")
+
+
 def t_limp_and_signal():
     """종료 경로 — limp 가 실제로 kp=kd=0 을 쓰는지."""
     print("\n[4] limp")
@@ -413,8 +442,8 @@ if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
-    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_friction_full,
-               t_limp_and_signal, t_hold_no_ratchet):
+    for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
+               t_friction_full, t_limp_and_signal, t_hold_no_ratchet):
         try:
             fn()
         except Exception as e:

@@ -50,7 +50,8 @@ def make_homer(jm, cfg: dict, dt: float, q_deg=None) -> HomeTrajectory:
 
 def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
               speed_dps: float | None = None, tol_deg: float = 5.0,
-              only_ch: int | None = None, kp: float = 0.0, kd: float = 0.0) -> float:
+              only_ch: int | None = None, kp: float = 0.0, kd: float = 0.0,
+              tau_ff_fn=None) -> float:
     """측정각에서 HOME 까지 S-curve 복귀. 소요시간[s] 반환. 도달 실패면 SafetyAbort.
 
     ★only_ch: **그 채널만** 움직이고 나머지는 손도 대지 않는다 (2026-08-12, 사용자 요청).
@@ -100,13 +101,13 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
         # ★경과시간 기준으로 진행한다. 호출 횟수 기준이면 루프가 밀렸다 몰아 돌 때
         #   궤적이 빨리감기 되어 v/a 한계가 무의미해진다(control/home.py 주석 참조).
         q_cmd_leg = homer.step(dt_meas)
-        _write_leg(hw, jm, q_cmd_leg, box_eff, only_ch, kp, kd)
+        _write_leg(hw, jm, q_cmd_leg, box_eff, only_ch, kp, kd, tau_ff_fn)
         _trip_check(hw, box_eff, only_ch)
         time.sleep(hw.dt)
 
     t_settle = time.perf_counter()                       # 정착
     while time.perf_counter() - t_settle < 0.5:
-        _write_leg(hw, jm, homer.q_cmd_leg, box_eff, only_ch, kp, kd)
+        _write_leg(hw, jm, homer.q_cmd_leg, box_eff, only_ch, kp, kd, tau_ff_fn)
         _trip_check(hw, box_eff, only_ch)
         time.sleep(hw.dt)
 
@@ -165,7 +166,8 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     return T
 
 
-def _write_leg(hw, jm, q_leg_deg, q_box, only_ch=None, kp=0.0, kd=0.0) -> None:
+def _write_leg(hw, jm, q_leg_deg, q_box, only_ch=None, kp=0.0, kd=0.0,
+               tau_ff_fn=None) -> None:
     """모델각 → 채널각 → SHM. 변환은 **JointMap 이 전담**한다(수식 복사 금지).
 
     ★상자를 **현재 측정각까지 늘려서** 적용한다 — 안 그러면 계단이 나간다.
@@ -183,7 +185,14 @@ def _write_leg(hw, jm, q_leg_deg, q_box, only_ch=None, kp=0.0, kd=0.0) -> None:
         if q_box is not None and only_ch in q_box:
             lo, hi = q_box[only_ch]
             v = min(max(v, lo), hi)
-        hw._raw_write(only_ch, v, kp, kd)
+        # ★중력 FF 를 실어 보낸다 (2026-08-12). 종전엔 홈복귀가 kp 만으로 중력을 들었다:
+        #   HL_thigh 진짜 중력 2.90Nm ÷ kp 50 → 정상상태 오차 **4.0°**(실측 4.5°).
+        #   그 4.5° 가 kp·err 3.75Nm 을 만들고, 그게 스톨 감지에 가짜 초과토크로 잡혔다.
+        #   FF 를 실으면 kp 가 감당할 몫이 마찰뿐이라 오차가 0.7° 로 떨어진다.
+        if tau_ff_fn is not None:
+            hw._raw_write_ff(only_ch, v, kp, kd, float(tau_ff_fn(float(hw._q[only_ch]))))
+        else:
+            hw._raw_write(only_ch, v, kp, kd)
         return
     hw._raw_write_all(q_ch, hw.hold_kp, hw.hold_kd, q_box)
 

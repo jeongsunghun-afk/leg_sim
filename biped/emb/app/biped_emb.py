@@ -577,7 +577,8 @@ def main():
               #   복귀 시 처진 자리에서 홈까지 궤적을 처음부터 다시 그린다.
               if wd_trip:
                   homer.start(q_leg)
-              hw.write_jog(homer.step(dt_meas))
+              # ★write_jog 가 아니라 write_home — jog 클램프가 계단을 만든다(2026-08-12)
+              hw.write_home(homer.step(dt_meas), q_leg)
               extra["home_progress"] = round(homer.progress, 3)
               extra["home_done"] = homer.done
               _at = homer.at_goal(q_leg, home_settle)

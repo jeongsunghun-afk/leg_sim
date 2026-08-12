@@ -82,6 +82,34 @@ class HwInterface:
 
     # ── 명령 ────────────────────────────────────────────────────────────────
     #   미배선 모터는 통신이 없어 명령이 무효 → 별도 enable 게이팅 없이 전 채널 명령(임베디드가 흡수).
+    def write_home(self, q_leg_joint_deg, q_meas_joint_deg):
+        """홈복귀 전용 기록 — **현재 위치보다 더 바깥으로는 안 보내되, 계단은 안 만든다.**
+
+        ★왜 write_jog 를 못 쓰나 (2026-08-12 실기 사고)
+          늘어진 자세에서 HL_foot 모델각이 **+60°** 였다(커플링: q_foot = raw − q_calf,
+          calf 가 −61° 로 처지면 raw 가 그대로여도 모델각이 +61° 로 읽힌다).
+          jog 한계는 +25.2° 라 write_jog 가 명령을 거기서 잘랐고,
+          **첫 틱에 34.8° 계단**이 나갔다 → kp 30 × 34.8° = 18 Nm → 발이 튕겨
+          426dps 로 폭주 → E-stop.
+          ⚠HomeTrajectory 는 바로 이걸 막으려고 q0 를 **일부러 클램프 안 한다**
+            (home.py 주석). 그 방어를 하류 클램프가 무효화하고 있었다.
+
+        ⇒ 한계를 **현재 측정각까지 늘려서** 적용한다:
+              lo_eff = min(lo, q_meas)   ·   hi_eff = max(hi, q_meas)
+          · 이미 범위 밖이면 그 자리는 허용한다(계단 없음)
+          · 더 바깥으로는 못 간다(보호 유지)
+          · 목표(홈)는 범위 안이므로 궤적이 **범위 쪽으로만** 데려간다 — 안전하다
+        """
+        qj = np.asarray(q_leg_joint_deg, float).copy()
+        qm = np.asarray(q_meas_joint_deg, float)
+        lo = np.minimum(self.jm.jog_min, qm)
+        hi = np.maximum(self.jm.jog_max, qm)
+        qj = np.clip(qj, lo, hi)
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        if rc not in (0, None):
+            self.n_write_fail += 1
+        return rc
+
     def write_jog(self, q_leg_joint_deg):
         """각축 검증: **모델각**을 받아 jog 안전한계로 클램프 후 채널각으로 변환해 기록.
 

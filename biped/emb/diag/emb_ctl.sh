@@ -112,6 +112,7 @@ reset)
     #   들어 있었더니 pkill -f 가 그 셸을 죽여 reset 이 ①에서 끊겼다(exit 144).
     #   패턴이 인자·히스토리·에디터 명령줄에 우연히 들어가는 건 흔한 일이다.
     #   ⇒ PID 를 모아 조상 제외 후 하나씩 죽인다. _kill_matching 로 ①③ 공통 처리.
+    _stuck=""
     _kill_matching() {   # $1 = ERE 패턴, $2 = 라벨
         for _p in $(ps -eo pid=,args= | grep -E "$1" | grep -vE "grep -E|ps -eo" \
                     | awk '{print $1}'); do
@@ -119,7 +120,17 @@ reset)
             _a=$(ps -o args= -p "$_p" 2>/dev/null | cut -c1-70)
             [ -z "$_a" ] && continue
             echo "     kill $_p  $_a"
-            kill -9 "$_p" 2>/dev/null || sudo kill -9 "$_p" 2>/dev/null
+            # ★sudo 는 **-n(비대화)** 로 쓴다 (2026-08-12). 종전엔 `sudo kill -9 <pid>`
+            #   였는데 sudoers 의 NOPASSWD 는 **딱 셋뿐**이다:
+            #       RobotEmbedded 바이너리 · pkill -x RobotEmbedded · pkill -9 -x RobotEmbedded
+            #   `kill -9 <pid>` 는 거기 없다 → **비밀번호를 묻는다.** 그런데 2>/dev/null 로
+            #   프롬프트가 가려져, 화면엔 아무것도 안 뜬 채 sudo 가 입력을 기다린다.
+            #   ⇒ reset 이 조용히 멈춘 것처럼 보이고 정리가 안 끝난다.
+            #   -n 이면 즉시 실패하고, 무엇을 못 죽였는지 이름을 대고 넘어간다.
+            if ! kill -9 "$_p" 2>/dev/null && ! sudo -n kill -9 "$_p" 2>/dev/null; then
+                echo "     ✗ 못 죽였다 pid $_p (root 소유) — 아래 수동 명령 참조"
+                _stuck="$_stuck $_p"
+            fi
         done
     }
     echo "  ① writer 종료 (biped_emb.py · actuator_test.py · RobotTestGait · mot_test)"
@@ -127,10 +138,10 @@ reset)
     sleep 1
 
     echo "  ② Emb 종료"
-    sudo pkill -x RobotEmbedded 2>/dev/null; sleep 1
+    sudo -n pkill -x RobotEmbedded 2>/dev/null; sleep 1
     if pgrep -x RobotEmbedded >/dev/null 2>&1; then
         echo "     TERM 으로 안 죽는다 → KILL"
-        sudo pkill -9 -x RobotEmbedded 2>/dev/null; sleep 1
+        sudo -n pkill -9 -x RobotEmbedded 2>/dev/null; sleep 1
     fi
 
     echo "  ③ 되살리는 래퍼 셸·sudo 정리"
@@ -147,6 +158,12 @@ reset)
         _w=$((_w+1))
     done
     echo
+    if [ -n "$_stuck" ]; then
+        echo "  ⚠ root 소유라 못 죽인 프로세스: $_stuck"
+        echo "    sudoers 에는 RobotEmbedded 관련 3개만 NOPASSWD 다 — 나머지는 수동으로:"
+        echo "      sudo kill -9$_stuck"
+        echo "    ⚠애초에 **Emb 를 sudo 없이 띄우면** 이 상황이 안 생긴다(RUNBOOK §1)."
+    fi
     echo "  남은 것 — Emb $_n 개 · writer $_w 개"
     if [ "$_n" != "0" ] || [ "$_w" != "0" ]; then
         echo "  ✗ 아직 남았다:"; ps -eo pid,ppid,etime,args | grep -E "RobotEmbedded|biped_emb\\.py|actuator_test\\.py" | grep -vE "grep -E|ps -eo"   # ★\.py 를 붙인다 — 뷰어의 biped_emb.**yaml** 경로에 걸렸었다

@@ -304,9 +304,21 @@ def main() -> int:
                   log=lambda m: print(f"  [multichirp]{m}"))
         print(f"\n  가진 시작 — {T:.0f}s. Ctrl+C 로 언제든 중단(limp).")
 
-        T_, Qm, DQ, TAU, QC, CUR, STT, CONN = [], [], [], [], [], [], [], []
+        # ★배열을 **미리 잡는다**. 여유 20% (루프가 밀리면 표본이 적어질 뿐 넘지 않는다)
+        _N = int(T * rate * 1.2) + 16
+        T_ = np.zeros(_N); QC = np.zeros((_N, n)); Qm = np.zeros((_N, n))
+        DQ = np.zeros((_N, n)); TAU = np.zeros((_N, n)); CUR = np.zeros((_N, n))
+        STT = np.zeros((_N, n), int); CONN = np.zeros((_N, n), int)
+        _i = 0
         _ipk = [0.0, 0.0]                 # [최대 총전류, 그 시각]
         _over, _lagmax = 0, 0.0           # 밀린 틱 수 · 최대 지연[ms]
+        # ★가진 동안 GC 를 끈다 (2026-08-12). 실기 500Hz 에서 **330.7ms** 정지가 찍혔고
+        #   그동안 드라이버에 명령이 안 나갔다 — 워치독 래치오프의 유력 원인이다.
+        #   ⚠참조순환이 없으면 참조계수만으로 다 회수된다. 위에서 배열을 미리 잡아
+        #     객체가 안 쌓이므로 30초 동안 메모리도 안 는다. 끝나면 반드시 되돌린다.
+        import gc as _gc
+        _gc_was = _gc.isenabled()
+        _gc.disable()
         t0 = time.perf_counter()
         while True:
             t = time.perf_counter() - t0
@@ -332,20 +344,29 @@ def main() -> int:
             # ★파워단 사망·스톨은 check_hold 에만 있다 — _check 로는 못 잡는다.
             #   오늘 다섯 번 겪은 그 고장을 30초 가진 중에 놓치면 안 된다.
             hw.check_hold()
-            T_.append(t); QC.append(q_leg)
-            Qm.append(jm.ch_to_q_joint(q_m))
-            DQ.append(jm.ch_to_dq_ctrl(np.array(hw._dq, float)))   # 채널 dps → 모델각 dps
-            TAU.append(np.array(hw._tau, float)[jm.ch])
+            # ★리스트 append 대신 **미리 잡은 배열**에 인덱스로 채운다 (2026-08-12).
+            #   종전엔 틱마다 numpy 배열 ~6개를 만들어 리스트에 쌓았다. 30초면
+            #   **15만 객체**가 살아남고, 파이썬 GC 가 gen2 를 돌 때 그 전부를 훑는다.
+            #   실기 500Hz 주행에서 **330.7ms** 정지가 찍혔다(이 기기 유휴 실측 32ms —
+            #   로봇이 도는 중이면 그 자릿수가 맞다). 그 동안 드라이버에 명령이 안 간다.
+            #   ⇒ 배열은 고정, 객체는 안 늘어난다. gc.disable() 과 짝이다.
+            #   ⚠임시 배열은 여전히 만들어지지만 **즉시 복사되고 버려진다** — 참조가
+            #     안 남으니 GC 가 훑을 대상이 안 늘어난다. 그게 요점이다.
+            T_[_i] = t
+            QC[_i] = q_leg
+            Qm[_i] = jm.ch_to_q_joint(q_m)
+            DQ[_i] = jm.ch_to_dq_ctrl(np.asarray(hw._dq, float))  # 채널 dps → 모델각 dps
+            TAU[_i] = np.asarray(hw._tau, float)[jm.ch]
             # ★전류를 남기고 **총합을 화면에 띄운다** (2026-08-12).
             #   다축에서 스톨도 과토크도 없이 축이 죽는다 — 매번 다른 축이, τ_trip 의
             #   절반도 안 되는 부하에서. solo 와 다른 건 **8축 동시 전류**뿐이다.
             #   공급전압 새그 → 저전압 보호 → 래치오프 가설을 이걸로 검증한다.
             #   ⚠SHM 에 버스 전압은 안 온다. 전류 총합이 유일한 대리지표다.
-            _c = np.abs(np.array(hw._cur, float)[jm.ch])
-            CUR.append(np.array(hw._cur, float)[jm.ch])
-            STT.append(np.array(hw._stt, int)[jm.ch])
-            CONN.append(np.array(hw._conn, int)[jm.ch])
-            _isum = float(_c.sum())
+            CUR[_i] = np.asarray(hw._cur, float)[jm.ch]
+            STT[_i] = np.asarray(hw._stt, int)[jm.ch]
+            CONN[_i] = np.asarray(hw._conn, int)[jm.ch]
+            _isum = float(np.abs(CUR[_i]).sum())
+            _i += 1
             if _isum > _ipk[0]:
                 _ipk[0], _ipk[1] = _isum, t
             if int(t) != int(t - hw.dt) and int(t) % 5 == 0:
@@ -355,7 +376,7 @@ def main() -> int:
                       f"밀림 {_over}틱(최대 {_lagmax:.1f}ms)  "
                       f"stt " + " ".join(str(v) for v in _st)
                       + ("" if len(set(_st.tolist())) == 1 else "  ★축마다 다르다"))
-            nxt = t0 + len(T_) * hw.dt
+            nxt = t0 + _i * hw.dt
             slp = nxt - time.perf_counter()
             if slp > 0:
                 time.sleep(slp)
@@ -363,6 +384,11 @@ def main() -> int:
                 # ★밀린 틱을 센다. 명령 공백이 드라이버 워치독을 건드릴 수 있다.
                 _over += 1
                 _lagmax = max(_lagmax, -slp * 1e3)
+
+        if _gc_was:
+            _gc.enable()
+        T_ = T_[:_i]; QC = QC[:_i]; Qm = Qm[:_i]; DQ = DQ[:_i]
+        TAU = TAU[:_i]; CUR = CUR[:_i]; STT = STT[:_i]; CONN = CONN[:_i]
 
         # ★수집이 끝나면 **먼저 저장하고** 그 다음에 뒷정리한다 (2026-08-12 실기).
         #   종전엔 여기서 goto_home 을 먼저 했는데 그게 오차 9.40° 로 실패하자 예외가
@@ -375,7 +401,7 @@ def main() -> int:
         #   실제와 다르면 시뮬이 다른 속도로 돌아 식별이 통째로 틀어진다.
         #   실기 첫 수집: 적힌 1.000ms vs 실제 **1.142ms** (14% 차이).
         #   ROTOR_I 는 가속(1/dt²)에 걸리므로 그 오차가 **30%** 로 증폭된다.
-        _dg = np.diff(np.array(T_))
+        _dg = np.diff(T_)
         _dt_real = float(np.median(_dg)) if len(_dg) else 1.0 / rate
         _dev = abs(_dt_real - 1.0 / rate) / (1.0 / rate) * 100
         if _dev > 5.0:
@@ -394,23 +420,23 @@ def main() -> int:
         kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
-        np.savez(path, t=np.array(T_), q=np.array(Qm), q_cmd=np.array(QC),
-                 dq=np.array(DQ), tau_ch=np.array(TAU), cur_ch=np.array(CUR),
-                 stt=np.array(STT), conn=np.array(CONN),
+        np.savez(path, t=T_, q=Qm, q_cmd=QC,
+                 dq=DQ, tau_ch=TAU, cur_ch=CUR,
+                 stt=STT, conn=CONN,
                  kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
                      [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"])
                       for c in jm.ch]),
                  names=np.array(jm.names), home=home, dt=_dt_real,
                  amp=amps, f0=f0, f1=f0 + k * T, phi=phi, corr_max=off.max(),
                  mirror=str(mirror))
-        print(f"\n  ✓ 저장: {path}  ({len(T_)} 표본)")
-        _pct = 100.0 * _over / max(len(T_), 1)
-        print(f"    루프 밀림 {_over}/{len(T_)}틱 ({_pct:.1f}%) · 최대 {_lagmax:.1f}ms"
+        print(f"\n  ✓ 저장: {path}  ({_i} 표본)")
+        _pct = 100.0 * _over / max(_i, 1)
+        print(f"    루프 밀림 {_over}/{_i}틱 ({_pct:.1f}%) · 최대 {_lagmax:.1f}ms"
               + ("   ✓ 실시간 유지" if _pct < 1.0 else
                  "   ★밀린다 — rate_hz 를 낮출 것(명령 공백이 드라이버 워치독을 건드린다)"))
         print(f"    최대 총전류 {_ipk[0]:.1f} A @ {_ipk[1]:.1f}s"
               f"  — 축별 최대 "
-              + " ".join(f"{v:.1f}" for v in np.abs(np.array(CUR)).max(axis=0)) + " A")
+              + " ".join(f"{v:.1f}" for v in np.abs(CUR).max(axis=0)) + " A")
 
         try:
             goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,

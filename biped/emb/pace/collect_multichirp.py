@@ -76,8 +76,19 @@ def chirp_bank(cfg, n, t_end):
     return amps, f0, k, phi
 
 
-def q_at(t, amps, f0, k, phi, ramp_s):
+def q_at(t, amps, f0, k, phi, ramp_s, T=None):
+    """★진폭 램프는 **양쪽**이다 (2026-08-12). 종전엔 올리기만 했다.
+
+    가진이 t=T 에서 뚝 끊기면 축이 **최대속도로 달리는 중에** 명령이 사라진다.
+    실기 첫 다축주행에서 그 뒤 홈복귀가 오차 9.40° 로 실패했다(HR_thigh) —
+    58dps 로 달리던 축을 1.4초 궤적으로 세우려 했으니 당연하다.
+    ⇒ 끝 ramp_s 동안 진폭을 0 으로 접는다. 정지 상태로 끝나 홈복귀가 자명해진다.
+    ⚠식별에는 무해하다. 시뮬이 **같은 q_cmd 를 재생**하므로 램프도 그대로 재현된다.
+      마지막 2초가 저진폭이 될 뿐이다(--holdout 이 거기 걸리면 조금 약해진다).
+    """
     s = min(t / ramp_s, 1.0) if ramp_s > 0 else 1.0     # 진폭 램프(계단 금지)
+    if T is not None and ramp_s > 0:
+        s = min(s, max(0.0, (T - t) / ramp_s))          # ★끝에서 접는다
     ph = 2 * np.pi * (f0 * t + 0.5 * k * t * t) + phi
     return amps * s * np.sin(ph)
 
@@ -161,7 +172,7 @@ def main() -> int:
     # ── 설계 검사 (하드웨어 없이) ────────────────────────────────────────
     tt = np.arange(0, T, 1.0 / rate)
     mirror = mc.get("mirror") or None
-    Q = np.array([apply_mirror(q_at(t, amps, f0, k, phi, ramp), jm.names, mirror)
+    Q = np.array([apply_mirror(q_at(t, amps, f0, k, phi, ramp, T), jm.names, mirror)
                   for t in tt]) + home
     print("■ 궤적 설계 검사")
     print(f"  길이 {T:.0f}s · {rate:.0f}Hz · {len(tt)} 표본 · 램프 {ramp:.0f}s")
@@ -280,7 +291,7 @@ def main() -> int:
             t = time.perf_counter() - t0
             if t >= T:
                 break
-            q_leg = home + apply_mirror(q_at(t, amps, f0, k, phi, ramp), jm.names, mirror)
+            q_leg = home + apply_mirror(q_at(t, amps, f0, k, phi, ramp, T), jm.names, mirror)
             q_ch = jm.q_joint_to_ch(q_leg)
             hw._raw_write_all(q_ch, kp, kd, box)
             q_m = np.array([hw.read(c)[0] for c in range(hw.n)])
@@ -301,26 +312,38 @@ def main() -> int:
             if slp > 0:
                 time.sleep(slp)
 
-        goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,
-                  log=lambda m: print(f"  [multichirp]{m}"))
+        # ★수집이 끝나면 **먼저 저장하고** 그 다음에 뒷정리한다 (2026-08-12 실기).
+        #   종전엔 여기서 goto_home 을 먼저 했는데 그게 오차 9.40° 로 실패하자 예외가
+        #   올라가 **np.savez 까지 못 갔다 — 30초를 멀쩡히 수집하고도 통째로 버렸다.**
+        #   수집이 끝난 시점에서 홈복귀는 **뒷정리**일 뿐이다. 뒷정리 실패로 결과를
+        #   버리면 안 된다.
+        #   ⚠저장은 with 블록 **안**이어야 한다 — 밖으로 빼면 __exit__ 이 limp 한 뒤다.
+        os.makedirs(a.out, exist_ok=True)
+        _sfx = "" if a.f_scale == 1.0 else f"_f{a.f_scale:g}"
+        path = os.path.join(a.out, (f"pace_multichirp{_sfx}.npz" if a.gains == "id"
+                                    else f"pace_multichirp_val{_sfx}.npz"))
+        # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
+        #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
+        kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
+        kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
+        # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
+        np.savez(path, t=np.array(T_), q=np.array(Qm), q_cmd=np.array(QC),
+                 dq=np.array(DQ), tau_ch=np.array(TAU),
+                 kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
+                     [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"])
+                      for c in jm.ch]),
+                 names=np.array(jm.names), home=home, dt=1.0 / rate,
+                 amp=amps, f0=f0, f1=f0 + k * T, phi=phi, corr_max=off.max(),
+                 mirror=str(mirror))
+        print(f"\n  ✓ 저장: {path}  ({len(T_)} 표본)")
 
-    os.makedirs(a.out, exist_ok=True)
-    _sfx = "" if a.f_scale == 1.0 else f"_f{a.f_scale:g}"
-    path = os.path.join(a.out, (f"pace_multichirp{_sfx}.npz" if a.gains == "id"
-                                else f"pace_multichirp_val{_sfx}.npz"))
-    # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
-    #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
-    kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
-    kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
-    # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
-    np.savez(path, t=np.array(T_), q=np.array(Qm), q_cmd=np.array(QC),
-             dq=np.array(DQ), tau_ch=np.array(TAU),
-             kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
-                 [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"]) for c in jm.ch]),
-             names=np.array(jm.names), home=home, dt=1.0 / rate,
-             amp=amps, f0=f0, f1=f0 + k * T, phi=phi, corr_max=off.max(),
-             mirror=str(mirror))
-    print(f"\n  ✓ 저장: {path}  ({len(T_)} 표본)")
+        try:
+            goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,
+                      log=lambda m: print(f"  [multichirp]{m}"))
+        except Exception as e:
+            print(f"\n  ⚠수집 후 홈복귀 실패({type(e).__name__}: {e})")
+            print("    **데이터는 이미 저장됐다** — 자세만 정리하면 된다.")
+
     print(f"    다음: ~/.venv-mujoco/bin/python pace_cmaes.py {path}")
     return 0
 

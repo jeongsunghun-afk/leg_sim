@@ -202,9 +202,24 @@ def main() -> int:
     if bad:
         raise SystemExit(f"✗ 궤적이 jog 한계 밖이다: {bad} — spec.pace_multi.amp_deg 를 줄일 것")
 
-    # ★속도 여유 — 처프는 30초를 계속 돈다. 한 번만 넘어도 트립이다.
-    vmax = np.abs(np.diff(Q, axis=0)).max(axis=0) * rate
+    # ★속도·범위는 **채널각**으로 봐야 한다 (2026-08-12, 사용자 지적).
+    #   종전엔 모델각(Q)으로만 쟀다. 그런데 드라이버가 보는 것도, vel_trip 이 걸리는
+    #   것도 **채널각**이다. foot 은 calf 커플링 때문에 둘이 크게 다르다:
+    #       q_ch_foot = (q_foot + q_calf)·s·k   [couple_coef +1 · gear_k 1.2]
+    #       모델 ±13° → **채널 ±34.8°** (2.7배) · 속도도 2.4배
+    #   전체 처프(--f-scale 1.0)에서 foot 채널속도가 **277 dps** 로 상한 200 을 넘는다.
+    #   모델각으로는 115 dps 라 "여유 27%" 로 보였다 — **없던 여유다.**
+    #   ⚠커플링 자체는 변환(q_joint_to_ch)에 제대로 들어가 있다. 빠진 건 **검사**다.
+    #     같은 양을 두 공간에서 다루면서 한쪽만 본, 오늘 반복된 그 부류다.
+    Qc = np.array([jm.q_joint_to_ch(q) for q in Q])
+    vmax_j = np.abs(np.diff(Q, axis=0)).max(axis=0) * rate
+    vmax = np.abs(np.diff(Qc, axis=0)).max(axis=0) * rate      # ★채널 기준
     vlim = float(spec["safety"]["vel_trip_dps"])
+    print("\n  채널각 범위·속도 (커플링 반영 — 드라이버가 보는 값)")
+    for i, nm in enumerate(jm.names):
+        _m = "  ★상한 초과" if vmax[i] > vlim else ""
+        print(f"    {nm:<10}[{Qc[:, i].min():+7.1f}, {Qc[:, i].max():+7.1f}]°"
+              f"  {vmax[i]:>5.0f} dps  (모델각 {vmax_j[i]:>4.0f}){_m}")
     print(f"\n  최대 |q̇| (명령) " + " ".join(f"{v:.0f}" for v in vmax)
           + f" dps   상한 {vlim:.0f} · 여유 {(1 - vmax.max()/vlim)*100:.0f}%")
     if vmax.max() > vlim * 0.85:
@@ -285,7 +300,8 @@ def main() -> int:
                   log=lambda m: print(f"  [multichirp]{m}"))
         print(f"\n  가진 시작 — {T:.0f}s. Ctrl+C 로 언제든 중단(limp).")
 
-        T_, Qm, DQ, TAU, QC = [], [], [], [], []
+        T_, Qm, DQ, TAU, QC, CUR, STT, CONN = [], [], [], [], [], [], [], []
+        _ipk = [0.0, 0.0]                 # [최대 총전류, 그 시각]
         t0 = time.perf_counter()
         while True:
             t = time.perf_counter() - t0
@@ -305,8 +321,24 @@ def main() -> int:
             Qm.append(jm.ch_to_q_joint(q_m))
             DQ.append(jm.ch_to_dq_ctrl(np.array(hw._dq, float)))   # 채널 dps → 모델각 dps
             TAU.append(np.array(hw._tau, float)[jm.ch])
+            # ★전류를 남기고 **총합을 화면에 띄운다** (2026-08-12).
+            #   다축에서 스톨도 과토크도 없이 축이 죽는다 — 매번 다른 축이, τ_trip 의
+            #   절반도 안 되는 부하에서. solo 와 다른 건 **8축 동시 전류**뿐이다.
+            #   공급전압 새그 → 저전압 보호 → 래치오프 가설을 이걸로 검증한다.
+            #   ⚠SHM 에 버스 전압은 안 온다. 전류 총합이 유일한 대리지표다.
+            _c = np.abs(np.array(hw._cur, float)[jm.ch])
+            CUR.append(np.array(hw._cur, float)[jm.ch])
+            STT.append(np.array(hw._stt, int)[jm.ch])
+            CONN.append(np.array(hw._conn, int)[jm.ch])
+            _isum = float(_c.sum())
+            if _isum > _ipk[0]:
+                _ipk[0], _ipk[1] = _isum, t
             if int(t) != int(t - hw.dt) and int(t) % 5 == 0:
-                print(f"    {t:5.1f}/{T:.0f}s  f≈{f0[0]+k[0]*t:.2f}Hz")
+                _st = np.array(hw._stt[:hw.n], int)
+                print(f"    {t:5.1f}/{T:.0f}s  f≈{f0[0]+k[0]*t:.2f}Hz  "
+                      f"전류합 {_isum:5.1f}A (최대 {_ipk[0]:5.1f}A @{_ipk[1]:.1f}s)  "
+                      f"stt " + " ".join(str(v) for v in _st)
+                      + ("" if len(set(_st.tolist())) == 1 else "  ★축마다 다르다"))
             nxt = t0 + len(T_) * hw.dt
             slp = nxt - time.perf_counter()
             if slp > 0:
@@ -328,7 +360,8 @@ def main() -> int:
         kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
         np.savez(path, t=np.array(T_), q=np.array(Qm), q_cmd=np.array(QC),
-                 dq=np.array(DQ), tau_ch=np.array(TAU),
+                 dq=np.array(DQ), tau_ch=np.array(TAU), cur_ch=np.array(CUR),
+                 stt=np.array(STT), conn=np.array(CONN),
                  kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
                      [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"])
                       for c in jm.ch]),
@@ -336,6 +369,9 @@ def main() -> int:
                  amp=amps, f0=f0, f1=f0 + k * T, phi=phi, corr_max=off.max(),
                  mirror=str(mirror))
         print(f"\n  ✓ 저장: {path}  ({len(T_)} 표본)")
+        print(f"    최대 총전류 {_ipk[0]:.1f} A @ {_ipk[1]:.1f}s"
+              f"  — 축별 최대 "
+              + " ".join(f"{v:.1f}" for v in np.abs(np.array(CUR)).max(axis=0)) + " A")
 
         try:
             goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,

@@ -649,7 +649,20 @@ class Hardware:
                     f"홀드축 ch{hc} **파워단 사망** — kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
                     f"보고 토크가 {self._tau[hc]:+.3f}Nm 뿐이다(비 "
                     f"{abs(float(self._tau[hc]))/cmd_t:.3f} < {self.dead_ratio}).\n"
-                    f"  속도 {self._dq[hc]:+.1f}dps — 명령을 무시하고 중력에 끌려간다.\n"
+                    f"  속도 {self._dq[hc]:+.1f}dps · 전류 {self._cur[hc]:+.2f}A"
+                    f" · **전 축 전류합 {float(np.abs(self._cur[:self.n]).sum()):.1f}A**\n"
+                    f"  ⚠전류합을 보라 — 다축에서 스톨·과토크 없이 축이 죽으면 **공급전압**\n"
+                    f"    새그를 의심할 것(8축 동시 전류가 solo 의 몇 배다).\n"
+                    # ★드라이버 상태워드를 찍는다 (2026-08-12). SHM 이 채널별 stt·conn 을
+                    #   보내는데 **읽어만 놓고 한 번도 안 봤다.** 드라이버가 왜 래치오프
+                    #   했는지(과전류·저전압·과열·추종오차)는 거기 있을 가능성이 높다.
+                    #   우리는 지금 "죽었다" 까지만 알고 **왜** 를 모른다 — 그걸 메운다.
+                    f"  드라이버 상태 — 이 축 stt={int(self._stt[hc])} conn={int(self._conn[hc])}\n"
+                    f"    전 축 stt  " + " ".join(f"ch{c}:{int(self._stt[c])}"
+                                                 for c in range(self.n)) + "\n"
+                    f"    전 축 conn " + " ".join(f"ch{c}:{int(self._conn[c])}"
+                                                 for c in range(self.n)) + "\n"
+                    f"    ⚠정상 축과 **다른 값**이면 그게 드라이버가 말하는 고장 코드다.\n"
                     f"  EtherCAT·텔레메트리는 정상인데 드라이버 파워단만 래치오프된 상태다.\n"
                     f"  **모터 전원 OFF → 3초 → ON** 후 Emb 재기동. Emb 만 재기동하면 안 풀린다.")
             if err > Lh.err_max:

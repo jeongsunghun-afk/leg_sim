@@ -267,7 +267,7 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
             if dead_ch and live > dead:
                 hw.limp()
                 raise SafetyAbort(
-                    "**드라이버 파워단 사망** — "
+                    "**드라이버가 명령을 안 받는다**(파워단 사망이 아니다) — "
                     + " · ".join(f"ch{c}(오차 {ee:+.2f}° · 명령 {cc:.2f}Nm · 보고 {tt:+.3f}Nm"
                                  f" · 비 {abs(tt)/cc:.3f})" for c, ee, cc, tt in dead_ch)
                     + f"\n  같은 순간 나머지 {live - dead}축은 정상 토크를 낸다 — "

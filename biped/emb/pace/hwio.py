@@ -115,6 +115,13 @@ class Hardware:
         self.lib = lib
 
         z = lambda k=self.n: np.zeros(k, np.float32)
+        # ⚠**_cur 는 전류가 아니다** (2026-08-12 확인). SHM 이 _tau 와 **비트 단위로 같은
+        #   값**을 넣는다(전 채널·전 표본, 최대 차이 0.000000). 브리지가 복사한 것이다.
+        #   ★이걸 모르고 τ/(kt·I) 를 "전류 교차검증" 으로 썼는데, 그 비가 축마다
+        #     0.79/0.53/0.66 으로 나온 건 **정확히 1/kt** 였다 — 검증이 아니라 항등식이었다.
+        #   ★tau 를 Nm 으로 읽으면 MuJoCo 중력과 맞고(calf 0.87 vs 0.80), A 로 읽으면
+        #     2배 어긋난다 → **tau 가 토크[Nm] 이고 _cur 이 그 복사본**이다.
+        #     ⇒ 오늘 잰 마찰·중력 값은 전부 유효하다. 다만 **전류 데이터는 없다.**
         self._q, self._dq, self._tau, self._cur = z(), z(), z(), z()
         self._rpy, self._acc, self._gyr = z(3), z(3), z(3)
         self._conn = np.zeros(self.n, np.int32)
@@ -646,13 +653,12 @@ class Hardware:
             if cmd_t > self.dead_cmd_nm and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio:
                 self.limp()      # 죽은 축은 잡을 수 없다 — 나머지도 놓는 게 안전하다
                 raise SafetyAbort(
-                    f"홀드축 ch{hc} **파워단 사망** — kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
+                    f"홀드축 ch{hc} **드라이버가 명령을 안 받는다** — "
+                    f"kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
                     f"보고 토크가 {self._tau[hc]:+.3f}Nm 뿐이다(비 "
                     f"{abs(float(self._tau[hc]))/cmd_t:.3f} < {self.dead_ratio}).\n"
-                    f"  속도 {self._dq[hc]:+.1f}dps · 전류 {self._cur[hc]:+.2f}A"
-                    f" · **전 축 전류합 {float(np.abs(self._cur[:self.n]).sum()):.1f}A**\n"
-                    f"  ⚠전류합을 보라 — 다축에서 스톨·과토크 없이 축이 죽으면 **공급전압**\n"
-                    f"    새그를 의심할 것(8축 동시 전류가 solo 의 몇 배다).\n"
+                    f"  속도 {self._dq[hc]:+.1f}dps"
+                    f" · 전 축 토크합 {float(np.abs(self._tau[:self.n]).sum()):.1f}Nm\n"
                     # ★드라이버 상태워드를 찍는다 (2026-08-12). SHM 이 채널별 stt·conn 을
                     #   보내는데 **읽어만 놓고 한 번도 안 봤다.** 드라이버가 왜 래치오프
                     #   했는지(과전류·저전압·과열·추종오차)는 거기 있을 가능성이 높다.
@@ -663,8 +669,15 @@ class Hardware:
                     f"    전 축 conn " + " ".join(f"ch{c}:{int(self._conn[c])}"
                                                  for c in range(self.n)) + "\n"
                     f"    ⚠정상 축과 **다른 값**이면 그게 드라이버가 말하는 고장 코드다.\n"
-                    f"  EtherCAT·텔레메트리는 정상인데 드라이버 파워단만 래치오프된 상태다.\n"
-                    f"  **모터 전원 OFF → 3초 → ON** 후 Emb 재기동. Emb 만 재기동하면 안 풀린다.")
+                    f"  ★**파워단이 죽은 게 아니다** (2026-08-12 실측으로 확인).\n"
+                    f"    diag/ch_probe.py 로 손으로 돌려 보니 그 축이 **1.87Nm 으로 버텼고**,\n"
+                    f"    다른 축이 다 풀린 상태에서 **자기 위치를 붙들고 있었다.**\n"
+                    f"    죽은 파워단은 위치를 못 붙든다 — 드라이버가 **마지막 setpoint 를 물고\n"
+                    f"    래치**된 상태다. 가만두면 토크가 0 인 건 자기 setpoint 에서 오차가\n"
+                    f"    0 이기 때문이지 힘이 없어서가 아니다.\n"
+                    f"  ⚠stt·conn 은 이 상태를 안 알려준다(정상값 그대로다).\n"
+                    f"  복구는 같다: **모터 전원 OFF → 3초 → ON** 후 Emb 재기동.\n"
+                    f"    Emb 만 재기동하면 안 풀린다.")
             if err > Lh.err_max:
                 self.safe_hold()
                 raise SafetyAbort(

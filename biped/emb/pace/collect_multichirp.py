@@ -372,7 +372,7 @@ def main() -> int:
             if int(t) != int(t - hw.dt) and int(t) % 5 == 0:
                 _st = np.array(hw._stt[:hw.n], int)
                 print(f"    {t:5.1f}/{T:.0f}s  f≈{f0[0]+k[0]*t:.2f}Hz  "
-                      f"전류합 {_isum:5.1f}A (최대 {_ipk[0]:5.1f}A @{_ipk[1]:.1f}s)  "
+                      f"토크합 {_isum:5.1f}Nm (최대 {_ipk[0]:5.1f} @{_ipk[1]:.1f}s)  "
                       f"밀림 {_over}틱(최대 {_lagmax:.1f}ms)  "
                       f"stt " + " ".join(str(v) for v in _st)
                       + ("" if len(set(_st.tolist())) == 1 else "  ★축마다 다르다"))
@@ -434,9 +434,9 @@ def main() -> int:
         print(f"    루프 밀림 {_over}/{_i}틱 ({_pct:.1f}%) · 최대 {_lagmax:.1f}ms"
               + ("   ✓ 실시간 유지" if _pct < 1.0 else
                  "   ★밀린다 — rate_hz 를 낮출 것(명령 공백이 드라이버 워치독을 건드린다)"))
-        print(f"    최대 총전류 {_ipk[0]:.1f} A @ {_ipk[1]:.1f}s"
+        print(f"    최대 토크합 {_ipk[0]:.1f} Nm @ {_ipk[1]:.1f}s"
               f"  — 축별 최대 "
-              + " ".join(f"{v:.1f}" for v in np.abs(CUR).max(axis=0)) + " A")
+              + " ".join(f"{v:.1f}" for v in np.abs(TAU).max(axis=0)) + " Nm")
 
         try:
             goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,

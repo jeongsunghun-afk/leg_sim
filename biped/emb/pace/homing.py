@@ -240,11 +240,16 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
         #   한 축만 그러면 그 드라이버 사망, 전부면 전원/enable 이다. 구분해서 말한다.
         try:
             live = dead = 0
+            dead_ch = []
             for c, cmd, q, dq, tq in snap:
-                kp_c, _ = hw._hold_gain_of(c) if c in hw.hold_ch else (0.0, 0.0)
+                # ★**실제로 써 보낸** 게인을 쓴다 — hold 게인이 아니다(hwio 주석 참조).
+                #   다축처프는 자기 게인셋으로 돌아 hold_kp 와 다르다.
+                kp_c, _ = hw._written_gain_of(c)
                 exp = kp_c * abs(cmd - q) * np.pi / 180.0
                 if exp > 0.5:
-                    dead += abs(tq) < exp * 0.15
+                    if abs(tq) < exp * 0.15:
+                        dead += 1
+                        dead_ch.append((c, cmd - q, exp, tq))
                     live += 1
             if live >= 3 and dead == live:
                 hw.limp()
@@ -252,6 +257,23 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
                     f"**전 축 무여자** — 유의미한 오차가 있는 {live}축이 전부 무토크다.\n"
                     f"  한 드라이버 사망이 아니라 **모터 전원이 꺼져 있거나 enable 이 안 먹은**\n"
                     f"  상태다. 모터 전원을 확인하고, 켜져 있다면 Emb 를 재기동할 것.\n"
+                    f"  (원 증상: {e})") from None
+            # ★**한 축만** 죽은 경우도 이름을 대야 한다 (2026-08-12 실기 ch2).
+            #   종전엔 '전 축 무여자' 일 때만 진단했다. 한 축이면 그냥 추종오차로 떠서
+            #   "막힘·게인부족·기계간섭 의심" 이라는 **엉뚱한 세 원인**을 제시했다.
+            #   정작 같은 덤프에 답이 있었다: ch2 오차 35.04° 에 토크 −0.025Nm(비 0.002)
+            #   인데 나머지 축은 0.84~2.66 으로 멀쩡했다. 증상은 하나인데 원인을 셋으로
+            #   흩는 그 부류다 — 오늘 여러 번 반복됐다.
+            if dead_ch and live > dead:
+                hw.limp()
+                raise SafetyAbort(
+                    "**드라이버 파워단 사망** — "
+                    + " · ".join(f"ch{c}(오차 {ee:+.2f}° · 명령 {cc:.2f}Nm · 보고 {tt:+.3f}Nm"
+                                 f" · 비 {abs(tt)/cc:.3f})" for c, ee, cc, tt in dead_ch)
+                    + f"\n  같은 순간 나머지 {live - dead}축은 정상 토크를 낸다 — "
+                      f"**그 축만** 죽은 것이다.\n"
+                    f"  복구: Emb 종료 → **모터 전원 OFF → 3초 → ON** → Emb 재기동.\n"
+                    f"  ⚠Emb 재기동만으로는 안 풀린다. 드라이버 자체 래치오프다.\n"
                     f"  (원 증상: {e})") from None
         except SafetyAbort:
             raise

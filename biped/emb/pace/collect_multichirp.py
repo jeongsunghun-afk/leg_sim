@@ -145,6 +145,10 @@ def main() -> int:
     #   ⚠양발 간격은 **위치 포락선**이 정하므로 이 값과 무관하다(진폭이 안 바뀐다).
     #     낮추는 건 동적 위험(추종실패·공진·토크)만 줄인다.
     #   ⚠1.0 이 아니면 파일명에 접미사가 붙는다 — 예비주행이 본 데이터를 덮으면 안 된다.
+    # ★루프 주기 — Pi 는 1000Hz 를 못 지킨다 (2026-08-12 실측 실효 805Hz).
+    #   처프 최고 1.85Hz 라 500Hz 면 270배로 충분하다. 마찰시험이 500Hz 로 잘 돌았다.
+    ap.add_argument("--rate", type=float, default=None,
+                    help="루프 주기[Hz] (기본 spec.shm.rate_hz). Pi 는 500 권장")
     ap.add_argument("--f-scale", type=float, default=1.0,
                     help="f_end 배율. 첫 주행은 0.4~0.6 으로 예비주행할 것")
     ap.add_argument("--dry", action="store_true",
@@ -157,7 +161,7 @@ def main() -> int:
     mc = spec.get("pace_multi", {})
     T = float(a.T or mc.get("duration_s", 30.0))
     ramp = float(mc.get("ramp_s", 2.0))
-    rate = float(spec["shm"]["rate_hz"])
+    rate = float(a.rate or spec["shm"]["rate_hz"])
     n = jm.n_leg
 
     if a.f_scale != 1.0:
@@ -302,6 +306,7 @@ def main() -> int:
 
         T_, Qm, DQ, TAU, QC, CUR, STT, CONN = [], [], [], [], [], [], [], []
         _ipk = [0.0, 0.0]                 # [최대 총전류, 그 시각]
+        _over, _lagmax = 0, 0.0           # 밀린 틱 수 · 최대 지연[ms]
         t0 = time.perf_counter()
         while True:
             t = time.perf_counter() - t0
@@ -310,7 +315,17 @@ def main() -> int:
             q_leg = home + apply_mirror(q_at(t, amps, f0, k, phi, ramp, T), jm.names, mirror)
             q_ch = jm.q_joint_to_ch(q_leg)
             hw._raw_write_all(q_ch, kp, kd, box)
-            q_m = np.array([hw.read(c)[0] for c in range(hw.n)])
+            # ★SHM 을 **한 번만** 읽는다 (2026-08-12). 종전엔 `[hw.read(c) for c in
+            #   range(hw.n)]` 로 **채널 수만큼(10회)** 읽었다. read() 는 매번 SHM 전체를
+            #   복사하고 신선도용 tobytes() 를 4개 만든다 — 1000Hz × 10 = **초당 1만 회**,
+            #   할당은 4만 회다. Pi 4 + 파이썬에서 이걸 1ms 안에 못 끝낸다.
+            #   ⚠루프가 밀리면 드라이버에 **명령이 안 간다.** 배포 제어기(500Hz)조차
+            #     "루프가 36ms 밀렸다" 를 찍는 기기다. 명령 공백이 길어지면 드라이버
+            #     워치독이 래치오프한다 — 다축에서만, 매번 다른 축이, 가벼운 부하에서
+            #     죽는 관측과 정확히 맞는다(solo 는 1축만 쓰고 500Hz 라 여유가 있었다).
+            #   ⇒ read() 한 번이면 self._q/_dq/_tau/_cur 가 **전 채널** 채워진다.
+            hw.read(ch_all[0])
+            q_m = np.array(hw._q, float)
             for c in ch_all:
                 hw._check(c, q_m[c], float(hw._dq[c]), float(hw._tau[c]),
                           float(hw._q_cmd[c]))
@@ -337,12 +352,17 @@ def main() -> int:
                 _st = np.array(hw._stt[:hw.n], int)
                 print(f"    {t:5.1f}/{T:.0f}s  f≈{f0[0]+k[0]*t:.2f}Hz  "
                       f"전류합 {_isum:5.1f}A (최대 {_ipk[0]:5.1f}A @{_ipk[1]:.1f}s)  "
+                      f"밀림 {_over}틱(최대 {_lagmax:.1f}ms)  "
                       f"stt " + " ".join(str(v) for v in _st)
                       + ("" if len(set(_st.tolist())) == 1 else "  ★축마다 다르다"))
             nxt = t0 + len(T_) * hw.dt
             slp = nxt - time.perf_counter()
             if slp > 0:
                 time.sleep(slp)
+            else:
+                # ★밀린 틱을 센다. 명령 공백이 드라이버 워치독을 건드릴 수 있다.
+                _over += 1
+                _lagmax = max(_lagmax, -slp * 1e3)
 
         # ★수집이 끝나면 **먼저 저장하고** 그 다음에 뒷정리한다 (2026-08-12 실기).
         #   종전엔 여기서 goto_home 을 먼저 했는데 그게 오차 9.40° 로 실패하자 예외가
@@ -350,6 +370,21 @@ def main() -> int:
         #   수집이 끝난 시점에서 홈복귀는 **뒷정리**일 뿐이다. 뒷정리 실패로 결과를
         #   버리면 안 된다.
         #   ⚠저장은 with 블록 **안**이어야 한다 — 밖으로 빼면 __exit__ 이 limp 한 뒤다.
+        # ★dt 는 **실측 중앙값**을 쓴다 (2026-08-12). 종전엔 1/rate 를 그대로 적었다.
+        #   pace_cmaes 는 이 값을 `m.opt.timestep` 과 지연 샘플수에 **그대로 쓴다** —
+        #   실제와 다르면 시뮬이 다른 속도로 돌아 식별이 통째로 틀어진다.
+        #   실기 첫 수집: 적힌 1.000ms vs 실제 **1.142ms** (14% 차이).
+        #   ROTOR_I 는 가속(1/dt²)에 걸리므로 그 오차가 **30%** 로 증폭된다.
+        _dg = np.diff(np.array(T_))
+        _dt_real = float(np.median(_dg)) if len(_dg) else 1.0 / rate
+        _dev = abs(_dt_real - 1.0 / rate) / (1.0 / rate) * 100
+        if _dev > 5.0:
+            print(f"\n  ⚠루프가 목표 주기를 못 지켰다 — 목표 {1000/rate:.2f}ms vs "
+                  f"실측 {_dt_real*1e3:.3f}ms ({_dev:.0f}% 차이, 실효 {1/_dt_real:.0f}Hz)")
+            print(f"    긴 공백: 2ms 초과 {int((_dg>0.002).sum())}회 · "
+                  f"5ms 초과 {int((_dg>0.005).sum())}회 · 최대 {_dg.max()*1e3:.1f}ms")
+            print(f"    **명령 공백은 드라이버 워치독을 건드릴 수 있다** — --rate 로 낮출 것.")
+            print(f"    dt 는 실측값 {_dt_real*1e3:.3f}ms 로 저장한다(식별이 틀어지지 않게).")
         os.makedirs(a.out, exist_ok=True)
         _sfx = "" if a.f_scale == 1.0 else f"_f{a.f_scale:g}"
         path = os.path.join(a.out, (f"pace_multichirp{_sfx}.npz" if a.gains == "id"
@@ -365,10 +400,14 @@ def main() -> int:
                  kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
                      [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"])
                       for c in jm.ch]),
-                 names=np.array(jm.names), home=home, dt=1.0 / rate,
+                 names=np.array(jm.names), home=home, dt=_dt_real,
                  amp=amps, f0=f0, f1=f0 + k * T, phi=phi, corr_max=off.max(),
                  mirror=str(mirror))
         print(f"\n  ✓ 저장: {path}  ({len(T_)} 표본)")
+        _pct = 100.0 * _over / max(len(T_), 1)
+        print(f"    루프 밀림 {_over}/{len(T_)}틱 ({_pct:.1f}%) · 최대 {_lagmax:.1f}ms"
+              + ("   ✓ 실시간 유지" if _pct < 1.0 else
+                 "   ★밀린다 — rate_hz 를 낮출 것(명령 공백이 드라이버 워치독을 건드린다)"))
         print(f"    최대 총전류 {_ipk[0]:.1f} A @ {_ipk[1]:.1f}s"
               f"  — 축별 최대 "
               + " ".join(f"{v:.1f}" for v in np.abs(np.array(CUR)).max(axis=0)) + " A")

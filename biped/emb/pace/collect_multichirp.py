@@ -369,7 +369,15 @@ def main() -> int:
             T_[_i] = t
             QC[_i] = q_leg
             Qm[_i] = jm.ch_to_q_joint(q_m)
-            DQ[_i] = jm.ch_to_dq_ctrl(np.asarray(hw._dq, float))  # 채널 dps → 모델각 dps
+            # ★**단위 변환을 빠뜨렸었다** (2026-08-12). ch_to_dq_ctrl 은 마지막에 D2R 을
+            #   곱해 **rad/s** 를 낸다. 그런데 npz 의 q 는 **deg** 이고, pace_cmaes 의
+            #   rollout 은 `d.qvel = dq_real * DEG` 로 **deg/s 인 줄 알고 또 변환**한다.
+            #   ⇒ 시뮬이 창(0.5s)마다 실측속도의 **1/57.3** 로 재초기화됐다 — 사실상
+            #     정지에서 출발한 셈이고, 창 앞부분이 계통적으로 뒤처진다.
+            #   ★hw_interface.py 는 같은 함수를 쓰면서 `* R2D` 로 되돌린다 — 그 주석에
+            #     "rad/s 로 주므로 deg/s 로 되돌린다" 고 적혀 있다. **여기만 빠졌다.**
+            #   실측 확인: dq / q의수치미분 기울기가 8축 전부 0.01734~0.01745 (=1/57.2958).
+            DQ[_i] = jm.ch_to_dq_ctrl(np.asarray(hw._dq, float)) / DEG   # → 모델각 deg/s
             TAU[_i] = np.asarray(hw._tau, float)[jm.ch]
             # ★전류를 남기고 **총합을 화면에 띄운다** (2026-08-12).
             #   다축에서 스톨도 과토크도 없이 축이 죽는다 — 매번 다른 축이, τ_trip 의

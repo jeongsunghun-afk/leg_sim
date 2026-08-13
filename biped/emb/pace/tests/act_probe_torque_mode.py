@@ -65,11 +65,27 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
     if _tbl:
         _qs = np.asarray(_tbl["q_ch"], float)
         _ts = np.asarray(_tbl["tau"], float)
+    # ★**hw.grav_fn 이 있으면 그걸 쓴다** (2026-08-12). actuator_test 가 홈복귀 **전에**
+    #   중력을 실측해 표에 상수 보정을 얹고 hw.grav_fn 에 넣어 둔다. 여기서 표를 새로
+    #   읽으면 그 보정이 사라진다 — 마찰시험은 이미 고쳤는데 **토크 프로브만 빠져 있었다.**
+    #   ⚠이게 왜 치명적인가: 이 프로브는 τ_break = |τ_cmd − bias| 를 양방향 평균해서
+    #     마찰을 낸다. bias 오차 Δ 는 s⁺=Δ+f · s⁻=−Δ+f 로 갈리는데, **|Δ| < f 일 때만**
+    #     평균에서 상쇄된다. --solo 의 thigh 는 표 오차가 **1.27Nm** 이고 마찰이 0.67 이라
+    #     |Δ| > f — 한쪽이 즉시 움직여 평균이 깨진다. 보정 없이는 thigh 를 못 잰다.
+    _gfn = getattr(hw, "grav_fn", None)
+
     def grav_at(q):
         """채널각 q 에서의 중력토크[Nm]. 표 밖은 끝값으로 고정(np.interp 기본)."""
+        if _gfn is not None:
+            return float(_gfn(ch, q))
         return float(np.interp(q, _qs, _ts)) if _tbl else _fallback
     swing = float((cfg.get("swing_by_ch") or {}).get(ch, cfg.get("tau_max_nm", 1.4)))
-    tau_max = (float(np.max(np.abs(_ts))) if _tbl else abs(_fallback)) + swing   # 절대 상한
+    # 절대 상한 — 보정이 걸려 있으면 그만큼 올라간다(안 그러면 램프가 상한에 먼저 걸린다)
+    _tbase = float(np.max(np.abs(_ts))) if _tbl else abs(_fallback)
+    if _gfn is not None and _tbl:
+        _tbase = max(_tbase, abs(grav_at(hw.read(ch)[0])) + abs(
+            float(np.interp(hw.read(ch)[0], _qs, _ts)) - grav_at(hw.read(ch)[0])))
+    tau_max = _tbase + swing
 
     bias = grav_at(hw.read(ch)[0])          # 시작 위치의 중력. 시행마다 갱신된다.
     log(f"  [{name}] 순수 토크모드 프로브 — tau G(q)±{swing} Nm @ {ramp} Nm/s, "

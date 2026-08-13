@@ -278,11 +278,25 @@ def main() -> int:
     if _gk not in mc:
         raise SystemExit(f"✗ spec.pace_multi.{_gk} 가 없다")
     kp = at._gain(mc[_gk]); kd = at._gain(mc[_gd])
+    # ★홈복귀는 **배포 게인**으로 한다 (2026-08-12 실기). 종전엔 hold_kp 에 처프 게인을
+    #   그대로 넘겼는데, goto_home 이 hold_kp 를 쓰므로 **calf 를 kp 25 로 78° 움직였다**
+    #   (배포는 80). 그 결과 오차 35.02° · 명령토크 15.28Nm — τ_trip 16 에 육박했고,
+    #   그 상태에서 드라이버가 명령을 안 받는 상태로 래치됐다(실기 1회).
+    #   ⚠처프가 게인을 낮추는 건 **식별을 위해서**다. 게인이 높으면 궤적이 q_cmd 에
+    #     붙어 파라미터 정보가 사라진다. 그건 **가진 구간에만** 필요한 이야기다 —
+    #     홈복귀는 그냥 자세를 옮기는 동작이라 배포 게인이 맞다.
+    #   ⚠가진 루프는 _raw_write_all(q_ch, kp, kd, box) 로 **처프 게인을 직접 넘긴다** —
+    #     hold_kp 를 안 쓰므로 이 변경이 식별 조건을 건드리지 않는다.
+    _kp_home = at._gain(sf.get("hold_kp", 40.0))
+    _kd_home = at._gain(sf.get("hold_kd", 2.0))
+    print("  ★홈복귀 게인 = 배포값 " + " ".join(
+        f"ch{c}:{_kp_home[c]:g}" for c in sorted(_kp_home)) if isinstance(_kp_home, dict)
+        else f"  ★홈복귀 게인 = {_kp_home}")
     at.preflight(spec)
 
     with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], rate, lim,
                   int(spec["shm"]["recv_wait_ms"]), float(g["enable_ramp_s"]),
-                  hold_channels=ch_all, hold_kp=kp, hold_kd=kd) as hw:
+                  hold_channels=ch_all, hold_kp=_kp_home, hold_kd=_kd_home) as hw:
         hw.publish_fn = lambda q_ch, rpy, on: publish_state(
             "pace:multichirp", jm.ch_to_q_joint(np.asarray(q_ch, float)),
             np.asarray(rpy, float), rate, on, "pace")

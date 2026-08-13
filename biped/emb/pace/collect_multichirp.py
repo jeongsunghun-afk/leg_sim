@@ -129,6 +129,13 @@ def main() -> int:
     ap.add_argument("--gains", choices=["id", "validate"], default="id",
                     help="★id=식별용(기본) · validate=검증용 게인셋. "
                          "원문의 'unseen PD gains' 검증 — 다른 게인에서 같은 θ 가 나오는지 본다")
+    # ★단계적 상향용 (2026-08-12, 사용자 제안 "처음부터 높은 건 좀"). f_end 만 곱한다 —
+    #   f_start 는 그대로라 **여전히 낮은 데서 시작해 쓸어 올린다**. 도달 상한만 낮춘다.
+    #   ⚠양발 간격은 **위치 포락선**이 정하므로 이 값과 무관하다(진폭이 안 바뀐다).
+    #     낮추는 건 동적 위험(추종실패·공진·토크)만 줄인다.
+    #   ⚠1.0 이 아니면 파일명에 접미사가 붙는다 — 예비주행이 본 데이터를 덮으면 안 된다.
+    ap.add_argument("--f-scale", type=float, default=1.0,
+                    help="f_end 배율. 첫 주행은 0.4~0.6 으로 예비주행할 것")
     ap.add_argument("--dry", action="store_true",
                     help="하드웨어 없이 궤적만 설계·검사(상관·한계·충돌 여유)")
     a = ap.parse_args()
@@ -142,6 +149,12 @@ def main() -> int:
     rate = float(spec["shm"]["rate_hz"])
     n = jm.n_leg
 
+    if a.f_scale != 1.0:
+        mc = {kk: (list(vv) if isinstance(vv, list) else vv) for kk, vv in mc.items()}
+        mc["f_end_hz"] = [float(v) * a.f_scale for v in mc["f_end_hz"]]
+        print(f"  ★f_end ×{a.f_scale:g} — 예비주행. f_start 는 그대로다"
+              f"(도달 상한만 낮춘다). f_end = "
+              + " ".join(f"{v:.2f}" for v in mc["f_end_hz"]) + " Hz")
     amps, f0, k, phi = chirp_bank(mc, n, T)
     home = np.array([float(x) for x in cfg_all["home"]["q_deg"]])[:n]
 
@@ -292,8 +305,9 @@ def main() -> int:
                   log=lambda m: print(f"  [multichirp]{m}"))
 
     os.makedirs(a.out, exist_ok=True)
-    path = os.path.join(a.out, "pace_multichirp.npz" if a.gains == "id"
-                        else "pace_multichirp_val.npz")
+    _sfx = "" if a.f_scale == 1.0 else f"_f{a.f_scale:g}"
+    path = os.path.join(a.out, (f"pace_multichirp{_sfx}.npz" if a.gains == "id"
+                                else f"pace_multichirp_val{_sfx}.npz"))
     # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
     #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
     kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])

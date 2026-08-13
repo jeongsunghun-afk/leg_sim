@@ -165,6 +165,8 @@ class Hardware:
         #   ⚠시험축만 대상이다. 홀드축까지 걸려면 채널별 표가 필요한데 지금은 없다 —
         #     호출부가 ch 를 보고 0 을 돌려주면 종전 동작 그대로다.
         self.tau_ff_fn = None
+        self._wr_kp = None            # 마지막으로 써 보낸 게인(판정용 단일 출처)
+        self._wr_kd = None
         self.stall_margin_nm = 2.0      # 중력 대비 이만큼 초과하면 후보
         self.stall_vel_dps = 5.0        # 그런데 이보다 느리면 스톨
         self.stall_ms = 300.0           # 이 시간 지속되면 중단
@@ -220,6 +222,16 @@ class Hardware:
         atexit.register(self.limp)
 
     # ── 종료 / limp ─────────────────────────────────────────────────────────
+    def _written_gain_of(self, ch: int) -> tuple[float, float]:
+        """**마지막으로 SHM 에 써 보낸** 게인. 판정은 이걸 써야 한다(위 check_hold 주석).
+
+        홀드게인(_hold_gain_of)과 다를 수 있다 — 다축처프는 자기 게인셋으로 돈다.
+        아직 아무것도 안 썼으면 홀드게인으로 떨어진다(하위호환).
+        """
+        if self._wr_kp is not None and ch < self.n:
+            return float(self._wr_kp[ch]), float(self._wr_kd[ch])
+        return self._hold_gain_of(ch)
+
     def _hold_gain_of(self, ch: int) -> tuple[float, float]:
         """홀드축 게인. dict 면 축별, 스칼라면 전 축 동일(하위호환).
 
@@ -568,6 +580,7 @@ class Hardware:
         self._q_cmd[ch] = q_cmd_deg
         kp_v, kd_v = self._hold_gains(ch, hold_scale)
         kp_v[ch] = kp; kd_v[ch] = kd
+        self._wr_kp, self._wr_kd = kp_v.copy(), kd_v.copy()
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
 
     @contextlib.contextmanager
@@ -616,8 +629,20 @@ class Hardware:
             #     정상 ch0: 오차 4.03° → 명령 7.03Nm · 보고 6.06Nm (비 0.86)
             #     사망 ch4: 오차 4.96° → 명령 8.66Nm · 보고 0.065Nm (비 **0.008**)
             #   ⚠스톨 감지로는 못 잡는다 — 죽은 축은 멈춰 있는 게 아니라 **떨어진다**(64dps).
-            kp_h0, _ = self._hold_gain_of(hc)
-            cmd_t = kp_h0 * abs(err) * math.pi / 180.0
+            # ★명령토크는 **kp·err − kd·dq** 다 — kd 항을 빼면 안 된다 (2026-08-12).
+            #   종전엔 kp·err 만 썼다. 홀드축은 정지해 있다는 가정이라 dq≈0 이었기 때문인데,
+            #   **PACE 다축처프는 전 축이 100dps 로 움직인다.** 거기서 두 항이 상쇄돼
+            #   실제 토크가 0 근처가 되는데 그걸 "토크가 안 나온다" 로 읽었다:
+            #     실기 ch7 — kp·err 3.09Nm · 보고 −0.446 → 비 0.144 로 '파워단 사망' 오판.
+            #     그런데 **속도가 −101.9dps** 였다. 죽은 foot 은 그렇게 못 움직인다
+            #     (중력 0.15Nm ÷ I 0.054 → 101.9dps 까지 33° 낙하가 필요한데 진폭은 13°).
+            #     kd·dq = 1.27×101.9dps = 2.26Nm 으로 kp·err 와 **같은 크기**였다.
+            #   ⚠게인도 틀린 걸 썼다: hold_kp[7]=30 을 쓰는데 처프는 kp=22 로 돌았다.
+            #     ⇒ 마지막으로 **실제 써 보낸** 게인을 쓴다. 같은 값을 두 곳에서 만들면
+            #       반드시 갈라진다 — 오늘 이 부류로만 여러 번 당했다.
+            kp_h0, kd_h0 = self._written_gain_of(hc)
+            _e = float(self._q_cmd[hc]) - float(self._q[hc])
+            cmd_t = abs(kp_h0 * _e - kd_h0 * float(self._dq[hc])) * math.pi / 180.0
             if cmd_t > self.dead_cmd_nm and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio:
                 self.limp()      # 죽은 축은 잡을 수 없다 — 나머지도 놓는 게 안전하다
                 raise SafetyAbort(
@@ -1014,6 +1039,7 @@ class Hardware:
             _kp, _kd = self._gain_at(c, kp, kd)
             kp_v[c] = min(max(_kp, 0.0), self.lim.kp_max)
             kd_v[c] = min(max(_kd, 0.0), self.lim.kd_max)
+        self._wr_kp, self._wr_kd = kp_v.copy(), kd_v.copy()
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
 
     def _gain_at(self, c: int, kp, kd):

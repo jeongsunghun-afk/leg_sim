@@ -737,9 +737,36 @@ def main() -> int:
                             # ★추가 점 — 시험구간을 훑어 보정의 **모양**을 잡는다.
                             _npt = int(spec["torque_mode"].get("grav_probe_points", 3))
                             if _npt > 1:
+                                # ★탐침 범위는 **시험이 실제로 쓸 폭**으로 제한한다
+                                #   (2026-08-14 수정). 종전엔 정렬상자 전체를 훑었는데
+                                #   thigh 는 그게 [−64.7, +135.2] 로 **200° 폭**이라
+                                #   탐침점이 −58.7 / +35.2 / **+129.2** 로 잡혔다.
+                                #   ⚠+129° 는 RL_INTERFACE 가 "URDF 가 틀렸다면 하드스톱에
+                                #     부딪힌다(미확인)" 로 표시한 구간이다. 게다가 홈복귀
+                                #     **전**이라 다른 7축이 무여자다 — 총 283° 를 매달린
+                                #     다리로 훑게 된다. 필요도 없고 위험하다.
+                                #   ⇒ 현재각 중심 ±span/2 로 자르고 상자로 clip 한다.
+                                #     관성시험 이동폭이 63~70° 이므로 70 이면 덮는다.
+                                #   ⚠보간은 바깥을 **끝값으로 고정**한다(외삽 안 함) —
+                                #     탐침 밖으로 나가도 마지막 보정값이 유지된다.
                                 _Lg = hw.limits_for(ch)
                                 _m = 6.0                      # 상자 끝 여유
-                                _cand = np.linspace(_Lg.q_min + _m, _Lg.q_max - _m, _npt)
+                                _sp = float(spec["torque_mode"].get("grav_probe_span_deg", 70.0))
+                                _plo = max(_Lg.q_min + _m, _q_now - _sp / 2)
+                                _phi = min(_Lg.q_max - _m, _q_now + _sp / 2)
+                                if _phi - _plo < 10.0:        # 자리가 없으면 포기한다
+                                    _log(f"    중력 탐침 생략 — 쓸 폭이 {_phi-_plo:.1f}° 뿐이다")
+                                    _cand = []
+                                else:
+                                    _cand = np.linspace(_plo, _phi, _npt)
+                                    # 가까운 점부터 — 총 이동거리를 줄인다
+                                    _cand = sorted(_cand, key=lambda v: abs(v - _q_now))
+                                    _tot = 0.0; _cur = _q_now
+                                    for _v in _cand:
+                                        _tot += abs(_v - _cur); _cur = _v
+                                    _log(f"    중력 탐침 {len(_cand)}점 "
+                                         f"[{_plo:+.1f}, {_phi:+.1f}]° · 총 이동 {_tot:.0f}°"
+                                         f" ≈ {_tot/15:.0f}초 (다른 축은 무여자다)")
                                 for _qp in _cand:
                                     if abs(_qp - _q_now) < 4.0:
                                         continue              # 이미 잰 자리

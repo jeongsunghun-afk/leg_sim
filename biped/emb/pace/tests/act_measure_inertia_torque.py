@@ -173,15 +173,43 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     box = joint.get("_ch_box")
     M = float(cfg.get("box_margin_deg", 3.0))
     q_home = hw.read(ch)[0]
+    # ★중력이 큰 축은 **훑는 구간을 중력 0 근처로 좁힌다** (2026-08-14).
+    #   상자 전체(70°)를 쓰면 중력이 그만큼 크게 변하고, 그 잔차가 방향 비대칭으로
+    #   남아 게이트를 못 넘는다 — HL_thigh 가 실제로 방향편차 15.8%(>15%)로 탈락했다.
+    #   ⚠중심만 옮기면 **오히려 나빠진다.** thigh 를 중력 0(+24.5°) 중심으로 70° 훑으면
+    #     |τ_g| 변화폭이 4.88 → 6.37 Nm 로 늘어난다(사인의 더 넓은 구간을 지난다).
+    #     **폭을 같이 줄여야** 한다: 30° 로 줄이면 2.87 Nm 로 **−41%** 다.
+    #   ⇒ `center_by_ch` 와 `travel_by_ch` 를 같이 준다. 둘 중 하나만 주면 안 된다.
+    #   ⚠폭을 줄이면 design_levels 의 제약 ③(u ≥ q̇_ref²·I/(2·travel·margin))이 올라
+    #     최저준위가 커진다. thigh 30° 에서 1.42~4.01 · 첨두 5.71 < 예산 10.8 로 성립한다.
+    _ctr = (cfg.get("center_by_ch") or {}).get(ch)
+    _trv = (cfg.get("travel_by_ch") or {}).get(ch)
     starts, travels = {}, {}
-    for d in (+1.0, -1.0):
-        if box:
-            lo, hi = box[0] + M, box[1] - M
+    if _ctr is not None and _trv is not None and box:
+        lo_b, hi_b = box[0] + M, box[1] - M
+        half = float(_trv) / 2.0
+        lo, hi = float(_ctr) - half, float(_ctr) + half
+        if lo < lo_b or hi > hi_b:                  # 상자를 벗어나면 밀어 넣는다
+            sh = max(lo_b - lo, 0.0) + min(hi_b - hi, 0.0)
+            lo += sh; hi += sh
+            log(f"  [{name}] ⚠탐침 구간이 상자를 벗어나 {sh:+.1f}° 밀었다")
+        for d in (+1.0, -1.0):
             starts[d] = lo if d > 0 else hi
-            travels[d] = min(hi - lo, float(cfg.get("travel_max_deg", 70.0)))
-        else:
-            starts[d] = q_home
-            travels[d] = travel
+            travels[d] = hi - lo
+        _g = getattr(hw, "grav_fn", None)
+        _sp = (max(_g(ch, x) for x in np.linspace(lo, hi, 40))
+               - min(_g(ch, x) for x in np.linspace(lo, hi, 40))) if _g else float("nan")
+        log(f"  [{name}] ★중력 최소 구간에서 훑는다 — 중심 {float(_ctr):+.1f}° · "
+            f"폭 {hi-lo:.0f}° · |τ_g| 변화폭 {_sp:.2f} Nm")
+    else:
+        for d in (+1.0, -1.0):
+            if box:
+                lo, hi = box[0] + M, box[1] - M
+                starts[d] = lo if d > 0 else hi
+                travels[d] = min(hi - lo, float(cfg.get("travel_max_deg", 70.0)))
+            else:
+                starts[d] = q_home
+                travels[d] = travel
     log(f"  [{name}] 방향별 시작 — +{starts[+1.0]:.1f}°(이동 {travels[+1.0]:.0f}°) · "
         f"−{starts[-1.0]:.1f}°(이동 {travels[-1.0]:.0f}°)")
 

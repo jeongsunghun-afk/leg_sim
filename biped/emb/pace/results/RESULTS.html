@@ -56,7 +56,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
 <tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>관성 대조</b> 비 1.06 · PACE 자유탐색으로 재확인</td><td class="ok">✅ 1.0 유지 (자유로 풀면 성적이 나빠짐)</td></tr>
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
-<p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(§4-②).</p>
+<p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(<b>§4-1</b> 재수집 또는 <b>§4-1-b</b> 일정속도 시험).</p>
 <p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
 <h2>0-b. 왜 각축이 필요했나 — 다축 PACE 의 세 한계</h2>
 <p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다 (<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고, 실제로 대부분을 이걸로 정했다. 그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
@@ -94,7 +94,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b><code>T_d</code> 8.39±0.79 ms</b></td><td>왕복지연 직접 실측</td><td><b>③ 경계를 좁힘</b></td></tr></table>
 <p><b>⚠각축도 만능이 아니다:</b></p>
 <p>- <b><code>thigh</code> 관성은 원리적으로 못 잰다.</b> <code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다   (주기 0.90 s). 런이 0.21~0.48 s 로 <b>주기의 39%</b> 라, <code>M⁻¹</code> 예측이 전제하는 t→0 극한이   깨진다. 자유(0.189)와 고정(0.221) <b>사이 어디도 아닌 값</b>이 나온다 → CAD 를 쓴다.</p>
-<p>- <b>중력이 큰 축이 오염된다.</b> hip \|τ_g\| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데   시험은 ±53° 를 훑어 잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다.   ⇒ 남은 미해결(§9)이 전부 여기로 모인다.</p>
+<p>- <b>중력이 큰 축이 오염된다.</b> hip \|τ_g\| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데   시험은 ±53° 를 훑어 잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다.   ⇒ 남은 미해결이 전부 여기로 모인다(§4-3).</p>
 <h3>그래서 최종값은 <b>출처가 셋으로 갈린다</b></h3>
 <pre>  각축 직접측정 (--solo)
         │   초기값(출발점) 과 탐색범위(허용 범위) 를 준다
@@ -147,7 +147,7 @@ pre code{border:0;background:none;padding:0}
 <tr><th>값</th><th>출처</th><th>오차</th><th>믿을 수 있나</th></tr>
 <tr><td><code>ROTOR_I</code> 7.327e-4</td><td>각축 토크시험 4곳</td><td><b>±10%</b></td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>damping.foot</code> 0.110</td><td>각축 토크시험 좌우</td><td><b>±0.012</b> (11%)</td><td class="ok">✅ 좋다</td></tr>
-<tr><td><code>delay</code> 8.78 ms</td><td>직접 실측 8.39±0.79</td><td><b>±0.79</b></td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>delay</code> 8.60 ms</td><td>직접 실측 8.39±0.79 (차 0.21)</td><td><b>±0.79</b></td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>frictionloss.calf</code> 0.573</td><td>PACE 4판</td><td><b>±2%</b></td><td class="ok">✅ 좋다</td></tr>
 <tr><td><b><code>damping.calf</code> 0</b></td><td>PACE 4판 전부 바닥, 짝은 불변</td><td>상한 0.002</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
 <tr><td><code>frictionloss.thigh</code> 0.567</td><td>PACE 4판</td><td class="n">±11%</td><td class="wa">⚠ 보통</td></tr>
@@ -172,7 +172,7 @@ pre code{border:0;background:none;padding:0}
 <div class="quote">런 길이가 0.21~0.48 s — <b>주기의 39%</b> 다. <code>M⁻¹</code> 예측은 "모든 자유 dof 가 같이</div>
 <div class="quote">가속" 하는 <b>t→0 극한</b>인데, 그만큼 긴 런에서는 calf 가 뒤처지고 thigh 가 그</div>
 <div class="quote">관성을 끌고 간다. 자유(0.189)와 고정(0.221) 사이 어디도 아닌 값이 나온다.</div>
-<p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>물리적으로 고정</b>해야 한다 (홀드는 유한 강성이라 안 된다 — §2 참조).</p>
+<p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>물리적으로 고정</b>해야 한다 (홀드는 유한 강성이라 안 된다).</p>
 <h2>3. 모터 게인 — <b>바꿀 필요 없다</b></h2>
 <p>배포 게인을 식별된 관성으로 평가하니 전부 정상 범위다.</p>
 <table>
@@ -186,12 +186,82 @@ pre code{border:0;background:none;padding:0}
 <h2>4. 더 해야 할 시험</h2>
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td><b>1</b></td><td>⑦ 재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td><code>JDAMP.thigh</code>(±61%) 분해</td></tr>
-<tr><td><b>2</b></td><td>⑥ <code>coef</code> 경사계 측정</td><td>실기</td><td class="n">10분</td><td>마지막 미측정 구조값</td></tr>
-<tr><td class="n">3</td><td>①-b 중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> 등</td></tr>
-<tr><td class="n">4</td><td>④ 다른 궤적 검증 · ⑤ hip 좌우차</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
-<p>⓪ · ⓪-b · ① 은 <b>끝났다</b>(백래시 · <code>coef</code> · 탐색범위 확장). 결론만 아래에 남긴다.</p>
-<h3>⓪-b ~~<code>coef</code> 크기 식별~~ — <b>해봤다. PACE 로는 안 된다</b> (2026-08-14)</h3>
+<tr><td><b>1</b></td><td>재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td><code>JDAMP.thigh</code>(±61%) 분해</td></tr>
+<tr><td><b>2</b></td><td><code>coef</code> 크기 — 경사계</td><td>실기</td><td class="n">10분</td><td>마지막 미측정 구조값</td></tr>
+<tr><td class="n">3</td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> · <code>thigh 관성</code></td></tr>
+<tr><td class="n">4</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
+<p>⇒ <b>넷 다 실기다.</b> 오프라인 적합으로 뽑을 건 다 뽑았다 — 남은 건 데이터 문제다. 끝난 시험은 <b>§5</b> 에 결론만 남긴다.</p>
+<h3>1. 재수집 — 주파수보다 <b>진폭</b>이다</h3>
+<p>지금 데이터의 calf 항별 크기:</p>
+<table>
+<tr><th>항</th><th>크기</th><th>비중</th></tr>
+<tr><td>관성 <code>I·q̈</code> (0.112 × 18.7 rad/s²)</td><td class="n">2.09 Nm</td><td class="n">82%</td></tr>
+<tr><td>쿨롱 <code>τ_c</code> (실측)</td><td class="n">0.39~0.58 Nm</td><td class="n">15%</td></tr>
+<tr><td><b>감쇠 <code>b·q̇</code></b> (0.09 × 0.80 rad/s)</td><td><b>0.072 Nm</b></td><td><b>3%</b></td></tr></table>
+<p>감쇠가 마찰의 1/8 이다. <code>JDAMP</code>↔<code>JFRIC</code> 맞바꿈(r=+0.93)도, <code>JDAMP.calf</code> 가 벽에 박히는 것도 전부 여기서 온다. 무엇을 키우느냐로 비용이 갈린다:</p>
+<table>
+<tr><th></th><th><code>q̇</code></th><th><code>q̈</code></th><th>감쇠/마찰</th><th><code>coef</code> 관측성</th><th><b>최대토크</b></th></tr>
+<tr><td>진폭 ×2</td><td>×2</td><td>×2</td><td>×2</td><td>×2</td><td><b>×2</b></td></tr>
+<tr><td>주파수 ×2</td><td>×2</td><td>×4</td><td>×2</td><td>×4</td><td><b>×4</b></td></tr></table>
+<p>1순위가 감쇠이므로 <b>진폭이 토크당 2배 효율적</b>이다. 여유도 그쪽에 있다:</p>
+<table>
+<tr><th>축</th><th>현 진폭</th><th>단측여유</th><th>배율</th></tr>
+<tr><td>hip</td><td class="n">5°</td><td class="n">6.0°</td><td><b>1.2×</b> ← 없음</td></tr>
+<tr><td>thigh</td><td class="n">18°</td><td class="n">40.0°</td><td class="n">2.2×</td></tr>
+<tr><td>calf</td><td class="n">16°</td><td class="n">40.0°</td><td class="n">2.5×</td></tr>
+<tr><td>foot</td><td class="n">13°</td><td class="n">23.2°</td><td class="n">1.8×</td></tr></table>
+<p>제안: thigh 18→32° · calf 16→32° · foot 13→20°, **hip 만 진폭 여유가 없으니</p>
+<p><code>f_end</code> 1.8→2.6 Hz**. calf 최대토크 2.1→4.2 Nm (<code>tau_trip</code> 16 · 유연성 공진 19.8 Hz).</p>
+<p class="warn">⚠먼저 확인할 것: <b>thigh 32° + calf 32° 동시 스윙이 지그·바닥과 안 부딪히는지</b>. 그리고 래치오프는 원위축에서 나던 미해결 문제인데 토크 2배는 그 위험을 키운다. 검증셋(<code>kp_validate</code>)도 같이 다시 받아야 비교가 성립하고, 진폭이 커지면 RMS(°) 자체가 커지므로 <b>데이터셋 간 비교는 정규화해야 한다.</b></p>
+<h3>1-b. 대안 — 속도를 독립 제어하는 시험</h3>
+<p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
+<div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
+<div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
+<h3>2. <code>coef</code> 크기 — 경사계로 재기 (<b>엔코더 밖으로 나가는 유일한 길</b>)</h3>
+<p><code>couple_check.py</code> 로는 <b>원리적으로 못 잰다.</b> 2026-08-14 실기 결과가 케이스 <b>(A)</b> 다:</p>
+<table>
+<tr><th></th><th>무릎 스윙</th><th><code>foot_ch</code> 기울기</th></tr>
+<tr><td>HL</td><td class="n">115.9°</td><td class="n">+0.0001</td></tr>
+<tr><td>HR</td><td class="n">148.9°</td><td class="n">+0.0000</td></tr></table>
+<p>엔코더가 모터축에 있어 커플링을 아예 못 본다(<code>\|c\| &lt; 2e-4</code>). 기울기가 실제 크기와 무관하게 0 이므로 이 도구는 (A)/(B) 만 가르고 크기는 못 낸다. *(다만 이 결과가 <b>raw각 PD 법칙이 옳다</b>는 걸 게인 2배 검증과 독립적으로 뒷받침한다 — 엔코더 좌표가 곧 tendon 좌표다.)*</p>
+<p>절차:</p>
+<p>1. 발목을 <b>채널각 고정</b>으로 잡는다 ← 결정적. 평소 명령경로로 잡으면 <code>coef=1</code> 보상이    걸려 재려는 대상이 정확히 상쇄된다. 2026-08-10 에 부호를 반대로 판정한 게 이 함정이다 2. 무릎만 크게(100° 이상) 돌린다 3. 발바닥 절대각을 휴대폰 경사계로 읽는다</p>
+<p><code>Δ발_절대각 = Δq_calf·(1 − c)</code> 이므로 100° 스윙에서:</p>
+<table>
+<tr><th><code>coef</code></th><th>발바닥 절대각 변화</th></tr>
+<tr><td class="n">1.00</td><td><b>0°</b></td></tr>
+<tr><td class="n">0.90</td><td class="n">10°</td></tr>
+<tr><td class="n">0.76</td><td class="n">24°</td></tr></table>
+<p>경사계 분해능 0.5° 면 넉넉하다. 2026-08-10 의 *"육안 일치"* 는 무릎을 30° 만 돌렸다면</p>
+<p><code>c=0.9</code> 여도 3° 라 놓칠 수 있는 크기다 — <b>육안 관측은 <code>c=1</code> 의 증거로 약하다.</b></p>
+<h3>3. 중력이 작은 자세에서 관성 재기</h3>
+<p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
+<p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
+<div class="quote">새 절차가 필요하다: 시험 자세를 <b>중력이 최소인 곳</b>으로 옮기고 거기서 훑는다.</div>
+<div class="quote">thigh 는 수직 근처, hip 은 롤축이 수평인 자세.</div>
+<p>이게 되면 위 표의 ❌ 넷 중 <b>셋이 채워진다.</b></p>
+<h3>3-b. HR_thigh 관성 (미측정)</h3>
+<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
+<h3>4. 다른 궤적으로 검증 한 번 더</h3>
+<p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>
+<pre>python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
+<p class="warn">⚠<code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다.</p>
+<h3>4-b. hip 좌우차 확정</h3>
+<p>위치스윕은 16% 차(0.928/0.803), 토크모드는 4% 차(0.888/0.852). 어느 쪽이 맞는지 미결. 구조가 다르다는 가설(HR 샤프트 경유 · HL 직결)을 확인하려면 반복 측정이 필요하다.</p>
+<h2>5. 끝난 시험 — 결론만</h2>
+<p>여기 셋은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다.</p>
+<h3>✓ 백래시 — <b>측정 완료, 범인이 아니다</b></h3>
+<p>HL_foot 토션 히스테리시스: <b>백래시 0.0667° ± 0.0034 (채널)</b> · 강성 <b>14.55 Nm/deg</b> (834 Nm/rad) · 주기간 강성 산포 1% — 깨끗한 측정이다.</p>
+<table>
+<tr><th>후보</th><th>잔차 기여</th><th>판정</th></tr>
+<tr><td>백래시 0.0556° (관절)</td><td class="n">0.03° (5%)</td><td>✗ <b>12배 작다</b></td></tr>
+<tr><td>감속기 유연성</td><td>공진 19.8 Hz — 처프 대역(≤0.62 Hz)의 32배 위</td><td>✗ 무관</td></tr>
+<tr><td>~~<code>coef</code> 오차 3~5%~~</td><td>~~0.44~0.73°~~</td><td>✗ <b>반증됨</b> — 아래 참조</td></tr></table>
+<p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다.</p>
+<p class="warn">⚠<b>당시엔 <code>coef</code> 가 유일하게 자릿수가 맞는 후보라고 적었는데, 그건 틀렸다.</b></p>
+<p><code>coef</code> 를 실제로 탐색변수로 넣어 보니 자유로 풀면 오히려 나빠진다(§5 두 번째 항목). 그리고 <code>coef</code> 를 낮췄을 때 개선이 나온 곳은 foot 이 아니라 <b>calf</b> 였다 — 잔차 지분이 큰 축이 곧 원인 축이라고 읽은 것이 오류였다. foot 잔차 0.68° 의 원인은 <b>아직 모른다.</b></p>
+<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다(<b>§4-3</b> 과 같은 문제).</p>
+<h3>✓ <code>coef</code> PACE 식별 — <b>해봤다. 이 데이터로는 안 된다</b></h3>
 <p><code>coef</code> 를 탐색변수로 넣었다(<code>pace_cmaes.py</code>, <code>set_coupling_coef</code> + <code>retarget_coupling</code>).</p>
 <p><code>q_raw</code> 는 coef 가정과 무관하게 정확하므로 <code>q_foot_true = q_raw − c·q_calf</code> 로 다시 풀어 비교한다. <code>c=1</code> 이 항등이라는 것부터 확인했다 — 기존 결과가 소수 4자리까지 재현됐다.</p>
 <p><b>결과: <code>c</code> 를 자유로 풀면 오히려 나빠진다.</b></p>
@@ -209,8 +279,8 @@ pre code{border:0;background:none;padding:0}
 <div class="quote"><code>coef</code> 는 할 일이 없어진다.</div>
 <div class="quote">⇒ *"탐색범위 벽에 박힌 값은 식별된 값이 아니다"* 는 <b>격자 훑기에도 똑같이 적용된다.</b></div>
 <div class="quote"><code>tests/scan_coef_jdamp.py</code> 에 행 최소가 격자 경계면 판정을 보류하는 가드를 넣었다.</div>
-<p><code>coef</code> 크기를 정말 재려면 <b>엔코더 밖</b>으로 나가야 한다 — ⑥ 참조.</p>
-<h3>① ~~<code>JDAMP.calf</code>·<code>JFRIC.foot</code> 탐색범위~~ — <b>끝났다</b> (2026-08-14, <code>fit_v5</code>)</h3>
+<p><code>coef</code> 크기를 정말 재려면 <b>엔코더 밖</b>으로 나가야 한다 — <b>§4-2</b> 참조.</p>
+<h3>✓ <code>JDAMP.calf</code>·<code>JFRIC.foot</code> 탐색범위 — <b>셋이 갈렸다</b> (<code>fit_v5</code>)</h3>
 <p>열어 보니 셋이 갈렸다:</p>
 <table>
 <tr><th></th><th>결과</th></tr>
@@ -236,73 +306,7 @@ pre code{border:0;background:none;padding:0}
 <p>&lt;/details&gt;</p>
 <p>앞으로 적합을 돌릴 때는 calf 점성을 0 에 못박는다 — 차원 하나가 준다:</p>
 <pre>--pin hip,rotor,JDAMP.foot,coef,JDAMP.calf=0</pre>
-<h3>①-b 중력이 작은 자세에서 관성 재기 — <b>값의 완결성</b></h3>
-<p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
-<p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
-<div class="quote">새 절차가 필요하다: 시험 자세를 <b>중력이 최소인 곳</b>으로 옮기고 거기서 훑는다.</div>
-<div class="quote">thigh 는 수직 근처, hip 은 롤축이 수평인 자세.</div>
-<p>이게 되면 위 표의 ❌ 넷 중 <b>셋이 채워진다.</b></p>
-<h3>⓪ ~~백래시~~ — <b>측정 완료, 범인이 아니다</b> (2026-08-14)</h3>
-<p>HL_foot 토션 히스테리시스: <b>백래시 0.0667° ± 0.0034 (채널)</b> · 강성 <b>14.55 Nm/deg</b> (834 Nm/rad) · 주기간 강성 산포 1% — 깨끗한 측정이다.</p>
-<table>
-<tr><th>후보</th><th>잔차 기여</th><th>판정</th></tr>
-<tr><td>백래시 0.0556° (관절)</td><td class="n">0.03° (5%)</td><td>✗ <b>12배 작다</b></td></tr>
-<tr><td>감속기 유연성</td><td>공진 19.8 Hz — 처프 대역(≤0.62 Hz)의 32배 위</td><td>✗ 무관</td></tr>
-<tr><td><b><code>coef</code> 오차 3~5%</b></td><td><b>0.44~0.73°</b></td><td>★ <b>유일하게 자릿수가 맞는다</b></td></tr></table>
-<p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다. <b><code>coef</code> 가 남은 후보다.</b></p>
-<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다(§4-①-b 와 같은 문제).</p>
-<h3>② 마찰 분해 — 속도를 독립 제어하는 시험</h3>
-<p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
-<div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
-<div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
-<h3>③ HR_thigh 관성 (미측정)</h3>
-<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
-<h3>④ 다른 궤적으로 검증 한 번 더</h3>
-<p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>
-<pre>python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
-<p class="warn">⚠<code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다.</p>
-<h3>⑤ hip 좌우차 확정</h3>
-<p>위치스윕은 16% 차(0.928/0.803), 토크모드는 4% 차(0.888/0.852). 어느 쪽이 맞는지 미결. 구조가 다르다는 가설(HR 샤프트 경유 · HL 직결)을 확인하려면 반복 측정이 필요하다.</p>
-<h3>⑥ <code>coef</code> 크기 — 경사계로 재기 (<b>엔코더 밖으로 나가는 유일한 길</b>)</h3>
-<p><code>couple_check.py</code> 로는 <b>원리적으로 못 잰다.</b> 2026-08-14 실기 결과가 케이스 <b>(A)</b> 다:</p>
-<table>
-<tr><th></th><th>무릎 스윙</th><th><code>foot_ch</code> 기울기</th></tr>
-<tr><td>HL</td><td class="n">115.9°</td><td class="n">+0.0001</td></tr>
-<tr><td>HR</td><td class="n">148.9°</td><td class="n">+0.0000</td></tr></table>
-<p>엔코더가 모터축에 있어 커플링을 아예 못 본다(<code>\|c\| &lt; 2e-4</code>). 기울기가 실제 크기와 무관하게 0 이므로 이 도구는 (A)/(B) 만 가르고 크기는 못 낸다. *(다만 이 결과가 <b>raw각 PD 법칙이 옳다</b>는 걸 게인 2배 검증과 독립적으로 뒷받침한다 — 엔코더 좌표가 곧 tendon 좌표다.)*</p>
-<p>절차:</p>
-<p>1. 발목을 <b>채널각 고정</b>으로 잡는다 ← 결정적. 평소 명령경로로 잡으면 <code>coef=1</code> 보상이    걸려 재려는 대상이 정확히 상쇄된다. 2026-08-10 에 부호를 반대로 판정한 게 이 함정이다 2. 무릎만 크게(100° 이상) 돌린다 3. 발바닥 절대각을 휴대폰 경사계로 읽는다</p>
-<p><code>Δ발_절대각 = Δq_calf·(1 − c)</code> 이므로 100° 스윙에서:</p>
-<table>
-<tr><th><code>coef</code></th><th>발바닥 절대각 변화</th></tr>
-<tr><td class="n">1.00</td><td><b>0°</b></td></tr>
-<tr><td class="n">0.90</td><td class="n">10°</td></tr>
-<tr><td class="n">0.76</td><td class="n">24°</td></tr></table>
-<p>경사계 분해능 0.5° 면 넉넉하다. 2026-08-10 의 *"육안 일치"* 는 무릎을 30° 만 돌렸다면</p>
-<p><code>c=0.9</code> 여도 3° 라 놓칠 수 있는 크기다 — <b>육안 관측은 <code>c=1</code> 의 증거로 약하다.</b></p>
-<h3>⑦ 재수집 — <b>주파수보다 진폭이다</b></h3>
-<p>지금 데이터의 calf 항별 크기:</p>
-<table>
-<tr><th>항</th><th>크기</th><th>비중</th></tr>
-<tr><td>관성 <code>I·q̈</code> (0.112 × 18.7 rad/s²)</td><td class="n">2.09 Nm</td><td class="n">82%</td></tr>
-<tr><td>쿨롱 <code>τ_c</code> (실측)</td><td class="n">0.39~0.58 Nm</td><td class="n">15%</td></tr>
-<tr><td><b>감쇠 <code>b·q̇</code></b> (0.09 × 0.80 rad/s)</td><td><b>0.072 Nm</b></td><td><b>3%</b></td></tr></table>
-<p>감쇠가 마찰의 1/8 이다. <code>JDAMP</code>↔<code>JFRIC</code> 맞바꿈(r=+0.93)도, <code>JDAMP.calf</code> 가 벽에 박히는 것도 전부 여기서 온다. 무엇을 키우느냐로 비용이 갈린다:</p>
-<table>
-<tr><th></th><th><code>q̇</code></th><th><code>q̈</code></th><th>감쇠/마찰</th><th><code>coef</code> 관측성</th><th><b>최대토크</b></th></tr>
-<tr><td>진폭 ×2</td><td>×2</td><td>×2</td><td>×2</td><td>×2</td><td><b>×2</b></td></tr>
-<tr><td>주파수 ×2</td><td>×2</td><td>×4</td><td>×2</td><td>×4</td><td><b>×4</b></td></tr></table>
-<p>1순위가 감쇠이므로 <b>진폭이 토크당 2배 효율적</b>이다. 여유도 그쪽에 있다:</p>
-<table>
-<tr><th>축</th><th>현 진폭</th><th>단측여유</th><th>배율</th></tr>
-<tr><td>hip</td><td class="n">5°</td><td class="n">6.0°</td><td><b>1.2×</b> ← 없음</td></tr>
-<tr><td>thigh</td><td class="n">18°</td><td class="n">40.0°</td><td class="n">2.2×</td></tr>
-<tr><td>calf</td><td class="n">16°</td><td class="n">40.0°</td><td class="n">2.5×</td></tr>
-<tr><td>foot</td><td class="n">13°</td><td class="n">23.2°</td><td class="n">1.8×</td></tr></table>
-<p>제안: thigh 18→32° · calf 16→32° · foot 13→20°, **hip 만 진폭 여유가 없으니</p>
-<p><code>f_end</code> 1.8→2.6 Hz**. calf 최대토크 2.1→4.2 Nm (<code>tau_trip</code> 16 · 유연성 공진 19.8 Hz).</p>
-<p class="warn">⚠먼저 확인할 것: <b>thigh 32° + calf 32° 동시 스윙이 지그·바닥과 안 부딪히는지</b>. 그리고 래치오프는 원위축에서 나던 미해결 문제인데 토크 2배는 그 위험을 키운다. 검증셋(<code>kp_validate</code>)도 같이 다시 받아야 비교가 성립하고, 진폭이 커지면 RMS(°) 자체가 커지므로 <b>데이터셋 간 비교는 정규화해야 한다.</b></p>
-<h2>5. 확정된 구조 (참고)</h2>
+<h2>6. 확정된 구조 (참고)</h2>
 <table>
 <tr><th>항목</th><th>결론</th></tr>
 <tr><td>calf→foot 커플링</td><td><b>실재, <code>coef</code> = 1 로 둔다</b> — 자유로 풀면 1.064 로 가지만 성적이 나빠진다</td></tr>

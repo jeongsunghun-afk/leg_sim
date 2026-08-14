@@ -506,6 +506,12 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     hi[0] = x0[0] * ROTOR_SPAN[1]
     lo[1:1 + nk] = x0[1:1 + nk] * JDAMP_SPAN[0]        # JDAMP 양쪽 확장
     hi[1:1 + nk] = x0[1:1 + nk] * JDAMP_SPAN[1]
+    # ★초기값이 0 이면 곱셈 탐색범위가 [0,0] 으로 **붕괴한다** — 폭 0 인 차원은
+    #   box_report 가 0 나누기를 하고 CMA-ES 는 죽은 차원을 흔든다. 절대값으로 연다.
+    _z = x0[1:1 + nk] <= 0
+    if _z.any():
+        lo[1:1 + nk][_z] = 0.0
+        hi[1:1 + nk][_z] = JDAMP_ZERO_HI
     # JFRIC 구간만 실측 기반으로 조인다. 벡터 순서는 [ROTOR_I, JDAMP…, JFRIC…] 이다.
     if JFRIC_SPAN[0] is not None:
         nj = len(names) if per_axis else len(KINDS)
@@ -575,6 +581,21 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     free = np.ones(len(x0), bool)
     if pin:
         lab = param_labels(names, per_axis)
+        # ★"라벨=값" 으로 **임의의 값에 못박는다** (2026-08-14 추가).
+        #   종전엔 --pin 이 x0(초기값)에 고정하는 것뿐이었다. 그런데 적합이 알려준
+        #   값에 고정하고 싶을 때가 있다 — JDAMP.calf 가 그렇다. 네 번의 적합에서
+        #   **매번 탐색범위 바닥**으로 갔고(0.0097→0.0035→0.0021, 하한 대비 1.16배),
+        #   짝인 JFRIC.calf 는 산포 2% 로 꿈쩍도 안 했다(0.572/0.586/0.573/0.573).
+        #   맞바꿈이면 짝이 같이 움직여야 하는데 안 움직인다 ⇒ **점성이 정말 0 이다.**
+        #   그걸 고정하려면 x0(0.09)이 아니라 0 에 박아야 하는데 방법이 없었다.
+        #   ⚠spec 의 measured_* 에 0 을 적는 건 안 된다 — 그건 **실측**이라는 뜻인데
+        #     이건 적합 결과다. 출처를 흐리면 나중에 근거를 되짚을 수 없다.
+        pin_v = {}
+        for _k in pin:
+            if "=" in _k:
+                _n, _v = _k.split("=", 1)
+                pin_v[_n.strip()] = float(_v)
+        pin = tuple(k.split("=", 1)[0].strip() for k in pin)
         # ★"rotor" — ROTOR_I 를 **실측으로 못박는다** (2026-08-14).
         #   두 독립 측정이 만났다:
         #       foot τ_ff 경로 (2026-08-11)      7.327e-4
@@ -593,6 +614,8 @@ def init_bounds(spec_path, names, per_axis, pin=()):
             #   (JDAMP.foot → 그 하나만). 실측이 한쪽만 있을 때 개별 지정이 필요하다.
             if L in pin:
                 free[i] = False
+                if L in pin_v:
+                    x0[i] = pin_v[L]
             elif L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
                 free[i] = False
     return x0, lo, hi, free
@@ -605,6 +628,7 @@ JFRIC_SPAN_DN = [0.75]  # ★아래쪽은 더 넓게 — Stribeck 으로 실측�
 #   (fit_v2·fit_v3 둘 다 0.2516). JDAMP.foot 은 실측 0.11 로 못박혀 있으니 이건
 #   JDAMP 와의 맞바꿈이 아니라 "발목 마찰이 실측보다 더 낮다" 는 한 방향 신호다.
 ROTOR_SPAN = (0.10, 3.0)   # 실측 초기값이 있으나 τ_ff 경로 1점 — 하한을 연다
+JDAMP_ZERO_HI = 0.02  # 초기값 0 인 JDAMP 의 상한(곱셈 탐색범위가 붕괴하므로 절대값)
 JDAMP_SPAN = (0.02, 10.0)  # **실측이 없다**(각축 전부 nan). 좁힐 근거가 없다
 #   2026-08-14: 하한 0.10→0.02. JDAMP.calf 가 fit_v2·fit_v3 에서 **둘 다 바닥**
 #   (0.0097 = x0×0.108)에 박혔다. 점성감쇠가 0 으로 가고 싶다는 뜻인데 막혀 확인이
@@ -809,9 +833,18 @@ def main() -> int:
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
     _lab_all = param_labels(D["names"], a.per_axis)
     for k in pin:
-        if k not in KINDS + ("rotor", "coef") and k not in _lab_all:
+        _k = k.split("=", 1)[0].strip()
+        if "=" in k:
+            try:
+                float(k.split("=", 1)[1])
+            except ValueError:
+                raise SystemExit(f"✗ --pin {k} — '=' 뒤는 숫자여야 한다")
+            if _k not in _lab_all:
+                raise SystemExit(f"✗ --pin {k} — 값 지정은 **개별 라벨**에만 된다"
+                                 f"(예: JDAMP.calf=0). kind 나 rotor 에는 못 쓴다")
+        elif _k not in KINDS + ("rotor", "coef") and _k not in _lab_all:
             raise SystemExit(f"✗ --pin {k} — {KINDS + ('rotor',)} 또는 개별 라벨"
-                             f"(예: JDAMP.foot) 이어야 한다")
+                             f"(예: JDAMP.foot, JDAMP.calf=0) 이어야 한다")
     x0, lo, hi, free = init_bounds(a.spec, D["names"], a.per_axis, pin)
     wrap = actuator_wrap(m, idx, D["names"], a.ctrl_space)
     _nw = sum(1 for w in wrap if w)

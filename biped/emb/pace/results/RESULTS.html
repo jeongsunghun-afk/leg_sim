@@ -37,7 +37,7 @@ pre code{border:0;background:none;padding:0}
 </style></head>
 <body><div class="wrap">
 <h1>액추에이터 식별 — 최종값 (2026-08-14)</h1>
-<p><code>fit_v2</code> 기준. 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다.</p>
+<p><code>fit_v5</code> 기준. 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다. 신뢰도는 <b>네 번의 적합(v2·v3·v4·v5)에서 얼마나 흔들렸나</b>로 매겼다 — 한 번의 오차막대보다 그게 정직하다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
 <pre> τ_cmd(t − T_d)  =  [ I_link + I_rot·N² ]·q̈  +  b·q̇  +  τ_c·sgn(q̇)  +  g(q)
@@ -117,10 +117,23 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
 <tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
-<tr><td>thigh</td><td class="n">0.0359</td><td class="n">0.170</td><td class="n">0.506</td></tr>
-<tr><td>calf</td><td class="n">0.0808</td><td class="n">0.009 ★</td><td class="n">0.572</td></tr>
-<tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.252 ★</td></tr></table>
-<p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.78 ms</b></p>
+<tr><td>thigh</td><td class="n">0.0359</td><td class="no">0.091 ❌</td><td class="n">0.567</td></tr>
+<tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td class="n">0.573</td></tr>
+<tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.240</td></tr></table>
+<p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.60 ms</b></p>
+<h3>네 번의 적합에서 얼마나 흔들렸나</h3>
+<table>
+<tr><th>값</th><th>v2</th><th>v3</th><th>v4</th><th>v5</th><th>산포</th><th>읽는 법</th></tr>
+<tr><td><code>JFRIC.calf</code></td><td class="n">0.572</td><td class="n">0.586</td><td class="n">0.573</td><td class="n">0.573</td><td><b>2%</b></td><td class="ok">✅ 확정</td></tr>
+<tr><td><code>JFRIC.foot</code></td><td class="n">0.252★</td><td class="n">0.252★</td><td class="n">0.252★</td><td><b>0.240</b></td><td class="n">—</td><td>v5 만 자유 — 1점</td></tr>
+<tr><td><code>JFRIC.thigh</code></td><td class="n">0.506</td><td class="n">0.553</td><td class="n">0.533</td><td class="n">0.567</td><td class="n">11%</td><td class="wa">⚠ 보통</td></tr>
+<tr><td><code>delay</code>[ms]</td><td class="n">8.78</td><td class="n">8.86</td><td class="n">7.42</td><td class="n">8.60</td><td class="n">17%</td><td>아래 참조</td></tr>
+<tr><td><code>JDAMP.thigh</code></td><td class="n">0.170</td><td class="n">0.142</td><td class="n">0.180</td><td class="n">0.091</td><td><b>61%</b></td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>JDAMP.calf</code></td><td class="n">0.0097★</td><td class="n">—</td><td class="n">0.0035★</td><td class="n">0.0021★</td><td class="n">—</td><td><b>매번 바닥 → 0</b></td></tr></table>
+<p class="warn">★ = 그 판에서 탐색범위 끝에 붙어 있었다(그 값은 "찾은 값" 이 아니다).</p>
+<p>⇒ <b><code>JDAMP.thigh</code> 가 2배로 흔들리는 동안 <code>JFRIC.thigh</code> 는 11% 안이다.</b> 둘의 합만 정해지고 나눔이 안 된다 — 한계 ①(r=+0.93)이 thigh 에서 그대로 살아 있다.</p>
+<p>⇒ <b><code>JDAMP.calf</code> 는 반대다.</b> 하한을 0.009→0.0018 로 5배 내려도 계속 바닥을 따라 내려갔는데(0.0097→0.0035→0.0021), 짝인 <code>JFRIC.calf</code> 는 <b>2% 도 안 움직였다.</b> 맞바꿈이면 짝이 같이 움직여야 한다. 안 움직인다 ⇒ <b>calf 점성감쇠는 정말 0 이다.</b> 탐색범위 인공물이 아니라 결과다.</p>
+<p>⇒ <b><code>delay</code> 가 이 적합이 더 물리적이라는 독립 근거다.</b> 마찰 탐색범위가 잘못 좁았던 v4 에서 7.42 ms 로 흘렀다가(하한 19%), 제대로 열자 <b>8.60</b> 으로 돌아왔다 — 직접 실측 8.39±0.79 와 0.21 ms 차이다. 자유변수가 모델오차를 흡수하다 만 것이다.</p>
 <div class="quote"><b>tendon 이란</b> — 밧줄이 아니라 <b>관절 두 개를 하나로 묶는 MuJoCo 장치</b>다.</div>
 <div class="quote"><code>&lt;fixed&gt;</code> 로 <code>1·q_calf + 1·q_foot</code> 를 정의하면 그 합이 곧 <b>실기 ch3 모터의 엔코더 각</b></div>
 <div class="quote">(raw 각)이 된다. calf 만 돌려도 ch3 엔코더가 변하는 실제 현상 그대로다.</div>
@@ -135,11 +148,12 @@ pre code{border:0;background:none;padding:0}
 <tr><td><code>ROTOR_I</code> 7.327e-4</td><td>각축 토크시험 4곳</td><td><b>±10%</b></td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>damping.foot</code> 0.110</td><td>각축 토크시험 좌우</td><td><b>±0.012</b> (11%)</td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>delay</code> 8.78 ms</td><td>직접 실측 8.39±0.79</td><td><b>±0.79</b></td><td class="ok">✅ 좋다</td></tr>
-<tr><td><code>damping.thigh</code> 0.170</td><td>PACE 만</td><td>교차검증 없음</td><td class="wa">⚠ 보통</td></tr>
-<tr><td><code>frictionloss</code> thigh·calf</td><td>PACE</td><td><b>±25%</b></td><td class="wa">⚠ 보통</td></tr>
-<tr><td><code>damping.calf</code> 0.009</td><td>PACE(벽)</td><td><b>0 ~ 0.17</b></td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>frictionloss.calf</code> 0.573</td><td>PACE 4판</td><td><b>±2%</b></td><td class="ok">✅ 좋다</td></tr>
+<tr><td><b><code>damping.calf</code> 0</b></td><td>PACE 4판 전부 바닥, 짝은 불변</td><td>상한 0.002</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
+<tr><td><code>frictionloss.thigh</code> 0.567</td><td>PACE 4판</td><td class="n">±11%</td><td class="wa">⚠ 보통</td></tr>
+<tr><td><code>frictionloss.foot</code> 0.240</td><td>PACE(v5 에서 처음 자유)</td><td class="n">1점뿐</td><td class="wa">⚠ 보통</td></tr>
+<tr><td><code>damping.thigh</code> 0.091</td><td>PACE 4판 <b>0.091~0.180</b></td><td><b>±61%</b></td><td class="no">❌ 못 믿는다</td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ 못 믿는다</td></tr>
-<tr><td><code>frictionloss.foot</code> 0.252</td><td>PACE(벽)</td><td>이 값 <b>이상</b></td><td class="no">❌ 못 믿는다</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
 <p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
 <h2>2. CAD 가 얼마나 안 맞나 (축별)</h2>
@@ -172,12 +186,11 @@ pre code{border:0;background:none;padding:0}
 <h2>4. 더 해야 할 시험</h2>
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td><b>1</b></td><td>① <code>JDAMP.calf</code>·<code>JFRIC.foot</code> 탐색범위 열고 재적합</td><td>노트북</td><td><b>공짜</b> (5~15분)</td><td class="no">❌ 둘이 값이 되는지</td></tr>
+<tr><td><b>1</b></td><td>⑦ 재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td><code>JDAMP.thigh</code>(±61%) 분해</td></tr>
 <tr><td><b>2</b></td><td>⑥ <code>coef</code> 경사계 측정</td><td>실기</td><td class="n">10분</td><td>마지막 미측정 구조값</td></tr>
-<tr><td><b>3</b></td><td>⑦ 재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td>③④ 마찰 분해</td></tr>
-<tr><td class="n">4</td><td>①-b 중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td>미해결 3개 중 셋</td></tr>
-<tr><td class="n">5</td><td>④ 다른 궤적 검증 · ⑤ hip 좌우차</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
-<p>⓪ 과 ⓪-b 는 <b>끝났다</b>(백래시 · <code>coef</code> PACE 식별). 결론만 아래에 남긴다.</p>
+<tr><td class="n">3</td><td>①-b 중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> 등</td></tr>
+<tr><td class="n">4</td><td>④ 다른 궤적 검증 · ⑤ hip 좌우차</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
+<p>⓪ · ⓪-b · ① 은 <b>끝났다</b>(백래시 · <code>coef</code> · 탐색범위 확장). 결론만 아래에 남긴다.</p>
 <h3>⓪-b ~~<code>coef</code> 크기 식별~~ — <b>해봤다. PACE 로는 안 된다</b> (2026-08-14)</h3>
 <p><code>coef</code> 를 탐색변수로 넣었다(<code>pace_cmaes.py</code>, <code>set_coupling_coef</code> + <code>retarget_coupling</code>).</p>
 <p><code>q_raw</code> 는 coef 가정과 무관하게 정확하므로 <code>q_foot_true = q_raw − c·q_calf</code> 로 다시 풀어 비교한다. <code>c=1</code> 이 항등이라는 것부터 확인했다 — 기존 결과가 소수 4자리까지 재현됐다.</p>
@@ -197,7 +210,16 @@ pre code{border:0;background:none;padding:0}
 <div class="quote">⇒ *"탐색범위 벽에 박힌 값은 식별된 값이 아니다"* 는 <b>격자 훑기에도 똑같이 적용된다.</b></div>
 <div class="quote"><code>tests/scan_coef_jdamp.py</code> 에 행 최소가 격자 경계면 판정을 보류하는 가드를 넣었다.</div>
 <p><code>coef</code> 크기를 정말 재려면 <b>엔코더 밖</b>으로 나가야 한다 — ⑥ 참조.</p>
-<h3>① <code>JDAMP.calf</code> · <code>JFRIC.foot</code> — 탐색범위를 열고 다시 적합 (<b>지금 바로, 공짜</b>)</h3>
+<h3>① ~~<code>JDAMP.calf</code>·<code>JFRIC.foot</code> 탐색범위~~ — <b>끝났다</b> (2026-08-14, <code>fit_v5</code>)</h3>
+<p>열어 보니 셋이 갈렸다:</p>
+<table>
+<tr><th></th><th>결과</th></tr>
+<tr><td><code>JFRIC.foot</code></td><td class="n">0.2516(벽) → <b>0.240, 탐색범위 17%</b> — 값이 됐다. 실측(0.36)보다 낮은 게 맞다(Stribeck)</td></tr>
+<tr><td><code>JFRIC.calf</code></td><td>하한을 0.533→0.190 으로 내렸는데 <b>0.573 그대로</b> — 애초에 벽이 아니었다</td></tr>
+<tr><td><code>JDAMP.calf</code></td><td>하한 5배를 내려도 계속 바닥 ⇒ <b>0 으로 확정</b> (위 산포표)</td></tr></table>
+<p>성적도 네 판 중 최고다(적합 0.4041 · 따로 뺀 구간 <b>0.3937</b>).</p>
+<p class="warn">⚠<b>두 번의 헛다리를 짚었다.</b> ⓐ <code>JFRIC_SPAN_DN</code> 을 넓혔는데 실측이 둘 다 있는 kind 는 <code>_span_lo</code> 의 −30% 하드코딩이 덮어써서 thigh·calf·foot 에 <b>안 먹었다</b> (<code>fit_v4</code> 의 하한이 <code>fit_v2</code> 와 글자 그대로 같았던 게 증거였다). ⓑ <code>box_report</code> 가 선형 위치를 써서 500배 범위인 <code>JDAMP</code> 에서 거짓 경보를 냈다. 둘 다 고쳤다(<code>--pin 라벨=값</code> 도 같이 넣었다 — 적합이 알려준 값에 못박을 수 있다).</p>
+<p>&lt;details&gt;&lt;summary&gt;당시 지시(참고)&lt;/summary&gt;</p>
 <p>둘 다 <code>fit_v2</code>·<code>fit_v3</code> 에서 <b>매번 바닥(0%)</b> 이다. 벽에 박힌 값은 식별된 값이 아니므로 지금 표의 <code>damping.calf 0.009</code> · <code>frictionloss.foot 0.252</code> 는 <b>값이 아니라 하한</b>이다.</p>
 <p>한 방향으로만 눌리고 반대쪽 짝은 고정/범위 안에 있어서, 둘이 같이 미끄러지는 맞바꿈이 아니다 — 열어도 발산하지 않는다:</p>
 <table>
@@ -211,6 +233,9 @@ pre code{border:0;background:none;padding:0}
     --holdout 0.2 --holdout-mode interleave \
     --pin hip,rotor,JDAMP.foot,coef --out fit_v4_wide</pre>
 <p>이번엔 두 값이 <b>범위 안에서 정해지는지</b>를 본다. 또 벽이면 물리적 하한(0)이라는 뜻이다.</p>
+<p>&lt;/details&gt;</p>
+<p>앞으로 적합을 돌릴 때는 calf 점성을 0 에 못박는다 — 차원 하나가 준다:</p>
+<pre>--pin hip,rotor,JDAMP.foot,coef,JDAMP.calf=0</pre>
 <h3>①-b 중력이 작은 자세에서 관성 재기 — <b>값의 완결성</b></h3>
 <p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
 <p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
@@ -287,8 +312,8 @@ pre code{border:0;background:none;padding:0}
 <h3>적합 성적</h3>
 <table>
 <tr><th></th><th>값</th><th>뜻</th></tr>
-<tr><td>적합 RMS</td><td class="n">0.405°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
-<tr><td>따로 뺀 구간 RMS</td><td class="n">0.397°</td><td>안 쓴 12창 — <b>적합보다 낮다</b>(과적합 없음)</td></tr>
+<tr><td>적합 RMS</td><td class="n">0.404°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
+<tr><td>따로 뺀 구간 RMS</td><td class="n">0.394°</td><td>안 쓴 12창 — <b>적합보다 낮다</b>(과적합 없음)</td></tr>
 <tr><td><b>검증 RMS</b></td><td><b>0.251°</b></td><td><b>게인 2배로 따로 수집한 데이터</b> — 가장 강한 시험</td></tr></table>
 <p class="warn">★<b>교훈 1</b>: 적합에 안 쓴 구간으로 검증해도 네 번 연속 <b>틀린 구조</b>를 골랐다. 게인을 바꾼 검증이 뒤집었다. 구조는 구조 증거로 고르고, 숫자로 가리려면 <b>조건을 바꾼 데이터</b>가 필요하다.</p>
 <p class="warn">★<b>교훈 2</b> (2026-08-14): *"탐색범위 벽에 박힌 값은 식별된 값이 아니다"* 는 <b>적합 결과뿐 아니라 진단용 격자 훑기에도 적용된다.</b> <code>coef</code> 맞바꿈 진단에서 네 행 전부 최소가 격자 끝이었는데 그걸 *"행마다 최적이 같다 = 독립이다"* 로 읽고 "결정적" 이라고 보고했다. 그건 물리가 아니라 격자 경계였다. <b>부분 훑기의 결론은 그 범위가 최적을 담고 있을 때만 유효하다.</b></p>

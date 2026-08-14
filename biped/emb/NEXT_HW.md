@@ -46,9 +46,28 @@
 #     죽은 줄 알고 다시 띄우면 **중복 writer** 가 되고, root 소유라 kill 도 못 한다.
 #     실측: sudo → SIGINT 무시 · 직접실행 → 0.11초 종료.
 #   ⚠기동 램프는 **제자리 유지**로 패치됨(halGait.cpp) — 로봇이 움직이지 않아야 정상이다.
+cd ~/simulation/biped/emb && diag/emb_ctl.sh start      # ★로그로 남길 거면 반드시 이쪽
+```
+
+⚠**아래 옛 레시피를 쓰지 말 것** (2026-08-14). 두 방향으로 다 틀렸다:
+
+```bash
+# ❌ 쓰지 말 것 — 참고용으로만 남긴다
 cd ~/ZSource/RobotEmbedded/build && ./src/RobotEmbedded 2>&1 \
   | grep --line-buffered -aE "EtherCAT|Slave|WKC|Fail" > /tmp/emb.log
 ```
+
+- **`[STT]RxCnt` 가 통째로 버려진다.** 그게 EtherCAT **동결 판별의 증거**다(RxCnt 가
+  안 늘면 동결). 동결을 쫓으려고 로그를 남기는 건데 정작 그 줄을 버린다.
+- 반대로 필터가 **아예 없으면** 시간당 1.7GB 로 자란다(2026-08-14 실측, 3.5GB 도달).
+
+⇒ `emb_ctl.sh start` 가 그 사이를 잡는다 — 반복 3패턴만 **1/500 로 솎고**(패턴별 카운터)
+  나머지 줄은 전부 통과시킨다. 495 KB/s → 수 KB/s. `EMB_LOG_EVERY=1` 로 전량 기록 가능.
+⚠**필터는 기동 시점에 걸린다.** 이미 떠 있는 Emb 에는 소급되지 않으니, 고친 뒤에는
+  `emb_ctl.sh stop && emb_ctl.sh start` 로 다시 띄워야 적용된다.
+
+로그를 **파일로 안 남기고 눈으로만** 볼 거면 터미널 직접 실행이 낫다(RUNBOOK §1 참조) —
+그건 파일을 안 만드니 디스크 문제가 없다.
 
 ---
 

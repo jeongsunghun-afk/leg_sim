@@ -86,14 +86,29 @@ def main() -> int:
     print(f"\n  격자 최소  coef {COEFS[i]:.2f} · JDAMP.calf ×{DMULS[j]:.1f} "
           f"→ {grid[i, j]:.4f}")
 
-    # ★판정: JDAMP.calf 를 각 coef 에서 다시 맞춘 뒤에도 coef 가 갈리나?
+    # ★★가드 — 행 최소가 **격자 경계**면 결론을 내지 않는다 (2026-08-14 추가).
+    #   이 가드가 없어서 실제로 오판했다. 네 행 전부 최소가 ×0.5(격자 왼쪽 끝)였는데
+    #   그걸 "JDAMP.calf 최적이 coef 와 무관하다 = 독립이다" 로 읽었다. 사실은 격자가
+    #   거기서 끊긴 것뿐이고, 진짜 최적은 JDAMP.calf=0.0097(×0.108) 로 **격자 밖**이었다.
+    #   전체 적합을 돌리자 coef 는 1.064 로 돌아왔다(고정 1.0 보다 오히려 나쁨).
+    #   ⇒ pace_cmaes 의 box_report 가 경고하는 그 실수를 진단 스크립트에서 냈다.
+    #     "벽에 박힌 값은 식별된 값이 아니다" 는 격자 훑기에도 똑같이 적용된다.
+    argmins = grid.argmin(axis=1)
+    on_edge = [int(a) in (0, len(DMULS) - 1) for a in argmins]
     prof = grid.min(axis=1)
     spread = float(prof.max() - prof.min())
     print(f"  coef 프로파일(각 행에서 JDAMP.calf 최적화 후): "
           + " ".join(f"{c:.2f}:{v:.4f}" for c, v in zip(COEFS, prof)))
     print(f"  프로파일 폭 {spread:.4f}° ({spread / prof.min():.1%})")
-    if spread < 0.005:
-        print("  ⇒ **맞바꿈다.** JDAMP.calf 를 풀면 coef 가 거의 안 갈린다.\n"
+    if any(on_edge):
+        bad = ", ".join(f"coef {COEFS[r]:.2f}→×{DMULS[argmins[r]]:.1f}"
+                        for r, e in enumerate(on_edge) if e)
+        print(f"\n  ⚠⚠**판정 보류** — {sum(on_edge)}/{len(COEFS)} 행의 최소가 격자 끝이다: {bad}")
+        print("     격자가 최적을 담고 있지 않다. DMULS 를 그 방향으로 넓혀 다시 돌릴 것.")
+        print("     ⚠이 상태에서 '행마다 최적이 같다'를 독립의 근거로 읽으면 안 된다 —")
+        print("       그건 물리가 아니라 격자 경계다(2026-08-14 실제로 그렇게 오판했다).")
+    elif spread < 0.005:
+        print("  ⇒ **맞바꿈이다.** JDAMP.calf 를 풀면 coef 가 거의 안 갈린다.\n"
               "     coef 는 이 데이터로 식별 불가 — 1.0 에 고정하고 별도 시험이 필요하다.")
     else:
         print("  ⇒ 맞바꿈이 아니다. JDAMP.calf 를 풀어도 coef 최소가 남는다.")

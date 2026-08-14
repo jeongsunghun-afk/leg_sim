@@ -134,6 +134,18 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
 
     # ── 준위 자동설계 (측정된 파단토크 기준) ──────────────────────────────
     tau_break = joint.get("_tau_break")            # torque 시험이 같은 실행에서 채워준다
+    # ★이번 실행에서 토크 프로브를 안 돌렸으면 **spec 의 실측 파단토크**를 쓴다
+    #   (2026-08-14). 종전엔 `--tests inertia` 단독이면 tau_break 가 None 이라 상수
+    #   준위로 떨어졌는데, 그 상수는 **HL_foot 기준**이다. thigh 에 걸면 이렇게 된다:
+    #     준위 [0.9~1.35] · thigh 파단 0.711 → 순토크 0.19~0.64
+    #     실측: 8런 중 7런이 "q̇_ref 미도달", +방향 유효표본 1개 → 회귀 불가
+    #   파단토크는 이미 8축 다 재서 spec 에 있다. 안 쓸 이유가 없다.
+    if tau_break is None:
+        _tbs = (spec.get("friction") or {}).get("measured_tau_break_ch") or {}
+        if int(ch) in _tbs:
+            tau_break = float(_tbs[int(ch)])
+            log(f"  [{name}] 파단토크를 spec 실측값에서 가져온다: {tau_break:.3f} Nm "
+                f"(이번 실행에서 --tests torque 를 안 돌렸다)")
     if tau_break and cfg.get("auto_levels", True):
         I_des = float(I_pred_joint or 0.054) / max(k_gear ** 2, 1e-9)
         auto, (ulo, uhi) = design_levels(
@@ -147,8 +159,11 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         else:
             log(f"  [{name}] ⚠준위 자동설계 불가(u 구간 없음 {ulo:.3f}~{uhi:.3f}) — spec 값 사용")
     elif not tau_break:
-        log(f"  [{name}] ⚠파단토크 미측정 — spec 상수 준위 사용. "
-            f"`--tests torque,inertia` 로 같이 돌리면 자동설계된다")
+        log(f"  [{name}] ★★파단토크를 모른다 — spec 상수 준위 {levels} 를 쓴다.\n"
+            f"           ⚠이 상수는 **HL_foot 기준**이다. 파단이 더 큰 축에 걸면 순토크가\n"
+            f"             거의 0 이 되어 런이 전부 탈락한다(2026-08-14 thigh 에서 8런 중 7런).\n"
+            f"           ⇒ `--tests torque,inertia` 로 돌리거나 spec 의\n"
+            f"             friction.measured_tau_break_ch 에 그 축을 넣을 것.")
 
     # ── 방향별 시작점 — 한계상자 끝에서 출발해 **이동거리를 최대로** ────────
     #   HOME 에서 양방향으로 가면 각 방향이 상자의 절반밖에 못 쓴다. 방향마다

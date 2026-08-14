@@ -258,10 +258,10 @@ def main() -> int:
     sf, g = spec["safety"], spec["gains"]
     box = at._mech_limit_box()
     ch_all = sorted(box)
-    # ★기본 lim 은 **가장 좁은** 축 기준으로 잡는다 — 채널별 상자를 못 찾은 채널이
+    # ★기본 lim 은 **가장 좁은** 축 기준으로 잡는다 — 채널별 탐색범위를 못 찾은 채널이
     #   느슨한 값으로 새는 것을 막는다. 실제 판정은 아래 hw.lim_ch(채널별)가 한다.
     #   ⚠종전엔 **합집합**(min of mins, max of maxes)이었다: hip 실한계가 ±14.9° 인데
-    #     상자가 ±176° 가 되어 **위치 트립이 사실상 없었다.** 30초를 도는 시험에서
+    #     탐색범위가 ±176° 가 되어 **위치 트립이 사실상 없었다.** 30초를 도는 시험에서
     #     어떤 축이 폭주해도 안 걸린다.
     lim = Limits(q_min=max(box[c][0] for c in ch_all), q_max=min(box[c][1] for c in ch_all),
                  tau_trip=float(mc.get("tau_trip_nm", sf["tau_trip_nm"])),

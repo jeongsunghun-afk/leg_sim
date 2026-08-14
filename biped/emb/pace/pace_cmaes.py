@@ -62,13 +62,13 @@
 
 ═══ 2026-08-14 **해결** — foot PD 는 raw각으로 잰다 ═══════════════════════
 
-궤적 hold-out 은 네 번 다 관절각을 골랐는데, **unseen PD gains 검증이 뒤집었다.**
+궤적 따로 뺀 구간 은 네 번 다 관절각을 골랐는데, **unseen PD gains 검증이 뒤집었다.**
 
   ★결정적 실험 — 게인만 2배로 바꿔 수집한 둘째 데이터셋(`--gains validate`)
       적합셋 kp [100  50  56.2 31.7 ...]  ·  검증셋 kp [100 100 112.5 63.4 ...]
                           A(raw)     B(joint)
       적합                0.4481     0.4313    ← B 가 4% 낫다
-      hold-out            0.4727     0.4567    ← B 가 3% 낫다
+      따로 뺀 구간            0.4727     0.4567    ← B 가 3% 낫다
       **검증(게인 2배)**   **0.2806**  0.3281    ← **A 가 14.5% 낫다**
       검증 개선           +28.2%     +20.1%
     같은 게인에서는 B 가 근소하게 앞서지만 **게인을 바꾸면 A 가 확실히 이긴다.**
@@ -81,15 +81,15 @@
       ③ MJCF tendon 길이 = q_calf+q_foot = 엔코더 좌표와 같다
       ④ `joint_map.q_joint_to_ch` 가 명령에 coef 를 되먹인다 → 목표도 raw
 
-  ★왜 궤적 hold-out 이 속였나
+  ★왜 궤적 따로 뺀 구간 이 속였나
     raw 법칙은 calf 추종오차를 foot 토크에 실으므로 **calf 모델오차가 foot 으로
     증폭**된다. 관절 법칙은 둘을 떼어 그 오염을 막는다 — 그래서 같은 게인에서는
     더 잘 맞는다. 하지만 그건 물리가 아니라 **오차 차단**이다.
     ⇒ **적합이 좋은 쪽이 물리적으로 맞는 쪽이라는 보장이 없다.** 이 사례가 그 증거다.
-    ⚠교훈: 궤적 hold-out 만으로 **모델 구조**를 고르지 말 것. 구조는 구조 증거로
+    ⚠교훈: 궤적 따로 뺀 구간 만으로 **모델 구조**를 고르지 말 것. 구조는 구조 증거로
       고르고, 숫자로 가리려면 **조건을 바꾼 데이터**(게인·자세·궤적)가 필요하다.
 
-  ⚠아직 남은 것: JFRIC.calf·JFRIC.foot 이 양쪽 모두 상자 하한에 박힌다. calf 가
+  ⚠아직 남은 것: JFRIC.calf·JFRIC.foot 이 양쪽 모두 탐색범위 하한에 박힌다. calf 가
     전혀 안 정해지는 것도 그대로다(JDAMP.calf 가 법칙에 따라 0.011↔0.477 로 뛴다).
     실측 JFRIC 이 처프 속도대에서 과대평가라는 뜻일 수 있다(Stribeck).
 
@@ -390,9 +390,9 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     """초기값·탐색범위 — **축별 측정값**에서 온다. 이게 sloppy 를 줄이는 핵심이다.
 
     ★pin — 그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(값은 x0 에 고정).
-      2026-08-14 f0.4_dqfix 적합에서 hip 이 상자 **모서리**로 갔다:
+      2026-08-14 f0.4_dqfix 적합에서 hip 이 탐색범위 **모서리**로 갔다:
           JFRIC.hip 상한 99% (1.069 / 상한 1.075) · JDAMP.hip 하한 1%
-      이건 JDAMP↔JFRIC 축퇴(r=+0.93)의 평탄방향을 따라 미끄러진 것이다. 왜 hip 이냐면
+      이건 JDAMP↔JFRIC 서로 맞바꿈(r=+0.93)의 평탄방향을 따라 미끄러진 것이다. 왜 hip 이냐면
       발끝 충돌 때문에 진폭을 5°(thigh 17.4° 의 1/3.6)로 줄였고, 그 결과 hip 이
       **비용의 4% 밖에 안 되기 때문**이다 — 아무 데나 밀어도 손해가 없다.
       ⇒ 데이터가 못 보는 축에 2모수를 낭비하지 않는다. 실측 JFRIC 으로 고정한다.
@@ -432,7 +432,7 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         #   갈리는 이유는 안다 — 스윕은 τ_c 와 b·q̇ 를 **뭉쳐** 재고, 토크절편은 q̇→0 으로
         #   외삽해 τ_c 만 낸다. MuJoCo 의 frictionloss 정의에는 후자가 맞지만, thigh 의
         #   절편은 방향편차 15.8% 로 게이트를 못 넘은 런에서 나왔다 — 못 믿는다.
-        #   ⇒ **씨앗은 기하평균, 상자는 둘을 감싸게** 잡는다. 고르는 건 적합에 맡긴다.
+        #   ⇒ **초기값은 기하평균, 탐색범위는 둘을 감싸게** 잡는다. 고르는 건 적합에 맡긴다.
         #     한쪽만 있으면(hip) 종전대로 그 값 ±비율이다.
         f0, _span_lo, _span_hi = {}, {}, {}
         for k in set(_sw) | set(_dy):
@@ -445,12 +445,12 @@ def init_bounds(spec_path, names, per_axis, pin=()):
                 f0[k] = float(a or b)
         # ★±20% → **±30%** (2026-08-12, 실기 데이터로 스캔 후).
         #   깨끗한 수집본(500Hz·dt 오차 0%)에서 배율 스캔을 하니 최소가 **×0.8** 이었다:
-        #     ×0.6 0.6689 · **×0.8 0.6628** · ×1.0 0.6780 · ×1.2 0.7103 · ×1.4 0.7541 (hold-out)
+        #     ×0.6 0.6689 · **×0.8 0.6628** · ×1.0 0.6780 · ×1.2 0.7103 · ×1.4 0.7541 (따로 뺀 구간)
         #   ±20% 면 최적이 경계에 딱 붙어 탐색이 벽을 민다 — 내부에 두려면 ±30% 가 필요하다.
         #   ⚠그래도 여전히 **못박는 것**이다: 종전 ×[0.3, 3.0](폭 10배) → ×[0.7, 1.3](1.9배).
-        #     JDAMP↔JFRIC 축퇴를 깨는 목적은 그대로 달성된다.
+        #     JDAMP↔JFRIC 맞바꿈을 깨는 목적은 그대로 달성된다.
         #   ★실측 ×1.0 이 구 추정치(0.38/0.44)보다 낫다 — 적합 0.6603 vs 0.6689 ·
-        #     hold-out 0.6780 vs 0.6889. **오늘 잰 마찰이 유효하다는 증거다.**
+        #     따로 뺀 구간 0.6780 vs 0.6889. **오늘 잰 마찰이 유효하다는 증거다.**
         #     최적이 0.8 인 방향은 설명된다: 우리는 ≤20dps 평탄부에서 쟀는데 처프는
         #     채널 90dps 까지 간다(Stribeck 이면 고속에서 낮다).
         JFRIC_SPAN[0] = 0.30
@@ -459,12 +459,12 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         JFRIC_SPAN[0] = None
     # ★JDAMP 실측이 있으면 초기값을 그걸로 덮는다 (2026-08-14).
     #   토크시험의 q̇_ref 훑기가 HL_foot 에서 b_joint ≈ 0.20 을 냈다(무릎 자유·고정
-    #   두 조건에서 0.214/0.202 로 재현). 그런데 종전 x0 은 0.02 였고 상자가
+    #   두 조건에서 0.214/0.202 로 재현). 그런데 종전 x0 은 0.02 였고 탐색범위가
     #   ×0.1~10 = [0.002, 0.2] 라 **실측이 천장에 딱 걸려 있었다.**
     #   그 상태로 적합하면 CMA-ES 가 하한 0.002 로 내려가 버린다(A′·B′ 둘 다 그랬다).
     #   ⚠이 값은 **괄호지 값이 아니다** — I 가 속도마다 21~24% 흔들려 가드가 b 를
-    #     거부했다. 그래도 "0.002 냐 0.2 냐" 는 100배 차이라 초기값·상자를 잡는 데는
-    #     충분하고, 안 넣으면 상자 밖에 최적이 있는 상태로 계속 돈다.
+    #     거부했다. 그래도 "0.002 냐 0.2 냐" 는 100배 차이라 초기값·탐색범위를 잡는 데는
+    #     충분하고, 안 넣으면 탐색범위 밖에 최적이 있는 상태로 계속 돈다.
     _md = (sp.get("friction") or {}).get("measured_damping_joint") or {}
     if _md:
         # ⚠kind 별 **평균**을 쓴다. 종전엔 마지막 채널 값이 이겼다 — foot 은 좌우가
@@ -485,11 +485,11 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     #   원문은 4n+1. 우리는 8축이 **같은 모터**라 ROTOR_I 를 공유하고 마찰·감쇠를
     #   kind별로 묶으므로 (1+4+4) + n(bias) + 1(delay) = 18 이다.
     #   ⚠bias 는 축별이어야 한다 — 엔코더 영점은 물리량이 아니라 축마다 따로다.
-    # ★상자 — 파라미터마다 **근거가 다르므로** 폭도 다르다 (2026-08-14 재조정).
-    #   종전은 전부 ×0.3~3.0 이었는데, f0.4_dqfix 적합에서 둘이 벽에 박혔다:
-    #     ROTOR_I    하한 1%  (×0.332) — 최적이 상자 **밖 아래**
-    #     JDAMP.foot 상한 95% (×2.88)  — 최적이 상자 **밖 위**
-    #   벽에 박힌 값은 "거기가 벽이었다" 는 말이지 식별된 값이 아니다.
+    # ★탐색범위 — 파라미터마다 **근거가 다르므로** 폭도 다르다 (2026-08-14 재조정).
+    #   종전은 전부 ×0.3~3.0 이었는데, f0.4_dqfix 적합에서 둘이 탐색범위 끝까지 밀렸다:
+    #     ROTOR_I    하한 1%  (×0.332) — 최적이 탐색범위 **밖 아래**
+    #     JDAMP.foot 상한 95% (×2.88)  — 최적이 탐색범위 **밖 위**
+    #   탐색범위 끝에 붙은 값은 "거기가 벽이었다" 는 말이지 식별된 값이 아니다.
     #   JDAMP 는 **실측이 하나도 없다**(각축 8축 전부 nan/≈0). 실측으로 좁힌 JFRIC 과
     #   달리 좁힐 근거가 없으니 넓게 연다. ROTOR_I 도 하한만 연다.
     lo = x0 * 0.3
@@ -503,17 +503,17 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     if JFRIC_SPAN[0] is not None:
         nj = len(names) if per_axis else len(KINDS)
         sl = slice(1 + nj, 1 + 2 * nj)
-        # ★상자를 **비대칭**으로 연다 (2026-08-14). 아래쪽을 더 넓게.
+        # ★탐색범위를 **비대칭**으로 연다 (2026-08-14). 아래쪽을 더 넓게.
         #   실측 JFRIC 은 **≤20dps 평탄부**에서 쟀는데 처프는 40~90dps 로 돈다.
         #   토크시험이 그 속도대의 운동마찰을 따로 쟀고 **정지마찰의 54~89%** 였다
         #   (Stribeck). 즉 실측값은 처프 속도대에서 **과대평가**다.
         #   실제로 네 번의 적합에서 JFRIC.calf·JFRIC.foot 이 **매번 하한에 박혔다** —
-        #   최적이 상자 밖 아래라는 뜻이다. 대칭 ±30% 로는 못 담는다.
+        #   최적이 탐색범위 밖 아래라는 뜻이다. 대칭 ±30% 로는 못 담는다.
         #   ⇒ 아래 −50% · 위 +30%. 위쪽은 넓힐 이유가 없다(실측보다 큰 마찰은
-        #     물리적 근거가 없고, 넓히면 JDAMP 와의 축퇴만 키운다).
+        #     물리적 근거가 없고, 넓히면 JDAMP 와의 맞바꿈만 키운다).
         lo[sl] = x0[sl] * (1.0 - JFRIC_SPAN_DN[0])
         hi[sl] = x0[sl] * (1.0 + JFRIC_SPAN[0])
-        # 두 실측이 다 있는 kind 는 **둘을 감싸는** 상자로 덮어쓴다(위 주석)
+        # 두 실측이 다 있는 kind 는 **둘을 감싸는** 탐색범위로 덮어쓴다(위 주석)
         _kk = names if per_axis else KINDS
         for i, k in enumerate(_kk):
             kk = kind_of(k) if per_axis else k
@@ -532,14 +532,14 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     #     회전자 관성이 tendon 을 타고 calf 로 실리는 양을 고친다.
     #     ⇒ 가설의 논거는 폐기하되, 파라미터 자체는 남긴다.
     #
-    #   ★JDAMP.calf 와 축퇴인지 직접 쟀다 (tests/scan_coef_jdamp.py).
+    #   ★JDAMP.calf 와 맞바꿈인지 직접 쟀다 (tests/scan_coef_jdamp.py).
     #     coef 4점 × JDAMP.calf 4점 격자에서:
     #       · 각 coef 에서 JDAMP.calf 를 다시 맞춰도 프로파일이 4.6% 폭으로 **단조**다
-    #       · JDAMP.calf 최적은 coef 와 **무관하게** ×0.5 다 (축퇴면 행마다 갈려야 한다)
-    #       · hold-out 도 같이 좋아진다: 1.00→0.5549, 0.76→0.5125 (−7.6%)
-    #     ⇒ 축퇴 아님. 과적합 아님.
+    #       · JDAMP.calf 최적은 coef 와 **무관하게** ×0.5 다 (맞바꿈면 행마다 갈려야 한다)
+    #       · 따로 뺀 구간 도 같이 좋아진다: 1.00→0.5549, 0.76→0.5125 (−7.6%)
+    #     ⇒ 맞바꿈 아님. 과적합 아님.
     #
-    #   ★상자를 0.70 까지 연다 (종전 0.85). 최소가 0.76 근처인데 0.85 에 막혀 있었다.
+    #   ★탐색범위를 0.70 까지 연다 (종전 0.85). 최소가 0.76 근처인데 0.85 에 막혀 있었다.
     #     0.76 과 0.80 은 구별이 안 된다(0.5262 vs 0.5269, 0.13%).
     #     ⚠0.80 = k_foot/k_calf(1.2/1.5) 는 **우연이다**. coef 는 joint_map.py:238 대로
     #       이미 감속비 이후 공간의 계수이고, 채널공간과 혼동했을 때 나오는 값은
@@ -547,7 +547,7 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     #     남는 해석: 발목은 **링키지** 구동이고 링키지 비는 1 이 아니며 자세의존적이다.
     #     0.76 은 시험 자세범위의 평균이다.
     #   ⚠상한은 1.15 로 둔다. 넓히면 bias·JFRIC 과 섞인다 — 커플링은 calf 스윙에
-    #     비례하는 **모양**이 있어서 좁은 상자 안에서는 구별된다.
+    #     비례하는 **모양**이 있어서 좁은 탐색범위 안에서는 구별된다.
     #   ⚠⚠이건 여전히 **적합값**이다. 결정적 측정은 diag/couple_check.py 다
     #     (무여자 + 손으로 무릎 왕복, 채널공간 회귀). 그게 나오면 여기를 못박을 것.
     x0 = np.concatenate([x0, np.zeros(nb), [DELAY0], [1.0]])
@@ -566,7 +566,7 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         #   감속비(8.4 vs 10.5)도 방법도 다른 두 축이 0.17% 로 일치한다.
         #   calf 쪽 근거: I_joint 실측 0.11192(MJCF 예측 −0.6% · 방향간 편차 9.4% ·
         #   R² 0.997/0.986) 에서 I_link 0.0310 을 빼고 N²=110.25 로 나눈 값이다.
-        #   ⚠f0.4_dqfix 적합은 2.436e-4(−66.8%)를 냈고 **상자 하한 1%** 에 박혀 있었다.
+        #   ⚠f0.4_dqfix 적합은 2.436e-4(−66.8%)를 냈고 **탐색범위 하한 1%** 에 박혀 있었다.
         #     그건 foot 제어법칙 버그를 armature 로 흡수한 결과다 — 실측을 믿는다.
         if "rotor" in pin:
             free[0] = False
@@ -595,20 +595,20 @@ BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° �
 #     (셀프테스트 T=4·120세대). 지연이 모델오차를 **흡수**한 것이고, 그 대가로
 #     JFRIC 이 −13~−63% 로 무너졌다. 실측이 있는 값을 자유변수로 두면 이렇게 된다.
 DELAY0, DELAY_LO, DELAY_HI = 0.00839, 0.0068, 0.0100
-COEF_LO, COEF_HI = 0.70, 1.15   # ★커플링 계수 상자 — 아래만 열었다 (init_bounds 주석)
+COEF_LO, COEF_HI = 0.70, 1.15   # ★커플링 계수 탐색범위 — 아래만 열었다 (init_bounds 주석)
 
 
 def split_segments(N, win, holdout, mode="tail"):
-    """적합/hold-out 구간을 나눈다. 반환은 (s,e) 목록 두 개.
+    """적합/따로 뺀 구간 구간을 나눈다. 반환은 (s,e) 목록 두 개.
 
     ★왜 `interleave` 가 필요한가 (2026-08-14)
-      종전엔 **뒤쪽 연속 20%** 만 hold-out 이었다. 그런데 우리 데이터는 **처프**다 —
-      뒤쪽은 곧 **고주파**다(적합구간 |dq|95% 40~46dps · hold-out 42~51dps).
-      그러면 hold-out 은 일반화 시험이 아니라 **"안 배운 주파수로의 외삽"** 시험이 된다.
+      종전엔 **뒤쪽 연속 20%** 만 따로 뺀 구간 이었다. 그런데 우리 데이터는 **처프**다 —
+      뒤쪽은 곧 **고주파**다(적합구간 |dq|95% 40~46dps · 따로 뺀 구간 42~51dps).
+      그러면 따로 뺀 구간 은 일반화 시험이 아니라 **"안 배운 주파수로의 외삽"** 시험이 된다.
       실제로 foot PD 법칙 A/B 비교에서 이게 결론을 뒤집었다:
-          A(raw)   적합 0.3568 · hold-out 0.7711   ← 저주파에 강하고 고주파에 약함
-          B(joint) 적합 0.3782 · hold-out 0.5000
-      A 는 저주파에서 3배 좋은데 꼬리(고주파)만 보는 hold-out 에서는 진다.
+          A(raw)   적합 0.3568 · 따로 뺀 구간 0.7711   ← 저주파에 강하고 고주파에 약함
+          B(joint) 적합 0.3782 · 따로 뺀 구간 0.5000
+      A 는 저주파에서 3배 좋은데 꼬리(고주파)만 보는 따로 뺀 구간 에서는 진다.
       ⇒ 창 단위로 **번갈아** 떼면 양쪽이 같은 주파수 범위를 본다. 그래야 비교가 된다.
     ⚠창(win) 경계로 자른다. 롤아웃이 어차피 창마다 실측으로 재초기화하므로
       창을 쪼개지 않는 한 의미가 바뀌지 않는다.
@@ -617,7 +617,7 @@ def split_segments(N, win, holdout, mode="tail"):
         ncut = int(N * (1 - holdout))
         return [(0, ncut)], [(ncut, N)]
     blocks = [(s_, min(s_ + win, N)) for s_ in range(0, N, win)]
-    k = max(2, int(round(1.0 / max(holdout, 1e-9))))    # k 개마다 1개를 hold-out
+    k = max(2, int(round(1.0 / max(holdout, 1e-9))))    # k 개마다 1개를 따로 뺀 구간
     fit_s = [b for i, b in enumerate(blocks) if i % k != k - 1]
     hold_s = [b for i, b in enumerate(blocks) if i % k == k - 1]
     return fit_s, hold_s
@@ -648,14 +648,14 @@ def split_params(p, n, per_axis):
 
 
 def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
-    """탐색값이 **상자 어디에 있는지** 찍는다. 벽에 박힌 항목 라벨을 반환한다.
+    """탐색값이 **탐색범위 어디에 있는지** 찍는다. 탐색범위 끝에 붙은 항목 라벨을 반환한다.
 
     ★왜 매번 찍나 (2026-08-14)
-      f0.4_dqfix 적합에서 ROTOR_I·JDAMP.foot·JFRIC.hip 셋이 벽에 박혀 있었는데,
-      출력에는 값만 있어서 **한참 뒤에야** 알았다. 벽에 박힌 값은 "최적이 상자 밖" 이라는
+      f0.4_dqfix 적합에서 ROTOR_I·JDAMP.foot·JFRIC.hip 셋이 탐색범위 끝에 붙어 있었는데,
+      출력에는 값만 있어서 **한참 뒤에야** 알았다. 탐색범위 끝에 붙은 값은 "최적이 탐색범위 밖" 이라는
       뜻이지 식별된 값이 아니다 — 그걸 결론으로 쓰면 안 된다. 그러니 값과 **같이** 찍는다.
     """
-    log(f"\n  {'파라미터':<16}{'하한':>11}{'값':>12}{'상한':>11}{'상자내':>8}  판정")
+    log(f"\n  {'파라미터':<16}{'하한':>11}{'값':>12}{'상한':>11}{'범위내':>8}  판정")
     wall = []
     for i, L in enumerate(labels):
         if L.startswith("bias"):
@@ -666,12 +666,12 @@ def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
         a, b = float(lo[i]), float(hi[i])
         u = (x[i] - a) / (b - a) if b > a else float("nan")
         if u >= 0.95 or u <= 0.05:
-            v = "★벽에 박혔다 — 최적이 상자 밖이다"
+            v = "★범위 끝까지 밀렸다 — 최적이 범위 밖이다"
             wall.append(L)
         elif u >= 0.85 or u <= 0.15:
-            v = "△벽 근처"
+            v = "△범위 끝 근처"
         else:
-            v = "✓상자 안에서 정해졌다"
+            v = "✓범위 안에서 정해졌다"
         log(f"  {L:<16}{a:>11.4g}{x[i]:>12.4g}{b:>11.4g}{u:>7.0%}  {v}")
     return wall
 
@@ -722,7 +722,7 @@ def main() -> int:
                          "게인이 바뀌어도 같은 θ 가 맞으면 순환·과적합이 아니다")
     ap.add_argument("--pin", default="", metavar="KIND[,KIND]",
                     help="그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(x0 에 고정). "
-                         "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 상자 모서리로 간다. "
+                         "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 탐색범위 모서리로 간다. "
                          "`rotor` 는 ROTOR_I 를 실측(7.33e-4)에 못박는다")
     ap.add_argument("--ctrl-space", default="tendon", choices=("tendon", "joint"),
                     help="foot PD 가 재는 오차. tendon=raw각(q_foot+q_calf, **실기**) · "
@@ -762,13 +762,13 @@ def main() -> int:
           f"창 {a.window}s({win} 스텝)")
     _nf = sum(e - s_ for s_, e in fit_segs); _nh = sum(e - s_ for s_, e in hold_segs)
     if a.holdout_mode == "tail":
-        print(f"  적합 구간 0~{fit_segs[0][1]} · **hold-out {hold_segs[0][0]}~{N}** "
+        print(f"  적합 구간 0~{fit_segs[0][1]} · **따로 뺀 구간 {hold_segs[0][0]}~{N}** "
               f"({a.holdout:.0%})")
         print(f"  ⚠처프에서 뒤쪽은 **고주파**다 — 이건 일반화가 아니라 **외삽** 시험이다."
               f" 모델 비교에는 `--holdout-mode interleave` 를 쓸 것")
     else:
         print(f"  **창 단위 교차분할** — 적합 {len(fit_segs)}창({_nf}표본) · "
-              f"hold-out {len(hold_segs)}창({_nh}표본, {_nh/N:.0%})")
+              f"따로 뺀 구간 {len(hold_segs)}창({_nh}표본, {_nh/N:.0%})")
         print(f"  ⇒ 양쪽이 같은 주파수 범위를 본다(처프의 tail 편향 제거)")
 
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
@@ -819,7 +819,7 @@ def main() -> int:
 
     c0, _ = evaluate(x0, fit_segs)
     h0, _ = evaluate(x0, hold_segs)
-    print(f"\n■ 초기값 RMS — 적합 {c0:.4f}° · hold-out {h0:.4f}°")
+    print(f"\n■ 초기값 RMS — 적합 {c0:.4f}° · 따로 뺀 구간 {h0:.4f}°")
     if a.eval_only:
         return 0
 
@@ -863,20 +863,20 @@ def main() -> int:
             print(f"  ★**미수렴** — 마지막 20% 세대에서 RMS 가 {tail_gain*100:.0f}% 더 내려갔다."
                   f" --iters 를 올릴 것(현재 {a.iters}). 이 값을 결론으로 쓰지 말 것")
     hb, qs = evaluate(best, hold_segs)
-    print(f"\n■ 결과 — 적합 RMS {bestc:.4f}° · **hold-out RMS {hb:.4f}°** "
+    print(f"\n■ 결과 — 적합 RMS {bestc:.4f}° · **따로 뺀 구간 RMS {hb:.4f}°** "
           f"(초기 {c0:.4f}/{h0:.4f})")
-    print(f"  개선 적합 {(1-bestc/c0)*100:+.1f}% · hold-out {(1-hb/h0)*100:+.1f}%")
+    print(f"  개선 적합 {(1-bestc/c0)*100:+.1f}% · 따로 뺀 구간 {(1-hb/h0)*100:+.1f}%")
     if hb > bestc * 1.5:
-        print("  ⚠hold-out 이 적합보다 크게 나쁘다 — **과적합**이다. 모수를 줄이거나"
+        print("  ⚠따로 뺀 구간 이 적합보다 크게 나쁘다 — **과적합**이다. 모수를 줄이거나"
               " 데이터를 늘릴 것")
     report(D["names"], best, a.per_axis)
     _wall = box_report(plab, best, x0, lo, hi, free)
     if _wall:
-        print("  ★**상자 벽에 박힌 값은 식별된 값이 아니다** — 최적이 상자 밖이라는 뜻이다."
+        print("  ★**탐색범위 끝에 붙은 값은 식별된 값이 아니다** — 최적이 탐색범위 밖이라는 뜻이다."
               " 경계를 넓혀 다시 돌리거나, 실측으로 고정할 것")
 
     # ── ★unseen PD gains 검증 (원문의 주 검증) ──────────────────────────────
-    #   hold-out 궤적보다 강하다: 게인이 바뀌면 kp·err 순환이나 과적합이 바로 드러난다.
+    #   따로 뺀 구간 궤적보다 강하다: 게인이 바뀌면 kp·err 순환이나 과적합이 바로 드러난다.
     #   ⚠게인은 **그 데이터셋의 것**을 쓴다(npz 에 kp_joint/kd_joint 가 들어 있다).
     if a.validate:
         V = load_data(a.validate)
@@ -888,7 +888,7 @@ def main() -> int:
         print(f"  적합셋 kp {np.round(D['kp'], 1)}")
         print(f"  검증셋 kp {np.round(V['kp'], 1)}   ← 다른 게인이어야 의미가 있다")
         if np.allclose(D["kp"], V["kp"]):
-            print("  ⚠게인이 같다 — 이건 unseen gains 검증이 아니다(궤적 hold-out 일 뿐)")
+            print("  ⚠게인이 같다 — 이건 unseen gains 검증이 아니다(궤적 따로 뺀 구간 일 뿐)")
         rows = []
         for lab, px in (("초기값", x0), ("적합 θ", best)):
             dyn, bias, dly, cf = split_params(px, len(V["names"]), a.per_axis)
@@ -919,7 +919,7 @@ def main() -> int:
     out = a.out or (os.path.splitext(a.npz)[0] + "_cmaes.npz")
     np.savez(out, x=best, x0=x0, rms_fit=bestc, rms_holdout=hb,
              per_axis=a.per_axis, names=np.array(D["names"]),
-             # ★상자를 같이 남긴다 (2026-08-14). 안 남겨서 "벽에 박혔는지" 를
+             # ★탐색범위를 같이 남긴다 (2026-08-14). 안 남겨서 "탐색범위 끝에 붙었는지" 를
              #   나중에 init_bounds 를 다시 불러 손으로 계산해야 했다.
              lo=lo, hi=hi, free=free, labels=np.array(plab),
              ctrl_space=a.ctrl_space, pin=np.array(pin))
@@ -962,14 +962,14 @@ def selftest(m, a) -> int:
     #   "되찾았다" 가 구분되지 않아 검증이 되지 않는다.
     bias_true = np.array([0.8, -1.2, 0.5, -0.3, -0.6, 0.9, -0.4, 0.7])
     delay_true = 0.010
-    # ★참값은 **상자 안에서** 만든다 (2026-08-14 수정).
+    # ★참값은 **탐색범위 안에서** 만든다 (2026-08-14 수정).
     #   종전엔 JFRIC 참값을 [0.42, 0.31, 0.50, 0.44] 로 **하드코딩**했는데, 2026-08-12 에
-    #   JFRIC 상자를 실측 ×[0.7,1.3] 으로 조인 뒤로 **네 개 전부 상자 밖**이 됐다:
+    #   JFRIC 탐색범위를 실측 ×[0.7,1.3] 으로 조인 뒤로 **네 개 전부 탐색범위 밖**이 됐다:
     #       hip 0.42 ∉ [0.579,1.075] · thigh 0.31 ∉ [0.469,0.871]
     #       calf 0.50 ∉ [0.700,1.301] · foot 0.44 ∉ [0.521,0.968]
     #   ⇒ 도달 불가능한 값을 되찾으라고 시킨 셈이라 **구조적으로 항상 실패**했다.
     #     "셀프테스트 실패" 가 상시화되면 진짜 회귀를 못 알아본다.
-    #   x0 에 배율을 곱해 만든다 — 상자가 바뀌어도 따라가고, x0 와 충분히 달라
+    #   x0 에 배율을 곱해 만든다 — 탐색범위가 바뀌어도 따라가고, x0 와 충분히 달라
     #   "안 움직였다" 와 "되찾았다" 가 구분된다.
     _x0s, _lo_s, _hi_s, _ = init_bounds(a.spec, names, False)
     _mul = np.array([1.35] + [1.6, 0.55, 1.9, 2.4] + [0.86, 1.14, 0.90, 1.10])
@@ -977,8 +977,8 @@ def selftest(m, a) -> int:
     _out = [(l, v, lo_, hi_) for l, v, lo_, hi_ in
             zip(param_labels(names, False)[:9], x_true[:9], _lo_s[:9], _hi_s[:9])
             if not (lo_ <= v <= hi_)]
-    if _out:                       # 상자가 또 좁아지면 여기서 바로 잡힌다
-        raise SystemExit("✗ 셀프테스트 참값이 상자 밖이다 — _mul 을 조정할 것: "
+    if _out:                       # 탐색범위가 또 좁아지면 여기서 바로 잡힌다
+        raise SystemExit("✗ 셀프테스트 참값이 탐색범위 밖이다 — _mul 을 조정할 것: "
                          + " · ".join(f"{l} {v:.4g}∉[{a_:.4g},{b_:.4g}]"
                                       for l, v, a_, b_ in _out))
     apply_params(m, idx, gear_n, split_params(x_true, len(names), False)[0], False, names)
@@ -1027,7 +1027,7 @@ def selftest(m, a) -> int:
     #   궤적데이터로 JDAMP 를 못 얻는 건 이 파일이 이미 문서화한 성질이다
     #   (JDAMP↔JFRIC r=+0.93 평탄방향 · design_excitation 이 설계 단계에서 짚음).
     #   그걸 합격 조건에 넣으면 셀프테스트가 **영구 실패**가 되고, 그러면 진짜 회귀를
-    #   못 알아본다 — 참값을 상자 밖에 두어 늘 실패하던 것과 같은 병이다.
+    #   못 알아본다 — 참값을 탐색범위 밖에 두어 늘 실패하던 것과 같은 병이다.
     #   ⇒ 값은 찍되 게이트는 ROTOR_I·JFRIC·bias·delay 가 진다. JDAMP 는 **토크시험**
     #     (act_measure_inertia_torque 의 q̇_ref 훑기)에서 괄호로 받아 온다.
     ok = True

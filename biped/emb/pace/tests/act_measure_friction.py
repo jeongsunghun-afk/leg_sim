@@ -264,11 +264,11 @@ def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log, tau_s,
                 speed_dps=10.0, stuck_ms=250.0) -> tuple[float, float]:
     """[q_lo, q_hi] 를 실제로 갈 수 있는지 저속으로 확인하고 **도달 가능한 구간**을 낸다.
 
-    ★왜 필요한가 (2026-08-12 HL_thigh) — **상자 안인데 못 가는 자리가 있다.**
+    ★왜 필요한가 (2026-08-12 HL_thigh) — **탐색범위 안인데 못 가는 자리가 있다.**
       무여자로 늘어진 하위 링크(calf·foot)가 바닥·프레임·반대 다리에 닿으면 거기서
-      막힌다. 관절한계(상자)로는 절대 알 수 없고, 자세가 바뀔 때마다 위치도 바뀐다.
-      실기: 상자 [-60,+40] **한가운데인 +6.71°** 에서 중력 대비 2.17Nm 를 넘기며 스톨.
-      상자를 아무리 정확히 적어도 이건 안 잡힌다 — 실제로 가 보는 수밖에 없다.
+      막힌다. 관절한계(탐색범위)로는 절대 알 수 없고, 자세가 바뀔 때마다 위치도 바뀐다.
+      실기: 탐색범위 [-60,+40] **한가운데인 +6.71°** 에서 중력 대비 2.17Nm 를 넘기며 스톨.
+      탐색범위를 아무리 정확히 적어도 이건 안 잡힌다 — 실제로 가 보는 수밖에 없다.
     ⇒ 스윕 전에 양끝을 **저속으로 한 번 다녀온다.** 막히면 그 자리를 기록하고 구간을
       줄인다. 시험을 죽이지 않는다 — 막힘은 실패가 아니라 **정보**다.
     ⚠전역 스톨 감지는 끄고(임계가 달라서) 여기서 자체 판정한다. 임계 cap_nm 은
@@ -308,7 +308,7 @@ def _probe_span(hw, ch, kp, kd, q_lo, q_hi, ff, log, tau_s,
                         log(f"    ⚠{'+' if d > 0 else '−'}쪽 {tgt:+.2f}° 로 못 간다 — "
                             f"{smp.q_deg:+.2f}° 에서 막혔다(중력 대비 "
                             f"{abs(smp.tau - fv):.2f}Nm > {cap_nm}Nm, {smp.dq_dps:+.1f}dps). "
-                            f"상자가 아니라 **간섭**이다. 여기까지만 쓴다: {out[idx]:+.2f}°")
+                            f"탐색범위가 아니라 **간섭**이다. 여기까지만 쓴다: {out[idx]:+.2f}°")
                         break
                 else:
                     since = None
@@ -401,7 +401,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
             time.sleep(0.3)
             q_start = q_center - d * half
             s = hw.run(ch, lambda t, a=q_start, d=d: a + d * v * t, T, kp, kd, tau_ff_fn=ff)
-            # ★limp 하지 않는다 — 120dps 에서 21.8° 관성주행해 상자를 넘었다(brake 주석).
+            # ★limp 하지 않는다 — 120dps 에서 21.8° 관성주행해 탐색범위를 넘었다(brake 주석).
             #   샘플은 이미 s 에 다 들어 있다. 브레이크 구간은 분석에 안 쓴다.
             hw.brake(ch, kp, kd, 0.25, tau_ff_fn=ff)
 
@@ -674,10 +674,10 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # 스톨 감지도 **같은 값**을 보게 한다. 두 곳이 다른 중력을 쓰면 그게 곧 오진이다.
     hw.grav_fn = lambda c, qq, _o=_g0: (_ff(qq) if c == ch else
                                         (_o(c, qq) if _o else 0.0))
-    # ★상자 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
-    #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 상자
+    # ★탐색범위 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
+    #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 탐색범위
     #   경계와 **정확히 일치**한다. 실기에서 그대로 터졌다:
-    #     HL_thigh 상자 [-60, +40], 파단 후 위치가 +20 이상 → 중심 +20.00 으로 클립
+    #     HL_thigh 탐색범위 [-60, +40], 파단 후 위치가 +20 이상 → 중심 +20.00 으로 클립
     #     → 스윕 [0, +40]. 그 +40 에서 기구 스톱을 밀며 스톨(초과 2.06Nm, -1.5dps).
     #   ⇒ 양끝 MARGIN 을 비우고, 그래도 안 들어가면 **스트로크를 줄인다.**
     #     조용히 줄이지 않는다 — 줄인 사실과 실제 구간을 로그에 찍는다.
@@ -697,7 +697,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
         MARGIN = 3.0 + float(np.rad2deg(_d))
     else:
         MARGIN = 6.0                       # I 를 모르면 보수적으로
-    log(f"    상자 여유 {MARGIN:.1f}° (기본 3.0 + 최고 {_vmax:.0f}dps 제어정지 "
+    log(f"    탐색범위 여유 {MARGIN:.1f}° (기본 3.0 + 최고 {_vmax:.0f}dps 제어정지 "
         f"{MARGIN - 3.0:.1f}°)")
     lo_b, hi_b = joint["q_min"] + MARGIN, joint["q_max"] - MARGIN
     half = fr["sweep"]["stroke_deg"] / 2
@@ -706,17 +706,17 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
         fr["sweep"]["stroke_deg"] = float(hi_b - lo_b)
         half = fr["sweep"]["stroke_deg"] / 2
         msg = (f"스윕 스트로크 축소 {old:.1f}° → {fr['sweep']['stroke_deg']:.1f}° — "
-               f"상자 [{joint['q_min']:.1f}, {joint['q_max']:.1f}] 에 여유 {MARGIN}° 를 "
+               f"탐색범위 [{joint['q_min']:.1f}, {joint['q_max']:.1f}] 에 여유 {MARGIN}° 를 "
                f"빼면 그만큼밖에 안 들어간다")
         log(f"    ⚠{msg}"); warn.append(msg)
     if not (lo_b + half <= q_center <= hi_b - half):
         was = q_center
         q_center = float(np.clip(q_center, lo_b + half, hi_b - half))
         msg = (f"스윕 중심각 이동 {was:.2f}° → {q_center:.2f}° "
-               f"(상자 여유 {MARGIN:.1f}° 확보)")
+               f"(탐색범위 여유 {MARGIN:.1f}° 확보)")
         log(f"    ⚠{msg}"); warn.append(msg)
 
-    # ★상자만 믿지 않고 **실제로 가 본다** (_probe_span 주석 참조).
+    # ★탐색범위만 믿지 않고 **실제로 가 본다** (_probe_span 주석 참조).
     log(f"    범위 확인 — [{q_center - half:+.2f}, {q_center + half:+.2f}]° 를 "
         f"저속으로 다녀온다")
     # ★임계는 **방금 잰 그 축의 마찰**에서 뽑는다 — 고정값은 축마다 틀린다.
@@ -735,7 +735,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
         if 2 * half < 3.0:
             raise RuntimeError(
                 f"쓸 수 있는 구간이 {2 * half:.1f}° 뿐이다 — 축이 거의 갇혀 있다.\n"
-                f"  도달 가능 [{r_lo:+.2f}, {r_hi:+.2f}]° · 상자 "
+                f"  도달 가능 [{r_lo:+.2f}, {r_hi:+.2f}]° · 탐색범위 "
                 f"[{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°.\n"
                 f"  **기구를 눈으로 볼 것** — 늘어진 하위 링크가 바닥·프레임·반대 다리에\n"
                 f"  닿아 있을 가능성이 높다. 그 다리를 살짝 들어 주고 다시 실행할 것.")
@@ -743,7 +743,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # (B) 등속 스윕
     log(f"  (B) 등속 스윕 — 중심 {q_center:.2f}° · ±{half:.1f}° → 실제 구간 "
         f"[{q_center - half:+.2f}, {q_center + half:+.2f}]° "
-        f"(상자 [{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°, 양끝 여유 "
+        f"(탐색범위 [{joint['q_min']:+.1f}, {joint['q_max']:+.1f}]°, 양끝 여유 "
         f"{min(q_center - half - joint['q_min'], joint['q_max'] - q_center - half):+.2f}°)")
     fr["sweep"]["_kt"] = next((float(x["kt_nm_per_a"]) for x in spec["joints"]
                                if int(x["ch"]) == ch and "kt_nm_per_a" in x), None)

@@ -101,7 +101,7 @@ int main(int argc,char**argv){
 
   std::printf("모델: %s\n", mjcf);
   // ★--eval 은 **진단 전용**이다. 종전엔 여기서도 Newton 을 돌려서, 서지 못하는 자세를
-  //   씨앗으로 주면 349° 같은 발산값을 뱉었다 — 그걸 해로 오해하기 딱 좋다.
+  //   초기값으로 주면 349° 같은 발산값을 뱉었다 — 그걸 해로 오해하기 딱 좋다.
   if(eval_only){ report("진단(--eval)", t,c,f); mj_deleteData(d); mj_deleteModel(m); return 0; }
   report("현재 Qflat8", t,c,f);
 

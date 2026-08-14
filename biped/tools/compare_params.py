@@ -62,7 +62,7 @@ def main() -> int:
     dmp0, frc0 = x0[1:1 + nj], x0[1 + nj:1 + 2 * nj]
 
     print(f"■ {os.path.basename(sys.argv[1])}"
-          f"  ·  RMS 적합 {float(z['rms_fit']):.4f}° · hold-out {float(z['rms_holdout']):.4f}°")
+          f"  ·  RMS 적합 {float(z['rms_fit']):.4f}° · 따로 뺀 구간 {float(z['rms_holdout']):.4f}°")
     print(f"  ROTOR_I  {x[0]:.4e}  (초기 {x0[0]:.4e} · {x[0] / x0[0] - 1:+.0%})\n")
 
     # ── JFRIC — 유일하게 직접 비교되는 값 ──────────────────────────────────

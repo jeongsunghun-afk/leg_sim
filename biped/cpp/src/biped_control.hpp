@@ -106,7 +106,7 @@ struct BipedControl {
   //     두 축·두 방법이 **0.17%** 로 만났다(순환 없는 경로의 독립 검증).
   //   ⚠JFRIC 은 전 축이 종전보다 크다(0.66~2.2배) — **보행 거동이 바뀐다.**
   //   ⚠hip 의 JDAMP·JFRIC 은 **식별된 게 아니라 고정한 값**이다(자극이 비용의 4% 뿐).
-  //   ★calf JDAMP(0.0092)·foot JFRIC(0.2517)는 **상자 벽에 박힌 값** — 더 낮을 수 있다.
+  //   ★calf JDAMP(0.0092)·foot JFRIC(0.2517)는 **탐색범위 끝에 붙은 값** — 더 낮을 수 있다.
   //   ⚠foot 의 dof_armature 는 0 이다(tendon 으로 이전).
   //   ⚠Python biped_wbic.py 와 **같은 값**이어야 한다. 한쪽만 고치면 파리티가 깨진다.
   double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.327e-4;

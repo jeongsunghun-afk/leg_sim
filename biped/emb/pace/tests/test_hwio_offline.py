@@ -209,9 +209,9 @@ def t_goto_all_home():
     from homing import goto_home, make_homer
     import yaml as _y
     cfg = _y.safe_load(open(os.path.join(os.path.dirname(PACE), "config", "biped_emb.yaml")))
-    box = at._mech_limit_box()      # 실기와 동일: 복귀 구간은 **기구한계** 상자
-    # (spec 상자를 쓰면 늘어진 ch3=+17.55° 가 상한 12.75° 로 잘려 시작부터 어긋난다 —
-    #  복귀용 상자가 왜 기구한계여야 하는지가 여기서 드러난다.)
+    box = at._mech_limit_box()      # 실기와 동일: 복귀 구간은 **기구한계** 탐색범위
+    # (spec 탐색범위를 쓰면 늘어진 ch3=+17.55° 가 상한 12.75° 로 잘려 시작부터 어긋난다 —
+    #  복귀용 탐색범위가 왜 기구한계여야 하는지가 여기서 드러난다.)
     hw.arm(3, 30.0, 2.0)
     homer = make_homer(jm, cfg, hw.dt)
     # ★**실기와 같은 15dps** 를 쓴다(config home.max_speed_dps).
@@ -236,7 +236,7 @@ def t_goto_all_home():
     # ★2026-08-11 조용한 버그 회귀검사: 시험축 한계가 전 채널에 적용되면 여기서 깨진다
     check("클램프에 목표가 잘리지 않음",
           all(box[c][0] - 1e-6 <= tgt[c] <= box[c][1] + 1e-6 for c in box),
-          "전 채널 목표가 채널각 상자 안")
+          "전 채널 목표가 채널각 탐색범위 안")
     hw.limp()
 
 
@@ -646,7 +646,7 @@ def t_coef_plumbing():
               f"라벨 {len(lab)} · 벡터 {len(x0)}")
         check(f"per_axis={per} 라벨 꼬리", lab[-2:] == ["delay", "coef"], f"{lab[-2:]}")
         check(f"per_axis={per} coef 초기값 1.0", x0[-1] == 1.0, f"{x0[-1]}")
-        check(f"per_axis={per} coef 상자가 1.0 을 담는다",
+        check(f"per_axis={per} coef 탐색범위가 1.0 을 담는다",
               lo[-1] <= 1.0 <= hi[-1], f"[{lo[-1]:.2f}, {hi[-1]:.2f}]")
         dyn, bias, dly, cf = P.split_params(x0, len(nm), per)
         check(f"per_axis={per} split_params 분해",

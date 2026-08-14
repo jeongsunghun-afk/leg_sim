@@ -51,7 +51,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>①</td><td><code>I_link</code> 링크 관성</td><td><b>CAD</b> — 실측으로 검증</td><td class="ok">✅ calf·foot ±8.3% · thigh·hip 미검증</td></tr>
 <tr><td>②</td><td><code>I_rot·N²</code> 로터 반사관성</td><td><b>각축 토크시험</b> ROTOR_I 7.327e-4</td><td class="ok">✅ 4곳 ±10%</td></tr>
 <tr><td>③</td><td><code>b</code> 점성</td><td>foot 은 <b>각축</b>, 나머지는 PACE</td><td class="ok">⚠ foot ✅ · thigh 보통 · calf·hip ❌</td></tr>
-<tr><td>④</td><td><code>τ_c</code> 쿨롱마찰</td><td><b>PACE</b> (각축과 25% 차)</td><td class="wa">⚠ ③과 축퇴라 나눔이 안 됨</td></tr>
+<tr><td>④</td><td><code>τ_c</code> 쿨롱마찰</td><td><b>PACE</b> (각축과 25% 차)</td><td class="wa">⚠ ③과 맞바꿈라 나눔이 안 됨</td></tr>
 <tr><td>⑤</td><td><code>g(q)</code> 중력</td><td><b>중력표 + 자세별 실측보정</b></td><td class="ok">✅ 시험 내부용 (MJCF 는 CAD 가 계산)</td></tr>
 <tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
 <tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>관성 대조</b> 비 1.06</td><td class="ok">✅ coef ≈ 1 확정</td></tr>
@@ -62,37 +62,41 @@ pre code{border:0;background:none;padding:0}
 <p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다
 (<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고 실제로 대부분을 이걸로 정했다.
 그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
+<p class="quote"><b>먼저 말 두 개.</b> 다축 최적화(CMA-ES)는 무에서 값을 찾지 않는다.
+<b>어딘가에서 출발해서</b>(= <b>초기값</b>), <b>정해둔 범위 안만</b> 뒤진다(= <b>탐색범위</b>).
+둘 다 각축 실측에서 왔다 — 그게 각축이 다축을 도운 방식이다.
+탐색범위 끝까지 밀려 멈춘 값은 <b>찾은 값이 아니라 더 못 간 값</b>이다(표의 ★).</p>
 
-<h3>한계 ① 공선성 — 궤적으로는 <b>원리적으로</b> 못 가른다</h3>
+<h3>한계 ① 두 값을 맞바꿔도 티가 안 난다 — 궤적으로는 <b>원리적으로</b> 못 가른다</h3>
 <p><code>JDAMP.foot</code> ↔ <code>JFRIC.foot</code> 상관 <b>r = +0.93</b>. 점성을 올리고 마찰을 내리면 궤적이 거의 같아진다.
 그래서 둘의 합만 정해지고 <b>나눔이 안 된다</b>(남은 불확실 −66 ~ +64%).</p>
 <p class="quote"><code>design_excitation.py</code> 가 <b>설계 단계에서 이미 예측했다.</b> 궤적 쪽 처방(dual·f0scale·f1scale)을
 전부 시도했지만 실패했다 — 가진을 어떻게 설계해도 안 갈린다. ⇒ <b>한쪽을 바깥에서 못박는 것 말고는 방법이 없다.</b></p>
 
-<h3>한계 ② 감도 불균형 — 안 움직여도 티가 안 난다</h3>
+<h3>한계 ② 어떤 축은 틀려도 티가 안 난다</h3>
 <p>비용이 <b>8축·60창을 통째로 뭉친 단일 RMS</b> 다(<code>cost_of</code>: <code>sqrt(mean(r²))</code>). 자극이 큰 축이 비용을 지배한다.</p>
 <table><tr><th></th><th>값</th><th>결과</th></tr>
-<tr><td><code>JDAMP</code> 감도 / <code>ROTOR_I</code> 감도</td><td class="n"><b>1/16 ~ 1/87</b></td><td>감쇠를 크게 틀려도 RMS 가 거의 안 변한다</td></tr>
+<tr><td><code>JDAMP</code> 를 틀렸을 때 / <code>ROTOR_I</code> 를 틀렸을 때 <b>RMS 가 변하는 양</b></td><td class="n"><b>1/16 ~ 1/87</b></td><td>감쇠를 크게 틀려도 RMS 가 거의 안 변한다</td></tr>
 <tr><td><b>hip 이 비용에서 차지하는 비중</b></td><td class="n"><b>4 %</b></td><td>hip 을 아무 값으로 둬도 통합 RMS 가 안 움직인다</td></tr></table>
-<p class="warn">⚠<b>hip 은 자유변수였는데도 씨앗에서 안 움직였다.</b> 금지된 게 아니라 <b>정보가 없어서</b>다.
+<p class="warn">⚠<b>hip 은 자유변수였는데도 초기값에서 안 움직였다.</b> 금지된 게 아니라 <b>정보가 없어서</b>다.
 겉보기엔 "다축이 정한 값" 인데 실제로는 각축값이 그대로 통과한 것이다(§1 의 ⚠ 표시).</p>
 
 <h3>한계 ③ 자유변수가 <b>모델오차를 흡수한다</b></h3>
 <p>지연 <code>T_d</code> 를 자유롭게 두자 실측 밖으로 달아나면서 다른 값을 끌고 갔다.</p>
-<table><tr><th>상자</th><th>추정 T_d</th><th>RMS</th><th>ROTOR_I 오차</th></tr>
+<table><tr><th>탐색범위</th><th>추정 T_d</th><th>RMS</th><th>ROTOR_I 오차</th></tr>
 <tr><td>2 ~ 16 ms (자유)</td><td><b>12.83 ms</b> ← 실측 8.39±0.79 <b>밖</b></td><td class="n">0.0615</td><td class="n no"><b>−6.7 %</b></td></tr>
 <tr><td>6.8 ~ 10 ms (실측으로 묶음)</td><td>9.46 ms</td><td class="n ok"><b>0.0449</b> (−27%)</td><td class="n ok"><b>+1.5 %</b> (4.5배 개선)</td></tr></table>
 <p><b>묶었더니 RMS 도 좋아지고 물리값도 맞았다.</b> 원문이 <code>T_d</code> 를 자유로 두는 건 그걸 따로 재지 않아서다 —
 <b>우리는 쟀으니 묶는다.</b> 실측이 있는 값을 자유로 두면 나머지가 그리로 흐른다.</p>
-<p class="warn">⇒ 여기서 <b>"RMS 가 낮다 ≠ 적합이 좋다"</b> 가 드러난다. 이 교훈은 hold-out 에서 한 번 더 반복된다
-(궤적 hold-out 이 네 번 연속 <b>틀린 구조</b>를 골랐다).</p>
+<p class="warn">⇒ 여기서 <b>"RMS 가 낮다 ≠ 적합이 좋다"</b> 가 드러난다. 이 교훈은 따로 뺀 구간 검증에서 한 번 더 반복된다
+(적합에 안 쓴 구간으로 검증해도 네 번 연속 <b>틀린 구조</b>를 골랐다).</p>
 
 <h3>각축이 준 것 — 그리고 각축도 못 하는 것</h3>
 <p>각축(<code>--solo</code>)은 <b>한 축만 τ_ff 로 흔들고 나머지를 잡는다.</b> 다축이 못 가르는 것을 바깥에서 못박는 역할이다.</p>
 <table><tr><th>각축이 준 값</th><th>어떻게</th><th>다축의 어느 한계를 메웠나</th></tr>
-<tr><td><b><code>ROTOR_I</code> 7.327e-4</b></td><td>τ_ff 경로(순환 없음). foot 7.327e-4 · calf 공통속도법 7.340e-4 → <b>0.17% 일치</b></td><td>③ 씨앗을 참값에 놓음</td></tr>
-<tr><td><b>foot <code>damping</code> 0.110</b></td><td>토크시험 q̈~|q̇| 직접회귀 (HL 0.12 · HR 0.10)</td><td class="ok"><b>① 공선성을 밖에서 끊음</b></td></tr>
-<tr><td>쿨롱마찰(스윕·토크절편)</td><td>저속 평탄부 / 절편 q̇→0 외삽</td><td>① 상자·씨앗</td></tr>
+<tr><td><b><code>ROTOR_I</code> 7.327e-4</b></td><td>τ_ff 경로(순환 없음). foot 7.327e-4 · calf 공통속도법 7.340e-4 → <b>0.17% 일치</b></td><td>③ 초기값을 참값에 놓음</td></tr>
+<tr><td><b>foot <code>damping</code> 0.110</b></td><td>토크시험 q̈~|q̇| 직접회귀 (HL 0.12 · HR 0.10)</td><td class="ok"><b>① 맞바꿈을 밖에서 끊음</b></td></tr>
+<tr><td>쿨롱마찰(스윕·토크절편)</td><td>저속 평탄부 / 절편 q̇→0 외삽</td><td>① 탐색범위·초기값</td></tr>
 <tr><td><b><code>T_d</code> 8.39±0.79 ms</b></td><td>왕복지연 직접 실측</td><td class="ok"><b>③ 경계를 좁힘</b></td></tr></table>
 <p class="warn">⚠<b>각축도 만능이 아니다.</b></p>
 <ul>
@@ -104,15 +108,21 @@ pre code{border:0;background:none;padding:0}
 </ul>
 
 <h3>그래서 최종값은 <b>출처가 셋으로 갈린다</b></h3>
-<pre>각축 직접측정  ──씨앗·상자──▶  다축 CMA-ES(9모수)  ──▶  fit_v2
-                                      │
-                    자극 있음 ────────┼──▶ 다축이 정함   thigh·calf·foot
-                    자극 없음(hip 4%) ┴──▶ 각축값 통과   hip ⚠</pre>
+<pre>  각축 직접측정 (--solo)
+        │   초기값(출발점) 과 탐색범위(허용 범위) 를 준다
+        ▼
+  다축 CMA-ES (9모수)
+        │
+        ├─ 자극이 있는 축 ──────▶ 다축이 정한 값     thigh · calf · foot
+        └─ 자극이 없는 축(hip 4%) ▶ 각축값이 그대로   hip ⚠
+        │
+        ▼
+  fit_v2  (최종)</pre>
 <table><tr><th>고정의 정도</th><th>대상</th><th>뜻</th></tr>
 <tr><td><b>완전 고정</b></td><td><code>T_d</code>(6.8~10 ms) · foot <code>damping</code></td><td>실측이 있으니 흘러가지 못하게 묶음</td></tr>
-<tr><td><b>씨앗 + 상자</b>(×0.3~3)</td><td><code>ROTOR_I</code> · 전 축 <code>JDAMP</code>/<code>JFRIC</code></td><td>각축값 중심으로 다축이 그 안에서 정함</td></tr>
-<tr><td class="wa"><b>사실상 고정</b> ⚠</td><td><b>hip</b> <code>JDAMP</code>·<code>JFRIC</code></td><td>자유변수인데 자극이 없어 씨앗에 머묾</td></tr>
-<tr><td class="wa"><b>벽에 박힘</b> ★</td><td>calf <code>JDAMP</code> · foot <code>JFRIC</code></td><td>상자 하한까지 밀렸다 — "찾은 값" 이 아니라 <b>"더 못 내려간 값"</b></td></tr></table>
+<tr><td><b>초기값 + 탐색범위</b>(×0.3~3)</td><td><code>ROTOR_I</code> · 전 축 <code>JDAMP</code>/<code>JFRIC</code></td><td>각축값 중심으로 다축이 그 안에서 정함</td></tr>
+<tr><td class="wa"><b>사실상 고정</b> ⚠</td><td><b>hip</b> <code>JDAMP</code>·<code>JFRIC</code></td><td>자유변수인데 자극이 없어 초기값에 머묾</td></tr>
+<tr><td class="wa"><b>탐색범위 끝에 붙음</b> ★</td><td>calf <code>JDAMP</code> · foot <code>JFRIC</code></td><td>탐색범위 아래 끝까지 밀렸다 — "찾은 값" 이 아니라 <b>"더 못 내려간 값"</b></td></tr></table>
 <p><b>⇒ 아래 §1 의 표는 이 세 갈래의 결과</b>다. ⚠ 와 ★ 를 그렇게 읽을 것.</p>
 
 <h2>1. MJCF 에 넣을 값</h2>
@@ -123,7 +133,12 @@ pre code{border:0;background:none;padding:0}
 <tr><td>calf</td><td class="n">0.0808</td><td class="n">0.009 ★</td><td class="n">0.572</td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.252 ★</td></tr></table>
 <p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.78 ms</b></p>
-<p class="warn">⚠ 고정한 값(식별 안 됨) ★ 상자 벽(더 낮을 수 있음)</p>
+<p class="quote"><b>tendon 이란</b> — 밧줄이 아니라 <b>관절 두 개를 하나로 묶는 MuJoCo 장치</b>다.
+<code>&lt;fixed&gt;</code> 로 <code>1·q_calf + 1·q_foot</code> 를 정의하면 그 합이 곧
+<b>실기 ch3 모터의 엔코더 각</b>(raw 각)이 된다 — calf 만 돌려도 ch3 엔코더가 변하는 실제 현상 그대로다.
+액추에이터를 여기 붙이면 힘이 두 관절로 자동 분배되고, 로터 관성도 (calf, foot) <b>비대각</b>으로 걸린다
+— <code>dof_armature</code> 로는 못 만드는 항이다.</p>
+<p class="warn">⚠ 고정한 값(식별 안 됨) ★ 탐색범위 끝(더 낮을 수 있음)</p>
 <pre>armature = ROTOR_I · N²    ROTOR_I = 7.327e-4 ± 10%    N = 7 · gear_k
 ⚠ foot 은 armature 를 tendon 으로 옮긴다 — dof_armature[foot]=0 안 하면 이중 계상</pre>
 <h3>값마다 얼마나 믿을 수 있나</h3>
@@ -174,7 +189,7 @@ pre code{border:0;background:none;padding:0}
 <div class="quote"><code>q_raw</code> 는 coef 가정과 무관하게 정확하고 <code>q_calf</code> 도 정확하므로,</div>
 <div class="quote"><code>c</code> 를 탐색변수로 넣고 <code>q_foot_true = q_raw − c·q_calf</code> 로 비교하면 된다.</div>
 <div class="quote">⚠비교 대상 자체가 <code>c</code> 에 의존하므로 <code>pace_cmaes</code> 수정이 필요하다.</div>
-<div class="quote">⚠축퇴 위험 — 다른 파라미터와 섞일 수 있다. **발목 출력쪽 센서(IMU 등)가 있으면</div>
+<div class="quote">⚠맞바꿈 위험 — 다른 파라미터와 섞일 수 있다. **발목 출력쪽 센서(IMU 등)가 있으면</div>
 <div class="quote">  직접 끝난다.** 간접식별이 안 되면 그게 다음 수다.</div>
 <p>이게 가설대로면 foot 잔차가 절반 이하로 떨어지고, 그게 전체의 2/3 이니 <b>전체 RMS 0.40 → 0.28 대</b>가 가능하다.</p>
 <h3>①-b 중력이 작은 자세에서 관성 재기 — <b>값의 완결성</b></h3>
@@ -193,7 +208,7 @@ pre code{border:0;background:none;padding:0}
 <p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다. <b><code>coef</code> 가 남은 후보다.</b></p>
 <p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다(§4-①-b 와 같은 문제).</p>
 <h3>② 마찰 분해 — 속도를 독립 제어하는 시험</h3>
-<p><code>damping</code>↔<code>frictionloss</code> 가 축퇴(r=+0.93)라 <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
+<p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
 <div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
 <div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
 <h3>③ HR_thigh 관성 (미측정)</h3>
@@ -215,7 +230,7 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th></th><th>값</th><th>뜻</th></tr>
 <tr><td>적합 RMS</td><td class="n">0.405°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
-<tr><td>hold-out RMS</td><td class="n">0.397°</td><td>안 쓴 12창 — <b>적합보다 낮다</b>(과적합 없음)</td></tr>
+<tr><td>따로 뺀 구간 RMS</td><td class="n">0.397°</td><td>안 쓴 12창 — <b>적합보다 낮다</b>(과적합 없음)</td></tr>
 <tr><td><b>검증 RMS</b></td><td><b>0.251°</b></td><td><b>게인 2배로 따로 수집한 데이터</b> — 가장 강한 시험</td></tr></table>
-<p class="warn">★<b>교훈</b>: 궤적 hold-out 은 네 번 연속 <b>틀린 구조</b>를 골랐다. 게인을 바꾼 검증이 뒤집었다. 구조는 구조 증거로 고르고, 숫자로 가리려면 <b>조건을 바꾼 데이터</b>가 필요하다.</p>
+<p class="warn">★<b>교훈</b>: 적합에 안 쓴 구간으로 검증해도 네 번 연속 <b>틀린 구조</b>를 골랐다. 게인을 바꾼 검증이 뒤집었다. 구조는 구조 증거로 고르고, 숫자로 가리려면 <b>조건을 바꾼 데이터</b>가 필요하다.</p>
 </div></body></html>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""coef × JDAMP.calf 격자 — **축퇴 여부를 직접 재는** 진단.
+"""coef × JDAMP.calf 격자 — **맞바꿈 여부를 직접 재는** 진단.
 
 ★왜 (2026-08-14)
   coef 1-D 훑기에서 최소가 0.76 에 나왔는데, 축별로 뜯어보니 개선이 foot 이 아니라
@@ -8,10 +8,10 @@
 
   기구학적으로 보면 coef 는 foot 액추에이터의 반력과 회전자 관성이 calf 로 얼마나
   실리는지를 정한다. 그러니 coef 를 낮추면 calf 가 받는 외란이 줄어 calf 잔차가 준다.
-  ⇒ **JDAMP.calf 부족을 대신 메우고 있을 수 있다.** JDAMP.calf 는 지금까지 상자 벽에
+  ⇒ **JDAMP.calf 부족을 대신 메우고 있을 수 있다.** JDAMP.calf 는 지금까지 탐색범위 벽에
     붙어 있던 미해결 항목이고, calf 감쇠는 실측이 없다(중력 잔차가 시험 진폭보다 커서).
 
-  둘이 축퇴라면 (coef, JDAMP.calf) 평면의 최소가 **골짜기**로 길게 눕는다. 그러면
+  둘이 맞바꿔져면 (coef, JDAMP.calf) 평면의 최소가 **골짜기**로 길게 눕는다. 그러면
   coef 는 이 데이터로 식별 불가이고, 1-D 훑기의 0.76 은 물리값이 아니라
   JDAMP.calf 를 x0 에 묶어둔 탓에 생긴 그림자다.
   독립이라면 각 coef 마다 JDAMP.calf 를 다시 맞춰도 최소가 한 점에 남는다.
@@ -69,7 +69,7 @@ def main() -> int:
         return float(np.sqrt(ss / cnt)), x[I_DCALF]
 
     print(f"■ coef × JDAMP.calf 격자   (x0 의 JDAMP.calf = {x0[I_DCALF]:.4f}, "
-          f"상자 {lo[I_DCALF]:.3f}~{hi[I_DCALF]:.3f})")
+          f"탐색범위 {lo[I_DCALF]:.3f}~{hi[I_DCALF]:.3f})")
     print(f"  {'':>7}" + "".join(f"{'×%.1f' % v:>10}" for v in DMULS)
           + f"{'행최소':>10}{'@':>7}")
     grid = np.zeros((len(COEFS), len(DMULS)))
@@ -93,19 +93,19 @@ def main() -> int:
           + " ".join(f"{c:.2f}:{v:.4f}" for c, v in zip(COEFS, prof)))
     print(f"  프로파일 폭 {spread:.4f}° ({spread / prof.min():.1%})")
     if spread < 0.005:
-        print("  ⇒ **축퇴다.** JDAMP.calf 를 풀면 coef 가 거의 안 갈린다.\n"
+        print("  ⇒ **맞바꿈다.** JDAMP.calf 를 풀면 coef 가 거의 안 갈린다.\n"
               "     coef 는 이 데이터로 식별 불가 — 1.0 에 고정하고 별도 시험이 필요하다.")
     else:
-        print("  ⇒ 축퇴가 아니다. JDAMP.calf 를 풀어도 coef 최소가 남는다.")
+        print("  ⇒ 맞바꿈이 아니다. JDAMP.calf 를 풀어도 coef 최소가 남는다.")
 
-    # hold-out 에서도 같은 결론인지 (적합에서만 나는 개선이면 과적합이다)
-    print("\n  ★hold-out 대조 — 격자 최소점 vs coef=1 최적 JDAMP.calf")
+    # 따로 뺀 구간 에서도 같은 결론인지 (적합에서만 나는 개선이면 과적합이다)
+    print("\n  ★따로 뺀 구간 대조 — 격자 최소점 vs coef=1 최적 JDAMP.calf")
     j1 = int(np.argmin(grid[COEFS.index(1.00)]))
     for lab, c, dm in (("격자 최소", COEFS[i], DMULS[j]),
                        ("coef=1.00", 1.00, DMULS[j1])):
         rf, _ = ev(c, dm, fit)
         rh, _ = ev(c, dm, hold)
-        print(f"    {lab:<10} coef {c:.2f} ×{dm:.1f}   적합 {rf:.4f} · hold-out {rh:.4f}")
+        print(f"    {lab:<10} coef {c:.2f} ×{dm:.1f}   적합 {rf:.4f} · 따로 뺀 구간 {rh:.4f}")
     return 0
 
 

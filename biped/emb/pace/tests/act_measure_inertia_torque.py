@@ -165,16 +165,16 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             f"           ⇒ `--tests torque,inertia` 로 돌리거나 spec 의\n"
             f"             friction.measured_tau_break_ch 에 그 축을 넣을 것.")
 
-    # ── 방향별 시작점 — 한계상자 끝에서 출발해 **이동거리를 최대로** ────────
-    #   HOME 에서 양방향으로 가면 각 방향이 상자의 절반밖에 못 쓴다. 방향마다
-    #   반대쪽 끝에서 출발하면 상자 전체를 쓴다(실측 27° → 69°).
+    # ── 방향별 시작점 — 한계탐색범위 끝에서 출발해 **이동거리를 최대로** ────────
+    #   HOME 에서 양방향으로 가면 각 방향이 탐색범위의 절반밖에 못 쓴다. 방향마다
+    #   반대쪽 끝에서 출발하면 탐색범위 전체를 쓴다(실측 27° → 69°).
     #   ★런이 짧으면 저τ 준위가 q̇_ref 에 못 닿아 **탈락**하고, 탈락은 τ_c 가 큰 쪽에
     #     치우쳐 일어나 회귀를 오염시킨다.
     box = joint.get("_ch_box")
     M = float(cfg.get("box_margin_deg", 3.0))
     q_home = hw.read(ch)[0]
     # ★중력이 큰 축은 **훑는 구간을 중력 0 근처로 좁힌다** (2026-08-14).
-    #   상자 전체(70°)를 쓰면 중력이 그만큼 크게 변하고, 그 잔차가 방향 비대칭으로
+    #   탐색범위 전체(70°)를 쓰면 중력이 그만큼 크게 변하고, 그 잔차가 방향 비대칭으로
     #   남아 게이트를 못 넘는다 — HL_thigh 가 실제로 방향편차 15.8%(>15%)로 탈락했다.
     #   ⚠중심만 옮기면 **오히려 나빠진다.** thigh 를 중력 0(+24.5°) 중심으로 70° 훑으면
     #     |τ_g| 변화폭이 4.88 → 6.37 Nm 로 늘어난다(사인의 더 넓은 구간을 지난다).
@@ -189,10 +189,10 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         lo_b, hi_b = box[0] + M, box[1] - M
         half = float(_trv) / 2.0
         lo, hi = float(_ctr) - half, float(_ctr) + half
-        if lo < lo_b or hi > hi_b:                  # 상자를 벗어나면 밀어 넣는다
+        if lo < lo_b or hi > hi_b:                  # 탐색범위를 벗어나면 밀어 넣는다
             sh = max(lo_b - lo, 0.0) + min(hi_b - hi, 0.0)
             lo += sh; hi += sh
-            log(f"  [{name}] ⚠탐침 구간이 상자를 벗어나 {sh:+.1f}° 밀었다")
+            log(f"  [{name}] ⚠탐침 구간이 탐색범위를 벗어나 {sh:+.1f}° 밀었다")
         for d in (+1.0, -1.0):
             starts[d] = lo if d > 0 else hi
             travels[d] = hi - lo
@@ -468,14 +468,14 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     #     잔차가 q̇_ref 마다 달라 기울기에 그대로 실린다. I 는 **준위 간 차이**로
     #     구해지니 이 편향이 상쇄되지만, b 는 **절편의 미세한 기울기**라 안 상쇄된다.
     #     ⚠R² 는 방패가 안 된다 — 위 +51% 사례의 R² 가 **0.958** 이었다.
-    #   ⇒ 결론: **JDAMP 를 이걸로 못박지 말 것.** 다만 PACE 의 JDAMP 상자가 지금
+    #   ⇒ 결론: **JDAMP 를 이걸로 못박지 말 것.** 다만 PACE 의 JDAMP 탐색범위가 지금
     #     ×0.1~10(폭 100배)이므로, ×[0.5, 2](폭 4배)로 **좁히는 근거**로는 쓸 수 있다.
     #     그게 이 값의 유일한 용도다.
     #
     #   ★왜 지금 이게 필요한가 — JDAMP 는 **어느 방법으로도 못 얻고 있었다.**
     #     각축 마찰법: 등속 구간에서 재므로 q̈=0, b 는 τ_c 와 완전히 섞인다(8축 전부 nan).
-    #     PACE(다축):  JDAMP↔JFRIC r=+0.93 축퇴라 평탄방향. 2026-08-14 적합에서
-    #                  JDAMP.foot 이 상자 **상한 95%**, JDAMP.hip 이 **하한 1%** 로 갈렸다.
+    #     PACE(다축):  JDAMP↔JFRIC r=+0.93 맞바꿔져 평탄방향. 2026-08-14 적합에서
+    #                  JDAMP.foot 이 탐색범위 **상한 95%**, JDAMP.hip 이 **하한 1%** 로 갈렸다.
     #     이 방법만 q̈ 를 실제로 만들어 놓고 b 를 각축에서 직접 본다.
     #
     #   ⚠기울기는 `b + dτ_c/dq̇` 이지 b 가 아니다. 둘을 가르려면 **마찰-속도 곡선**이
@@ -540,7 +540,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                 log(f"           ⇒ JDAMP 괄호(관절) **[{res['b_joint']*0.5:.4f}, "
                     f"{res['b_joint']*2:.4f}]** — 못박는 값이 **아니다**.")
                 log(f"             합성검증 b 오차 −110%~+39% (I 는 ±1%). PACE 의 JDAMP "
-                    f"상자를 ×0.1~10 → 이 괄호로 좁히는 데만 쓸 것")
+                    f"탐색범위를 ×0.1~10 → 이 괄호로 좁히는 데만 쓸 것")
             else:
                 why = ("기울기 음수" if b_ch <= 0 else
                        f"직선성 R²={r2:.3f}<0.8" if r2 < 0.8 else

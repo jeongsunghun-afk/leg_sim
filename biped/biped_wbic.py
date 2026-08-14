@@ -54,7 +54,7 @@ DRV_PEAK  = np.array([84, 84, 126, 100.8, 84, 84, 126, 100.8])   # HL/HR × (hip
 #   ⚠신뢰도가 축마다 다르다. 아래 표의 표식을 그대로 옮긴다:
 #     ⚠hip 의 damping·frictionloss 는 **식별된 게 아니라 고정한 값**이다 —
 #       hip 자극이 비용의 4% 뿐이라 적합이 아무 값이나 고른다. 관성도 미측정.
-#     ★calf damping(0.0092)·foot frictionloss(0.2517)는 **상자 벽에 박힌 값**이라
+#     ★calf damping(0.0092)·foot frictionloss(0.2517)는 **탐색범위 끝에 붙은 값**이라
 #       그 방향으로 더 낮을 수 있다.
 #   ⚠foot 의 dof_armature 는 **0** 이다 — tendon 으로 옮겨 갔다(_foot_rotor_to_tendon).
 GEAR    = np.array([7.0, 7.0, 10.5, 8.4])   # hip,thigh,calf,foot

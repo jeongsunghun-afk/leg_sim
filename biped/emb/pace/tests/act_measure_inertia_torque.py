@@ -169,6 +169,14 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     log(f"  [{name}] 방향별 시작 — +{starts[+1.0]:.1f}°(이동 {travels[+1.0]:.0f}°) · "
         f"−{starts[-1.0]:.1f}°(이동 {travels[-1.0]:.0f}°)")
 
+    # ★첫 goto 전에 **무장한다** (2026-08-14, 실기에서 잡혔다).
+    #   루프 안의 `arm(ch, 0, 0)` 은 **토크램프용**(게인을 0 으로 내리는 것)이고,
+    #   그 바로 앞 `goto` 는 위치게인으로 움직이므로 **이미 무장돼 있어야** 한다.
+    #   순서가 뒤집혀 있었는데 `--tests torque,inertia` 로 돌리면 토크 프로브가 먼저
+    #   arm 해서 가려졌다 — `--tests inertia` **단독은 한 번도 돈 적이 없다.**
+    #   ⚠arm 은 지금 있는 자리를 래치하고 게인을 0→목표로 램프하므로 충격이 없다.
+    hw.arm(ch, brake_kp, brake_kd)
+
     n_rep = int(cfg.get("repeats", 1))
     runs = []
     try:

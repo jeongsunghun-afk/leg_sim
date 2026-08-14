@@ -510,13 +510,57 @@ def t_vref_sweep_synth():
           f"b 오차 {eb:+.0%} ← **못 되찾는다. 괄호로만 쓸 것**")
 
 
+def t_inertia_full():
+    """★관성 시험 **전 경로**를 밟는다 (2026-08-14 추가).
+
+    왜 필요했나 — `measure_inertia_torque` 가 첫 `hw.goto` 를 **무장 전에** 불렀다.
+    루프 안의 `arm(ch, 0, 0)` 은 토크램프용이라 그 뒤에 있었고, 앞의 goto 는
+    위치게인을 쓰므로 이미 무장돼 있어야 한다 → `RuntimeError: arm() 을 먼저 호출할 것`.
+    3주 넘게 안 걸린 이유는 **늘 `--tests torque,inertia` 로 돌렸기** 때문이다 —
+    토크 프로브가 먼저 arm 해서 가려졌다. `--tests inertia` 단독은 실기에서 처음
+    돌린 순간 죽었다. t_friction_full 과 같은 부류의 사고다(안 밟은 경로).
+
+    ⚠물리값은 보지 않는다. 스텁 동역학은 실기와 다르다. 이 시험이 지키는 건
+      "예외 없이 끝까지 돈다" 뿐이다.
+    """
+    print("\n[3d] measure_inertia_torque — 무장·램프·회귀 전 경로")
+    import copy, tempfile
+    spec = copy.deepcopy(_load_spec())
+    n = int(spec["shm"]["n_channel"])
+    home, _ = _home_targets()
+
+    it = spec["inertia_torque"]                              # ── SHRINK ──
+    # 실기값이면 준위 6 × 방향 2 × 반복 2 = 24런이고 런당 최대 4초라 너무 길다.
+    it.update(auto_levels=False, repeats=1, tau_levels_nm=[0.9, 1.2, 1.5],
+              travel_deg=20.0, travel_max_deg=20.0, vel_cap_dps=80.0,
+              vref_dps=40.0, vref_sweep_dps=[20, 30, 40])
+
+    fake = FakeLib(n, q_init=home, dt=1 / 500.)
+    hw = _make_hw(fake, spec, hold=[], align=False)           # solo 와 동일 조건
+    _gt0 = (spec["torque_mode"].get("tau_grav_table") or {})
+    hw.grav_fn = (lambda c, q, _t=_gt0:
+                  float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"])) if c in _t else 0.0)
+    j = {"ch": 3, "name": "HL_foot", "gear": 7.0, "q_min": -27.84, "q_max": 48.0,
+         "gear_k": 1.2, "_ch_box": (-27.84, 48.0)}
+
+    from act_measure_inertia_torque import measure_inertia_torque
+    with tempfile.TemporaryDirectory() as td:
+        html, res = measure_inertia_torque(hw, spec, j, td, log=lambda *a: None)
+    check("무장 전 goto 로 안 죽는다", isinstance(html, str) and len(html) > 100)
+    for k in ("ch", "name", "levels", "runs", "valid"):
+        check(f"결과 키 {k}", k in res)
+    # q̇_ref 훑기 블록이 실제로 밟혔는지 — 런이 없으면 건너뛰는 게 정상이라 존재만 본다
+    check("q̇_ref 훑기 경로", "vref_sweep" in res or not res.get("runs"),
+          f"runs={len(res.get('runs', []))}")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
-               t_vref_sweep_synth):
+               t_vref_sweep_synth, t_inertia_full):
         try:
             fn()
         except Exception as e:

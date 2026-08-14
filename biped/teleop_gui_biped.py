@@ -191,118 +191,118 @@ def jog_zero():                       # 전체 0(home)
 #     SHM 세그먼트는 root 소유지만 perms 666 이라 비루트 attach 에 문제가 없다.
 #     죽어 있을 때만 띄우고, 살아 있으면 건드리지 않는다.
 #   ⚠두 번 눌러야 실행된다(오조작 방지) — 프로세스를 띄우고 모터를 물리는 동작이다.
-_EMB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
-_EMB_BIN = os.path.expanduser('~/ZSource/RobotEmbedded/build/src/RobotEmbedded')
-_restart_armed = [0.0]
+# _EMB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
+# _EMB_BIN = os.path.expanduser('~/ZSource/RobotEmbedded/build/src/RobotEmbedded')
+# _restart_armed = [0.0]
 
 
-def _proc_pids(prefix):
-    """명령줄이 prefix 로 **시작**하는 PID. bash 래퍼·자기 자신이 안 걸리게 한다."""
-    try:
-        out = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True).stdout
-    except Exception:
-        return []
-    pids = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        pid, _, args = line.partition(' ')
-        if args.strip().startswith(prefix):
-            pids.append(int(pid))
-    return pids
-
-
-def _pgrep_x(name):
-    """프로세스 **이름**이 정확히 일치하는 PID (명령줄 prefix 로는 sudo 래퍼를 못 잡는다)."""
-    try:
-        r = subprocess.run(['pgrep', '-x', name], capture_output=True, text=True)
-        return [int(x) for x in r.stdout.split()]
-    except Exception:
-        return []
-
-
-def _restart_worker():
-    def say(m):
-        print(f'[gui] {m}', flush=True)
-        try:
-            dpg.set_value('restart_msg', m)
-        except Exception:
-            pass
-
-    # ★RobotEmbedded 검출은 프로세스 **이름**으로 한다 — 명령줄 prefix 로는 `sudo ./src/...`
-    #   형태를 못 잡는다(처음에 그렇게 짰다가 실기에서 빈 배열이 나와 발견).
-    if not _pgrep_x('RobotEmbedded'):
-        # ★setcap 이 돼 있어 **일반 사용자로 띄울 수 있다**(2026-08-11 확인):
-        #     cap_net_admin,cap_net_raw=eip  ·  SHM perms 666 이라 비루트 attach 도 된다.
-        #   그 전에는 sudo 가 필요해 GUI 에서 못 띄웠다.
-        if not os.path.exists(_EMB_BIN):
-            say(f'✗ RobotEmbedded 바이너리가 없다: {_EMB_BIN}'); return
-        say('RobotEmbedded 기동 중 …')
-        try:
-            subprocess.Popen(['./src/RobotEmbedded'], cwd=os.path.dirname(os.path.dirname(_EMB_BIN)),
-                             stdout=open('/tmp/robotembedded.log', 'w'),
-                             stderr=subprocess.STDOUT, start_new_session=True)
-        except Exception as e:
-            say(f'✗ RobotEmbedded 기동 실패: {e} — setcap 확인'); return
-        # 초기화 게이트: halGait 는 수신 100틱 + 램프 4500틱 @1kHz ≈ 4.6초 동안 SHM 명령을
-        # 무시한다. 그 전에 제어기를 붙이면 첫 명령이 버려진다 ⇒ 충분히 기다린다.
-        for i in range(80):
-            time.sleep(0.1)
-            if not _pgrep_x('RobotEmbedded'):
-                say('✗ RobotEmbedded 가 곧바로 죽었다 — /tmp/robotembedded.log 확인'); return
-            if i * 0.1 > 6.0:
-                break
-        say('RobotEmbedded 준비됨(초기화 게이트 6s 대기 완료)')
-
-    old = _proc_pids('python3 app/biped_emb.py')
-    if old:
-        say(f'제어기 종료 {old} …')
-        for pid in old:
-            try:
-                os.kill(pid, 15)
-            except Exception:
-                pass
-        for _ in range(40):                       # 최대 4초 대기
-            time.sleep(0.1)
-            if not _proc_pids('python3 app/biped_emb.py'):
-                break
-        else:
-            say('✗ 이전 제어기가 안 죽는다 — 수동 확인 필요'); return
-
-    say('제어기 기동 중 …')
-    try:
-        # ★hold 로 시작한다. off 로 띄우면 Emb 게이트가 열리는 순간 무여자 명령이 먹혀
-        #   다리가 풀린다(2026-08-10 실기에서 겪음).
-        subprocess.Popen(['python3', 'app/biped_emb.py', '--start-mode', 'hold'],
-                         cwd=_EMB_DIR, stdout=open('/tmp/biped_emb.log', 'w'),
-                         stderr=subprocess.STDOUT, start_new_session=True)
-    except Exception as e:
-        say(f'✗ 기동 실패: {e}'); return
-
-    for _ in range(100):                          # state 가 신선해질 때까지 최대 10초
-        time.sleep(0.1)
-        try:
-            if time.time() - os.path.getmtime(STATE) < 0.5:
-                st = json.load(open(STATE))
-                say(f"✅ 복구됨 — mode={st.get('mode')} n_ok={st.get('n_ok')}/8 "
-                    f"{st.get('loop_hz', 0):.0f}Hz")
-                return
-        except Exception:
-            pass
-    say('✗ 기동했으나 state 가 갱신되지 않는다 — /tmp/biped_emb.log 확인')
-
-
-def on_restart():
-    now = time.time()
-    if now - _restart_armed[0] > 3.0:             # 1차 클릭 = 무장
-        _restart_armed[0] = now
-        dpg.set_value('restart_msg', '⚠ 3초 안에 한 번 더 누르면 제어기를 재기동한다')
-        return
-    _restart_armed[0] = 0.0
-    threading.Thread(target=_restart_worker, daemon=True).start()
-
-
+# def _proc_pids(prefix):
+#     """명령줄이 prefix 로 **시작**하는 PID. bash 래퍼·자기 자신이 안 걸리게 한다."""
+#     try:
+#         out = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True).stdout
+#     except Exception:
+#         return []
+#     pids = []
+#     for line in out.splitlines():
+#         line = line.strip()
+#         if not line:
+#             continue
+#         pid, _, args = line.partition(' ')
+#         if args.strip().startswith(prefix):
+#             pids.append(int(pid))
+#     return pids
+#
+#
+# def _pgrep_x(name):
+#     """프로세스 **이름**이 정확히 일치하는 PID (명령줄 prefix 로는 sudo 래퍼를 못 잡는다)."""
+#     try:
+#         r = subprocess.run(['pgrep', '-x', name], capture_output=True, text=True)
+#         return [int(x) for x in r.stdout.split()]
+#     except Exception:
+#         return []
+#
+#
+# def _restart_worker():
+#     def say(m):
+#         print(f'[gui] {m}', flush=True)
+#         try:
+#             dpg.set_value('restart_msg', m)
+#         except Exception:
+#             pass
+#
+#     # ★RobotEmbedded 검출은 프로세스 **이름**으로 한다 — 명령줄 prefix 로는 `sudo ./src/...`
+#     #   형태를 못 잡는다(처음에 그렇게 짰다가 실기에서 빈 배열이 나와 발견).
+#     if not _pgrep_x('RobotEmbedded'):
+#         # ★setcap 이 돼 있어 **일반 사용자로 띄울 수 있다**(2026-08-11 확인):
+#         #     cap_net_admin,cap_net_raw=eip  ·  SHM perms 666 이라 비루트 attach 도 된다.
+#         #   그 전에는 sudo 가 필요해 GUI 에서 못 띄웠다.
+#         if not os.path.exists(_EMB_BIN):
+#             say(f'✗ RobotEmbedded 바이너리가 없다: {_EMB_BIN}'); return
+#         say('RobotEmbedded 기동 중 …')
+#         try:
+#             subprocess.Popen(['./src/RobotEmbedded'], cwd=os.path.dirname(os.path.dirname(_EMB_BIN)),
+#                              stdout=open('/tmp/robotembedded.log', 'w'),
+#                              stderr=subprocess.STDOUT, start_new_session=True)
+#         except Exception as e:
+#             say(f'✗ RobotEmbedded 기동 실패: {e} — setcap 확인'); return
+#         # 초기화 게이트: halGait 는 수신 100틱 + 램프 4500틱 @1kHz ≈ 4.6초 동안 SHM 명령을
+#         # 무시한다. 그 전에 제어기를 붙이면 첫 명령이 버려진다 ⇒ 충분히 기다린다.
+#         for i in range(80):
+#             time.sleep(0.1)
+#             if not _pgrep_x('RobotEmbedded'):
+#                 say('✗ RobotEmbedded 가 곧바로 죽었다 — /tmp/robotembedded.log 확인'); return
+#             if i * 0.1 > 6.0:
+#                 break
+#         say('RobotEmbedded 준비됨(초기화 게이트 6s 대기 완료)')
+#
+#     old = _proc_pids('python3 app/biped_emb.py')
+#     if old:
+#         say(f'제어기 종료 {old} …')
+#         for pid in old:
+#             try:
+#                 os.kill(pid, 15)
+#             except Exception:
+#                 pass
+#         for _ in range(40):                       # 최대 4초 대기
+#             time.sleep(0.1)
+#             if not _proc_pids('python3 app/biped_emb.py'):
+#                 break
+#         else:
+#             say('✗ 이전 제어기가 안 죽는다 — 수동 확인 필요'); return
+#
+#     say('제어기 기동 중 …')
+#     try:
+#         # ★hold 로 시작한다. off 로 띄우면 Emb 게이트가 열리는 순간 무여자 명령이 먹혀
+#         #   다리가 풀린다(2026-08-10 실기에서 겪음).
+#         subprocess.Popen(['python3', 'app/biped_emb.py', '--start-mode', 'hold'],
+#                          cwd=_EMB_DIR, stdout=open('/tmp/biped_emb.log', 'w'),
+#                          stderr=subprocess.STDOUT, start_new_session=True)
+#     except Exception as e:
+#         say(f'✗ 기동 실패: {e}'); return
+#
+#     for _ in range(100):                          # state 가 신선해질 때까지 최대 10초
+#         time.sleep(0.1)
+#         try:
+#             if time.time() - os.path.getmtime(STATE) < 0.5:
+#                 st = json.load(open(STATE))
+#                 say(f"✅ 복구됨 — mode={st.get('mode')} n_ok={st.get('n_ok')}/8 "
+#                     f"{st.get('loop_hz', 0):.0f}Hz")
+#                 return
+#         except Exception:
+#             pass
+#     say('✗ 기동했으나 state 가 갱신되지 않는다 — /tmp/biped_emb.log 확인')
+#
+#
+# def on_restart():
+#     now = time.time()
+#     if now - _restart_armed[0] > 3.0:             # 1차 클릭 = 무장
+#         _restart_armed[0] = now
+#         dpg.set_value('restart_msg', '⚠ 3초 안에 한 번 더 누르면 제어기를 재기동한다')
+#         return
+#     _restart_armed[0] = 0.0
+#     threading.Thread(target=_restart_worker, daemon=True).start()
+#
+#
 def set_mode(mode):
     if mode == 'reset':
         left.clear(); right.clear()
@@ -429,9 +429,15 @@ with dpg.window(tag='main'):
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
         dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
-        with dpg.group():
-            dpg.add_button(label='제어기 재시작', width=120, callback=lambda: on_restart())
-            dpg.add_text('(프로세스)', color=(120, 130, 150))
+        # ★'제어기 재시작' 버튼 **삭제** (2026-08-14). 코드는 아래에 주석으로 남긴다.
+        #   ⚠이 버튼은 `emb_ctl.sh` 를 **우회하고 RobotEmbedded 를 직접 띄웠다**:
+        #       subprocess.Popen(['./src/RobotEmbedded'], stdout=open('/tmp/robotembedded.log','w'))
+        #     ⇒ ① awk 로그필터 없음 — 시간당 1.7GB 로 자란다. 게다가 파일명이 달라
+        #          (`robotembedded.log`) **아무도 안 보는 자리**에 쌓인다.
+        #       ② 중복기동 가드 없음 — emb_ctl 은 "중복 기동은 EtherCAT 버스를 깬다" 며 막는다.
+        #       ③ 신선도(MotorStatus16) 확인 없음 · stdbuf 없음(버퍼링으로 로그가 안 보임).
+        #   ⇒ 기동/재기동은 **`emb/diag/emb_ctl.sh` 한 곳으로** 모은다. GUI 는 모드만 바꾼다.
+        #     복구:  cd ~/simulation/biped/emb && diag/emb_ctl.sh stop && diag/emb_ctl.sh start
         with dpg.group():              # ★Home=정해진 홈 자세로 S-curve 복귀(emb/control/home.py)
             _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
             dpg.add_text('(S-curve)', color=(120, 130, 150))
@@ -479,7 +485,6 @@ with dpg.window(tag='main'):
             dpg.add_text(f'{JOG_LIM[i][1]:<6.1f}', color=(120, 130, 150))
             dpg.add_text('--.-', tag=f'meas_{i}', color=(150, 220, 150))
     dpg.add_separator()
-    dpg.add_text('', tag='restart_msg', color=(255, 205, 120))
     dpg.add_text('-', tag='state', color=(150, 220, 150))
 
 with dpg.handler_registry():

@@ -43,5 +43,9 @@ P("Qhome", row(Q_HOME)); P("drv_peak", row(c.drv_peak))   # ★MJCF 파생값(�
 P("ankle", ' '.join(str(x) for x in ANKLE_IDX))
 P("gains", f"{SW_KP} {SW_KD} {W_ORI} {W_ANKLE} {W_POST} {W_LAM} {STANCE_KD} {MU*MU_MARGIN} {LAMZ_MIN}")
 
-c.wbic_track(stance, {swing_leg: (p, v)}, c.lam)   # → d.ctrl (tau)
-P("tau", row(d.ctrl))
+c.wbic_track(stance, {swing_leg: (p, v)}, c.lam)   # → d.ctrl
+# ★2026-08-13 키 개명 tau → u_drive. `d.ctrl` 은 이제 **관절토크가 아니라 드라이브 토크**다
+#   (발목 액추에이터 tendon 이전). 이름을 그대로 두면 C++ 쪽이 관절토크와 비교해 조용히
+#   어긋난다 — 실제로 어긋났고, 파리티가 그걸 잡았다(calf 만 foot 값만큼 차이).
+#   ⇒ **하드웨어에 실제로 나가는 양**으로 비교한다. 그게 파리티가 지켜야 할 것이다.
+P("u_drive", row(d.ctrl))

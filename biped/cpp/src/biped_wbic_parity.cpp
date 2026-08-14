@@ -37,8 +37,12 @@ int main(int argc,char**argv){
   in.SW_KP=gn[0]; in.SW_KD=gn[1]; in.W_ORI=gn[2]; in.W_ANKLE=gn[3]; in.W_POST=gn[4];
   in.W_LAM=gn[5]; in.STANCE_KD=gn[6]; in.MU_EFF=gn[7]; in.LAMZ_MIN=gn[8];
 
-  VectorXd tau=wbic_track(in);
-  VectorXd tau_py=vec("tau",nu);
+  // ★2026-08-13 비교공간을 **드라이브 토크**로 (dump 키도 u_drive 로 개명).
+  //   wbic_track 은 관절토크를 돌려주는데 Python 쪽 d.ctrl 은 드라이브 토크다
+  //   (발목 tendon 이전). 그대로 비교하면 calf 만 foot 값만큼 어긋난다 — 실제로 그랬다.
+  //   하드웨어에 나가는 건 드라이브 토크이므로 그쪽으로 맞춘다.
+  VectorXd tau=tau_to_drive(wbic_track(in));
+  VectorXd tau_py=vec("u_drive",nu);
   double maxdiff=(tau-tau_py).cwiseAbs().maxCoeff();
   std::cout<<"C++ tau: "<<tau.transpose()<<"\n";
   std::cout<<"Py  tau: "<<tau_py.transpose()<<"\n";

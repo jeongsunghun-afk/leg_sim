@@ -207,6 +207,34 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         _gmax = max(abs(grav_at(q)) for q in np.linspace(_lo_b, _hi_b, 41))
         tau_max = tau_max + _gmax
         log(f"  [{name}] 중력상쇄 켬 — |τ_g| 최대 {_gmax:.3f} Nm ⇒ 토크상한 {tau_max:.2f} Nm")
+        # ★**트립 예산**을 미리 확인한다 (2026-08-14). 종전엔 tau_max 만 올리고
+        #   안전트립(τ_trip)과 대조하지 않아 **런 도중에** 죽었다:
+        #     HL_thigh 중력 6.67 + 파단 0.73 + 가진 3.27 = 10.7Nm > τ_trip 8.0
+        #     → "토크 한계 |−10.36| > 8.0 이 50ms 지속" 으로 2번째 준위에서 중단
+        #   중력이 작은 축은 예산이 남아 안 걸렸을 뿐이다(foot 0.24+0.6+0.73=1.6).
+        #   ⇒ 필요 첨두를 계산해 **준위를 깎는다.** 못 깎으면 그 자리에서 멈춘다 —
+        #     런을 반쯤 돌린 뒤 죽는 것보다 낫다.
+        _trip = float(getattr(hw.limits_for(ch), "tau_trip", 0.0) or 0.0)
+        if _trip > 0 and levels:
+            _need = _gmax + max(levels)
+            _room = _trip * 0.90 - _gmax          # 가진에 쓸 수 있는 몫
+            if _need > _trip * 0.90:
+                if _room <= min(levels):
+                    raise SafetyAbort(
+                        f"{name}: 토크예산 부족 — 중력만 {_gmax:.2f}Nm 인데 τ_trip 이"
+                        f" {_trip:.1f}Nm 이다. 최저준위 {min(levels):.2f}Nm 도 못 넣는다.\n"
+                        f"  ⇒ spec 의 tau_trip_nm 을 올리거나(시험 전용), 중력이 작은"
+                        f" 자세에서 잴 것.")
+                _old = list(levels)
+                levels = [x for x in levels if x <= _room]
+                log(f"  [{name}] ⚠토크예산 — 중력 {_gmax:.2f} + 준위최대 {max(_old):.2f}"
+                    f" = {_need:.2f} > τ_trip {_trip:.1f}×0.9")
+                log(f"           준위를 {len(_old)}→{len(levels)}개로 깎는다"
+                    f" (상한 {_room:.2f}Nm): {[round(x,2) for x in levels]}")
+                if len(levels) < 3:
+                    raise SafetyAbort(
+                        f"{name}: 예산 안에 남는 준위가 {len(levels)}개뿐이다(최소 3)."
+                        f" τ_trip 을 올리거나 중력이 작은 자세에서 잴 것.")
 
     n_rep = int(cfg.get("repeats", 1))
     runs = []

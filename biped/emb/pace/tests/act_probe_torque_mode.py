@@ -191,17 +191,33 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
             t0 = time.monotonic()
             tau_at_move, tau_peak, moved = None, 0.0, False
             traj = []
+            # ★중력 바이어스를 **매 틱 현재각에서 다시 잡는다** (2026-08-14).
+            #   종전엔 시행 시작 때 한 번 잡고 램프 내내 고정이었다. 중력이 완만한 축
+            #   (foot |τ_g| 0.09~0.24Nm)에서는 통했지만 **thigh 에서 무너졌다**:
+            #     파단 0.172Nm(τ_s 실측 0.95 의 1/5) → 상자 이탈 q=41.97 ∉ [−60, 40]
+            #   thigh 는 기울기가 ~0.1Nm/° 라 축이 몇 도만 움직여도 FF 가 그만큼 틀어지고,
+            #   그 오차가 곧 순토크라 가속이 붙는다. 파단이 비정상적으로 낮게 잡히는 것도
+            #   같은 이유다 — 스윙이 아니라 **FF 오차**가 축을 밀고 있었다.
+            #   ⇒ grav_at(현재각) 으로 추종하면 스윙만 남아 램프가 자기안정된다.
+            #   ⚠추종에도 상한을 둔다: 보간이 틀리면 추종이 오히려 폭주를 만든다.
+            #     시작 바이어스에서 ±_BCAP 을 넘지 않게 자른다.
+            _BCAP = 1.5                          # [Nm] 바이어스 추종 허용폭
+            _qs = q0
             while True:
                 t = time.monotonic() - t0
-                tau_cmd = bias + direction * min(ramp * t, swing)
+                _sw = min(ramp * t, swing)
+                _b = float(np.clip(grav_at(_qs), bias - _BCAP, bias + _BCAP))
+                tau_cmd = _b + direction * _sw
                 if ramp * t >= swing and t > swing / ramp + 1.5:
                     break                       # 상한에서 1.5초 더 버텨보고 종료
                 s = hw.step_torque(ch, tau_cmd, tau_max)
+                _qs = s.q_deg
                 traj.append((t, tau_cmd, s.q_deg, s.dq_dps, s.tau))
-                tau_peak = max(tau_peak, abs(tau_cmd - bias))
+                tau_peak = max(tau_peak, _sw)
                 if (s.q_deg - q0) * direction > move_deg:
-                    # ★기록은 **바이어스를 뺀** 값 = 순수 마찰분이다.
-                    tau_at_move = abs(tau_cmd - bias); moved = True
+                    # ★기록은 **스윙분** 이다 = 순수 마찰분. 바이어스가 매 틱 바뀌므로
+                    #   종전처럼 `tau_cmd - bias` 로 빼면 추종분이 섞인다.
+                    tau_at_move = _sw; moved = True
                     break                       # ★즉시 중단 → 다음 줄에서 토크 0
                 time.sleep(hw.dt)
             # ★limp() 가 아니라 시험축만 푼다 (2026-08-11).

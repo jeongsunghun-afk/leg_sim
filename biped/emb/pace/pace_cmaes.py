@@ -423,6 +423,31 @@ BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° �
 DELAY0, DELAY_LO, DELAY_HI = 0.00839, 0.0068, 0.0100
 
 
+def split_segments(N, win, holdout, mode="tail"):
+    """적합/hold-out 구간을 나눈다. 반환은 (s,e) 목록 두 개.
+
+    ★왜 `interleave` 가 필요한가 (2026-08-14)
+      종전엔 **뒤쪽 연속 20%** 만 hold-out 이었다. 그런데 우리 데이터는 **처프**다 —
+      뒤쪽은 곧 **고주파**다(적합구간 |dq|95% 40~46dps · hold-out 42~51dps).
+      그러면 hold-out 은 일반화 시험이 아니라 **"안 배운 주파수로의 외삽"** 시험이 된다.
+      실제로 foot PD 법칙 A/B 비교에서 이게 결론을 뒤집었다:
+          A(raw)   적합 0.3568 · hold-out 0.7711   ← 저주파에 강하고 고주파에 약함
+          B(joint) 적합 0.3782 · hold-out 0.5000
+      A 는 저주파에서 3배 좋은데 꼬리(고주파)만 보는 hold-out 에서는 진다.
+      ⇒ 창 단위로 **번갈아** 떼면 양쪽이 같은 주파수 범위를 본다. 그래야 비교가 된다.
+    ⚠창(win) 경계로 자른다. 롤아웃이 어차피 창마다 실측으로 재초기화하므로
+      창을 쪼개지 않는 한 의미가 바뀌지 않는다.
+    """
+    if mode == "tail":
+        ncut = int(N * (1 - holdout))
+        return [(0, ncut)], [(ncut, N)]
+    blocks = [(s_, min(s_ + win, N)) for s_ in range(0, N, win)]
+    k = max(2, int(round(1.0 / max(holdout, 1e-9))))    # k 개마다 1개를 hold-out
+    fit_s = [b for i, b in enumerate(blocks) if i % k != k - 1]
+    hold_s = [b for i, b in enumerate(blocks) if i % k == k - 1]
+    return fit_s, hold_s
+
+
 def to_z(x, lo, hi):
     """★탐색을 z∈[0,1] 로 정규화한다.
 
@@ -507,7 +532,11 @@ def main() -> int:
     ap.add_argument("--iters", type=int, default=120)
     ap.add_argument("--popsize", type=int, default=10)
     ap.add_argument("--holdout", type=float, default=0.3,
-                    help="뒤쪽 이 비율은 **적합에 안 쓰고** 검증에만 쓴다")
+                    help="이 비율은 **적합에 안 쓰고** 검증에만 쓴다")
+    ap.add_argument("--holdout-mode", default="tail", choices=("tail", "interleave"),
+                    help="tail=뒤쪽 연속(종전) · interleave=창 단위로 번갈아. "
+                         "처프 데이터에서 tail 은 **고주파 외삽 시험**이 된다 — "
+                         "모델 비교에는 interleave 를 쓸 것(split_segments 독스트링 참조)")
     ap.add_argument("--validate", default=None, metavar="npz",
                     help="★unseen PD gains 검증 (PACE arXiv:2509.06342). 다른 게인으로 수집한 "
                          "npz 를 주면, 적합된 θ 를 **그 데이터**에 걸어 RMS 를 낸다. "
@@ -549,10 +578,19 @@ def main() -> int:
     d = mujoco.MjData(m)
     N = len(D["t"])
     win = max(1, int(round(a.window / D["dt"])))
-    ncut = int(N * (1 - a.holdout))
+    fit_segs, hold_segs = split_segments(N, win, a.holdout, a.holdout_mode)
     print(f"■ 데이터 {os.path.basename(a.npz)} — {N} 표본 · dt {D['dt']*1000:.1f}ms · "
           f"창 {a.window}s({win} 스텝)")
-    print(f"  적합 구간 0~{ncut} · **hold-out {ncut}~{N}** ({a.holdout:.0%})")
+    _nf = sum(e - s_ for s_, e in fit_segs); _nh = sum(e - s_ for s_, e in hold_segs)
+    if a.holdout_mode == "tail":
+        print(f"  적합 구간 0~{fit_segs[0][1]} · **hold-out {hold_segs[0][0]}~{N}** "
+              f"({a.holdout:.0%})")
+        print(f"  ⚠처프에서 뒤쪽은 **고주파**다 — 이건 일반화가 아니라 **외삽** 시험이다."
+              f" 모델 비교에는 `--holdout-mode interleave` 를 쓸 것")
+    else:
+        print(f"  **창 단위 교차분할** — 적합 {len(fit_segs)}창({_nf}표본) · "
+              f"hold-out {len(hold_segs)}창({_nh}표본, {_nh/N:.0%})")
+        print(f"  ⇒ 양쪽이 같은 주파수 범위를 본다(처프의 tail 편향 제거)")
 
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
     for k in pin:
@@ -579,15 +617,20 @@ def main() -> int:
             print(f"    {plab[i]:<16}{x0[i]:>12.4g}")
         print(f"    자유차원 {int(free.sum())}/{len(x0)}")
 
-    def evaluate(p, s, e):
+    def evaluate(p, segs):
+        """구간 **목록**에 대해 RMS 를 낸다. 표본수로 가중해야 창 길이가 달라도 맞다."""
         dyn, bias, dly = split_params(p, len(D["names"]), a.per_axis)
         apply_params(m, idx, D["gear_n"], dyn, a.per_axis, D["names"])
-        qs = rollout(m, d, idx, D["q"][s:e], D["dq"][s:e], D["q_cmd"][s:e],
-                     D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly, wrap=wrap)
-        return cost_of(qs, D["q"][s:e] - bias), qs      # ★진짜 각(q_enc − bias)과 비교
+        ss = 0.0; cnt = 0; last = None
+        for s_, e in segs:
+            qs = rollout(m, d, idx, D["q"][s_:e], D["dq"][s_:e], D["q_cmd"][s_:e],
+                         D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly, wrap=wrap)
+            r = qs - (D["q"][s_:e] - bias)
+            ss += float(np.sum(r ** 2)); cnt += r.size; last = qs
+        return float(np.sqrt(ss / max(cnt, 1))), last
 
-    c0, _ = evaluate(x0, 0, ncut)
-    h0, _ = evaluate(x0, ncut, N)
+    c0, _ = evaluate(x0, fit_segs)
+    h0, _ = evaluate(x0, hold_segs)
     print(f"\n■ 초기값 RMS — 적합 {c0:.4f}° · hold-out {h0:.4f}°")
     if a.eval_only:
         return 0
@@ -616,7 +659,7 @@ def main() -> int:
     while not es.stop():
         Z = es.ask()
         X = [expand(z) for z in Z]
-        F = [evaluate(x, 0, ncut)[0] for x in X]
+        F = [evaluate(x, fit_segs)[0] for x in X]
         es.tell(Z, F)
         it += 1
         if min(F) < bestc:
@@ -631,7 +674,7 @@ def main() -> int:
         if tail_gain > 0.05:
             print(f"  ★**미수렴** — 마지막 20% 세대에서 RMS 가 {tail_gain*100:.0f}% 더 내려갔다."
                   f" --iters 를 올릴 것(현재 {a.iters}). 이 값을 결론으로 쓰지 말 것")
-    hb, qs = evaluate(best, ncut, N)
+    hb, qs = evaluate(best, hold_segs)
     print(f"\n■ 결과 — 적합 RMS {bestc:.4f}° · **hold-out RMS {hb:.4f}°** "
           f"(초기 {c0:.4f}/{h0:.4f})")
     print(f"  개선 적합 {(1-bestc/c0)*100:+.1f}% · hold-out {(1-hb/h0)*100:+.1f}%")

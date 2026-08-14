@@ -100,7 +100,18 @@ def main() -> int:
     except Exception as e:
         print(f"✗ 상태파일을 못 읽는다: {STATE} ({e})\n  제어기를 먼저 띄울 것."); return 1
     if "q_ch_deg" not in st0:
-        print("✗ state 에 q_ch_deg 가 없다 — 제어기를 재시작할 것(구버전)."); return 1
+        # ★"구버전" 은 대개 오진이다 (2026-08-14). 이 파일은 **여러 프로그램이 쓴다** —
+        #   제어기(app/biped_emb.py · cpp/biped_deploy)만 q_ch_deg 를 내고,
+        #   actuator_test 의 hwio.publish_fn 은 q_leg_deg 까지만 낸다.
+        #   시험이 끝난 뒤 그 찌꺼기가 남아 있으면 "구버전" 으로 보인다.
+        #   ⇒ mode 를 보여 **누가 쓴 파일인지** 알려 준다.
+        print(f"✗ state 에 q_ch_deg 가 없다 — 이 파일을 쓴 건 제어기가 아니다.")
+        print(f"   mode={st0.get('mode')!r} · backend={st0.get('backend')!r}"
+              f"  (pace:* 면 actuator_test 가 남긴 찌꺼기다)")
+        print(f"   ⇒ 제어기를 띄울 것:  cd ~/simulation/biped/emb && python3 app/biped_emb.py")
+        print(f"     그리고 GUI 에서 **off(무여자)** 로 둔 뒤 다시 실행할 것.")
+        print(f"   ⚠모터 명령 writer 는 한 번에 하나만 — actuator_test 와 같이 띄우지 말 것.")
+        return 1
     if st0.get("mode") != "off" and not a.expect_hold:
         print(f"  ⚠ 모드가 off 가 아니다({st0.get('mode')}). 손으로 무릎을 돌리려면 off 가 맞다.")
 

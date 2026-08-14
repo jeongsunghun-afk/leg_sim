@@ -709,13 +709,21 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < holdA.size(); ++i)  // 제어 안 되는 발목만 0 홀드(12-DOF; 16-DOF는 WBC 제어)
       d->ctrl[holdA[i]] = KpA * (0.0 - d->qpos[holdQ[i]]) + KdA * (0.0 - d->qvel[holdV[i]]);
     d->ctrl[wact] = KpW * (0.0 - d->qpos[wq]) + KdW * (0.0 - d->qvel[wv]);  // 허리 0 (단단히)
-    // ★외란 push: PUSH(N) 크기·PUSH_T(s) 시각·PUSH_DUR(s) 지속·PUSH_AX(0=x,1=y,2=z) 방향
+    // ★외란 push: PUSH(N) 크기·PUSH_T(s) 첫시각·PUSH_DUR(s) 지속·PUSH_AX(0=x,1=y,2=z)·PUSH_REP(반복수)·PUSH_EVERY(간격s, 교대방향)
     if (getenv("PUSH") && baseBody >= 0) {
       double pf = std::atof(getenv("PUSH")), pt = getenv("PUSH_T") ? std::atof(getenv("PUSH_T")) : 3.0;
       double pdur = getenv("PUSH_DUR") ? std::atof(getenv("PUSH_DUR")) : 0.1;
       int pax = getenv("PUSH_AX") ? std::atoi(getenv("PUSH_AX")) : 1;
+      int prep = getenv("PUSH_REP") ? std::atoi(getenv("PUSH_REP")) : 1;
+      double pevery = getenv("PUSH_EVERY") ? std::atof(getenv("PUSH_EVERY")) : 2.0;
       for (int k = 0; k < 3; ++k) d->xfrc_applied[6 * baseBody + k] = 0.0;
-      if (t >= pt && t < pt + pdur) { d->xfrc_applied[6 * baseBody + pax] = pf; if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) std::cerr << "  [PUSH] t=" << t << " F=" << pf << "N ax=" << pax << "\n"; }
+      for (int r = 0; r < prep; ++r) {
+        double trp = pt + r * pevery;
+        if (t >= trp && t < trp + pdur) {  // 반복마다 교대 방향(±)으로 밀어 반복 외란 강건성 시연
+          d->xfrc_applied[6 * baseBody + pax] = (r % 2 == 0 ? pf : -pf);
+          if (getenv("TROT_DBG") && step % int(0.1 / dt) == 0) std::cerr << "  [PUSH] t=" << t << " F=" << (r % 2 == 0 ? pf : -pf) << "N ax=" << pax << "\n";
+        }
+      }
     }
 
     mj_step(m, d);
@@ -749,6 +757,18 @@ int main(int argc, char** argv) {
       char hud[128]; snprintf(hud, sizeof(hud), "t=%.1fs  base_z=%.3f  gait=%s  %s", t, d->qpos[2], gait.c_str(),
                               useWbc ? "WBC" : "ff+PD");
       mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, vp, "02_Leg OCS2 NMPC+WBC", hud, &con);
+      // ★VIDEO 캡처: 렌더 프레임을 GL framebuffer서 직접 readPixels → raw RGB 파일(가림 무관). ffmpeg로 인코딩.
+      if (getenv("VIDEO") && step % 32 == 0) {  // 32ms sim = ~31fps
+        static FILE* vf = fopen(getenv("VIDEO"), "wb");
+        static std::vector<unsigned char> vbuf(vp.width * vp.height * 3);
+        static int vframes = 0; const int VMAX = getenv("VIDEO_N") ? atoi(getenv("VIDEO_N")) : 300;
+        if (vf && vframes < VMAX) {
+          mjr_readPixels(vbuf.data(), nullptr, vp, &con);
+          fwrite(vbuf.data(), 1, vbuf.size(), vf); vframes++;
+          if (vframes == 1) fprintf(stderr, "[VIDEO] %dx%d capture start (VMAX=%d)\n", vp.width, vp.height, VMAX);
+          if (vframes >= VMAX) { fclose(vf); vf = nullptr; fprintf(stderr, "[VIDEO] done %d frames\n", vframes); }
+        }
+      }
       glfwSwapBuffers(win); glfwPollEvents();
     }
 

@@ -581,13 +581,108 @@ def t_spec_schema():
         check(f"friction.{key} 가 dict", isinstance(v, dict), f"{type(v).__name__}")
 
 
+def t_coef_plumbing():
+    """★coef 배선 — **비교 대상 자체를 바꾸는** 코드라 불변량으로 묶는다 (2026-08-14).
+
+    `retarget_coupling` 은 잔차의 기준이 되는 q 를 다시 쓴다. 여기가 틀리면 RMS 가
+    조용히 좋아지거나 나빠지고, **그게 물리인지 버그인지 구별할 방법이 없다**.
+    그래서 값이 아니라 성질을 본다:
+        ① c=1 은 항등이다 — 기존 적합 결과(0.5498/0.5581)가 그대로 재현돼야 한다
+        ② raw각 불변 — 엔코더가 재는 건 raw각이고 c 와 무관하다.
+           q_foot(c) + c·q_calf 는 c 가 뭐든 같아야 한다. 이게 핵심 불변량이다
+        ③ 다리를 안 섞는다 — HL_foot 은 HL_calf 만 본다
+        ④ 라벨과 벡터 길이가 같다 — 이 파일이 이미 두 번 당한 사고다
+    """
+    sys.path.insert(0, PACE)
+    import pace_cmaes as P
+
+    nm = ["HL_hip", "HL_thigh", "HL_calf", "HL_foot",
+          "HR_hip", "HR_thigh", "HR_calf", "HR_foot"]
+    rng = np.random.default_rng(0)
+    q = rng.normal(size=(50, 8)) * 20.0
+    i_lf, i_lc = nm.index("HL_foot"), nm.index("HL_calf")
+    i_rf, i_rc = nm.index("HR_foot"), nm.index("HR_calf")
+
+    a1 = P.retarget_coupling(q, nm, 1.0)
+    check("c=1 은 항등", np.array_equal(np.asarray(a1), q),
+          f"최대차 {np.max(np.abs(np.asarray(a1) - q)):.3e}")
+
+    for c in (0.70, 0.85, 1.15):
+        a = np.asarray(P.retarget_coupling(q, nm, c))
+        # ② raw각 불변 — 이게 깨지면 기구학이 틀린 것이다
+        raw0 = q[:, i_lf] + 1.0 * q[:, i_lc]
+        rawc = a[:, i_lf] + c * a[:, i_lc]
+        check(f"c={c:.2f} raw각 불변(HL)", np.allclose(raw0, rawc, atol=1e-9),
+              f"최대차 {np.max(np.abs(raw0 - rawc)):.3e}")
+        raw0 = q[:, i_rf] + 1.0 * q[:, i_rc]
+        rawc = a[:, i_rf] + c * a[:, i_rc]
+        check(f"c={c:.2f} raw각 불변(HR)", np.allclose(raw0, rawc, atol=1e-9),
+              f"최대차 {np.max(np.abs(raw0 - rawc)):.3e}")
+        # ③ foot 말고는 안 건드린다 + 다리를 안 섞는다
+        keep = [i for i, n in enumerate(nm) if P.kind_of(n) != "foot"]
+        check(f"c={c:.2f} 비-foot 축 불변", np.array_equal(a[:, keep], q[:, keep]),
+              f"바뀐 열 {[nm[i] for i in keep if not np.array_equal(a[:, i], q[:, i])]}")
+        # HL_calf 만 0 인 데이터를 넣으면 HL_foot 은 안 변해야 한다(다리 혼선 검출)
+        q2 = q.copy(); q2[:, i_lc] = 0.0
+        a2 = np.asarray(P.retarget_coupling(q2, nm, c))
+        check(f"c={c:.2f} 다리 혼선 없음",
+              np.allclose(a2[:, i_lf], q2[:, i_lf], atol=1e-12),
+              f"HL_calf=0 일 때 HL_foot 이동 {np.max(np.abs(a2[:, i_lf] - q2[:, i_lf])):.3e}")
+        # 원본을 훼손하지 않는다(in-place 사고 방지)
+        check(f"c={c:.2f} 입력 비파괴", np.array_equal(q2[:, i_lc], np.zeros(len(q2))),
+              "입력 배열 보존")
+
+    # ④ 라벨·벡터·분해가 서로 맞나
+    for per in (False, True):
+        x0, lo, hi, free = P.init_bounds(os.path.join(PACE, "spec.yaml"), nm, per)
+        lab = P.param_labels(nm, per)
+        nd = 1 + 2 * len(nm) if per else 9
+        check(f"per_axis={per} 길이 정합",
+              len(x0) == len(lo) == len(hi) == len(free) == nd + len(nm) + 2,
+              f"x0={len(x0)} lo={len(lo)} hi={len(hi)} free={len(free)} "
+              f"기대={nd + len(nm) + 2}")
+        # param_labels 는 **탐색벡터 전체**의 라벨이다(dyn+bias+delay+coef).
+        check(f"per_axis={per} 라벨↔벡터 길이", len(lab) == len(x0),
+              f"라벨 {len(lab)} · 벡터 {len(x0)}")
+        check(f"per_axis={per} 라벨 꼬리", lab[-2:] == ["delay", "coef"], f"{lab[-2:]}")
+        check(f"per_axis={per} coef 초기값 1.0", x0[-1] == 1.0, f"{x0[-1]}")
+        check(f"per_axis={per} coef 상자가 1.0 을 담는다",
+              lo[-1] <= 1.0 <= hi[-1], f"[{lo[-1]:.2f}, {hi[-1]:.2f}]")
+        dyn, bias, dly, cf = P.split_params(x0, len(nm), per)
+        check(f"per_axis={per} split_params 분해",
+              len(dyn) == nd and len(bias) == len(nm) and np.isscalar(dly + 0)
+              and cf == 1.0, f"dyn={len(dyn)} bias={len(bias)} cf={cf}")
+
+    # --pin coef 가 마지막 차원을 정말 죽이나
+    _, _, _, fr = P.init_bounds(os.path.join(PACE, "spec.yaml"), nm, False, pin=("coef",))
+    check("--pin coef 가 coef 차원을 뺀다", not fr[-1] and fr[:-1].all(),
+          f"자유 {int(fr.sum())}/{len(fr)}")
+
+    # tendon 쪽은 mujoco 가 있어야 본다 — 없으면 건너뛴다(시스템 python3 에는 없다)
+    try:
+        import mujoco  # noqa: F401
+    except ImportError:
+        print("    · set_coupling_coef 는 건너뜀 (mujoco 없음 — venv 에서 볼 것)")
+        return
+    mj = P.load_fixed_base(os.path.join(os.path.dirname(PACE), "..", "biped_flatfoot.mjcf"))
+    w0 = np.array(mj.wrap_prm, copy=True)
+    P.set_coupling_coef(mj, 0.8)
+    ch = np.flatnonzero(np.asarray(mj.wrap_prm) != w0)
+    check("calf wrap 2개만 바뀐다", len(ch) == 2, f"{len(ch)}개 바뀜")
+    check("값이 0.8", np.allclose(np.asarray(mj.wrap_prm)[ch], 0.8),
+          f"{np.asarray(mj.wrap_prm)[ch]}")
+    P.set_coupling_coef(mj, 1.0)
+    check("c=1 로 되돌리면 원복", np.allclose(mj.wrap_prm, w0),
+          f"최대차 {np.max(np.abs(np.asarray(mj.wrap_prm) - w0)):.3e}")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
-               t_vref_sweep_synth, t_inertia_full, t_spec_schema):
+               t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing):
         try:
             fn()
         except Exception as e:

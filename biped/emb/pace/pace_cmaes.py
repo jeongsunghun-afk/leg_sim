@@ -214,6 +214,52 @@ def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
     return True
 
 
+def set_coupling_coef(m, c: float) -> None:
+    """calf→foot 커플링 계수를 tendon wrap 에 쓴다. **힘·관성 쪽**을 바꾼다.
+
+    tendon 길이 = c·q_calf + 1·q_foot = q_raw 가 되도록 한다.
+    로터 KE = ½·I·N²·(q̇_foot + c·q̇_calf)² 이므로 tendon_armature 는 그대로다.
+    ⚠**기구학 쪽(데이터)도 같이 바꿔야 한다** — `retarget_coupling` 참조.
+    """
+    import mujoco
+    for s_ in ("HL", "HR"):
+        tid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_TENDON, f"{s_}_foot_rotor")
+        if tid < 0:
+            continue
+        for k in range(m.tendon_adr[tid], m.tendon_adr[tid] + m.tendon_num[tid]):
+            jn = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, m.wrap_objid[k])
+            if jn and "calf" in jn:
+                m.wrap_prm[k] = float(c)
+
+
+def retarget_coupling(arr, names, c: float):
+    """저장된 모델각(coef=1 가정)을 **coef=c 기준**으로 다시 쓴다.
+
+    ★왜 필요한가 (2026-08-14)
+      npz 의 q·q_cmd·dq 는 `jm.ch_to_q_joint` 가 만든 값이고 그 함수는 **coef=1 을
+      하드코딩**한다. 즉 데이터 자체에 가정이 박혀 있다. c 를 탐색하려면 그걸 풀어야 한다.
+
+      엔코더가 실제로 재는 것은 raw각이고 그건 가정과 무관하게 정확하다:
+          q_raw = q_foot_stored + 1·q_calf          (저장값에서 정확히 복원된다)
+      참 모델각은 c 로 다시 푼다:
+          q_foot_true = q_raw − c·q_calf = q_foot_stored + (1−c)·q_calf
+      calf 는 커플링이 없으므로 그대로다.
+    ⚠속도도 같은 선형관계다(offset 만 빠진다).
+    ⚠c=1 이면 항등이다 — 그래서 기존 결과가 그대로 재현되는지로 검증할 수 있다.
+    """
+    if c == 1.0:
+        return arr
+    out = np.array(arr, float, copy=True)
+    for i, n in enumerate(names):
+        if kind_of(n) != "foot":
+            continue
+        j = [k for k, o in enumerate(names)
+             if o[:2] == n[:2] and kind_of(o) == "calf"]
+        if j:
+            out[:, i] = arr[:, i] + (1.0 - c) * arr[:, j[0]]
+    return out
+
+
 def actuator_wrap(m, idx, names, ctrl_space="tendon"):
     """액추에이터별 **PD 가 무엇을 오차로 재는가** 를 MJCF 에서 읽어 만든다.
 
@@ -337,7 +383,7 @@ def param_labels(names, per_axis: bool) -> list:
     dyn = (["ROTOR_I"] + [f"JDAMP.{x}" for x in names] + [f"JFRIC.{x}" for x in names]
            if per_axis else
            ["ROTOR_I"] + [f"JDAMP.{k}" for k in KINDS] + [f"JFRIC.{k}" for k in KINDS])
-    return dyn + [f"bias.{n}" for n in names] + ["delay"]
+    return dyn + [f"bias.{n}" for n in names] + ["delay", "coef"]
 
 
 def init_bounds(spec_path, names, per_axis, pin=()):
@@ -475,9 +521,38 @@ def init_bounds(spec_path, names, per_axis, pin=()):
                 lo[1 + nj + i] = _span_lo[kk]
                 hi[1 + nj + i] = _span_hi[kk]
     nb = len(names)
-    x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
-    lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO]])
-    hi = np.concatenate([hi, np.full(nb, +BIAS_MAX), [DELAY_HI]])
+    # ★coef — calf→foot 커플링 계수 (2026-08-14 추가).
+    #   저장소에 남은 **유일한 미측정 구조 파라미터**다. RL_INTERFACE:
+    #   "부호는 [실측], 크기 1.0 은 [미확정], 근거는 육안 일치뿐".
+    #
+    #   ★넣게 된 동기는 **틀렸고**, 결과는 맞았다 — 기록해 둔다.
+    #     동기: "foot 이 잔차의 63~72% 이고 coef 3~5% 오차면 0.44~0.73° 가 나온다".
+    #     그런데 실제로 c 를 낮춰 보니 개선이 **calf 에서** 나왔다(−22%/−18%,
+    #     foot 은 −3%). 즉 coef 는 foot 위치오차가 아니라, foot 액추에이터의 반력·
+    #     회전자 관성이 tendon 을 타고 calf 로 실리는 양을 고친다.
+    #     ⇒ 가설의 논거는 폐기하되, 파라미터 자체는 남긴다.
+    #
+    #   ★JDAMP.calf 와 축퇴인지 직접 쟀다 (tests/scan_coef_jdamp.py).
+    #     coef 4점 × JDAMP.calf 4점 격자에서:
+    #       · 각 coef 에서 JDAMP.calf 를 다시 맞춰도 프로파일이 4.6% 폭으로 **단조**다
+    #       · JDAMP.calf 최적은 coef 와 **무관하게** ×0.5 다 (축퇴면 행마다 갈려야 한다)
+    #       · hold-out 도 같이 좋아진다: 1.00→0.5549, 0.76→0.5125 (−7.6%)
+    #     ⇒ 축퇴 아님. 과적합 아님.
+    #
+    #   ★상자를 0.70 까지 연다 (종전 0.85). 최소가 0.76 근처인데 0.85 에 막혀 있었다.
+    #     0.76 과 0.80 은 구별이 안 된다(0.5262 vs 0.5269, 0.13%).
+    #     ⚠0.80 = k_foot/k_calf(1.2/1.5) 는 **우연이다**. coef 는 joint_map.py:238 대로
+    #       이미 감속비 이후 공간의 계수이고, 채널공간과 혼동했을 때 나오는 값은
+    #       0.8 이 아니라 **1.25**(과보상)다 — 방향이 반대라 그 설명은 성립하지 않는다.
+    #     남는 해석: 발목은 **링키지** 구동이고 링키지 비는 1 이 아니며 자세의존적이다.
+    #     0.76 은 시험 자세범위의 평균이다.
+    #   ⚠상한은 1.15 로 둔다. 넓히면 bias·JFRIC 과 섞인다 — 커플링은 calf 스윙에
+    #     비례하는 **모양**이 있어서 좁은 상자 안에서는 구별된다.
+    #   ⚠⚠이건 여전히 **적합값**이다. 결정적 측정은 diag/couple_check.py 다
+    #     (무여자 + 손으로 무릎 왕복, 채널공간 회귀). 그게 나오면 여기를 못박을 것.
+    x0 = np.concatenate([x0, np.zeros(nb), [DELAY0], [1.0]])
+    lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO], [COEF_LO]])
+    hi = np.concatenate([hi, np.full(nb, +BIAS_MAX), [DELAY_HI], [COEF_HI]])
     # ★고정축은 **탐색벡터에서 뺀다**(경계를 붙이는 게 아니라 차원을 없앤다).
     #   lo==hi 로 눌러도 되지만 그러면 CMA-ES 가 죽은 차원을 계속 흔든다 —
     #   popsize 10 에 18차원이라 2차원 낭비가 작지 않다.
@@ -495,6 +570,8 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         #     그건 foot 제어법칙 버그를 armature 로 흡수한 결과다 — 실측을 믿는다.
         if "rotor" in pin:
             free[0] = False
+        if "coef" in pin:
+            free[-1] = False
         for i, L in enumerate(lab):
             # kind 로 지정(hip → JDAMP.hip·JFRIC.hip 둘 다) 또는 **개별 라벨**로 지정
             #   (JDAMP.foot → 그 하나만). 실측이 한쪽만 있을 때 개별 지정이 필요하다.
@@ -518,6 +595,7 @@ BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° �
 #     (셀프테스트 T=4·120세대). 지연이 모델오차를 **흡수**한 것이고, 그 대가로
 #     JFRIC 이 −13~−63% 로 무너졌다. 실측이 있는 값을 자유변수로 두면 이렇게 된다.
 DELAY0, DELAY_LO, DELAY_HI = 0.00839, 0.0068, 0.0100
+COEF_LO, COEF_HI = 0.70, 1.15   # ★커플링 계수 상자 — 아래만 열었다 (init_bounds 주석)
 
 
 def split_segments(N, win, holdout, mode="tail"):
@@ -565,7 +643,8 @@ def split_params(p, n, per_axis):
     """탐색벡터 → (동역학, bias[deg], delay[s]). 순서는 init_bounds 와 짝이다."""
     nd = 1 + 2 * n if per_axis else 9
     p = np.asarray(p, float)
-    return p[:nd], p[nd:nd + n], float(p[nd + n])
+    coef = float(p[nd + n + 1]) if len(p) > nd + n + 1 else 1.0
+    return p[:nd], p[nd:nd + n], float(p[nd + n]), coef
 
 
 def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
@@ -617,6 +696,9 @@ def report(names, x, per_axis, log=print):
         b = np.asarray(x[nd:nd + n], float)
         log(f"  {'bias[deg]':<16}" + " ".join(f"{v:+.3f}" for v in b))
         log(f"  {'delay[ms]':<16}{float(x[nd+n])*1e3:>12.2f}   (실측 8.39±0.79)")
+    if len(x) >= nd + n + 2:
+        log(f"  {'coef':<16}{float(x[nd+n+1]):>12.4f}   "
+            f"(커플링 계수 — 1.0 은 **가정**이지 실측이 아니다)")
 
 
 def main() -> int:
@@ -692,7 +774,7 @@ def main() -> int:
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
     _lab_all = param_labels(D["names"], a.per_axis)
     for k in pin:
-        if k not in KINDS + ("rotor",) and k not in _lab_all:
+        if k not in KINDS + ("rotor", "coef") and k not in _lab_all:
             raise SystemExit(f"✗ --pin {k} — {KINDS + ('rotor',)} 또는 개별 라벨"
                              f"(예: JDAMP.foot) 이어야 한다")
     x0, lo, hi, free = init_bounds(a.spec, D["names"], a.per_axis, pin)
@@ -718,13 +800,20 @@ def main() -> int:
 
     def evaluate(p, segs):
         """구간 **목록**에 대해 RMS 를 낸다. 표본수로 가중해야 창 길이가 달라도 맞다."""
-        dyn, bias, dly = split_params(p, len(D["names"]), a.per_axis)
+        dyn, bias, dly, cf = split_params(p, len(D["names"]), a.per_axis)
         apply_params(m, idx, D["gear_n"], dyn, a.per_axis, D["names"])
+        # ★coef 는 **두 곳**을 같이 바꿔야 한다 — MJCF 의 힘·관성 쪽(tendon wrap)과
+        #   데이터의 기구학 쪽(저장된 모델각은 coef=1 가정으로 만들어졌다).
+        #   한쪽만 바꾸면 물리적으로 앞뒤가 안 맞는 모델이 된다.
+        set_coupling_coef(m, cf)
+        Q  = retarget_coupling(D["q"], D["names"], cf)
+        QC = retarget_coupling(D["q_cmd"], D["names"], cf)
+        DQ = retarget_coupling(D["dq"], D["names"], cf)
         ss = 0.0; cnt = 0; last = None
         for s_, e in segs:
-            qs = rollout(m, d, idx, D["q"][s_:e], D["dq"][s_:e], D["q_cmd"][s_:e],
+            qs = rollout(m, d, idx, Q[s_:e], DQ[s_:e], QC[s_:e],
                          D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly, wrap=wrap)
-            r = qs - (D["q"][s_:e] - bias)
+            r = qs - (Q[s_:e] - bias)
             ss += float(np.sum(r ** 2)); cnt += r.size; last = qs
         return float(np.sqrt(ss / max(cnt, 1))), last
 
@@ -802,12 +891,16 @@ def main() -> int:
             print("  ⚠게인이 같다 — 이건 unseen gains 검증이 아니다(궤적 hold-out 일 뿐)")
         rows = []
         for lab, px in (("초기값", x0), ("적합 θ", best)):
-            dyn, bias, dly = split_params(px, len(V["names"]), a.per_axis)
+            dyn, bias, dly, cf = split_params(px, len(V["names"]), a.per_axis)
             apply_params(m, idx, V["gear_n"], dyn, a.per_axis, V["names"])
-            qs = rollout(m, d, vi, V["q"], V["dq"], V["q_cmd"], V["kp"], V["kd"],
+            set_coupling_coef(m, cf)
+            VQ  = retarget_coupling(V["q"], V["names"], cf)
+            VQC = retarget_coupling(V["q_cmd"], V["names"], cf)
+            VDQ = retarget_coupling(V["dq"], V["names"], cf)
+            qs = rollout(m, d, vi, VQ, VDQ, VQC, V["kp"], V["kd"],
                          V["dt"], vw, bias=bias, delay_s=dly,
                          wrap=actuator_wrap(m, vi, V["names"], a.ctrl_space))
-            rows.append((lab, cost_of(qs, V["q"] - bias)))
+            rows.append((lab, cost_of(qs, VQ - bias)))
         for lab, c in rows:
             print(f"    {lab:<8}RMS {c:.4f}°")
         imp = (1 - rows[1][1] / rows[0][1]) * 100
@@ -880,7 +973,7 @@ def selftest(m, a) -> int:
     #   "안 움직였다" 와 "되찾았다" 가 구분된다.
     _x0s, _lo_s, _hi_s, _ = init_bounds(a.spec, names, False)
     _mul = np.array([1.35] + [1.6, 0.55, 1.9, 2.4] + [0.86, 1.14, 0.90, 1.10])
-    x_true = np.concatenate([_x0s[:9] * _mul, bias_true, [delay_true]])
+    x_true = np.concatenate([_x0s[:9] * _mul, bias_true, [delay_true], [1.0]])
     _out = [(l, v, lo_, hi_) for l, v, lo_, hi_ in
             zip(param_labels(names, False)[:9], x_true[:9], _lo_s[:9], _hi_s[:9])
             if not (lo_ <= v <= hi_)]
@@ -904,7 +997,7 @@ def selftest(m, a) -> int:
     print(f"■ 셀프테스트 — 합성 {T:.0f}s · dt {dt*1000:.0f}ms · 측정잡음 0.02°")
 
     def ev(p):
-        dyn, bias, dly = split_params(p, len(names), False)
+        dyn, bias, dly, _cf = split_params(p, len(names), False)
         apply_params(m, idx, gear_n, dyn, False, names)
         qs = rollout(m, d, idx, q_meas, dq_true, q_cmd, kp, kd, dt, win,
                      bias=bias, delay_s=dly, wrap=wrap)

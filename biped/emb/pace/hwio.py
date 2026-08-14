@@ -219,6 +219,11 @@ class Hardware:
         self.dead_cmd_nm = 3.0
         self.dead_ratio = 0.15
         self._q_cmd = np.zeros(self.n, np.float32)
+        # ★마지막으로 써 보낸 **토크 피드포워드** (2026-08-14). 종전엔 어디에도 안 남아서
+        #   값 모니터의 "명령" 이 위치뿐이었다 — PACE 는 τ_ff 가진이 본체인데도.
+        #   ⚠write_pos 경로는 드라이버에 tau=0 이 나가므로 거기서 0 으로 되돌린다.
+        #     안 되돌리면 직전 처프의 τ_ff 가 홀드 구간까지 남아 거짓 명령으로 보인다.
+        self._tau_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
         #   사라져 화면이 멎었다. 사람이 로봇 옆에서 토크시험을 돌리는 구간에서
@@ -408,7 +413,8 @@ class Hardware:
                 #   `_ch` 접미사는 이 저장소의 각도층 규약이다(채널각임을 명시).
                 self.publish_fn(self._q, self._rpy, self._armed,
                                 {'dq_ch': self._dq, 'tau_ch': self._tau,
-                                 'q_cmd_ch': self._q_cmd})
+                                 'q_cmd_ch': self._q_cmd, 'tau_cmd_ch': self._tau_cmd,
+                                 'kp': self._wr_kp, 'kd': self._wr_kd})
             except Exception as e:
                 # ★조용히 삼키면 안 된다 (2026-08-14). 2026-08-13 에 publish_fn 에
                 #   4번째 인자를 추가했는데 오프라인 시험의 람다는 3개만 받았다.
@@ -597,6 +603,11 @@ class Hardware:
         z = np.zeros(self.n, np.float32)
         tv = np.zeros(self.n, np.float32)
         tv[ch] = float(np.clip(tau_ff, -self.lim.tau_trip, self.lim.tau_trip))
+        # ★여기서도 **써 보낸 게인**을 남긴다 (2026-08-14). 종전엔 _raw_write /
+        #   _raw_write_all 에만 있어서 τ_ff 시험 중 `_written_gain_of` 가 **직전 게인**을
+        #   돌려줬다 — "판정용 단일 출처" 라 적어 두고 가장 중요한 경로에서 갱신이 빠졌다.
+        self._wr_kp, self._wr_kd = kp_v.copy(), kd_v.copy()
+        self._tau_cmd = tv.copy()                      # 클램프 **후** = 실제 나간 값
         self.lib.bridge_write_mit(_p(self._q_cmd), _p(z), _p(tv), _p(kp_v), _p(kd_v), self.n)
 
     def _hold_gains(self, ch: int, scale: float = 1.0):
@@ -625,6 +636,7 @@ class Hardware:
         kp_v, kd_v = self._hold_gains(ch, hold_scale)
         kp_v[ch] = kp; kd_v[ch] = kd
         self._wr_kp, self._wr_kd = kp_v.copy(), kd_v.copy()
+        self._tau_cmd[:] = 0.0                         # 위치제어 = 드라이버에 tau 0
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
 
     @contextlib.contextmanager
@@ -1103,6 +1115,7 @@ class Hardware:
             kp_v[c] = min(max(_kp, 0.0), self.lim.kp_max)
             kd_v[c] = min(max(_kd, 0.0), self.lim.kd_max)
         self._wr_kp, self._wr_kd = kp_v.copy(), kd_v.copy()
+        self._tau_cmd[:] = 0.0                         # 위치제어 = 드라이버에 tau 0
         self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp_v), _p(kd_v), self.n)
 
     def _gain_at(self, c: int, kp, kd):

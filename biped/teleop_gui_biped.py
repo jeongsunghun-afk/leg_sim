@@ -1,7 +1,7 @@
 """biped 전용 슬림 GUI (17-DOF GUI 규약) — dearpygui.
 
 명령을 JSON 채널(/tmp/biped_cmd.json)로 발행 → biped_run.py 소비.
-★듀얼 조이스틱: 좌스틱=전후(vx)/측방(vy) · 우스틱=선회(wz). 버튼 Stand/Walk/RESET.
+★듀얼 조이스틱: 좌스틱=전후(vx)/측방(vy) · 우스틱=선회(wz). 버튼: 정지·현자세 · 2점 평발 stand · 점발 보행.
 실행(proxddp env): /home/jsh/miniforge3/envs/proxddp/bin/python teleop_gui_biped.py
   ① 컨트롤러: python biped_run.py   ② GUI: 위 명령
 """
@@ -413,27 +413,42 @@ with dpg.window(tag='main'):
             dpg.add_slider_float(tag='h_sl', default_value=H_DEF, min_value=H_MIN, max_value=H_MAX, width=180, callback=on_height)
     dpg.add_spacer(height=8)
     dpg.add_text('모션', color=(170, 175, 195))
-    with dpg.group(horizontal=True):   # RESET → Off전원 → Stand(2점서기) → Walk(1점보행)
-        _rb = dpg.add_button(label='RESET', width=90, callback=lambda: set_mode('reset'))
+    # ★2026-08-14 라벨 정리 — 이름이 동작을 오해시키고 있었다.
+    #   · 'RESET' → **'정지·현자세'**: 프로세스와 아무 상관이 없다. 하는 일은
+    #     `jogger.reset(q_leg)` → HOLD, 즉 "jog 램프를 **현재 측정각**으로 재시드하고
+    #     그 자리에 선다". 램프를 재시드하는 게 핵심이라 다음 JOG 에서 계단이 안 생긴다.
+    #     'RESET' 이라 써 두니 '제어기 재기동'과 헷갈렸다 — 둘은 전혀 다른 동작이다.
+    #   · '제어기 재기동' → **'제어기 재시작(프로세스)'**: 진짜로 프로세스를 죽였다 띄운다.
+    #     SHM/통신 두절 복구용. 오조작 방지로 3초 안에 두 번 눌러야 실행된다.
+    #   · 'Stand 서기' → **'2점 평발 stand'** · 'Walk 이동' → **'점발 보행'**
+    #     접촉모드가 동작 이름 안에 들어가야 한다. 평발/점발은 발 자세가 53° 다르고
+    #     (밑창 수평 vs toe-down) 전환은 매달아서 해야 하는 별개 작업이다.
+    with dpg.group(horizontal=True):   # 정지 → Off전원 → JOG → 재시작
+        _rb = dpg.add_button(label='정지·현자세', width=110, callback=lambda: set_mode('reset'))
         dpg.bind_item_theme(_rb, _stop)
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
         dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
-        dpg.add_button(label='제어기 재기동', width=110, callback=lambda: on_restart())
+        with dpg.group():
+            dpg.add_button(label='제어기 재시작', width=120, callback=lambda: on_restart())
+            dpg.add_text('(프로세스)', color=(120, 130, 150))
         with dpg.group():              # ★Home=정해진 홈 자세로 S-curve 복귀(emb/control/home.py)
             _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
             dpg.add_text('(S-curve)', color=(120, 130, 150))
         dpg.bind_item_theme(_hb, _home)
         dpg.add_button(label='Hold', width=70, callback=lambda: set_mode('hold'))
-        with dpg.group():              # ★Stand=2점접촉 서기(자동 전환)
-            dpg.add_button(label='Stand 서기', width=110, callback=lambda: set_mode('stand'))
-            dpg.add_text('(2점접촉)', color=(120, 130, 150))
-        with dpg.group():              # ★Walk=1점접촉 보행(자동 전환)
-            _wb = dpg.add_button(label='Walk 이동', width=110, callback=lambda: set_mode('walk'))
-            dpg.add_text('(1점접촉)', color=(120, 130, 150))
+        with dpg.group():              # ★2점 평발 = 정적 자세유지(보행 안 함)
+            dpg.add_button(label='2점 평발 stand', width=130, callback=lambda: set_mode('stand'))
+            dpg.add_text('(밑창 접지·정적)', color=(120, 130, 150))
+        with dpg.group():              # ★1점 점발 = stepping 보행
+            _wb = dpg.add_button(label='점발 보행', width=110, callback=lambda: set_mode('walk'))
+            dpg.add_text('(발끝 1점·동적)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
-    dpg.add_text('복구 순서: 전원(Off) → [Home 복귀] → 서기(Stand) → 이동(Walk)   · Off=모터 토크차단(limp), 실HW=motor disable',
-                 color=(150, 155, 175))
+    dpg.add_text('복구 순서: Off 전원 → Home 복귀 → Hold → (접지·하중전달) → 2점 평발 stand'
+                 '   · Off=모터 토크차단(limp), 실HW=motor disable', color=(150, 155, 175))
+    dpg.add_text('⚠매달린 채로 stand/보행을 켜지 말 것 — GRF 를 전제한 QP 라 해가 안 나오고 '
+                 '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home/hold 뿐.',
+                 color=(210, 150, 90))
     dpg.add_text('Home=정해진 홈 자세(emb/config/biped_emb.yaml: home.q_deg)로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기',
                  color=(150, 155, 175))
     dpg.add_separator()

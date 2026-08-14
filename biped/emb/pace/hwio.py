@@ -638,7 +638,14 @@ class Hardware:
                 return self._raw_write_ff(ch, q_cmd_deg, kp, kd, v)
         kp = min(max(kp, 0.0), self.lim.kp_max)      # 스케일 오류가 그대로 드라이버로 가지 않게
         kd = min(max(kd, 0.0), self.lim.kd_max)
-        q_cmd_deg = min(max(q_cmd_deg, self.lim.q_min), self.lim.q_max)
+        # ★limits_for(ch) 로 자른다 — 종전엔 self.lim 이었다 (2026-08-14 수정).
+        #   형제인 `_raw_write_ff` 는 처음부터 limits_for(ch) 를 썼고, 판정하는
+        #   `_check` 도 limits_for(ch) 를 쓴다. 여기만 self.lim 이라 **τ_ff 유무에 따라
+        #   같은 명령이 다른 지점에서 잘렸다.** actuator_test.py:718 이 arm 할 때
+        #   lim_ch[ch] 를 넓히므로 실제로 갈리는 조건이다(FF 있으면 넓은 상자, 없으면 좁은 상자).
+        #   lim_ch 에 등록이 없으면 limits_for 가 self.lim 을 돌려주므로 기존 동작 그대로다.
+        _L = self.limits_for(ch)
+        q_cmd_deg = min(max(q_cmd_deg, _L.q_min), _L.q_max)
         self._q_cmd[ch] = q_cmd_deg
         kp_v, kd_v = self._hold_gains(ch, hold_scale)
         kp_v[ch] = kp; kd_v[ch] = kd

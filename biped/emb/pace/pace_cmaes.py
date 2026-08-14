@@ -616,6 +616,14 @@ def init_bounds(spec_path, names, per_axis, pin=()):
                 free[i] = False
                 if L in pin_v:
                     x0[i] = pin_v[L]
+                    # ★탐색범위를 못박은 값까지 **넓힌다** (2026-08-14).
+                    #   안 넓히면 조용히 틀린다: expand() 는 고정축도 to_z→from_z 로
+                    #   왕복시키는데 from_z 가 [lo,hi] 로 자른다. --pin JDAMP.calf=0 을
+                    #   줬더니 헤더는 "고정 0" 인데 판정표는 **0.0018**(=하한)이었다.
+                    #   실제로 적합에 쓰인 값은 0 이 아니라 0.0018 이었던 것이다.
+                    #   (이번엔 0.25% 라 결과가 안 바뀌었지만, 상한 밖을 못박으면 크게 튄다.)
+                    lo[i] = min(lo[i], x0[i])
+                    hi[i] = max(hi[i], x0[i])
             elif L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
                 free[i] = False
     return x0, lo, hi, free

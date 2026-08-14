@@ -653,6 +653,19 @@ def t_coef_plumbing():
               len(dyn) == nd and len(bias) == len(nm) and np.isscalar(dly + 0)
               and cf == 1.0, f"dyn={len(dyn)} bias={len(bias)} cf={cf}")
 
+    # ★--pin 라벨=값 이 **왕복해도 그 값인가** (2026-08-14 회귀시험).
+    #   expand() 는 고정축도 to_z→from_z 로 왕복시키고 from_z 는 [lo,hi] 로 자른다.
+    #   못박은 값이 탐색범위 밖이면 **조용히 경계값으로 바뀐다** — 실제로 그랬다
+    #   (--pin JDAMP.calf=0 → 헤더 "고정 0" 인데 실제 쓰인 값 0.0018).
+    for _v in (0.0, 1e-5, 5.0):
+        _x, _lo, _hi, _fr = P.init_bounds(os.path.join(PACE, "spec.yaml"), nm, False,
+                                          pin=(f"JDAMP.calf={_v}",))
+        _i = P.param_labels(nm, False).index("JDAMP.calf")
+        _rt = P.from_z(P.to_z(_x, _lo, _hi), _lo, _hi)[_i]
+        check(f"--pin JDAMP.calf={_v:g} 왕복", abs(_rt - _v) < 1e-12,
+              f"x0={_x[_i]:g} → 왕복 {_rt:g} (탐색범위 [{_lo[_i]:g},{_hi[_i]:g}])")
+        check(f"--pin JDAMP.calf={_v:g} 고정됨", not _fr[_i], f"free={_fr[_i]}")
+
     # --pin coef 가 마지막 차원을 정말 죽이나
     _, _, _, fr = P.init_bounds(os.path.join(PACE, "spec.yaml"), nm, False, pin=("coef",))
     check("--pin coef 가 coef 차원을 뺀다", not fr[-1] and fr[:-1].all(),

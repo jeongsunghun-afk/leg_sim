@@ -20,6 +20,31 @@ import numpy as np
 STATE_PATH = os.environ.get("QUAD_STATE", "/tmp/biped_state.json")
 
 
+def leg_extra(jm, dq_ch=None, tau_ch=None, q_cmd_ch=None, kp=None, kd=None):
+    """채널 배열 → 모니터가 쓰는 확장 키(**모델각·관절토크**). 없는 항목은 빼고 낸다.
+
+    ★왜 여기 두나 (2026-08-13): PACE 하니스도 상태를 발행하는데(state_pub 를 분리한 이유가
+      그것이다) **위치만** 넘기고 있었다. 그래서 PACE 로 시험하는 동안 값 모니터의
+      속도·토크가 통째로 비었다. 변환식을 하니스마다 복붙하면 반드시 갈라지므로
+      (같은 실수를 GUI 한계·gen_emb_init_pose·calib_zero 에서 이미 세 번 했다)
+      **JointMap 에 위임하는 한 곳**을 만든다.
+    ⚠단위 규약: 각도·속도는 모델각[deg·deg/s], 토크는 관절[Nm]. 채널값을 그대로 내면 안 된다.
+    """
+    import numpy as _np
+    e = {}
+    if dq_ch is not None:
+        e["dq_leg_dps"] = [round(float(v), 2) for v in jm.ch_to_dq_ctrl(dq_ch) * (180.0 / _np.pi)]
+    if tau_ch is not None:
+        e["tau_leg_nm"] = [round(float(v), 3) for v in jm.ch_to_tau_joint(tau_ch)]
+    if q_cmd_ch is not None:
+        e["q_cmd_deg"] = [round(float(v), 2) for v in jm.ch_to_q_joint(q_cmd_ch)]
+    if kp is not None:
+        e["kp_leg"] = [round(float(v), 1) for v in _np.asarray(kp, float)[jm.ch]]
+    if kd is not None:
+        e["kd_leg"] = [round(float(v), 2) for v in _np.asarray(kd, float)[jm.ch]]
+    return e
+
+
 def publish_state(mode, q_leg_deg, rpy_deg, loop_hz, motors_on, backend, extra=None,
                   path: str | None = None):
     """상태 1건 발행. 실패는 조용히 삼킨다 — 발행 실패가 제어를 멈추면 안 된다.

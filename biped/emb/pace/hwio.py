@@ -379,7 +379,11 @@ class Hardware:
         if self.publish_fn is not None and now >= self._pub_next:
             self._pub_next = now + self.pub_period
             try:                       # 발행 실패가 시험을 멈추면 안 된다
-                self.publish_fn(self._q, self._rpy, self._armed)
+                # ★raw 채널배열을 함께 넘긴다 (2026-08-13). 종전엔 위치만 넘겨서
+                #   PACE 로 시험하는 동안 값 모니터의 속도·토크가 통째로 비었다.
+                #   변환(채널→모델각/관절토크)은 호출자가 JointMap 으로 한다.
+                self.publish_fn(self._q, self._rpy, self._armed,
+                                {'dq': self._dq, 'tau': self._tau, 'q_cmd': self._q_cmd})
             except Exception:
                 pass
         return q, dq, tau, cur

@@ -392,6 +392,17 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     free = np.ones(len(x0), bool)
     if pin:
         lab = param_labels(names, per_axis)
+        # ★"rotor" — ROTOR_I 를 **실측으로 못박는다** (2026-08-14).
+        #   두 독립 측정이 만났다:
+        #       foot τ_ff 경로 (2026-08-11)      7.327e-4
+        #       calf 공통속도법 (2026-08-14)     7.340e-4   (+0.17%)
+        #   감속비(8.4 vs 10.5)도 방법도 다른 두 축이 0.17% 로 일치한다.
+        #   calf 쪽 근거: I_joint 실측 0.11192(MJCF 예측 −0.6% · 방향간 편차 9.4% ·
+        #   R² 0.997/0.986) 에서 I_link 0.0310 을 빼고 N²=110.25 로 나눈 값이다.
+        #   ⚠f0.4_dqfix 적합은 2.436e-4(−66.8%)를 냈고 **상자 하한 1%** 에 박혀 있었다.
+        #     그건 foot 제어법칙 버그를 armature 로 흡수한 결과다 — 실측을 믿는다.
+        if "rotor" in pin:
+            free[0] = False
         for i, L in enumerate(lab):
             if L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
                 free[i] = False
@@ -503,7 +514,8 @@ def main() -> int:
                          "게인이 바뀌어도 같은 θ 가 맞으면 순환·과적합이 아니다")
     ap.add_argument("--pin", default="", metavar="KIND[,KIND]",
                     help="그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(x0 에 고정). "
-                         "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 상자 모서리로 간다")
+                         "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 상자 모서리로 간다. "
+                         "`rotor` 는 ROTOR_I 를 실측(7.33e-4)에 못박는다")
     ap.add_argument("--ctrl-space", default="tendon", choices=("tendon", "joint"),
                     help="foot PD 가 재는 오차. tendon=raw각(q_foot+q_calf, **실기**) · "
                          "joint=관절각(2026-08-14 이전 동작). actuator_wrap 독스트링 참조")
@@ -541,8 +553,8 @@ def main() -> int:
 
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
     for k in pin:
-        if k not in KINDS:
-            raise SystemExit(f"✗ --pin {k} — kind 는 {KINDS} 중 하나여야 한다")
+        if k not in KINDS + ("rotor",):
+            raise SystemExit(f"✗ --pin {k} — {KINDS + ('rotor',)} 중 하나여야 한다")
     x0, lo, hi, free = init_bounds(a.spec, D["names"], a.per_axis, pin)
     wrap = actuator_wrap(m, idx, D["names"], a.ctrl_space)
     _nw = sum(1 for w in wrap if w)
@@ -556,6 +568,13 @@ def main() -> int:
           f"JFRIC ×{1-JFRIC_SPAN[0]:.2g}~{1+JFRIC_SPAN[0]:.2g} · "
           f"bias ±{BIAS_MAX}° · delay {DELAY_LO*1e3:.0f}~{DELAY_HI*1e3:.0f}ms")
     report(D["names"], x0, a.per_axis)
+    plab = param_labels(D["names"], a.per_axis)
+    if not free.all():
+        # ★여기서 찍는다 — `--eval-only` 로 **고정이 걸렸는지 먼저 확인**할 수 있어야 한다.
+        print("\n■ 고정(탐색 제외) — 실측이 있거나 이 데이터로는 정할 수 없다")
+        for i in np.flatnonzero(~free):
+            print(f"    {plab[i]:<16}{x0[i]:>12.4g}")
+        print(f"    자유차원 {int(free.sum())}/{len(x0)}")
 
     def evaluate(p, s, e):
         dyn, bias, dly = split_params(p, len(D["names"]), a.per_axis)
@@ -575,11 +594,6 @@ def main() -> int:
     except ImportError:
         raise SystemExit("✗ cma 가 없다: ~/.venv-mujoco/bin/pip install cma")
     # ★z∈[0,1] 정규화 공간에서 탐색한다(to_z 주석 참조). 원공간은 스케일이 4자리 벌어진다.
-    plab = param_labels(D["names"], a.per_axis)
-    if not free.all():
-        print("\n■ 고정(탐색 제외) — 이 데이터로는 정할 수 없어 x0 에 묶는다")
-        for i in np.flatnonzero(~free):
-            print(f"    {plab[i]:<16}{x0[i]:>10.4f}")
     z0 = to_z(x0, lo, hi)
 
     def expand(zf):

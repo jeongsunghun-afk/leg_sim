@@ -50,7 +50,7 @@ sys.path[:0] = [HERE, os.path.join(HERE, "tests"), os.path.join(EMB, "interface"
 from hwio import DEG, Hardware, Limits, SafetyAbort   # noqa: E402
 from homing import goto_home, make_homer             # noqa: E402
 from joint_map import JointMap                       # noqa: E402
-from state_pub import publish_state                  # noqa: E402
+from state_pub import publish_state, leg_extra                  # noqa: E402
 import actuator_test as at                           # noqa: E402
 
 
@@ -297,9 +297,10 @@ def main() -> int:
     with Hardware(spec["shm"]["lib"], spec["shm"]["n_channel"], rate, lim,
                   int(spec["shm"]["recv_wait_ms"]), float(g["enable_ramp_s"]),
                   hold_channels=ch_all, hold_kp=_kp_home, hold_kd=_kd_home) as hw:
-        hw.publish_fn = lambda q_ch, rpy, on: publish_state(
+        hw.publish_fn = lambda q_ch, rpy, on, raw=None: publish_state(
             "pace:multichirp", jm.ch_to_q_joint(np.asarray(q_ch, float)),
-            np.asarray(rpy, float), rate, on, "pace")
+            np.asarray(rpy, float), rate, on, "pace",
+            extra=leg_extra(jm, **(raw or {})))
         # ★오늘(2026-08-12) 만든 안전장치를 **여기에도** 건다. 이 시험이 가장 오래 돈다
         #   (30초 연속 가진). 정작 여기에 안 걸려 있었다.
         #   ㆍlim_ch  : 채널별 위치·토크 한계 (위 합집합 사고 참조)

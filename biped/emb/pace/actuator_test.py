@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.join(HERE, "tests"))
 from hwio import DEG, Hardware, Limits, SafetyAbort  # noqa: E402
 from homing import goto_home, make_homer            # noqa: E402  GUI 와 동일 궤적
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "interface"))
-from state_pub import publish_state                 # noqa: E402  뷰어와 동일 스키마
+from state_pub import publish_state, leg_extra                 # noqa: E402  뷰어와 동일 스키마
 
 
 def load_spec(path: str) -> dict:
@@ -664,9 +664,10 @@ def main() -> int:
                         # ★뷰어 상태 발행 — 시험 중에는 biped_emb 를 끄므로(writer 는 하나)
                         #   여기서 발행하지 않으면 **화면이 멎는다**. 사람이 옆에 있는 구간이다.
                         _mode = f"pace:{j['name']}"
-                        hw.publish_fn = lambda q_ch, rpy, on, _m=_mode, _j=_jm: publish_state(
+                        hw.publish_fn = lambda q_ch, rpy, on, raw=None, _m=_mode, _j=_jm: publish_state(
                             _m, _j.ch_to_q_joint(np.asarray(q_ch, float)),
-                            np.asarray(rpy, float), 1.0 / hw.dt, on, "pace")
+                            np.asarray(rpy, float), 1.0 / hw.dt, on, "pace",
+                            extra=leg_extra(_j, **(raw or {})))
                         # 자세 보고 + 영점 검증(모델각은 0 이어야 한다). 판정과 무관하게 찍는다.
                         hw.lim_ch = lim_ch            # ★채널별 트립 상한 적용
                         # ★스톨 감지용 중력 조회 — 표는 채널각으로 색인돼 있다.

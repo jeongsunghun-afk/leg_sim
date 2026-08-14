@@ -199,14 +199,26 @@ PACE 는 <b>시뮬이 실기를 따라가게</b> 하는 것을 목적으로 한�
 <tr><td class="ax">calf</td><td class="n">1.001</td><td class="n">0.761</td><td class="n">0.621</td><td class="n">0.82</td></tr>
 <tr><td class="ax">foot</td><td class="n">0.745</td><td class="n">0.359</td><td class="n">0.372</td><td class="n good">1.03</td></tr>
 </table>
-<div class="note ok"><b>foot 에서 궤적 재현매칭과 토크 램프 회귀가 3% 안에서 만난다.</b>
-완전히 독립인 두 방법이다. <code>JDAMP.foot</code> 을 실측 0.11 로 못박았더니 PACE 가
-쿨롱항을 절편값으로 되찾았다 — <i>"속도의존분을 damping 이 받으면 frictionloss 는
-τ_c(0) 이 된다"</i> 가 확인된다.</div>
-<div class="note"><b>kind 마다 어느 쪽이 맞는지 다르다</b> — thigh 는 스윕 쪽, foot 은
-절편 쪽. thigh 의 절편은 게이트를 못 넘은 런에서 나왔으니 못 믿는다. ⇒ 하나를 고르지
-않고 <b>씨앗은 기하평균, 상자는 둘을 감싸게</b> 잡고 적합에 맡긴다.</div>
+<div class="note"><b>⚠정정 — "3% 일치" 는 오독이었다.</b>
+<code>JFRIC.foot</code> 은 <b>매 실행에서 상자 하한에 앉는다</b>: fit_final 0.3723(하한
+0.3723, 0%) → fit_v2 0.2517(하한 0.2516, 0%). 하한을 내리면 값이 따라 내려간다.
+0.372 가 토크절편 0.359 와 가까웠던 건 <b>하한이 우연히 거기 있었기 때문</b>이다.</div>
 
+<div class="note key">원인은 <b>JDAMP↔JFRIC 축퇴</b>(r=+0.93) — 한쪽을 못박으면 다른 쪽이
+그만큼 미끄러진다. <code>JDAMP.foot</code> 자유면 (0.002, 0.52), 0.11 로 고정하면
+(0.11, 0.25). <b>분해는 궤적데이터로 못 가린다.</b> 의미 있는 비교는 <b>운용속도에서의
+총 마찰토크</b> τ = τ_c + b·q̇ 다.</div>
+
+<table>
+<tr><th>kind</th><th class="n">q̇ [dps]</th><th class="n">토크시험</th><th class="n">PACE</th><th class="n">비</th><th class="n">스윕 τ_c</th></tr>
+<tr><td class="ax">thigh</td><td class="n">44</td><td class="n">0.409</td><td class="n">0.637</td><td class="n warnc">1.56</td><td class="n">0.670</td></tr>
+<tr><td class="ax">calf</td><td class="n">46</td><td class="n">0.761</td><td class="n">0.579</td><td class="n"><b>0.76</b></td><td class="n">1.001</td></tr>
+<tr><td class="ax">foot</td><td class="n">40</td><td class="n">0.436</td><td class="n">0.328</td><td class="n"><b>0.75</b></td><td class="n">0.745</td></tr>
+</table>
+<div class="note"><b>calf·foot 에서 PACE 가 토크시험보다 약 25% 낮다</b> — 분해가 아니라
+총량에서 갈린다. thigh 는 반대인데 그 절편은 게이트를 못 넘은 런에서 나왔으니 못 믿는다.
+⇒ <b>마찰 분해는 아직 미해결이다.</b> 배포에는 총량이 맞는 쪽(PACE)을 쓰되 τ_c 와 b 의
+나눔은 신뢰구간이 넓다고 봐야 한다.</div>
 
 <h2>4 · 감쇠 — foot 에만 있다</h2>
 <table>

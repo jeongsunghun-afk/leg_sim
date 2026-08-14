@@ -159,7 +159,23 @@ def main() -> int:
             print(f"  ⇒ **(B) 엔코더가 커플링을 본다.** {drv} 1° 당 {dvn} 채널각이 {c_ch:+.3f}° 움직인다.")
             print(f"     측정·명령 양쪽을 보정해야 한다.")
             print(f"     모델각 기준 커플링 계수 c = {c_m:+.4f}  ← 이 값을 config 에 넣는다")
-        if r2_ch is not None and r2_ch < 0.90:
+        # ★(A) 에서는 **R² 가 낮은 게 정답이다** (2026-08-14 수정).
+        #   기울기가 0 이면 설명되는 분산도 0 이라 R²→0 이 된다. 종전엔 R²<0.90 이면
+        #   무조건 "다시 재라" 고 했는데, (A) 로 판정한 직후에 그 경고를 띄우면
+        #   **성공한 측정을 실패로 읽게 만든다.** 실제로 HL·HR 세 번 다 그랬다
+        #   (기울기 0.0000~0.0001 · R² 0.063~0.081 — 전부 정상적인 (A) 다).
+        #   ⇒ (A) 일 때는 **잔차 폭**으로 본다. foot 채널이 실제로 몇 도나 흔들렸나.
+        fspan = float(np.max(fch) - np.min(fch)) if len(fch) else 0.0
+        cspan = float(np.max(cch) - np.min(cch)) if len(cch) else 0.0
+        if abs(c_ch) < 0.02:
+            bound = fspan / cspan if cspan > 0 else float("nan")
+            print(f"\n  foot 채널각은 {fspan:.2f}° 밖에 안 움직였다(calf {cspan:.1f}°)")
+            print(f"  ⇒ 기울기 상한 |c| < {bound:.5f} — **0 이라고 봐도 된다.**")
+            print(f"     (R² {r2_ch:.3f} 이 낮은 건 정상이다. 기울기가 0 이면 설명할 분산이 없다)")
+            if fspan > 1.0:
+                print(f"  ⚠그래도 {fspan:.2f}° 는 크다 — 발목이 중력으로 흔들렸을 수 있다."
+                      f" hold 로 잡고 다시 잴 것(--expect-hold).")
+        elif r2_ch is not None and r2_ch < 0.90:
             print(f"\n  ⚠ R² {r2_ch:.3f} 로 낮다 — 선형이 아니거나 잡음(발목이 중력으로 흔들림)이 섞였다.")
             print(f"     hold 로 발목을 잡고 무릎만 JOG 로 돌려 다시 잴 것(--expect-hold).")
         # 자세 의존성: 앞/뒤 절반을 따로 적합해 비교

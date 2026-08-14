@@ -52,7 +52,19 @@ start)
     #   Emb 는 영원히 도니 버퍼가 flush 되지 않는다. pkill 로 죽이면 **통째로 버려진다.**
     #   ⇒ "RobotEmbedded 는 stdout 에 안 쓴다" 는 오판이었다. 실은 쓰는데 안 보였다.
     #     그 오판 때문에 EtherCAT 동결 원인 규명이 하루 막혔다.
-    ( cd "$EMB_DIR" && stdbuf -oL -eL "$EMB_BIN" > "$LOG" 2>&1 & )
+    # ★반복 스팸을 **솎아서** 쌓는다 (2026-08-14). 필터가 아예 없어서 로그가
+    #   **495 KB/s = 시간당 1.7GB** 로 자랐다 — 3.5GB 까지 갔고 디스크를 잡아먹었다.
+    #   ⚠전부 버리면 안 된다: `[STT]RxCnt` 는 EtherCAT **동결 판별의 증거**다
+    #     (RxCnt 가 안 늘면 동결). 그래서 버리는 게 아니라 **1/N 로 솎는다.**
+    #     N=500 이면 초당 5줄쯤 남아 동결 판별에는 차고 넘치고, 1 KB/s 로 떨어진다.
+    #     에러·경고 등 **그 외 모든 줄은 그대로 통과**한다.
+    #   ⚠awk 에 `fflush()` 를 넣는다 — stdout 이 파일이면 libc 가 블록 버퍼링으로
+    #     바꾸는 그 문제가 awk 에도 똑같이 생긴다(2026-08-12 에 Emb 에서 겪었다).
+    #   EMB_LOG_EVERY=1 로 두면 종전처럼 전량 기록한다(단기 정밀진단용).
+    _every=${EMB_LOG_EVERY:-500}
+    ( cd "$EMB_DIR" && stdbuf -oL -eL "$EMB_BIN" 2>&1 \
+        | awk -v n="$_every" '/^\[STT\]RxCnt|^\[SET\]RxCnt|^\[engRobot_Proc/ { if (++c % n) next } { print; fflush() }' \
+        > "$LOG" & )
     sleep 2
     if ! running; then
         echo "  무권한 기동 실패 → sudo 로 재시도(gpiomem/mem 접근이 필요한 듯):"

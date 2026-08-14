@@ -556,13 +556,38 @@ def t_inertia_full():
           f"runs={len(res.get('runs', []))}")
 
 
+def t_spec_schema():
+    """★spec.yaml 이 **의도한 모양으로 파싱되는가** (2026-08-14 추가).
+
+    2026-08-14 에 `measured_damping_joint:` 키 **아래**에 2칸 들여쓰기 주석을 달았더니
+    YAML 매핑이 거기서 끊겨 값 `7:`·`3:` 이 **friction 의 형제 키**가 되고 그 키 자체는
+    None 이 됐다. 파서는 조용히 통과했고 **실측 감쇠가 한 번도 안 읽혔다** —
+    적합을 두 번 돌린 뒤에야 출력의 JDAMP.foot 이 기본값인 걸 보고 알았다.
+    ⇒ 숫자 키가 dict 안쪽에만 있는지, 실측 블록이 dict 인지 검사한다.
+    """
+    import yaml
+    sp = yaml.safe_load(open(os.path.join(PACE, "spec.yaml"), encoding="utf-8"))
+    bad = [k for k in sp if not isinstance(k, str)]
+    check("최상위 키가 전부 문자열", not bad, f"{bad}")
+    for sec in ("friction", "torque_mode", "inertia_torque", "safety", "pace_multi"):
+        d = sp.get(sec)
+        if not isinstance(d, dict):
+            continue
+        bad = [k for k in d if not isinstance(k, str)]
+        check(f"{sec} 키가 전부 문자열", not bad, f"{bad}  ← 들여쓰기가 끊겼다")
+    fr = sp.get("friction") or {}
+    for key in ("measured_coulomb_ch", "measured_tau_static_ch", "measured_damping_joint"):
+        v = fr.get(key)
+        check(f"friction.{key} 가 dict", isinstance(v, dict), f"{type(v).__name__}")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
-               t_vref_sweep_synth, t_inertia_full):
+               t_vref_sweep_synth, t_inertia_full, t_spec_schema):
         try:
             fn()
         except Exception as e:

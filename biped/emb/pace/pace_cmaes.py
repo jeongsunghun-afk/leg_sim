@@ -396,10 +396,15 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     #     충분하고, 안 넣으면 상자 밖에 최적이 있는 상태로 계속 돈다.
     _md = (sp.get("friction") or {}).get("measured_damping_joint") or {}
     if _md:
+        # ⚠kind 별 **평균**을 쓴다. 종전엔 마지막 채널 값이 이겼다 — foot 은 좌우가
+        #   0.12/0.10 인데 0.10 만 반영됐다(dict 순서에 결과가 달렸다는 뜻이다).
+        _by = {}
         for c, v in _md.items():
             c = int(c)
             if c < len(names):
-                d0[kind_of(names[c])] = float(v)
+                _by.setdefault(kind_of(names[c]), []).append(float(v))
+        for k, vs in _by.items():
+            d0[k] = float(np.mean(vs))
     if per_axis:
         x0 = np.concatenate([[rot0], [d0[kind_of(x)] for x in names],
                              [f0[kind_of(x)] for x in names]])
@@ -427,7 +432,15 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     if JFRIC_SPAN[0] is not None:
         nj = len(names) if per_axis else len(KINDS)
         sl = slice(1 + nj, 1 + 2 * nj)
-        lo[sl] = x0[sl] * (1.0 - JFRIC_SPAN[0])
+        # ★상자를 **비대칭**으로 연다 (2026-08-14). 아래쪽을 더 넓게.
+        #   실측 JFRIC 은 **≤20dps 평탄부**에서 쟀는데 처프는 40~90dps 로 돈다.
+        #   토크시험이 그 속도대의 운동마찰을 따로 쟀고 **정지마찰의 54~89%** 였다
+        #   (Stribeck). 즉 실측값은 처프 속도대에서 **과대평가**다.
+        #   실제로 네 번의 적합에서 JFRIC.calf·JFRIC.foot 이 **매번 하한에 박혔다** —
+        #   최적이 상자 밖 아래라는 뜻이다. 대칭 ±30% 로는 못 담는다.
+        #   ⇒ 아래 −50% · 위 +30%. 위쪽은 넓힐 이유가 없다(실측보다 큰 마찰은
+        #     물리적 근거가 없고, 넓히면 JDAMP 와의 축퇴만 키운다).
+        lo[sl] = x0[sl] * (1.0 - JFRIC_SPAN_DN[0])
         hi[sl] = x0[sl] * (1.0 + JFRIC_SPAN[0])
     nb = len(names)
     x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
@@ -461,7 +474,8 @@ def init_bounds(spec_path, names, per_axis, pin=()):
 
 
 # bias·delay 경계 — 실측 근거로 잡는다(임의값이 아니다)
-JFRIC_SPAN = [None]   # init_bounds 가 채운다(실측 있으면 ±비율)
+JFRIC_SPAN = [None]   # init_bounds 가 채운다(실측 있으면 +비율)
+JFRIC_SPAN_DN = [0.50]  # ★아래쪽은 더 넓게 — Stribeck 으로 실측이 과대평가다(위 주석)
 ROTOR_SPAN = (0.10, 3.0)   # 실측 초기값이 있으나 τ_ff 경로 1점 — 하한을 연다
 JDAMP_SPAN = (0.10, 10.0)  # **실측이 없다**(각축 전부 nan). 좁힐 근거가 없다
 BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° 였다(2026-08-11)
@@ -659,7 +673,7 @@ def main() -> int:
     print(f"■ 초기값 — {len(x0)} 모수 "
           f"(동역학 {len(x0)-len(D['names'])-1} + bias {len(D['names'])} + delay 1). "
           f"ROTOR_I ×{ROTOR_SPAN[0]}~{ROTOR_SPAN[1]} · JDAMP ×{JDAMP_SPAN[0]}~{JDAMP_SPAN[1]} · "
-          f"JFRIC ×{1-JFRIC_SPAN[0]:.2g}~{1+JFRIC_SPAN[0]:.2g} · "
+          f"JFRIC ×{1-JFRIC_SPAN_DN[0]:.2g}~{1+JFRIC_SPAN[0]:.2g} · "
           f"bias ±{BIAS_MAX}° · delay {DELAY_LO*1e3:.0f}~{DELAY_HI*1e3:.0f}ms")
     report(D["names"], x0, a.per_axis)
     plab = param_labels(D["names"], a.per_axis)

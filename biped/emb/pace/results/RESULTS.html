@@ -1,652 +1,164 @@
-<title>액추에이터 식별 — 최종값 (fit_v2)</title>
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>액추에이터 식별 — 최종값</title>
 <style>
-/* ── 팔레트 ────────────────────────────────────────────────
-   light = bare :root. dark = 미디어쿼리(OS) + [data-theme] 스탬프(토글) 양쪽.
-   accent/flag 쌍은 dataviz validate_palette.js 로 두 모드 모두 ALL PASS.  */
-:root{
-  --ground:#f4f6f8; --surf:#ffffff; --surf2:#eef2f6;
-  --rule:#dde3e9;  --rule2:#c9d2da;
-  --ink:#12171c;   --ink2:#48535d;  --mut:#79848e;
-  --acc:#1a5a94;   --acc-soft:#dceaf6; --acc-line:#9cc0dd;
-  --flag:#b3541e;  --flag-soft:#f8e8dc;
-  --hatch:rgba(179,84,30,.10);
-  --shadow:0 1px 2px rgba(18,23,28,.05);
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --ground:#101317; --surf:#181c21; --surf2:#1f242a;
-    --rule:#272d34;  --rule2:#3a424a;
-    --ink:#e9edf1;   --ink2:#aab5bf;  --mut:#77828c;
-    --acc:#4a8fce;   --acc-soft:#16283a; --acc-line:#2d4a66;
-    --flag:#cf7a2e;  --flag-soft:#2c1f14;
-    --hatch:rgba(207,122,46,.13);
-    --shadow:none;
-  }
-}
-:root[data-theme="dark"]{
-  --ground:#101317; --surf:#181c21; --surf2:#1f242a;
-  --rule:#272d34;  --rule2:#3a424a;
-  --ink:#e9edf1;   --ink2:#aab5bf;  --mut:#77828c;
-  --acc:#4a8fce;   --acc-soft:#16283a; --acc-line:#2d4a66;
-  --flag:#cf7a2e;  --flag-soft:#2c1f14;
-  --hatch:rgba(207,122,46,.13);
-  --shadow:none;
-}
-
+:root{--bg:#fbfbfa;--surf:#fff;--line:#e6e4e0;--ink:#1c1b19;--ink2:#4a4744;--mut:#8a857e;
+ --acc:#3b6ea5;--ok:#15803d;--wa:#b45309;--no:#b91c1c}
+@media(prefers-color-scheme:dark){:root{--bg:#161513;--surf:#1e1d1a;--line:#332f2b;
+ --ink:#eceae6;--ink2:#c3bdb5;--mut:#8d867d;--acc:#7aa7d4;--ok:#5fbf7f;--wa:#e0a458;--no:#e58a84}}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{
-  margin:0; background:var(--ground); color:var(--ink);
-  font:15px/1.7 'Pretendard Variable',Pretendard,'Noto Sans KR',-apple-system,
-       BlinkMacSystemFont,'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
-  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
-}
-/* 이 페이지의 display 서체는 모노다 — 숫자가 주인공이라서. */
-code,pre,.mono,.num,th,.chip,.eyebrow,.pill{
-  font-family:ui-monospace,'SFMono-Regular','JetBrains Mono','Cascadia Mono',
-              'Roboto Mono',Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;
-}
-.wrap{max-width:960px;margin:0 auto;padding:44px 24px 96px}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:15px/1.7 -apple-system,'Noto Sans KR',Pretendard,system-ui,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:40px 22px 90px}
+h1{font-size:26px;letter-spacing:-.02em;margin:0 0 26px}
+h2{font-size:19px;margin:46px 0 12px;padding-top:20px;border-top:1px solid var(--line)}
+h3{font-size:15px;margin:26px 0 6px;color:var(--ink2)}
+p{margin:11px 0}
+p.warn{background:var(--surf);border:1px solid var(--line);border-left:3px solid var(--wa);
+ border-radius:0 6px 6px 0;padding:11px 15px;font-size:14px;color:var(--ink2)}
+p.warn b{color:var(--ink)}
+.quote{border-left:3px solid var(--acc);background:var(--surf);padding:11px 15px;
+ margin:12px 0;border-radius:0 6px 6px 0;font-size:14px;color:var(--ink2)}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;
+ font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:600;color:var(--mut);font-size:12px;letter-spacing:.04em;
+ padding:0 10px 7px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--line)}
+td.n,th.n{text-align:right}
+td.ok{color:var(--ok);font-weight:600}td.no{color:var(--no);font-weight:600}
+td.wa{color:var(--wa);font-weight:600}
+tr:last-child td{border-bottom:none}
+pre{background:var(--surf);border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+ overflow-x:auto;font:12.5px/1.75 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2)}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surf);
+ border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+pre code{border:0;background:none;padding:0}
+</style></head>
+<body><div class="wrap">
+<h1>액추에이터 식별 — 최종값 (2026-08-14)</h1>
+<p><code>fit_v2</code> 기준. 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다.</p>
+<h2>0. 무엇을 채웠나 — 수식으로</h2>
+<p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
+<pre> τ_cmd(t − T_d)  =  [ I_link + I_rot·N² ]·q̈  +  b·q̇  +  τ_c·sgn(q̇)  +  g(q)
+      └── ⑥ ──┘      └─ ① ─┘  └─ ② ─┘         └ ③ ┘    └──── ④ ────┘   └─ ⑤ ─┘
+                     └──── dof_armature ────┘   dof_damping  dof_frictionloss
 
-/* ── 머리 ── */
-.mast{display:flex;flex-direction:column;gap:8px;margin-bottom:30px}
-.eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
-h1{font-size:30px;line-height:1.25;letter-spacing:-.025em;font-weight:700;margin:0;
-   text-wrap:balance}
-.deck{color:var(--ink2);font-size:14.5px;margin:0;max-width:62ch}
-
-/* ── 섹션 ── */
-section{margin-top:52px}
-.shead{display:flex;align-items:baseline;gap:14px;padding-bottom:11px;
-  border-bottom:1px solid var(--rule2);margin-bottom:20px}
-.shead .n{font-size:12px;letter-spacing:.1em;color:var(--acc);font-weight:600;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-h2{font-size:20px;letter-spacing:-.015em;font-weight:650;margin:0;text-wrap:balance}
-.shead .tag{margin-left:auto;font-size:11.5px;letter-spacing:.08em;color:var(--mut);
-  text-transform:uppercase;white-space:nowrap;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-h3{font-size:14px;font-weight:650;letter-spacing:.01em;color:var(--ink2);margin:30px 0 10px}
-p{margin:12px 0;max-width:66ch}
-b,strong{font-weight:650}
-a{color:var(--acc)}
-:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:2px}
-
-/* ── 카드/노트 ── */
-.card{background:var(--surf);border:1px solid var(--rule);border-radius:10px;
-  box-shadow:var(--shadow);padding:18px 20px;margin:18px 0}
-.note{background:var(--surf);border:1px solid var(--rule);border-radius:8px;
-  padding:13px 16px;margin:16px 0;font-size:14px;line-height:1.65;color:var(--ink2)}
-.note b{color:var(--ink)}
-.note.key{border-color:var(--acc-line);background:var(--acc-soft)}
-.note.flag{border-color:color-mix(in srgb,var(--flag) 40%,var(--rule));
-  background:var(--flag-soft)}
-.note .lead{color:var(--ink);font-weight:650}
-
-/* ── 지표 타일 ── */
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:10px;margin:24px 0 4px}
-.tile{background:var(--surf);border:1px solid var(--rule);border-radius:9px;
-  padding:13px 15px 12px;box-shadow:var(--shadow)}
-.tile .k{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-.tile .v{font-size:24px;font-weight:650;letter-spacing:-.03em;margin-top:5px;line-height:1.1;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums}
-.tile .v small{font-size:14px;font-weight:500;letter-spacing:0}
-.tile .s{font-size:12px;color:var(--mut);margin-top:5px;line-height:1.45}
-
-/* ── 표 ── */
-.tw{overflow-x:auto;margin:16px 0;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:min(100%,520px)}
-th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
-  font-weight:600;text-align:left;white-space:nowrap;padding:0 12px 8px;
-  border-bottom:1px solid var(--rule2)}
-td{padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
-tbody tr:last-child td{border-bottom:none}
-.n,th.n{text-align:right;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.ax{color:var(--ink2);white-space:nowrap;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-td.strong{font-weight:650;color:var(--ink)}
-tr.rand td{background:
-  repeating-linear-gradient(135deg,transparent 0 5px,var(--hatch) 5px 10px)}
-
-/* ── 신뢰도 미터: 색이 아니라 '개수'로 등급을 읽는다 ── */
-.meter{display:inline-flex;gap:3px;align-items:center;vertical-align:-1px}
-.meter i{width:7px;height:7px;border-radius:50%;box-sizing:border-box;
-  border:1px solid var(--acc)}
-.meter i.on{background:var(--acc)}
-.meter i.off{border-color:var(--rule2)}
-.grade{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
-.grade .lb{font-size:12px;color:var(--ink2)}
-.pill{display:inline-block;font-size:10.5px;letter-spacing:.06em;padding:2px 7px;
-  border-radius:4px;border:1px solid currentColor;white-space:nowrap}
-.pill.rnd{color:var(--flag)}
-.pill.wall{color:var(--mut)}
-
-/* ── 방정식 ── */
-.eq{display:flex;flex-wrap:wrap;align-items:flex-start;gap:4px 10px;
-  padding:6px 0 4px;overflow-x:auto}
-.term{display:flex;flex-direction:column;align-items:center;gap:7px;padding-bottom:2px}
-.chip{display:inline-flex;align-items:center;justify-content:center;min-width:20px;
-  height:19px;padding:0 5px;border-radius:5px;background:var(--acc-soft);
-  color:var(--acc);font-size:12px;font-weight:600;border:1px solid var(--acc-line)}
-.chip.ghost{visibility:hidden}
-.term .t{font-size:15.5px;color:var(--ink);white-space:nowrap;background:none;
-  border:none;padding:0}
-.term .sub{font-size:10.5px;letter-spacing:.05em;color:var(--mut);white-space:nowrap;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-.eq2{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:18px;padding-top:16px;
-  border-top:1px dashed var(--rule2);font-size:14px}
-.eq2 .row{display:flex;align-items:center;gap:9px}
-.eq2 .lbl{font-size:11.5px;letter-spacing:.06em;color:var(--mut);white-space:nowrap;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-
-/* ── 도형 ── */
-figure{margin:20px 0;background:var(--surf);border:1px solid var(--rule);
-  border-radius:10px;padding:18px 20px 14px;box-shadow:var(--shadow)}
-figure .fx{overflow-x:auto}
-svg{display:block;width:100%;height:auto;overflow:visible}
-figcaption{font-size:12.5px;line-height:1.6;color:var(--mut);margin-top:12px;
-  padding-top:11px;border-top:1px solid var(--rule);max-width:72ch}
-figcaption b{color:var(--ink2)}
-.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--ink2);
-  margin-top:12px}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
-
-/* ── HTML 막대 (적합 성적 · ζ) ── */
-.bars{display:grid;grid-template-columns:auto 1fr auto;gap:9px 14px;align-items:center;
-  font-size:13.5px}
-.bars .bl{color:var(--ink2);white-space:nowrap}
-.bars .bl.hi{color:var(--ink);font-weight:650}
-.track{height:14px;background:var(--surf2);border-radius:3px;position:relative}
-.fill{height:100%;background:var(--acc);border-radius:3px;opacity:.42}
-.fill.hi{opacity:1}
-.bars .bv{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink2)}
-.bars .bv.hi{color:var(--ink);font-weight:650}
-
-.zeta{position:relative;height:16px;min-width:130px}
-.zeta .band{position:absolute;top:4px;height:8px;background:var(--acc-soft);
-  border-left:1px solid var(--acc-line);border-right:1px solid var(--acc-line)}
-.zeta .axis{position:absolute;top:7px;left:0;right:0;height:1px;background:var(--rule2)}
-.zeta .dot{position:absolute;top:2px;width:12px;height:12px;margin-left:-6px;
-  border-radius:50%;background:var(--acc);border:2px solid var(--surf)}
-.zeta .dot.out{background:var(--flag)}
-
-pre{background:var(--surf2);border:1px solid var(--rule);border-radius:8px;
-  padding:14px 16px;overflow-x:auto;font-size:12.5px;line-height:1.75;color:var(--ink2);
-  margin:16px 0}
-p code,li code,td code,figcaption code,.note code{background:var(--surf2);
-  border:1px solid var(--rule);border-radius:4px;padding:1px 5px;font-size:12.5px}
-
-/* ── 다음 시험 ── */
-ol.next{list-style:none;counter-reset:t;padding:0;margin:18px 0;display:grid;gap:12px}
-ol.next li{counter-increment:t;background:var(--surf);border:1px solid var(--rule);
-  border-radius:9px;padding:15px 18px 15px 54px;position:relative;box-shadow:var(--shadow)}
-ol.next li::before{content:counter(t);position:absolute;left:17px;top:15px;
-  width:22px;height:22px;border-radius:6px;background:var(--acc-soft);color:var(--acc);
-  border:1px solid var(--acc-line);display:flex;align-items:center;justify-content:center;
-  font-size:12px;font-weight:600;
-  font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
-ol.next li.top{border-color:var(--acc-line)}
-ol.next h4{margin:0 0 6px;font-size:14.5px;font-weight:650;letter-spacing:-.005em}
-ol.next p{margin:6px 0 0;font-size:13.5px;color:var(--ink2);max-width:64ch}
-blockquote{margin:11px 0 0;padding:10px 14px;border-left:2px solid var(--acc);
-  background:var(--acc-soft);border-radius:0 6px 6px 0;font-size:13.5px;color:var(--ink)}
-blockquote p{margin:0;color:inherit}
-
-.foot{margin-top:64px;padding-top:18px;border-top:1px solid var(--rule2);
-  font-size:12px;line-height:1.7;color:var(--mut)}
-.foot code{font-size:11.5px}
-
-@media (max-width:560px){
-  h1{font-size:24px}
-  .wrap{padding:32px 16px 72px}
-  .shead{flex-wrap:wrap}
-  .shead .tag{margin-left:0;flex-basis:100%}
-}
-</style>
-
-<div class="wrap">
-
-<header class="mast">
-  <div class="eyebrow">emb / pace · fit_v2 · 2026-08-14</div>
-  <h1>액추에이터 식별 — 최종값</h1>
-  <p class="deck">각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다.
-  값 옆의 등급은 그 값을 얼마나 믿을 수 있는지다 — 등급이 낮은 넷은
-  숫자가 아니라 <b>도메인 랜덤화의 입력</b>으로 다뤄야 한다.</p>
-</header>
-
-<div class="tiles">
-  <div class="tile"><div class="k">검증 RMS</div>
-    <div class="v">0.251<small>°</small></div>
-    <div class="s">게인 2배 · 별도 수집</div></div>
-  <div class="tile"><div class="k">ROTOR_I</div>
-    <div class="v">7.327<small>e−4</small></div>
-    <div class="s">4곳 ±10%</div></div>
-  <div class="tile"><div class="k">delay</div>
-    <div class="v">8.78<small> ms</small></div>
-    <div class="s">실측 8.39±0.79</div></div>
-  <div class="tile"><div class="k">닫힌 항</div>
-    <div class="v">5<small> / 8</small></div>
-    <div class="s">①②⑥⑦⑧</div></div>
-  <div class="tile"><div class="k">랜덤화 대상</div>
-    <div class="v">4</div>
-    <div class="s">damping hip·calf<br>frictionloss hip·foot</div></div>
-</div>
-
-
-<!-- ══ 0 ══ -->
-<section>
-<div class="shead"><span class="n">§0</span><h2>무엇을 채웠나 — 수식으로</h2>
-  <span class="tag">모델식</span></div>
-
-<p>한 축이 따르는 식은 이것이다. 각 항이 어느 파라미터고, 무엇으로 채웠는지 표시했다.</p>
-
-<figure>
-<div class="fx">
-<div class="eq" role="img" aria-label="한 축의 운동방정식: 지연된 토크명령 = 관성항 + 점성항 + 쿨롱마찰항 + 중력항">
-  <div class="term"><span class="chip">⑥</span>
-    <code class="t">τ_cmd(t − T_d)</code><span class="sub">delay</span></div>
-  <div class="term"><span class="chip ghost">·</span><code class="t">=</code>
-    <span class="sub">&nbsp;</span></div>
-  <div class="term"><span class="chip">①②</span>
-    <code class="t">[ I_link + I_rot·N² ]·q̈</code><span class="sub">dof_armature</span></div>
-  <div class="term"><span class="chip ghost">·</span><code class="t">+</code>
-    <span class="sub">&nbsp;</span></div>
-  <div class="term"><span class="chip">③</span>
-    <code class="t">b·q̇</code><span class="sub">dof_damping</span></div>
-  <div class="term"><span class="chip ghost">·</span><code class="t">+</code>
-    <span class="sub">&nbsp;</span></div>
-  <div class="term"><span class="chip">④</span>
-    <code class="t">τ_c·sgn(q̇)</code><span class="sub">dof_frictionloss</span></div>
-  <div class="term"><span class="chip ghost">·</span><code class="t">+</code>
-    <span class="sub">&nbsp;</span></div>
-  <div class="term"><span class="chip">⑤</span>
-    <code class="t">g(q)</code><span class="sub">CAD 계산</span></div>
-</div>
-<div class="eq2">
-  <div class="row"><span class="lbl">발목만</span>
-    <code class="t">q_raw = q_foot + coef·q_calf</code><span class="chip">⑦</span></div>
-  <div class="row"><span class="lbl">관측</span>
-    <code class="t">q_enc = q_true + q̃_b</code><span class="chip">⑧</span></div>
-</div>
-</div>
-<figcaption>발목 좌표 <code>q_raw</code> 는 엔코더·명령·토크가 <b>전부</b> 쓰는 좌표다.</figcaption>
-</figure>
-
-<div class="tw">
+ 그리고 발목만:   q_raw = q_foot + coef·q_calf   ← ⑦    (엔코더·명령·토크 전부 이 좌표)
+ 관측:            q_enc = q_true + q̃_b          ← ⑧</pre>
 <table>
-<thead><tr><th></th><th>항</th><th>무엇으로 채웠나</th><th>상태</th></tr></thead>
-<tbody>
-<tr><td><span class="chip">①</span></td><td><code>I_link</code> 링크 관성</td>
-    <td><b>CAD</b> — 실측으로 검증</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">calf·foot ±8.3% · thigh·hip 미검증</span></span></td></tr>
-<tr><td><span class="chip">②</span></td><td><code>I_rot·N²</code> 로터 반사관성</td>
-    <td><b>각축 토크시험</b> ROTOR_I 7.327e−4</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">4곳 ±10%</span></span></td></tr>
-<tr><td><span class="chip">③</span></td><td><code>b</code> 점성</td>
-    <td>foot 은 <b>각축</b>, 나머지는 PACE</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span>
-    <span class="lb">foot 만 좋다 · calf·hip 못 믿는다</span></span></td></tr>
-<tr><td><span class="chip">④</span></td><td><code>τ_c</code> 쿨롱마찰</td>
-    <td><b>PACE</b> (각축과 25% 차)</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span>
-    <span class="lb">③과 축퇴라 나눔이 안 됨</span></span></td></tr>
-<tr><td><span class="chip">⑤</span></td><td><code>g(q)</code> 중력</td>
-    <td><b>중력표 + 자세별 실측보정</b></td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">시험 내부용 · MJCF 는 CAD 가 계산</span></span></td></tr>
-<tr><td><span class="chip">⑥</span></td><td><code>T_d</code> 지연</td>
-    <td><b>직접 실측</b> 8.39±0.79 ms</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">좋다</span></span></td></tr>
-<tr><td><span class="chip">⑦</span></td><td><code>coef</code> 커플링</td>
-    <td><b>관성 대조</b> 비 1.06</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">coef ≈ 1 확정</span></span></td></tr>
-<tr><td><span class="chip">⑧</span></td><td><code>q̃_b</code> 엔코더 영점</td>
-    <td><b>PACE</b> 축별 8개</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span>
-    <span class="lb">최대 0.52°</span></span></td></tr>
-</tbody>
-</table>
-</div>
-
-<div class="note key"><span class="lead">①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</span><br>
-③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다 (§4-②).</div>
-
-<div class="note flag"><b>MuJoCo 는 이 식 그대로가 아니다.</b> <code>τ_c·sgn(q̇)</code> 만 있고
-<b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데
-그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</div>
-</section>
-
-
-<!-- ══ 1 ══ -->
-<section>
-<div class="shead"><span class="n">§1</span><h2>MJCF 에 넣을 값</h2>
-  <span class="tag">확정 · 등급 포함</span></div>
-
-<div class="tw">
+<tr><th></th><th>항</th><th>무엇으로 채웠나</th><th>상태</th></tr>
+<tr><td>①</td><td><code>I_link</code> 링크 관성</td><td><b>CAD</b> — 실측으로 검증</td><td class="ok">✅ calf·foot ±8.3% · thigh·hip 미검증</td></tr>
+<tr><td>②</td><td><code>I_rot·N²</code> 로터 반사관성</td><td><b>각축 토크시험</b> ROTOR_I 7.327e-4</td><td class="ok">✅ 4곳 ±10%</td></tr>
+<tr><td>③</td><td><code>b</code> 점성</td><td>foot 은 <b>각축</b>, 나머지는 PACE</td><td class="ok">⚠ foot ✅ · thigh 보통 · calf·hip ❌</td></tr>
+<tr><td>④</td><td><code>τ_c</code> 쿨롱마찰</td><td><b>PACE</b> (각축과 25% 차)</td><td class="wa">⚠ ③과 축퇴라 나눔이 안 됨</td></tr>
+<tr><td>⑤</td><td><code>g(q)</code> 중력</td><td><b>중력표 + 자세별 실측보정</b></td><td class="ok">✅ 시험 내부용 (MJCF 는 CAD 가 계산)</td></tr>
+<tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
+<tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>관성 대조</b> 비 1.06</td><td class="ok">✅ coef ≈ 1 확정</td></tr>
+<tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
+<p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(§4-②).</p>
+<p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
+<h2>1. MJCF 에 넣을 값</h2>
 <table>
-<thead><tr><th>kind</th><th class="n">dof_armature</th><th class="n">dof_damping</th>
-  <th class="n">dof_frictionloss</th></tr></thead>
-<tbody>
-<tr><td class="ax">hip</td><td class="n">0.0359</td>
-    <td class="n">0.090 <span class="pill wall">고정</span></td>
-    <td class="n">0.827 <span class="pill wall">고정</span></td></tr>
-<tr><td class="ax">thigh</td><td class="n">0.0359</td><td class="n">0.170</td>
-    <td class="n">0.506</td></tr>
-<tr><td class="ax">calf</td><td class="n">0.0808</td>
-    <td class="n">0.009 <span class="pill wall">벽</span></td><td class="n">0.572</td></tr>
-<tr><td class="ax">foot</td><td class="n strong">0 → tendon</td><td class="n">0.110</td>
-    <td class="n">0.252 <span class="pill wall">벽</span></td></tr>
-</tbody>
-</table>
-</div>
-
-<div class="card">
-  <div style="display:flex;flex-wrap:wrap;gap:8px 34px;font-size:14px">
-    <div><span class="lbl mono" style="font-size:11.5px;letter-spacing:.06em;color:var(--mut)">TENDON_ARMATURE (foot)</span>
-      <div class="num" style="font-size:19px;font-weight:650">0.0517</div></div>
-    <div><span class="lbl mono" style="font-size:11.5px;letter-spacing:.06em;color:var(--mut)">DELAY</span>
-      <div class="num" style="font-size:19px;font-weight:650">8.78 ms</div></div>
-  </div>
-</div>
-
-<pre>armature = ROTOR_I · N²     ROTOR_I = 7.327e-4 ± 10%     N = 7 · gear_k</pre>
-
-<div class="note flag"><b>foot 은 armature 를 tendon 으로 옮긴다</b> — 더하는 게 아니라
-옮기는 것이다. <code>dof_armature[foot] = 0</code> 을 안 하면 이중 계상이다.</div>
-
+<tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
+<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
+<tr><td>thigh</td><td class="n">0.0359</td><td class="n">0.170</td><td class="n">0.506</td></tr>
+<tr><td>calf</td><td class="n">0.0808</td><td class="n">0.009 ★</td><td class="n">0.572</td></tr>
+<tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.252 ★</td></tr></table>
+<p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.78 ms</b></p>
+<p class="warn">⚠ 고정한 값(식별 안 됨) ★ 상자 벽(더 낮을 수 있음)</p>
+<pre>armature = ROTOR_I · N²    ROTOR_I = 7.327e-4 ± 10%    N = 7 · gear_k
+⚠ foot 은 armature 를 tendon 으로 옮긴다 — dof_armature[foot]=0 안 하면 이중 계상</pre>
 <h3>값마다 얼마나 믿을 수 있나</h3>
-<div class="tw">
 <table>
-<thead><tr><th>값</th><th>출처</th><th class="n">오차</th><th>등급</th></tr></thead>
-<tbody>
-<tr><td class="ax">ROTOR_I 7.327e−4</td><td>각축 토크시험 4곳</td><td class="n strong">±10%</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lb">좋다</span></span></td></tr>
-<tr><td class="ax">damping.foot 0.110</td><td>각축 토크시험 좌우</td><td class="n strong">±0.012 <span style="font-weight:400;color:var(--mut)">(11%)</span></td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lb">좋다</span></span></td></tr>
-<tr><td class="ax">delay 8.78 ms</td><td>직접 실측 8.39±0.79</td><td class="n strong">±0.79</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lb">좋다</span></span></td></tr>
-<tr><td class="ax">damping.thigh 0.170</td><td>PACE 만</td><td class="n">교차검증 없음</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="off"></i></span><span class="lb">보통</span></span></td></tr>
-<tr><td class="ax">frictionloss thigh·calf</td><td>PACE</td><td class="n strong">±25%</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="on"></i><i class="off"></i></span><span class="lb">보통</span></span></td></tr>
-<tr class="rand"><td class="ax">damping.calf 0.009</td><td>PACE (상자 벽)</td><td class="n strong">0 ~ 0.17</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span><span class="pill rnd">랜덤화</span></span></td></tr>
-<tr class="rand"><td class="ax">damping.hip 0.090</td><td>없음 — 옛 외삽값</td><td class="n">미측정</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span><span class="pill rnd">랜덤화</span></span></td></tr>
-<tr class="rand"><td class="ax">frictionloss.foot 0.252</td><td>PACE (상자 벽)</td><td class="n">이 값 <b>이상</b></td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span><span class="pill rnd">랜덤화</span></span></td></tr>
-<tr class="rand"><td class="ax">frictionloss.hip 0.827</td><td>위치스윕 (고정)</td><td class="n">미검증</td>
-    <td><span class="grade"><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span><span class="pill rnd">랜덤화</span></span></td></tr>
-</tbody>
-</table>
-</div>
-<div class="legend">
-  <span><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></span> 좋다 — 독립 교차검증됨</span>
-  <span><span class="meter"><i class="on"></i><i class="on"></i><i class="off"></i></span> 보통 — 단일 출처</span>
-  <span><span class="meter"><i class="on"></i><i class="off"></i><i class="off"></i></span> 못 믿는다 — 빗금 행</span>
-</div>
-<div class="note flag"><b>못 믿는 넷은 도메인 랜덤화 대상으로 둘 것.</b>
-셋(<code>damping.calf</code>·<code>damping.hip</code> 그리고 §2 의 hip·thigh 관성)은
-§4-① 한 번으로 같이 풀린다.</div>
-</section>
-
-
-<!-- ══ 2 ══ -->
-<section>
-<div class="shead"><span class="n">§2</span><h2>CAD 가 얼마나 안 맞나</h2>
-  <span class="tag">축별 관성 대조</span></div>
-
-<figure>
-<div class="fx">
-<svg viewBox="0 0 780 208" role="img"
-  aria-label="축별 실측 관성이 그 자세의 다물체 예측과 얼마나 다른가. HL_calf +8.3%, HR_calf +5.5%, HL_foot −8.3%, HR_foot +2.2%, HL_thigh +41% (게이트 탈락).">
-  <defs>
-    <pattern id="hx" width="7" height="7" patternTransform="rotate(135)"
-      patternUnits="userSpaceOnUse">
-      <rect width="7" height="7" fill="var(--surf2)"/>
-      <line x1="0" y1="0" x2="0" y2="7" stroke="var(--rule2)" stroke-width="2.5"/>
-    </pattern>
-    <style>
-      .gl{stroke:var(--rule);stroke-width:1}
-      .zl{stroke:var(--rule2);stroke-width:1.5}
-      .tk{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
-      .rl{fill:var(--ink2);font:12px ui-monospace,Menlo,monospace}
-      .vl{fill:var(--ink);font:11.5px ui-monospace,Menlo,monospace;font-weight:600}
-      .vm{fill:var(--mut);font:11.5px ui-monospace,Menlo,monospace}
-      .bar{fill:var(--acc)}
-    </style>
-  </defs>
-
-  <!-- 눈금: 0 은 x=300, 1% = 7px -->
-  <g>
-    <line class="gl" x1="195" y1="14" x2="195" y2="164"/>
-    <line class="zl" x1="300" y1="10" x2="300" y2="168"/>
-    <line class="gl" x1="405" y1="14" x2="405" y2="164"/>
-    <line class="gl" x1="510" y1="14" x2="510" y2="164"/>
-    <line class="gl" x1="615" y1="14" x2="615" y2="164"/>
-    <text class="tk" x="195" y="182" text-anchor="middle">−15%</text>
-    <text class="tk" x="300" y="182" text-anchor="middle">0</text>
-    <text class="tk" x="405" y="182" text-anchor="middle">+15%</text>
-    <text class="tk" x="510" y="182" text-anchor="middle">+30%</text>
-    <text class="tk" x="615" y="182" text-anchor="middle">+45%</text>
-    <text class="tk" x="300" y="200" text-anchor="middle">실측 − 예측 (예측 대비 %)</text>
-  </g>
-
-  <!-- HL_calf +8.3 -->
-  <text class="rl" x="176" y="30" text-anchor="end">HL_calf</text>
-  <rect class="bar" x="300" y="20" width="58.1" height="14" rx="4">
-    <title>HL_calf — 예측 0.0991 / 실측 0.1073 (+8.3%)</title></rect>
-  <text class="vl" x="366" y="31">+8.3%</text>
-
-  <!-- HR_calf +5.5 -->
-  <text class="rl" x="176" y="59" text-anchor="end">HR_calf</text>
-  <rect class="bar" x="300" y="49" width="38.5" height="14" rx="4">
-    <title>HR_calf — 예측 0.0991 / 실측 0.1046 (+5.5%)</title></rect>
-  <text class="vl" x="346" y="60">+5.5%</text>
-
-  <!-- HL_foot −8.3 -->
-  <text class="rl" x="176" y="88" text-anchor="end">HL_foot</text>
-  <rect class="bar" x="241.9" y="78" width="58.1" height="14" rx="4">
-    <title>HL_foot — 예측 0.0533 / 실측 0.0489 (−8.3%)</title></rect>
-  <text class="vl" x="234" y="89" text-anchor="end">−8.3%</text>
-
-  <!-- HR_foot +2.2 -->
-  <text class="rl" x="176" y="117" text-anchor="end">HR_foot</text>
-  <rect class="bar" x="300" y="107" width="15.4" height="14" rx="4">
-    <title>HR_foot — 예측 0.0533 / 실측 0.0545 (+2.2%)</title></rect>
-  <text class="vl" x="323" y="118">+2.2%</text>
-
-  <!-- HL_thigh +41 — 무효 -->
-  <text class="rl" x="176" y="146" text-anchor="end" opacity=".62">HL_thigh</text>
-  <rect x="300" y="136" width="287" height="14" rx="4" fill="url(#hx)"
-    stroke="var(--rule2)" stroke-width="1">
-    <title>HL_thigh — 예측 0.1849 / 실측 0.2607 (+41%) · 방향편차 15.8% 로 게이트 탈락, 값 무효</title></rect>
-  <text class="vm" x="595" y="147">+41% · 무효</text>
-</svg>
-</div>
-<div class="legend">
-  <span><i style="background:var(--acc)"></i>유효 — 부호는 막대 방향으로 읽는다</span>
-  <span><i style="background:var(--surf2);border:1px solid var(--rule2);
-    background-image:repeating-linear-gradient(135deg,transparent 0 3px,var(--rule2) 3px 5px)"></i>게이트 탈락 — 값 자체가 무효</span>
-</div>
-<figcaption>실측 관성을 <b>그 자세의 다물체 예측</b>과 비교했다.
-calf·foot 넷이 ±8.3% 안이고 <b>부호가 갈린다</b> ⇒ 계통오차가 아니라 산포다.
-<b>CAD 질량·관성은 맞다.</b> hip 좌우는 미측정.</figcaption>
-</figure>
-
-<div class="tw">
+<tr><th>값</th><th>출처</th><th>오차</th><th>믿을 수 있나</th></tr>
+<tr><td><code>ROTOR_I</code> 7.327e-4</td><td>각축 토크시험 4곳</td><td><b>±10%</b></td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>damping.foot</code> 0.110</td><td>각축 토크시험 좌우</td><td><b>±0.012</b> (11%)</td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>delay</code> 8.78 ms</td><td>직접 실측 8.39±0.79</td><td><b>±0.79</b></td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>damping.thigh</code> 0.170</td><td>PACE 만</td><td>교차검증 없음</td><td class="wa">⚠ 보통</td></tr>
+<tr><td><code>frictionloss</code> thigh·calf</td><td>PACE</td><td><b>±25%</b></td><td class="wa">⚠ 보통</td></tr>
+<tr><td><code>damping.calf</code> 0.009</td><td>PACE(벽)</td><td><b>0 ~ 0.17</b></td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>frictionloss.foot</code> 0.252</td><td>PACE(벽)</td><td>이 값 <b>이상</b></td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
+<p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
+<h2>2. CAD 가 얼마나 안 맞나 (축별)</h2>
+<p>실측 관성 vs <b>그 자세의 다물체 예측</b>.</p>
 <table>
-<thead><tr><th>축</th><th class="n">예측</th><th class="n">실측</th><th class="n">오차</th></tr></thead>
-<tbody>
-<tr><td class="ax">HL_calf</td><td class="n">0.0991</td><td class="n">0.1073</td><td class="n strong">+8.3%</td></tr>
-<tr><td class="ax">HR_calf</td><td class="n">0.0991</td><td class="n">0.1046</td><td class="n strong">+5.5%</td></tr>
-<tr><td class="ax">HL_foot</td><td class="n">0.0533</td><td class="n">0.0489</td><td class="n strong">−8.3%</td></tr>
-<tr><td class="ax">HR_foot</td><td class="n">0.0533</td><td class="n">0.0545</td><td class="n strong">+2.2%</td></tr>
-<tr class="rand"><td class="ax">HL_thigh</td><td class="n">0.1849</td><td class="n">0.2607</td>
-    <td class="n">+41% · 무효</td></tr>
-<tr class="rand"><td class="ax">HL/HR_hip</td><td class="n">—</td><td class="n">—</td>
-    <td class="n">미측정</td></tr>
-</tbody>
-</table>
-</div>
-<div class="note">thigh 는 <b>방향편차 15.8% 로 게이트 탈락</b>이라 값 자체가 무효다 —
-"+41% 만큼 CAD 가 틀렸다" 가 아니라 "이 측정을 못 쓴다" 는 뜻이다.</div>
-</section>
-
-
-<!-- ══ 3 ══ -->
-<section>
-<div class="shead"><span class="n">§3</span><h2>모터 게인 — 바꿀 필요 없다</h2>
-  <span class="tag">배포 게인 재평가</span></div>
-
-<p>배포 게인을 <b>식별된 관성</b>으로 다시 평가하니 전부 정상 범위다.</p>
-
-<div class="tw">
+<tr><th>축</th><th>예측</th><th>실측</th><th>오차</th></tr>
+<tr><td>HL_calf</td><td class="n">0.0991</td><td class="n">0.1073</td><td><b>+8.3%</b></td></tr>
+<tr><td>HR_calf</td><td class="n">0.0991</td><td class="n">0.1046</td><td><b>+5.5%</b></td></tr>
+<tr><td>HL_foot</td><td class="n">0.0533</td><td class="n">0.0489</td><td><b>−8.3%</b></td></tr>
+<tr><td>HR_foot</td><td class="n">0.0533</td><td class="n">0.0545</td><td><b>+2.2%</b></td></tr>
+<tr><td>HL_thigh</td><td class="n">0.1887</td><td class="n">0.2479</td><td class="no">+31% ❌ 원리적 한계</td></tr>
+<tr><td>HL/HR_hip</td><td class="n">—</td><td class="n">—</td><td>미측정</td></tr></table>
+<p><b>calf·foot 넷이 ±8.3% 안이고 부호가 갈린다</b> ⇒ 계통오차가 아니라 산포. <b>CAD 질량·관성은 맞다.</b></p>
+<p class="warn">⚠<b>thigh 는 <code>--solo</code> 로 못 잰다 — 원리적 한계다</b> (2026-08-14 확인). 중력창을 넣어 방향편차를 15.8% → <b>2.6%</b> 로 잡았는데도 +31% 가 남는다. 이유:</p>
+<div class="quote"><code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다. 주기 ≈ 2π√(L/g) = <b>0.90 s</b> 인데</div>
+<div class="quote">런 길이가 0.21~0.48 s — <b>주기의 39%</b> 다. <code>M⁻¹</code> 예측은 "모든 자유 dof 가 같이</div>
+<div class="quote">가속" 하는 <b>t→0 극한</b>인데, 그만큼 긴 런에서는 calf 가 뒤처지고 thigh 가 그</div>
+<div class="quote">관성을 끌고 간다. 자유(0.189)와 고정(0.221) 사이 어디도 아닌 값이 나온다.</div>
+<p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>물리적으로 고정</b>해야 한다 (홀드는 유한 강성이라 안 된다 — §2 참조).</p>
+<h2>3. 모터 게인 — <b>바꿀 필요 없다</b></h2>
+<p>배포 게인을 식별된 관성으로 평가하니 전부 정상 범위다.</p>
 <table>
-<thead><tr><th>kind</th><th class="n">kp [채널]</th><th class="n">kd [채널]</th>
-  <th class="n">f_n</th><th class="n">ζ</th><th style="width:190px">ζ 위치</th></tr></thead>
-<tbody>
-<tr><td class="ax">hip</td><td class="n">100</td><td class="n">6.0</td><td class="n">3.5 Hz</td>
-    <td class="n strong">0.66</td>
-    <td><div class="zeta"><div class="axis"></div>
-      <div class="band" style="left:50%;width:16.7%"></div>
-      <div class="dot" style="left:55%" title="ζ = 0.66"></div></div></td></tr>
-<tr><td class="ax">thigh</td><td class="n">50</td><td class="n">4.0</td><td class="n">2.7 Hz</td>
-    <td class="n strong">0.69</td>
-    <td><div class="zeta"><div class="axis"></div>
-      <div class="band" style="left:50%;width:16.7%"></div>
-      <div class="dot" style="left:57.5%" title="ζ = 0.69"></div></div></td></tr>
-<tr><td class="ax">calf</td><td class="n">80</td><td class="n">3.5</td><td class="n">5.3 Hz</td>
-    <td class="n strong">0.73</td>
-    <td><div class="zeta"><div class="axis"></div>
-      <div class="band" style="left:50%;width:16.7%"></div>
-      <div class="dot" style="left:60.8%" title="ζ = 0.73"></div></div></td></tr>
-<tr><td class="ax">foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.5 Hz</td>
-    <td class="n strong">0.94</td>
-    <td><div class="zeta"><div class="axis"></div>
-      <div class="band" style="left:50%;width:16.7%"></div>
-      <div class="dot out" style="left:78.3%" title="ζ = 0.94 — 약간 과감쇠"></div></div></td></tr>
-</tbody>
-</table>
-</div>
-<div class="legend">
-  <span><i style="background:var(--acc-soft);border:1px solid var(--acc-line)"></i>ζ 0.6~0.8 목표대</span>
-  <span><i style="background:var(--flag);border-radius:50%"></i>대 바깥</span>
-  <span style="color:var(--mut)">가로축 0 → 1.2</span>
-</div>
-
+<tr><th>kind</th><th>kp [채널]</th><th>kd [채널]</th><th>f_n</th><th>ζ</th><th>판정</th></tr>
+<tr><td>hip</td><td class="n">100</td><td class="n">6.0</td><td class="n">3.5 Hz</td><td class="n">0.66</td><td class="ok">✅</td></tr>
+<tr><td>thigh</td><td class="n">50</td><td class="n">4.0</td><td class="n">2.7 Hz</td><td class="n">0.69</td><td class="ok">✅</td></tr>
+<tr><td>calf</td><td class="n">80</td><td class="n">3.5</td><td class="n">5.3 Hz</td><td class="n">0.73</td><td class="ok">✅</td></tr>
+<tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.5 Hz</td><td class="n">0.94</td><td class="ok">✅ 약간 과감쇠</td></tr></table>
 <p>foot 만 ζ 0.94 로 조금 높다. 굳이 맞추려면 <b>kd 2.0 → 1.5</b>. 급하지 않다.</p>
-<div class="note">시험용 게인은 별도다 — 식별 처프는 <b>kp 를 낮추고</b>(궤적이 명령에 붙으면
-파라미터 정보가 사라진다), <b>홈복귀는 배포 게인</b>을 쓴다.</div>
-</section>
-
-
-<!-- ══ 4 ══ -->
-<section>
-<div class="shead"><span class="n">§4</span><h2>더 해야 할 시험</h2>
-  <span class="tag">우선순위 순</span></div>
-
-<ol class="next">
-<li class="top">
-  <h4>중력이 작은 자세에서 관성 재기 — 가장 값어치 있다</h4>
-  <p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이
-  <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를
-  못 넘는다 (thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
-  <blockquote><p>시험 자세를 <b>중력이 최소인 곳</b>으로 옮기고 거기서 훑는다.
-  thigh 는 수직 근처, hip 은 롤축이 수평인 자세.</p></blockquote>
-  <p>이게 되면 §1 의 못 믿는 넷 중 <b>셋이 채워진다.</b></p>
-</li>
-<li>
-  <h4>마찰 분해 — 속도를 독립 제어하는 시험</h4>
-  <p><code>damping</code> ↔ <code>frictionloss</code> 가 축퇴(r = +0.93)라
-  <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
-  <blockquote><p><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇
-  단계로 바꾸면 τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> ·
-  기울기가 <code>damping</code></b> 이다.</p></blockquote>
-</li>
-<li>
-  <h4>HR_thigh 관성 (미측정)</h4>
-  <p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
-</li>
-<li>
-  <h4>다른 궤적으로 검증 한 번 더</h4>
-  <p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>
-  <pre style="margin:11px 0 0">python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
-  <p><code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 <b>6.8%</b>(최대 44 ms)까지 갔다.</p>
-</li>
-<li>
-  <h4>hip 좌우차 확정</h4>
-  <p>위치스윕은 16% 차 (0.928 / 0.803), 토크모드는 4% 차 (0.888 / 0.852). 어느 쪽이
-  맞는지 미결. 구조가 다르다는 가설(HR 샤프트 경유 · HL 직결)을 확인하려면 반복 측정이
-  필요하다.</p>
-</li>
-</ol>
-</section>
-
-
-<!-- ══ 5 ══ -->
-<section>
-<div class="shead"><span class="n">§5</span><h2>확정된 구조 · 적합 성적</h2>
-  <span class="tag">참고</span></div>
-
-<div class="tw">
+<p>시험용 게인은 별도다 — 식별 처프는 kp 를 낮추고(궤적이 명령에 붙으면 파라미터 정보가 사라진다), 홈복귀는 배포 게인을 쓴다.</p>
+<h2>4. 더 해야 할 시험</h2>
+<p>우선순위 순.</p>
+<h3>① <code>coef</code> 크기 식별 — <b>정확도에는 이게 가장 크다</b></h3>
+<p>foot 이 오차의 <b>63~72%</b> 다(축별 잔차 실측). 그리고 <code>coef</code> 는 저장소에 남은 <b>유일한 미측정 구조 파라미터</b>다 — <code>RL_INTERFACE.md</code>: *"부호는 [실측], 크기 1.0 은 [미확정], 근거는 육안 일치뿐"*. ⓪에서 백래시·유연성이 배제됐으므로 남은 후보다.</p>
+<div class="quote">엔코더로는 원리적으로 못 본다(케이스 A). 하지만 <b>PACE 로 식별할 수 있다</b> —</div>
+<div class="quote"><code>q_raw</code> 는 coef 가정과 무관하게 정확하고 <code>q_calf</code> 도 정확하므로,</div>
+<div class="quote"><code>c</code> 를 탐색변수로 넣고 <code>q_foot_true = q_raw − c·q_calf</code> 로 비교하면 된다.</div>
+<div class="quote">⚠비교 대상 자체가 <code>c</code> 에 의존하므로 <code>pace_cmaes</code> 수정이 필요하다.</div>
+<div class="quote">⚠축퇴 위험 — 다른 파라미터와 섞일 수 있다. **발목 출력쪽 센서(IMU 등)가 있으면</div>
+<div class="quote">  직접 끝난다.** 간접식별이 안 되면 그게 다음 수다.</div>
+<p>이게 가설대로면 foot 잔차가 절반 이하로 떨어지고, 그게 전체의 2/3 이니 <b>전체 RMS 0.40 → 0.28 대</b>가 가능하다.</p>
+<h3>①-b 중력이 작은 자세에서 관성 재기 — <b>값의 완결성</b></h3>
+<p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
+<p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
+<div class="quote">새 절차가 필요하다: 시험 자세를 <b>중력이 최소인 곳</b>으로 옮기고 거기서 훑는다.</div>
+<div class="quote">thigh 는 수직 근처, hip 은 롤축이 수평인 자세.</div>
+<p>이게 되면 위 표의 ❌ 넷 중 <b>셋이 채워진다.</b></p>
+<h3>⓪ ~~백래시~~ — <b>측정 완료, 범인이 아니다</b> (2026-08-14)</h3>
+<p>HL_foot 토션 히스테리시스: <b>백래시 0.0667° ± 0.0034 (채널)</b> · 강성 <b>14.55 Nm/deg</b> (834 Nm/rad) · 주기간 강성 산포 1% — 깨끗한 측정이다.</p>
 <table>
-<thead><tr><th>항목</th><th>결론</th></tr></thead>
-<tbody>
-<tr><td class="ax">calf→foot 커플링</td>
-    <td><b>실재, coef ≈ 1</b> — 관성 비 1.06 (예측: tendon 0.99 / 없음 0.64)</td></tr>
-<tr><td class="ax">엔코더</td><td><b>모터축(raw각)</b> — 커플링을 안 본다</td></tr>
-<tr><td class="ax">foot PD 오차</td><td><b>raw각</b> — 게인 2배 검증에서 확정</td></tr>
-<tr><td class="ax">MJCF</td><td><code>&lt;fixed&gt;</code> tendon, coef 1·1</td></tr>
-</tbody>
-</table>
-</div>
-
-<figure>
-<div class="bars" role="img"
-  aria-label="적합 RMS 0.405도, hold-out RMS 0.397도, 게인 2배 검증 RMS 0.251도. 가로축 0에서 0.5도.">
-  <span class="bl">적합</span>
-  <div class="track"><div class="fill" style="width:81%"></div></div>
-  <span class="bv">0.405°</span>
-
-  <span class="bl">hold-out</span>
-  <div class="track"><div class="fill" style="width:79.4%"></div></div>
-  <span class="bv">0.397°</span>
-
-  <span class="bl hi">검증 (게인 2배)</span>
-  <div class="track"><div class="fill hi" style="width:50.2%"></div></div>
-  <span class="bv hi">0.251°</span>
-</div>
-<div class="legend"><span style="color:var(--mut)">가로축 0 → 0.5° RMS</span></div>
-<figcaption><b>적합</b> 파라미터를 찾는 데 쓴 48창 · <b>hold-out</b> 안 쓴 12창 —
-적합보다 낮다(과적합 없음) · <b>검증</b> 게인 2배로 따로 수집한 데이터,
-가장 강한 시험이다.</figcaption>
-</figure>
-
-<div class="note key"><span class="lead">교훈 — 궤적 hold-out 은 네 번 연속 틀린 구조를 골랐다.</span><br>
-게인을 바꾼 검증이 뒤집었다. <b>구조는 구조 증거로 고르고, 숫자로 가리려면
-조건을 바꾼 데이터가 필요하다.</b></div>
-</section>
-
-
-<div class="foot">
-원문 <code>emb/pace/RESULTS.md</code> (fit_v2 기준, 2026-08-14) ·
-<code>emb/pace/spec.yaml</code> · 원시데이터 <code>emb/pace/results/*.npz</code><br>
-차트 색은 dataviz <code>validate_palette.js</code> 로 검증했다 — accent
-<code>#1a5a94</code>/<code>#4a8fce</code> 와 flag <code>#b3541e</code>/<code>#cf7a2e</code> 가
-light·dark 양쪽에서 여섯 검사 전부 통과. 그럼에도 <b>색에 기대지 않게</b> 설계했다:
-신뢰도는 <b>점 개수</b>로, 관성 편차의 부호는 <b>막대 방향</b>으로, 무효·랜덤화 대상은
-<b>빗금</b>으로 인코딩하고 값은 전부 직접 라벨을 붙였다.
-</div>
-
-</div>
+<tr><th>후보</th><th>잔차 기여</th><th>판정</th></tr>
+<tr><td>백래시 0.0556° (관절)</td><td class="n">0.03° (5%)</td><td>✗ <b>12배 작다</b></td></tr>
+<tr><td>감속기 유연성</td><td>공진 19.8 Hz — 처프 대역(≤0.62 Hz)의 32배 위</td><td>✗ 무관</td></tr>
+<tr><td><b><code>coef</code> 오차 3~5%</b></td><td><b>0.44~0.73°</b></td><td>★ <b>유일하게 자릿수가 맞는다</b></td></tr></table>
+<p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다. <b><code>coef</code> 가 남은 후보다.</b></p>
+<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다(§4-①-b 와 같은 문제).</p>
+<h3>② 마찰 분해 — 속도를 독립 제어하는 시험</h3>
+<p><code>damping</code>↔<code>frictionloss</code> 가 축퇴(r=+0.93)라 <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
+<div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
+<div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
+<h3>③ HR_thigh 관성 (미측정)</h3>
+<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
+<h3>④ 다른 궤적으로 검증 한 번 더</h3>
+<p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>
+<pre>python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
+<p class="warn">⚠<code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다.</p>
+<h3>⑤ hip 좌우차 확정</h3>
+<p>위치스윕은 16% 차(0.928/0.803), 토크모드는 4% 차(0.888/0.852). 어느 쪽이 맞는지 미결. 구조가 다르다는 가설(HR 샤프트 경유 · HL 직결)을 확인하려면 반복 측정이 필요하다.</p>
+<h2>5. 확정된 구조 (참고)</h2>
+<table>
+<tr><th>항목</th><th>결론</th></tr>
+<tr><td>calf→foot 커플링</td><td><b>실재, coef ≈ 1</b> (관성 비 1.06 vs 예측 0.99 / 0.64)</td></tr>
+<tr><td>엔코더</td><td><b>모터축(raw각)</b> — 커플링을 안 본다</td></tr>
+<tr><td>foot PD 오차</td><td><b>raw각</b> (게인 2배 검증에서 확정)</td></tr>
+<tr><td>MJCF</td><td><code>&lt;fixed&gt;</code> tendon, coef 1·1</td></tr></table>
+<h3>적합 성적</h3>
+<table>
+<tr><th></th><th>값</th><th>뜻</th></tr>
+<tr><td>적합 RMS</td><td class="n">0.405°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
+<tr><td>hold-out RMS</td><td class="n">0.397°</td><td>안 쓴 12창 — <b>적합보다 낮다</b>(과적합 없음)</td></tr>
+<tr><td><b>검증 RMS</b></td><td><b>0.251°</b></td><td><b>게인 2배로 따로 수집한 데이터</b> — 가장 강한 시험</td></tr></table>
+<p class="warn">★<b>교훈</b>: 궤적 hold-out 은 네 번 연속 <b>틀린 구조</b>를 골랐다. 게인을 바꾼 검증이 뒤집었다. 구조는 구조 증거로 고르고, 숫자로 가리려면 <b>조건을 바꾼 데이터</b>가 필요하다.</p>
+</div></body></html>

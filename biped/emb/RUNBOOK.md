@@ -277,6 +277,51 @@ kp100 인 hip 과 kp30 인 foot 을 같은 잣대로 재게 된다.
 
 ---
 
+## ★MD80 응답 패킷 — 우리가 볼 수 있는 것의 전부
+
+출처: `docs/MD-80 CAN 통신 정리_이형상_20260511.pdf` (DEFAULT_RESPONSE) + 벤더 확인 2026-08-14.
+구조는 `EMB(Pi) ──EtherCAT── MCU(RGA LAN9252 8AXIS) ──FDCAN── MD80` 이고,
+**MD80 이 안 주는 것은 MCU 도 못 만든다.** 그래서 이 표가 정보의 상한이다.
+
+| BYTE | 내용 | 타입 | 우리에게 오나 |
+|---|---|---|---|
+| 0 | FRAME ID (0x0A) | uint8 | — |
+| **1–2** | **ERROR VECTOR** | uint16 | ⚠**하위 8bit 만** → `ucStatus` |
+| **3** | **MOTOR TEMPERATURE** | uint8 [°C] | ⚠SHM 엔 오는 듯(`fAccelrationOrTemperture`)하나 **브리지가 안 읽는다** |
+| 4–7 | MAIN ENCODER POSITION | float [rad] | ✅ `fPosition` |
+| 8–11 | MAIN ENCODER VELOCITY | float [rad/s] | ✅ `fVelocity` |
+| 12–15 | **MOTOR TORQUE** | float [Nm] | ✅ `fTorque` |
+| 16–19 | OUTPUT ENCODER POSITION | float | ❌ **MCU 에서 삭제**(패킷 이슈) |
+| 20–23 | OUTPUT ENCODER VELOCITY | float | ❌ 〃 |
+
+여기서 곧바로 따라오는 것 셋:
+
+- **전류는 어디에도 없다.** `fCurrent` 는 채울 원천이 없어 `fTorque` 복사본이다
+  (`pace/hwio.py:134` 가 비트단위 일치를 확인해 뒀다). **전류 요청은 접는다** —
+  있어도 `τ = Kt·Iq` 라 Kt 뒤에 있어 토크 스케일 α 를 못 푼다.
+- **엔코더는 모터축 하나뿐이다.** OUTPUT(관절축) 엔코더가 MCU 에서 잘린다
+  ⇒ `diag/couple_check.py` 의 **(A) 경우가 확정**이다. 커플링은 소프트로 풀 수밖에 없고,
+  `joint_map` 이 하는 그대로가 맞다.
+- **`ucStatus` = ERROR VECTOR 하위 8bit.** 아직 정제 전 원값이다.
+  ⚠**상위 8bit 는 잘려서 안 온다** — 거기 있는 비트는 못 본다.
+
+### 래치오프가 나면 `ucStatus` 부터 본다
+
+값 모니터에 **`err` 열**로 원값이 hex 로 뜬다(0 이 아니면 빨강). CSV 에도 `*_stt` 로 남는다.
+종전에는 `health` 문자열(`ok`/`fault`)만 나가서 **"죽었다"는 것만 알고 왜인지는 못 봤다.**
+
+MAB SDK 의 비트 정의(`~/CANdle-SDK/candlelib/src/MD/MDStatus.hpp`)를 참고 대조군으로 쓸 수 있다.
+`hardwareStatus` 는 **하위 6bit** 에 원인이 몰려 있어 잘려도 살아남는다:
+
+```
+0 OverCurrent   1 OverVoltage   2 UnderVoltage
+3 MotorTemp     4 MosfetTemp    5 ADCCurrentOffset
+```
+
+⚠단 ERROR VECTOR 가 `hardwareStatus` 인지 `quickStatus`(요약 비트) 인지는 **미확인**이다.
+  `quickStatus` 라면 bit4 가 "하드웨어 에러 있음" 요약이고 상세는 별도 레지스터다.
+  **실제 값을 한 번 보면 갈린다** — 그게 지금 `err` 열을 넣은 이유다.
+
 ## 고장 판별 — 값이 얼어붙었을 때
 
 Emb 는 EtherCAT OP 를 잃어도 **프로세스가 계속 돌고, 마지막 버퍼를 재발행하며,

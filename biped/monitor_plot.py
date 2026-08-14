@@ -57,8 +57,10 @@ SIG = [("q",   "q_leg_deg",   "q_cmd_deg",   "deg",   "위치 [deg]",    4.0),
 #     0 으로 채우면 "명령이 0 이었다" 와 구분이 안 된다.
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 LOG_KEYS = ("q_leg_deg", "q_cmd_deg", "dq_leg_dps", "dq_cmd_dps",
-            "tau_leg_nm", "tau_cmd_nm", "kp_leg", "kd_leg")
-LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c", "kp", "kd")
+            "tau_leg_nm", "tau_cmd_nm", "kp_leg", "kd_leg", "stt_raw")
+# ★stt = ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit. 래치오프 원인의 유일한 단서라
+#   그래프엔 안 그려도 **로그에는 반드시** 남긴다.
+LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c", "kp", "kd", "stt")
 
 
 def log_header(names):
@@ -306,6 +308,10 @@ def main() -> int:
             fl.append(f"write_fail={st['write_fail']}")
         if st.get("tilt_estop_ok") is False:
             fl.append("IMU 죽음 → tilt E-stop 무력")
+        _sr = col(st, "stt_raw", nj)
+        _bad = [f"{names[k]}=0x{int(v):02X}" for k, v in enumerate(_sr) if v]
+        if _bad:      # ERROR VECTOR 가 0 이 아닌 축 — 원값을 그대로 보여준다
+            fl.append("ERR " + " ".join(_bad))
         dpg.set_value("flags", "   ".join(fl) if fl else "이상 없음")
 
         # 곡선 갱신 — None 표본은 건너뛴다(명령이 없는 순수 토크모드 대응).

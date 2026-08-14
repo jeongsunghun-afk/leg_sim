@@ -650,6 +650,15 @@ def main():
                   extra["tau_cmd_nm"] = [round(float(v), 3) for v in hw.cmd_tau_nm]
                   extra["kp_leg"]     = [round(float(v), 1) for v in hw.cmd_kp]
                   extra["kd_leg"]     = [round(float(v), 2) for v in hw.cmd_kd]
+                  # ★ucStatus 원값 (2026-08-13). 종전엔 `health` 문자열로만 나가서
+                  #   **"fault" 라는 것만 알고 왜인지는 못 봤다.**
+                  #   ucStatus = MD80 DEFAULT_RESPONSE 의 **ERROR VECTOR 하위 8bit**
+                  #   (벤더 확인 2026-08-14. 아직 정제 전이라 원값 그대로 실린다).
+                  #   ⚠상위 8bit 는 MCU 에서 잘려 안 온다 — 거기 있는 비트는 못 본다.
+                  #   래치오프 순간의 이 값이 원인 판별의 유일한 단서다. 반드시 원값으로 남긴다.
+                  _rs = getattr(hw, "_raw", None)
+                  if _rs is not None and len(getattr(_rs, "status", [])) >= jm.n_leg:
+                      extra["stt_raw"] = [int(_rs.status[c]) for c in jm.ch]
               except Exception:
                   pass          # 발행 실패가 제어를 멈추면 안 된다(state_pub 와 같은 원칙)
               # ★래치·워치독을 **밖으로 드러낸다** (2026-08-12).

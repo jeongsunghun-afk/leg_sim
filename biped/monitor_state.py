@@ -127,6 +127,9 @@ def main() -> int:
             tm = get(st, "tau_leg_nm", nj);  tc = get(st, "tau_cmd_nm", nj)
             kp = get(st, "kp_leg", nj);      kd = get(st, "kd_leg", nj)
             qch = get(st, "q_ch_deg", nj)
+            # ★ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit(벤더 확인 2026-08-14).
+            #   'fault' 라는 것만 알고 왜인지 못 보던 걸 숫자로 드러낸다.
+            stt = get(st, "stt_raw", nj)
             health = st.get("health") or ["?"] * nj
             inst = st.get("installed") or [True] * nj
 
@@ -153,7 +156,7 @@ def main() -> int:
             out.append(paint(
                 f"\n  {'축':<9}{'q측정':>8}{'q명령':>8}{'Δq':>7}{'≈Nm':>6} │"
                 f"{'dq측정':>8}{'dq명령':>8}{'Δdq':>7} │{'τ측정':>8}{'τ명령':>8}{'Δτ':>7} │"
-                f"{'kp':>5}{'kd':>5}{chh:>8}  st\n", "c", col))
+                f"{'kp':>5}{'kd':>5}{chh:>8}  st  err\n", "c", col))
             out.append("  " + "─" * (90 + (8 if a.ch else 0)) + "\n")
 
             for i in range(nj):
@@ -181,7 +184,9 @@ def main() -> int:
                        f"{fmt(kp[i], 5, 0)}{fmt(kd[i], 5, 1)}")
                 if a.ch:
                     row += fmt(qch[i], 8, 1)
-                out.append(row + "  " + paint(h[:1], c_h, col) + "\n")
+                ev = "" if stt[i] is None else f" 0x{int(stt[i]):02X}"
+                c_ev = "r" if (stt[i] and int(stt[i])) else "d"
+                out.append(row + "  " + paint(h[:1], c_h, col) + paint(ev, c_ev, col) + "\n")
 
             out.append("\n  " + paint("세션 최대 │ ", "d", col)
                        + paint(f"|Δq| {max(peak_eq):5.2f}°  |dq| {max(peak_dq):6.1f}dps  "

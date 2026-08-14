@@ -333,6 +333,17 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                  gear_k=k_gear, vref=vref, levels=np.array(levels, float),
                  tau_break=float(joint.get("_tau_break") or np.nan),
                  hold=np.array(sorted(getattr(hw, "hold_ch", []) or []), int),
+                 # ★**측정 자세**를 남긴다 (2026-08-14). 이게 없으면 MJCF 대조가 안 된다.
+                 #   유효관성은 자세에 크게 의존한다 — HL_thigh 를 중립에서 계산하면
+                 #   0.155(solo)/0.168(홀드)인데, 실제 solo 자세(calf −61°·foot +62° 로
+                 #   접힘)에서는 **0.185/0.221** 이다. 20~31% 차이다.
+                 #   ⚠스크립트가 찍는 "MJCF 예측" 은 `I_total_pred`(= I_link+I_rotor·N²)로
+                 #     **고립축** 값이다. 아래 subtree 가 작은 foot·calf 에서는 우연히
+                 #     가까웠지만 thigh 에서는 안 맞는다(실측 0.261 vs 0.169 → +55%,
+                 #     자세 반영 홀드 기준으로는 +18%).
+                 #   ⇒ 제대로 대조하려면 **이 자세 + 이 홀드조건**으로 M⁻¹ 을 풀어야 한다.
+                 #     그건 mujoco 가 있는 곳(오프라인)에서 한다.
+                 q_pose_ch=np.asarray(hw._q[:hw.n], float),
                  **{f"r{i}": np.column_stack([r["t"], r["q"], r["dq"], r["tau"]])
                     for i, r in enumerate(runs)},
                  meta=np.array([[r["rep"], r["dir"], r["tau_cmd"]] for r in runs], float))

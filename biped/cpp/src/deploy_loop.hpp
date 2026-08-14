@@ -48,7 +48,8 @@ struct DeployLoop {
     if(getenv("EST_ANCHOR")) est.k_anchor = atof(getenv("EST_ANCHOR"));
     if(getenv("EST_ALPHA"))  est.alpha    = atof(getenv("EST_ALPHA"));
     if(getenv("EST_JAC_CONTACT")) est.jac_at_contact = atoi(getenv("EST_JAC_CONTACT"))!=0;
-    if(LCOMP>0) dpred=mj_makeData(m);
+    bool kin = getenv("LAT_COMP_KIN") && atoi(getenv("LAT_COMP_KIN"))!=0;
+    if(LCOMP>0 && !kin) dpred=mj_makeData(m);   // kin 이면 dpred 없이 외삽 분기로 간다
   }
   void reset(mjModel* m, mjData* d){
     est.reset(Eigen::Vector3d(d->qpos[0],d->qpos[1],d->qpos[2])); sbuf.clear(); abuf.clear();
@@ -103,6 +104,15 @@ struct DeployLoop {
       for(int l=0;l<LCOMP;l++){ for(int i=0;i<nu;i++) dpred->ctrl[i]=th[i]; mj_step(m,dpred); }
       for(int i=0;i<m->nq;i++) cqp[i]=dpred->qpos[i];
       for(int i=0;i<m->nv;i++) cqv[i]=dpred->qvel[i];
+    }
+    // ★운동학 외삽(LAT_COMP_KIN=1) — **실기가 실제로 돌릴 경로**라 시뮬에도 둔다.
+    //   동역학 롤아웃은 이 Pi 에서 mj_step 604µs × 4 = 2.42ms 라 제어주기 2ms 를 넘는다
+    //   (biped_deploy.cpp 주석 참조). 여기서 비교가 안 되면 실기 결과를 예측할 수 없다.
+    else if(LCOMP>0){
+      const double TT = LCOMP*dt;
+      for(int i=0;i<3;i++) cqp[i] += cqv[i]*TT;
+      mju_quatIntegrate(cqp.data()+3, cqv.data()+3, TT);
+      for(int j=0;j<NJ;j++) cqp[7+j] += cqv[6+j]*TT;
     }
     // ⑥ 주입 → 제어 → 물리 복원
     std::vector<double> gp(m->nq), gv(m->nv);

@@ -56,7 +56,12 @@ echo "▶ 선회·측방  (접촉모델을 건드리면 여기가 먼저 드러�
 run "turn wz0.3"   $PT "WZ=0.3"    0.10 12   5   0.90  99   0.50
 run "side vy0.1"   $PT "VY=0.10"   0.00 10   5  -9.9   99   0.50
 echo "▶ 배포경로 (추정 폐루프 EST_CTRL)"
-run "EST v0.15"    $PT "EST_CTRL=1" 0.15 $DUR 5  1.80  99   0.50
+#   ★2026-08-14 실기 기본값을 그대로 건다 — 구동지연 8.4ms(실측) + 운동학 지연보상.
+#     종전엔 지연도 보상도 없이 돌아서, **실기가 실제로 겪는 조건을 한 번도 안 봤다.**
+#     (지연보상은 그때 실기 바이너리에 아예 없었다. biped_deploy.cpp 주석 참조.)
+#     보상 없이 이 조건을 걸면 vx 0.15/0.20 에서 낙상한다 — 그게 이 줄의 존재 이유다.
+run "EST v0.15"    $PT "EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1" 0.15 $DUR 5  1.80  99   0.50
+run "EST v0.20"    $PT "EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1" 0.20 $DUR 5  2.40  99   0.50
 
 echo "──────────── PASS=$pass  FAIL=$fail ────────────"
 [ $fail = 0 ] && { echo "✅ ALL PASS — 회귀 없음"; exit 0; } || { echo "❌ REGRESSION — 위 실패 항목 확인"; exit 1; }

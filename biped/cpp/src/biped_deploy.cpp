@@ -133,6 +133,63 @@ int main(int argc, char** argv){
     std::vector<double> fr={m->geom_size[c.sph[0]*3], m->geom_size[c.sph[1]*3]};
     est.init(m,fg,fr); est.reset(Eigen::Vector3d(0,0,d->qpos[2])); }
 
+  // ── 지연보상(Smith predictor) ────────────────────────────────────────────
+  // ★2026-08-14 신설. 종전엔 **시뮬에만** 있었다(deploy_loop.hpp) — 그런데 그 헤더를
+  //   include 하는 건 biped_sim/biped_view 뿐이고, 실기 writer 인 이 바이너리는 아니다.
+  //   그래서 `LAT_COMP_MS=8.4` 를 줘도 **아무 일도 일어나지 않았다.**
+  //   STABILITY_MAP.md 가 그 값을 "배포 조건" 이라 적어둔 탓에 켜져 있다고 오해했다.
+  //
+  // 원리: 지금 읽는 센서는 T_d 전의 상태이고, 그 사이 내보낸 토크는 아직 안 나타났다.
+  //       ⇒ **마지막 명령토크를 유지한 채** 모델을 T_d 만큼 굴려 "지금"을 만들어 제어한다.
+  //   왕복지연 실측 **8.39±0.79 ms**(emb/pace/RESULTS.md ⑥). 모델 timestep 2ms → 4 step.
+  //   ⚠LCOMP 는 제어주기가 아니라 **m->opt.timestep** 으로 나눈다 — mj_step 이 그만큼
+  //     전진하기 때문이다. 지금은 둘 다 2ms 라 같지만 ctrl_hz 를 바꾸면 갈라진다.
+  //
+  // ★기본 **켜짐 8.4ms**(2026-08-14 근거 확보). 끄려면 `LAT_COMP_MS=0`.
+  //   biped_sim 배포경로(EST_CTRL=1 · ACT_LAT_MS=8.4 · T=15s)에서 잰 값이다:
+  //     보상없음  vx 0.05/0.15/0.20 에서 낙상 1/1/1  → 켜면 **전부 0**
+  //     stand     base·tilt 가 소수점까지 동일 — **완전 중립**(해가 없다)
+  //     보상값 오차 6.8/8.4/10.0/16.0 ms 전부 0 낙상(6.8·vx0.20 만 1)
+  //       ⇒ 실측 ±0.79ms 는 물론 과보상 쪽으로도 안전하다. 위험한 건 **덜** 주는 쪽.
+  //   ⚠속도잡음 증폭도 무시할 만하다: ENCDQ_N 0.0368 rad/s × 8.4ms = **0.018°**.
+  const double MDT = m->opt.timestep;
+  const double lat_comp_ms = getenv("LAT_COMP_MS") ? atof(getenv("LAT_COMP_MS")) : 8.4;
+  // 안전망 — 예측이 튀면 **버리고 실측을 쓴다**. 시뮬판엔 이 가드가 없다(발산해도
+  // 넘어질 뿐이지만, 실기에선 그 토크가 그대로 모터로 나간다).
+  const double LC_MAX_DEG = getenv("LAT_COMP_MAX_DEG") ? atof(getenv("LAT_COMP_MAX_DEG")) : 5.0;
+  const double LC_MAX_Z   = getenv("LAT_COMP_MAX_Z")   ? atof(getenv("LAT_COMP_MAX_Z"))   : 0.05;
+  // ★운동학 외삽(`LAT_COMP_KIN=1`) — **이게 이 기기의 기본값이어야 한다.**
+  //   동역학 롤아웃은 mj_step 4회인데 이 Pi 에서 mj_step 이 **604 µs** 다(실측 2026-08-14,
+  //   두 모델 모두). 4회 = 2.42ms > 제어주기 2.00ms ⇒ **주기를 못 지킨다**
+  //   (mock 실측: 504Hz → 285Hz). 지연을 보상하려다 지연을 만드는 셈이다.
+  //   외삽은 q += q̇·T 라 사실상 공짜다(실측 501Hz 유지). 8.4ms 에서 빠지는 건 ½q̈T² 항뿐이고,
+  //   시뮬 비교에서 **동역학과 낙상수가 동률**이었다(4속도 전부 0). ⇒ 기본값.
+  //   `LAT_COMP_KIN=0` 으로 동역학 롤아웃을 강제할 수 있다(오프라인 연구용. 주기를 못 지킨다).
+  const bool LC_KIN = getenv("LAT_COMP_KIN") ? atoi(getenv("LAT_COMP_KIN"))!=0 : true;
+  int LCOMP = 0; mjData* dpred = nullptr;
+  if(lat_comp_ms > 0){
+    LCOMP = (int)std::lround(lat_comp_ms/1000.0/MDT);
+    if(LCOMP > 0 && LC_KIN){
+      std::printf("[deploy] 지연보상 **ON(운동학 외삽)** — %.2fms. 안전망 |Δq|<%.1f° · |Δz|<%.0fmm\n",
+                  lat_comp_ms, LC_MAX_DEG, LC_MAX_Z*1e3);
+    } else if(LCOMP > 0){
+      dpred = mj_makeData(m);
+      std::printf("[deploy] 지연보상 **ON(동역학 롤아웃)** — %.2fms = %d step(모델 dt %.1fms)."
+                  " 안전망 |Δq|<%.1f° · |Δz|<%.0fmm\n"
+                  "[deploy] ⚠⚠ mj_step %d회 ≈ %.2fms > 제어주기 %.2fms — **주기를 못 지킨다.**"
+                  " 이 기기에선 LAT_COMP_KIN=1 을 쓸 것.\n",
+                  lat_comp_ms, LCOMP, MDT*1e3, LC_MAX_DEG, LC_MAX_Z*1e3,
+                  LCOMP, LCOMP*0.604, dt*1e3);
+    } else {
+      std::printf("[deploy] ⚠LAT_COMP_MS=%.2f 는 모델 1 step(%.1fms) 미만 → 보상 안 함\n",
+                  lat_comp_ms, MDT*1e3);
+    }
+  } else {
+    std::printf("[deploy] ⚠지연보상 **OFF**(LAT_COMP_MS=0) — 실측지연 8.39ms 가 보상되지 않는다.\n");
+  }
+  std::vector<double> u_prev(NU, 0.0);      // ★in-flight 토크. 롤아웃이 이걸 유지한다
+  long lc_n = 0, lc_skip = 0; bool lc_warned = false;
+
   // ── 하드웨어 ──
   HwIface* hw = mock ? (HwIface*)new MockHw(NCH, dt)
                      : (HwIface*)new ShmHw(cfg.lib, NCH);
@@ -227,6 +284,10 @@ int main(int argc, char** argv){
           if(mode=="stand" || mode=="walk"){
             c.reset(); c.com_ref_z = body_h;
             est.reset(Eigen::Vector3d(0,0,d->qpos[2]));
+            // ★in-flight 토크도 같이 지운다. 안 지우면 직전 세션의 마지막 토크로
+            //   첫 틱을 예측한다 — 무장 순간이 가장 위험한 자리다.
+            std::fill(u_prev.begin(), u_prev.end(), 0.0);
+            lc_n = lc_skip = 0; lc_warned = false;
           }
           std::printf("[deploy] 모드 %s → %s\n", prev_mode.c_str(), mode.c_str());
         }
@@ -299,6 +360,50 @@ int main(int argc, char** argv){
       d->qvel[0]=est.v[0]; d->qvel[1]=est.v[1]; d->qvel[2]=est.v[2];
       for(int a=0;a<3;a++) d->qvel[3+a]=gyro[a];
       for(int j=0;j<NJ;j++) d->qvel[6+j]=dq_ctrl[j];
+
+      // ★지연보상 — 마지막 명령토크를 유지한 채 LCOMP step 굴려 "지금"을 만든다.
+      //   실패하면 **조용히 실측으로 되돌린다**(예측을 안 쓸 뿐, 제어는 계속된다).
+      if(LCOMP>0){
+        lc_n++;
+        std::vector<double> pq(m->nq), pv(m->nv);
+        if(dpred){                                   // (a) 동역학 롤아웃 — in-flight 토크 유지
+          mju_copy(dpred->qpos, d->qpos, m->nq);
+          mju_copy(dpred->qvel, d->qvel, m->nv);
+          mju_zero(dpred->act, m->na); dpred->time = d->time;
+          for(int l=0;l<LCOMP;l++){
+            for(int i=0;i<NU;i++) dpred->ctrl[i] = u_prev[i];
+            mj_step(m, dpred);
+          }
+          mju_copy(pq.data(), dpred->qpos, m->nq);
+          mju_copy(pv.data(), dpred->qvel, m->nv);
+        } else {                                     // (b) 운동학 외삽 — q += q̇·T (사실상 공짜)
+          const double TT = lat_comp_ms/1000.0;
+          mju_copy(pq.data(), d->qpos, m->nq);
+          mju_copy(pv.data(), d->qvel, m->nv);        // 속도는 그대로(가속도를 안 쓴다)
+          for(int i=0;i<3;i++) pq[i] += d->qvel[i]*TT;             // base 위치
+          mju_quatIntegrate(pq.data()+3, d->qvel+3, TT);           // base 자세 ← 자이로
+          for(int j=0;j<NJ;j++) pq[7+j] += d->qvel[6+j]*TT;        // 관절
+        }
+        // 가드 ① 유한성 ② 관절각 튐 ③ 몸통고도 튐.
+        //   8.4ms 는 200dps 로 돌아도 1.7° 다 — 5° 를 넘으면 예측이 깨진 것이다.
+        bool ok = true;
+        for(int i=0;i<m->nq && ok;i++) ok = std::isfinite(pq[i]);
+        for(int i=0;i<m->nv && ok;i++) ok = std::isfinite(pv[i]);
+        if(ok) for(int j=0;j<NJ;j++)
+          if(std::fabs(pq[7+j]-d->qpos[7+j])*JointMap::R2D > LC_MAX_DEG){ ok=false; break; }
+        if(ok && std::fabs(pq[2]-d->qpos[2]) > LC_MAX_Z) ok = false;
+        if(ok){
+          mju_copy(d->qpos, pq.data(), m->nq);
+          mju_copy(d->qvel, pv.data(), m->nv);
+        } else {
+          lc_skip++;
+          // 한 번은 반드시 알린다 — 조용히 폴백하면 "보상이 켜져 있다" 고 착각한다.
+          if(!lc_warned){ lc_warned = true;
+            std::fprintf(stderr, "[deploy] ⚠지연보상 예측이 가드에 걸렸다 — 실측상태로 폴백."
+                                 " (|Δq|>%.1f° 또는 |Δz|>%.0fmm 또는 비유한)\n",
+                         LC_MAX_DEG, LC_MAX_Z*1e3); }
+        }
+      }
       mj_forward(m,d);
       c.com_ref_z = body_h;
       c.control(dt);
@@ -317,6 +422,9 @@ int main(int argc, char** argv){
         if(lim<=0) lim = 80.0;
         u_drv[i] = std::max(-lim, std::min(lim, d->ctrl[i]));
       }
+      // ★다음 틱의 롤아웃이 유지할 in-flight 토크. **클램프 뒤** 값이어야 한다 —
+      //   실제로 나가는 게 이것이고, 예측이 클램프 전 값을 쓰면 모델이 로봇보다 세진다.
+      for(int i=0;i<NU;i++) u_prev[i] = u_drv[i];
       // ★관절토크로 되돌려서 넘긴다 — joint_map(tau_ctrl_to_ch)이 **자기가 전단**하므로
       //   드라이브 토크를 그대로 주면 전단이 두 번 걸려 τ_calf−2·τ_foot 이 나간다.
       VectorXd tj = bipedwbic::drive_to_tau(u_drv);
@@ -386,7 +494,11 @@ int main(int argc, char** argv){
         // ★WBIC QP 건강도 — **접지 판정의 유일한 지표**(biped_control.hpp 주석 참조).
         //   발이 덜 닿으면 QP 가 매 틱 실패하고 중력보상 폴백으로 떨어지는데,
         //   겉보기엔 안정돼 보인다. 이 셋이 그 상태를 드러낸다.
-        "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f]}",
+        // ★지연보상 상태. `lat_comp_ms`=0 이면 **꺼져 있다**(env 미설정).
+        //   `lc_skip_pct`>0 은 예측이 가드에 걸려 실측으로 폴백 중이라는 뜻 —
+        //   켜 놓고도 실제로는 안 걸린 상태라 반드시 보인다.
+        "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f],"
+        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
         rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
@@ -394,7 +506,8 @@ int main(int argc, char** argv){
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,
         (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",
         imu_dead?"false":"true",
-        c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2]);
+        c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
+        LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0);
       write_state(stt_p, buf);
     }
 
@@ -415,6 +528,10 @@ int main(int argc, char** argv){
 
   if(g_stop) std::printf("\n[deploy] 신호 %d 수신 → 안전종료\n", (int)g_stop);
   safe_shutdown(*hw, NCH);
+  if(LCOMP>0 && lc_n)
+    std::printf("[deploy] 지연보상 %.2fms — %ld 틱 중 %ld 폴백(%.1f%%)\n",
+                lat_comp_ms, lc_n, lc_skip, 100.0*(double)lc_skip/(double)lc_n);
+  if(dpred) mj_deleteData(dpred);
   delete hw; mj_deleteData(d); mj_deleteModel(m);
   return rc;
 }

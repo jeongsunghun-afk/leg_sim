@@ -159,6 +159,18 @@ def main() -> int:
                 _t = (f"QP실패 {_qf:.0f}% · K={st.get('qp_K','?')} · com_err {_cn:.0f}mm")
                 flags.append(paint(_t + ("  ← 접지 불량(폐루프 죽음)" if _qf >= 50 else ""),
                                    "R" if _qf >= 50 else ("y" if _qf >= 20 else "g"), col))
+            # ★지연보상 — **꺼져 있어도 겉보기엔 똑같이 돈다.** 그래서 표시한다.
+            #   9일간 "켜져 있다" 고 믿은 채로 실제로는 꺼져 있었던 적이 있다(RUNBOOK §6-c).
+            _lc = st.get("lat_comp_ms")
+            if _lc is not None:
+                _sk = st.get("lc_skip_pct", 0.0)
+                if _lc <= 0:
+                    flags.append(paint("지연보상 OFF", "y", col))
+                elif _sk >= 1:
+                    flags.append(paint(f"지연보상 {_lc:.1f}ms · 폴백 {_sk:.0f}%  ← 예측 버려지는 중",
+                                       "R" if _sk >= 20 else "y", col))
+                else:
+                    flags.append(paint(f"지연보상 {_lc:.1f}ms", "g", col))
             out.append(("  " + "   ".join(flags) if flags else "  " + paint("이상 없음", "g", col)) + "\n")
 
             chh = "   q_ch" if a.ch else ""

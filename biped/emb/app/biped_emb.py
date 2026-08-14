@@ -392,7 +392,9 @@ def main():
                                 f"    실기 stand/walk 는 C++ 배포 바이너리가 담당한다:\n"
                                 f"      cd {os.path.join(BIPED, 'cpp')} && "
                                 f"LD_LIBRARY_PATH=$HOME/mujoco/lib ./build/biped_deploy\n"
-                                f"    ⚠ 모터 명령 writer 는 한 번에 하나만 — 이 앱을 먼저 종료할 것.",
+                                f"    ⚠ 모터 명령 writer 는 한 번에 하나만 — 이 앱을 먼저 종료할 것.\n"
+                                f"    ※지연보상은 그 바이너리에서 **기본 켜짐**(8.4ms 실측·운동학 외삽).\n"
+                                f"      기동 로그의 '지연보상' 줄로 확인할 것. 끄려면 LAT_COMP_MS=0.",
                                 flush=True)
                       new_mode = FSM.HOLD
                   elif new_mode != FSM.HOLD:

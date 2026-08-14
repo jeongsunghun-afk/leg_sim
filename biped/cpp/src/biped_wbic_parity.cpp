@@ -31,7 +31,7 @@ int main(int argc,char**argv){
   in.has_swing=true; in.swing_leg=(int)G("swing_leg")[0];
   in.Jsw=mat("Jsw",3,nv);
   for(int i=0;i<3;i++){ in.sw_pos[i]=G("sw_pos")[i]; in.sw_ptgt[i]=G("sw_ptgt")[i]; in.sw_vtgt[i]=G("sw_vtgt")[i]; }
-  in.Qhome=vec("Qhome",nu); in.tau_peak=vec("tau_peak",nu);
+  in.Qhome=vec("Qhome",nu); in.drv_peak=vec("drv_peak",nu);   // ★2026-08-13 개명(관절→드라이브 한계)
   for(double x:G("ankle")) in.ankle_idx.push_back((int)x);
   auto& gn=G("gains");
   in.SW_KP=gn[0]; in.SW_KD=gn[1]; in.W_ORI=gn[2]; in.W_ANKLE=gn[3]; in.W_POST=gn[4];

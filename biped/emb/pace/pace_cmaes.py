@@ -181,8 +181,54 @@ def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
     return True
 
 
+def actuator_wrap(m, idx, names, ctrl_space="tendon"):
+    """액추에이터별 **PD 가 무엇을 오차로 재는가** 를 MJCF 에서 읽어 만든다.
+
+    ★2026-08-14 발견 — foot 만 **힘 쪽만 옮기고 오차 쪽을 안 옮겼다.**
+      실기 드라이버는 **채널각**으로 PD 를 건다. foot 의 채널각은
+          q_ch = (q_foot + coef·q_calf)·sign·k + offset      (coef=+1, biped_emb.yaml)
+      이므로 드라이버가 보는 오차는 q_foot 이 아니라 **(q_foot + q_calf)** 의 오차다.
+      kp_joint = kp_ch·k² 도 그 raw 오차에 곱해지는 값이다(τ_joint = k²·kp_ch·Δraw).
+      MJCF 는 이미 foot 액추에이터를 `<fixed>` tendon(coef 1,1)으로 옮겨 뒀는데
+      — **힘을 주는 쪽만** 옮겼고 `rollout` 의 오차는 관절각에 남아 있었다.
+
+    ⚠증거(f0.4_dqfix, 적합구간, foot RMS):
+        적합 안 된 x0 에서   관절각 1.0451° → **raw각 0.7072°**  (−32%)
+        적합된 θ 에서        관절각 0.6866° → raw각 0.9752°      (+42%)
+      뒤집힘 자체가 진단이다 — 틀린 법칙으로 적합하면 CMA-ES 가 그 오차를
+      armature·마찰로 **흡수**하고, 그 상태에서 법칙만 바꾸면 당연히 나빠진다.
+      이 파일 독스트링이 경고해 둔 "잘 맞는데 물리적으로 틀린 값" 그 자체다.
+      ⇒ 기본값을 tendon 으로 둔다. `--ctrl-space joint` 로 옛 동작을 재현할 수 있다.
+
+    반환: 축별 튜플 (col, qpos_adr, dof_adr, coef) 들, 커플 없으면 None.
+    """
+    import mujoco
+    if ctrl_space == "joint":
+        return [None] * len(idx)
+    qadr = {n: idx[i][1] for i, n in enumerate(names)}
+    dadr = {n: idx[i][2] for i, n in enumerate(names)}
+    col = {n: i for i, n in enumerate(names)}
+    out = []
+    for i, (_, qa, dofa, aid) in enumerate(idx):
+        tid = m.actuator_trnid[aid, 0]
+        if m.actuator_trntype[aid] != mujoco.mjtTrn.mjTRN_TENDON:
+            out.append(None)
+            continue
+        # fixed tendon 의 wrap 목록을 그대로 읽는다 — MJCF 가 바뀌어도 따라간다
+        w = []
+        for k in range(m.tendon_adr[tid], m.tendon_adr[tid] + m.tendon_num[tid]):
+            jid = m.wrap_objid[k]
+            jn = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, jid)
+            hit = [n for n in names if jn == n + "_joint" or jn.startswith(n)]
+            if not hit:                       # 데이터에 없는 관절이면 무시한다
+                continue
+            w.append((col[hit[0]], qadr[hit[0]], dadr[hit[0]], float(m.wrap_prm[k])))
+        out.append(tuple(w) if w else None)
+    return out
+
+
 def rollout(m, d, idx, q_real, dq_real, q_cmd, kp, kd, dt, win_steps,
-            bias=None, delay_s=0.0):
+            bias=None, delay_s=0.0, wrap=None):
     """창 단위 재초기화 롤아웃. 실기와 **같은 제어법칙**을 시뮬 안에서 돌린다.
 
     ★bias·delay 는 PACE 원문 파라미터다 (arXiv:2509.06342, p = [I_a, d, τ_f, q̃_b, T_d]).
@@ -210,8 +256,19 @@ def rollout(m, d, idx, q_real, dq_real, q_cmd, kp, kd, dt, win_steps,
             tc = t - sh if t - sh >= 0 else 0                # 지연된 명령
             for i, (_, qa, dofa, aid) in enumerate(idx):
                 q_sim[t, i] = d.qpos[qa] / DEG
-                err = (q_cmd[tc, i] - d.qpos[qa] / DEG) * DEG
-                d.ctrl[aid] = kp[i] * err - kd[i] * d.qvel[dofa]
+                w = None if wrap is None else wrap[i]
+                if w is None:                                # raw각 == 모델각 (hip·thigh·calf)
+                    err = (q_cmd[tc, i] - d.qpos[qa] / DEG) * DEG
+                    vel = d.qvel[dofa]
+                else:
+                    # ★foot — 드라이버는 **채널각**(= raw 의 선형사상)으로 PD 를 건다.
+                    #   q_raw_foot = q_foot + coef·q_calf 이므로 오차도 그 합이다.
+                    #   RL_INTERFACE.md §0·§1 · d.ctrl 이 드라이브 토크인 것은 §6-d.
+                    err = vel = 0.0
+                    for c_, qa_, da_, cf_ in w:
+                        err += cf_ * (q_cmd[tc, c_] - d.qpos[qa_] / DEG) * DEG
+                        vel += cf_ * d.qvel[da_]
+                d.ctrl[aid] = kp[i] * err - kd[i] * vel
             mujoco.mj_step(m, d)
     return q_sim
 
@@ -250,8 +307,18 @@ def param_labels(names, per_axis: bool) -> list:
     return dyn + [f"bias.{n}" for n in names] + ["delay"]
 
 
-def init_bounds(spec_path, names, per_axis):
-    """초기값·탐색범위 — **축별 측정값**에서 온다. 이게 sloppy 를 줄이는 핵심이다."""
+def init_bounds(spec_path, names, per_axis, pin=()):
+    """초기값·탐색범위 — **축별 측정값**에서 온다. 이게 sloppy 를 줄이는 핵심이다.
+
+    ★pin — 그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(값은 x0 에 고정).
+      2026-08-14 f0.4_dqfix 적합에서 hip 이 상자 **모서리**로 갔다:
+          JFRIC.hip 상한 99% (1.069 / 상한 1.075) · JDAMP.hip 하한 1%
+      이건 JDAMP↔JFRIC 축퇴(r=+0.93)의 평탄방향을 따라 미끄러진 것이다. 왜 hip 이냐면
+      발끝 충돌 때문에 진폭을 5°(thigh 17.4° 의 1/3.6)로 줄였고, 그 결과 hip 이
+      **비용의 4% 밖에 안 되기 때문**이다 — 아무 데나 밀어도 손해가 없다.
+      ⇒ 데이터가 못 보는 축에 2모수를 낭비하지 않는다. 실측 JFRIC 으로 고정한다.
+      ⚠JDAMP 는 실측이 **없다**(외삽값 0.09). 고정하는 건 '측정했다' 가 아니라
+        '이 데이터로는 정할 수 없으니 흔들지 않는다' 는 뜻이다."""
     import yaml
     sp = yaml.safe_load(open(spec_path, encoding="utf-8"))
     rot0 = 7.327e-4          # 2026-08-11 τ_ff 경로 실측(foot 좌우 평균)
@@ -295,8 +362,20 @@ def init_bounds(spec_path, names, per_axis):
     #   원문은 4n+1. 우리는 8축이 **같은 모터**라 ROTOR_I 를 공유하고 마찰·감쇠를
     #   kind별로 묶으므로 (1+4+4) + n(bias) + 1(delay) = 18 이다.
     #   ⚠bias 는 축별이어야 한다 — 엔코더 영점은 물리량이 아니라 축마다 따로다.
+    # ★상자 — 파라미터마다 **근거가 다르므로** 폭도 다르다 (2026-08-14 재조정).
+    #   종전은 전부 ×0.3~3.0 이었는데, f0.4_dqfix 적합에서 둘이 벽에 박혔다:
+    #     ROTOR_I    하한 1%  (×0.332) — 최적이 상자 **밖 아래**
+    #     JDAMP.foot 상한 95% (×2.88)  — 최적이 상자 **밖 위**
+    #   벽에 박힌 값은 "거기가 벽이었다" 는 말이지 식별된 값이 아니다.
+    #   JDAMP 는 **실측이 하나도 없다**(각축 8축 전부 nan/≈0). 실측으로 좁힌 JFRIC 과
+    #   달리 좁힐 근거가 없으니 넓게 연다. ROTOR_I 도 하한만 연다.
     lo = x0 * 0.3
     hi = x0 * 3.0
+    nk = len(names) if per_axis else len(KINDS)
+    lo[0] = x0[0] * ROTOR_SPAN[0]                      # ROTOR_I 하한만 확장
+    hi[0] = x0[0] * ROTOR_SPAN[1]
+    lo[1:1 + nk] = x0[1:1 + nk] * JDAMP_SPAN[0]        # JDAMP 양쪽 확장
+    hi[1:1 + nk] = x0[1:1 + nk] * JDAMP_SPAN[1]
     # JFRIC 구간만 실측 기반으로 조인다. 벡터 순서는 [ROTOR_I, JDAMP…, JFRIC…] 이다.
     if JFRIC_SPAN[0] is not None:
         nj = len(names) if per_axis else len(KINDS)
@@ -307,11 +386,22 @@ def init_bounds(spec_path, names, per_axis):
     x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
     lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO]])
     hi = np.concatenate([hi, np.full(nb, +BIAS_MAX), [DELAY_HI]])
-    return x0, lo, hi
+    # ★고정축은 **탐색벡터에서 뺀다**(경계를 붙이는 게 아니라 차원을 없앤다).
+    #   lo==hi 로 눌러도 되지만 그러면 CMA-ES 가 죽은 차원을 계속 흔든다 —
+    #   popsize 10 에 18차원이라 2차원 낭비가 작지 않다.
+    free = np.ones(len(x0), bool)
+    if pin:
+        lab = param_labels(names, per_axis)
+        for i, L in enumerate(lab):
+            if L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
+                free[i] = False
+    return x0, lo, hi, free
 
 
 # bias·delay 경계 — 실측 근거로 잡는다(임의값이 아니다)
 JFRIC_SPAN = [None]   # init_bounds 가 채운다(실측 있으면 ±비율)
+ROTOR_SPAN = (0.10, 3.0)   # 실측 초기값이 있으나 τ_ff 경로 1점 — 하한을 연다
+JDAMP_SPAN = (0.10, 10.0)  # **실측이 없다**(각축 전부 nan). 좁힐 근거가 없다
 BIAS_MAX = 3.0        # [deg] 지그 영점 후 잔차가 모델각 0.5~2.3° 였다(2026-08-11)
 # ★지연은 **직접 실측**했다: 8.39 ± 0.79 ms (act_measure_latency.py).
 #   원문(PACE)은 T_d 를 자유롭게 탐색하는데, 그건 그 값을 따로 재지 않았기 때문이다.
@@ -343,6 +433,35 @@ def split_params(p, n, per_axis):
     nd = 1 + 2 * n if per_axis else 9
     p = np.asarray(p, float)
     return p[:nd], p[nd:nd + n], float(p[nd + n])
+
+
+def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
+    """탐색값이 **상자 어디에 있는지** 찍는다. 벽에 박힌 항목 라벨을 반환한다.
+
+    ★왜 매번 찍나 (2026-08-14)
+      f0.4_dqfix 적합에서 ROTOR_I·JDAMP.foot·JFRIC.hip 셋이 벽에 박혀 있었는데,
+      출력에는 값만 있어서 **한참 뒤에야** 알았다. 벽에 박힌 값은 "최적이 상자 밖" 이라는
+      뜻이지 식별된 값이 아니다 — 그걸 결론으로 쓰면 안 된다. 그러니 값과 **같이** 찍는다.
+    """
+    log(f"\n  {'파라미터':<16}{'하한':>11}{'값':>12}{'상한':>11}{'상자내':>8}  판정")
+    wall = []
+    for i, L in enumerate(labels):
+        if L.startswith("bias"):
+            continue
+        if free is not None and not free[i]:
+            log(f"  {L:<16}{'':>11}{x[i]:>12.4g}{'':>11}{'고정':>8}  — 탐색 제외")
+            continue
+        a, b = float(lo[i]), float(hi[i])
+        u = (x[i] - a) / (b - a) if b > a else float("nan")
+        if u >= 0.95 or u <= 0.05:
+            v = "★벽에 박혔다 — 최적이 상자 밖이다"
+            wall.append(L)
+        elif u >= 0.85 or u <= 0.15:
+            v = "△벽 근처"
+        else:
+            v = "✓상자 안에서 정해졌다"
+        log(f"  {L:<16}{a:>11.4g}{x[i]:>12.4g}{b:>11.4g}{u:>7.0%}  {v}")
+    return wall
 
 
 def report(names, x, per_axis, log=print):
@@ -382,6 +501,12 @@ def main() -> int:
                     help="★unseen PD gains 검증 (PACE arXiv:2509.06342). 다른 게인으로 수집한 "
                          "npz 를 주면, 적합된 θ 를 **그 데이터**에 걸어 RMS 를 낸다. "
                          "게인이 바뀌어도 같은 θ 가 맞으면 순환·과적합이 아니다")
+    ap.add_argument("--pin", default="", metavar="KIND[,KIND]",
+                    help="그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(x0 에 고정). "
+                         "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 상자 모서리로 간다")
+    ap.add_argument("--ctrl-space", default="tendon", choices=("tendon", "joint"),
+                    help="foot PD 가 재는 오차. tendon=raw각(q_foot+q_calf, **실기**) · "
+                         "joint=관절각(2026-08-14 이전 동작). actuator_wrap 독스트링 참조")
     ap.add_argument("--eval-only", action="store_true", help="초기값만 평가(CMA-ES 생략)")
     ap.add_argument("--st-T", type=float, default=4.0, help="셀프테스트 길이[s]")
     ap.add_argument("--st-dt", type=float, default=0.002,
@@ -414,17 +539,29 @@ def main() -> int:
           f"창 {a.window}s({win} 스텝)")
     print(f"  적합 구간 0~{ncut} · **hold-out {ncut}~{N}** ({a.holdout:.0%})")
 
-    x0, lo, hi = init_bounds(a.spec, D["names"], a.per_axis)
+    pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
+    for k in pin:
+        if k not in KINDS:
+            raise SystemExit(f"✗ --pin {k} — kind 는 {KINDS} 중 하나여야 한다")
+    x0, lo, hi, free = init_bounds(a.spec, D["names"], a.per_axis, pin)
+    wrap = actuator_wrap(m, idx, D["names"], a.ctrl_space)
+    _nw = sum(1 for w in wrap if w)
+    print(f"■ 제어공간 — foot PD 오차 = "
+          + ("**raw각**(q_foot+q_calf, 실기 드라이버와 같다)" if a.ctrl_space == "tendon"
+             else "관절각(2026-08-14 이전 동작 — 실기와 다르다)")
+          + f"  · 커플 액추에이터 {_nw}개")
     print(f"■ 초기값 — {len(x0)} 모수 "
           f"(동역학 {len(x0)-len(D['names'])-1} + bias {len(D['names'])} + delay 1). "
-          f"동역학 ×0.3~3.0 · bias ±{BIAS_MAX}° · delay {DELAY_LO*1e3:.0f}~{DELAY_HI*1e3:.0f}ms")
+          f"ROTOR_I ×{ROTOR_SPAN[0]}~{ROTOR_SPAN[1]} · JDAMP ×{JDAMP_SPAN[0]}~{JDAMP_SPAN[1]} · "
+          f"JFRIC ×{1-JFRIC_SPAN[0]:.2g}~{1+JFRIC_SPAN[0]:.2g} · "
+          f"bias ±{BIAS_MAX}° · delay {DELAY_LO*1e3:.0f}~{DELAY_HI*1e3:.0f}ms")
     report(D["names"], x0, a.per_axis)
 
     def evaluate(p, s, e):
         dyn, bias, dly = split_params(p, len(D["names"]), a.per_axis)
         apply_params(m, idx, D["gear_n"], dyn, a.per_axis, D["names"])
         qs = rollout(m, d, idx, D["q"][s:e], D["dq"][s:e], D["q_cmd"][s:e],
-                     D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly)
+                     D["kp"], D["kd"], D["dt"], win, bias=bias, delay_s=dly, wrap=wrap)
         return cost_of(qs, D["q"][s:e] - bias), qs      # ★진짜 각(q_enc − bias)과 비교
 
     c0, _ = evaluate(x0, 0, ncut)
@@ -438,16 +575,30 @@ def main() -> int:
     except ImportError:
         raise SystemExit("✗ cma 가 없다: ~/.venv-mujoco/bin/pip install cma")
     # ★z∈[0,1] 정규화 공간에서 탐색한다(to_z 주석 참조). 원공간은 스케일이 4자리 벌어진다.
-    es = cma.CMAEvolutionStrategy(list(to_z(x0, lo, hi)), 0.25, {
+    plab = param_labels(D["names"], a.per_axis)
+    if not free.all():
+        print("\n■ 고정(탐색 제외) — 이 데이터로는 정할 수 없어 x0 에 묶는다")
+        for i in np.flatnonzero(~free):
+            print(f"    {plab[i]:<16}{x0[i]:>10.4f}")
+    z0 = to_z(x0, lo, hi)
+
+    def expand(zf):
+        """자유차원 z → **전체** 실공간 벡터. 고정축은 언제나 x0 값이다."""
+        z = z0.copy()
+        z[free] = zf
+        return from_z(z, lo, hi)
+
+    es = cma.CMAEvolutionStrategy(list(z0[free]), 0.25, {
         "popsize": a.popsize, "maxiter": a.iters,
         "bounds": [0.0, 1.0], "verbose": -9})       # ★z 공간이므로 경계도 [0,1] 이다
-    print(f"\n■ CMA-ES — popsize {a.popsize} · 최대 {a.iters} 세대 (z∈[0,1] 정규화 탐색)")
+    print(f"\n■ CMA-ES — popsize {a.popsize} · 최대 {a.iters} 세대 "
+          f"(z∈[0,1] 정규화 · 자유차원 {int(free.sum())}/{len(x0)})")
     best, bestc = np.array(x0), c0
     hist = []
     it = 0
     while not es.stop():
         Z = es.ask()
-        X = [from_z(z, lo, hi) for z in Z]
+        X = [expand(z) for z in Z]
         F = [evaluate(x, 0, ncut)[0] for x in X]
         es.tell(Z, F)
         it += 1
@@ -471,6 +622,10 @@ def main() -> int:
         print("  ⚠hold-out 이 적합보다 크게 나쁘다 — **과적합**이다. 모수를 줄이거나"
               " 데이터를 늘릴 것")
     report(D["names"], best, a.per_axis)
+    _wall = box_report(plab, best, x0, lo, hi, free)
+    if _wall:
+        print("  ★**상자 벽에 박힌 값은 식별된 값이 아니다** — 최적이 상자 밖이라는 뜻이다."
+              " 경계를 넓혀 다시 돌리거나, 실측으로 고정할 것")
 
     # ── ★unseen PD gains 검증 (원문의 주 검증) ──────────────────────────────
     #   hold-out 궤적보다 강하다: 게인이 바뀌면 kp·err 순환이나 과적합이 바로 드러난다.
@@ -491,7 +646,8 @@ def main() -> int:
             dyn, bias, dly = split_params(px, len(V["names"]), a.per_axis)
             apply_params(m, idx, V["gear_n"], dyn, a.per_axis, V["names"])
             qs = rollout(m, d, vi, V["q"], V["dq"], V["q_cmd"], V["kp"], V["kd"],
-                         V["dt"], vw, bias=bias, delay_s=dly)
+                         V["dt"], vw, bias=bias, delay_s=dly,
+                         wrap=actuator_wrap(m, vi, V["names"], a.ctrl_space))
             rows.append((lab, cost_of(qs, V["q"] - bias)))
         for lab, c in rows:
             print(f"    {lab:<8}RMS {c:.4f}°")
@@ -507,7 +663,11 @@ def main() -> int:
 
     out = os.path.splitext(a.npz)[0] + "_cmaes.npz"
     np.savez(out, x=best, x0=x0, rms_fit=bestc, rms_holdout=hb,
-             per_axis=a.per_axis, names=np.array(D["names"]))
+             per_axis=a.per_axis, names=np.array(D["names"]),
+             # ★상자를 같이 남긴다 (2026-08-14). 안 남겨서 "벽에 박혔는지" 를
+             #   나중에 init_bounds 를 다시 불러 손으로 계산해야 했다.
+             lo=lo, hi=hi, free=free, labels=np.array(plab),
+             ctrl_space=a.ctrl_space, pin=np.array(pin))
     print(f"\n  ✓ 저장: {out}")
     return 0
 
@@ -547,13 +707,34 @@ def selftest(m, a) -> int:
     #   "되찾았다" 가 구분되지 않아 검증이 되지 않는다.
     bias_true = np.array([0.8, -1.2, 0.5, -0.3, -0.6, 0.9, -0.4, 0.7])
     delay_true = 0.010
-    x_true = np.concatenate([[7.327e-4], [0.11, 0.07, 0.13, 0.025],
-                             [0.42, 0.31, 0.50, 0.44], bias_true, [delay_true]])
+    # ★참값은 **상자 안에서** 만든다 (2026-08-14 수정).
+    #   종전엔 JFRIC 참값을 [0.42, 0.31, 0.50, 0.44] 로 **하드코딩**했는데, 2026-08-12 에
+    #   JFRIC 상자를 실측 ×[0.7,1.3] 으로 조인 뒤로 **네 개 전부 상자 밖**이 됐다:
+    #       hip 0.42 ∉ [0.579,1.075] · thigh 0.31 ∉ [0.469,0.871]
+    #       calf 0.50 ∉ [0.700,1.301] · foot 0.44 ∉ [0.521,0.968]
+    #   ⇒ 도달 불가능한 값을 되찾으라고 시킨 셈이라 **구조적으로 항상 실패**했다.
+    #     "셀프테스트 실패" 가 상시화되면 진짜 회귀를 못 알아본다.
+    #   x0 에 배율을 곱해 만든다 — 상자가 바뀌어도 따라가고, x0 와 충분히 달라
+    #   "안 움직였다" 와 "되찾았다" 가 구분된다.
+    _x0s, _lo_s, _hi_s, _ = init_bounds(a.spec, names, False)
+    _mul = np.array([1.35] + [1.6, 0.55, 1.9, 2.4] + [0.86, 1.14, 0.90, 1.10])
+    x_true = np.concatenate([_x0s[:9] * _mul, bias_true, [delay_true]])
+    _out = [(l, v, lo_, hi_) for l, v, lo_, hi_ in
+            zip(param_labels(names, False)[:9], x_true[:9], _lo_s[:9], _hi_s[:9])
+            if not (lo_ <= v <= hi_)]
+    if _out:                       # 상자가 또 좁아지면 여기서 바로 잡힌다
+        raise SystemExit("✗ 셀프테스트 참값이 상자 밖이다 — _mul 을 조정할 것: "
+                         + " · ".join(f"{l} {v:.4g}∉[{a_:.4g},{b_:.4g}]"
+                                      for l, v, a_, b_ in _out))
     apply_params(m, idx, gear_n, split_params(x_true, len(names), False)[0], False, names)
     win = max(1, int(round(a.window / dt)))
     # 참 궤적: 실측 자리에 시뮬을 넣고 창 재초기화 없이 한 번에 굴린다
     q0 = np.zeros((len(tt), 8)); dq0 = np.zeros_like(q0)
-    q_true = rollout(m, d, idx, q0, dq0, q_cmd, kp, kd, dt, len(tt), delay_s=delay_true)
+    # ★합성·적합 **둘 다** 실전 제어법칙으로 돈다. 여기만 옛 법칙이면 셀프테스트가
+    #   production 경로를 안 지키게 된다(2026-08-14 foot PD 를 raw각으로 바꾸며 추가).
+    wrap = actuator_wrap(m, idx, names, a.ctrl_space)
+    q_true = rollout(m, d, idx, q0, dq0, q_cmd, kp, kd, dt, len(tt),
+                     delay_s=delay_true, wrap=wrap)
     dq_true = np.vstack([np.zeros(8), np.diff(q_true, axis=0) / dt])
     rng = np.random.default_rng(0)
     # ★엔코더는 q_true + bias 를 읽는다 — 추정기는 이 bias 를 되찾아야 한다
@@ -564,10 +745,10 @@ def selftest(m, a) -> int:
         dyn, bias, dly = split_params(p, len(names), False)
         apply_params(m, idx, gear_n, dyn, False, names)
         qs = rollout(m, d, idx, q_meas, dq_true, q_cmd, kp, kd, dt, win,
-                     bias=bias, delay_s=dly)
+                     bias=bias, delay_s=dly, wrap=wrap)
         return cost_of(qs, q_meas - bias)
 
-    x0, lo, hi = init_bounds(a.spec, names, False)
+    x0, lo, hi, _free = init_bounds(a.spec, names, False)
     print(f"  초기 RMS {ev(x0):.4f}°  ·  참값 RMS {ev(x_true):.4f}°")
     try:
         import cma
@@ -587,13 +768,21 @@ def selftest(m, a) -> int:
             print(f"    세대 {it:>3}  최량 RMS {bestc:.4f}°")
     print(f"\n  {'파라미터':<16}{'참값':>12}{'추정':>12}{'오차':>10}")
     lab = ["ROTOR_I"] + [f"JDAMP.{k}" for k in KINDS] + [f"JFRIC.{k}" for k in KINDS]
+    # ★JDAMP 는 **합격 판정에서 뺀다** (2026-08-14).
+    #   궤적데이터로 JDAMP 를 못 얻는 건 이 파일이 이미 문서화한 성질이다
+    #   (JDAMP↔JFRIC r=+0.93 평탄방향 · design_excitation 이 설계 단계에서 짚음).
+    #   그걸 합격 조건에 넣으면 셀프테스트가 **영구 실패**가 되고, 그러면 진짜 회귀를
+    #   못 알아본다 — 참값을 상자 밖에 두어 늘 실패하던 것과 같은 병이다.
+    #   ⇒ 값은 찍되 게이트는 ROTOR_I·JFRIC·bias·delay 가 진다. JDAMP 는 **토크시험**
+    #     (act_measure_inertia_torque 의 q̇_ref 훑기)에서 괄호로 받아 온다.
     ok = True
     for i, l in enumerate(lab):
         e = (best[i] / x_true[i] - 1) * 100
         good = abs(e) < 30
-        ok &= good
+        gate = not l.startswith("JDAMP.")
+        ok &= (good or not gate)
         print(f"  {l:<16}{x_true[i]:>12.4g}{best[i]:>12.4g}{e:>9.1f}%"
-              + ("" if good else "  ★"))
+              + ("" if good else ("  ★" if gate else "  (판정제외 — 궤적으로는 못 얻는다)")))
     # ★bias·delay 는 **절대오차**로 본다 — 참값이 0 근처일 수 있어 비율이 무의미하다
     nb = len(names)
     be = np.abs(best[9:9 + nb] - x_true[9:9 + nb])
@@ -604,7 +793,11 @@ def selftest(m, a) -> int:
           + ("" if bg else "  ★(0.3° 초과)"))
     print(f"  {'delay[ms] 오차':<16}{x_true[9+nb]*1e3:>12.2f}{best[9+nb]*1e3:>12.2f}"
           f"{de:>8.2f}ms" + ("" if dg else "  ★(2ms 초과)"))
-    print(f"\n  RMS {bestc:.4f}° · 셀프테스트 {'통과' if ok else '실패(30% 초과 항목)'}")
+    print(f"\n  RMS {bestc:.4f}° · 셀프테스트 "
+          + ("통과" if ok else "실패(30% 초과 — JDAMP 는 판정에서 제외됨)"))
+    if bestc > 0.05:
+        print(f"  ⚠RMS {bestc:.4f}° 는 잡음바닥(0.02°)보다 한참 위다 — **미수렴**이다."
+              f" 게이트로 쓰려면 `--st-T 4 --iters 120` 이상으로 돌릴 것")
     return 0 if ok else 1
 
 

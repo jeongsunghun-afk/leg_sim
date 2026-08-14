@@ -283,7 +283,7 @@ def main() -> int:
     import mujoco
     d = mujoco.MjData(m)
     idx = P.joint_index(m, names)
-    x0, lo, hi = P.init_bounds(a.spec, names, False)
+    x0, lo, hi, _free = P.init_bounds(a.spec, names, False)
     # ★라벨은 pace_cmaes 가 만든다 — 여기서 만들면 갈린다 (2026-08-12 실제로 갈렸다:
     #   init_bounds 에 bias·delay 가 추가됐는데 여기 라벨은 9개 그대로여서 x0 18개와 어긋났다).
     plabels = P.param_labels(names, False)

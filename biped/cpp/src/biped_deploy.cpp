@@ -118,8 +118,12 @@ int main(int argc, char** argv){
     std::printf("✗ 모델 관절수(%d) ≠ config joints(%d) — 모델/설정 불일치\n", NJ, jm.n_leg);
     mj_deleteData(d); mj_deleteModel(m); return 1;
   }
-  std::printf("[deploy] 모델=%s (nq=%d nv=%d nu=%d, 점발 1pt) · cmode=%d\n",
-              mjcf.c_str(), m->nq, m->nv, m->nu, c.cmode);
+  // ★"점발 1pt" 하드코딩이었다(2026-08-13 수정). 평발 MJCF 를 줘도 그렇게 찍혀서,
+  //   운전자가 이 줄로 무엇이 올라왔는지 확인하는데 **거짓말을 하고 있었다.**
+  //   cmode 는 heel 구 유무로 자동 결정된다(BipedControl: cmode = has_heel ? 1 : 0).
+  std::printf("[deploy] 모델=%s (nq=%d nv=%d nu=%d) · cmode=%d **%s**\n",
+              mjcf.c_str(), m->nq, m->nv, m->nu, c.cmode,
+              c.cmode==1 ? "2점 평발(정적 자세유지)" : "1점 점발(stepping 보행)");
 
   BipedEstimator est;
   { std::vector<int> fg={c.sph[0],c.sph[1]};
@@ -297,15 +301,23 @@ int main(int argc, char** argv){
       c.control(dt);
 
       // 토크 → 채널. ★tau_max_frac 로 한 번 더 클램프(컨트롤러 내부 클립과 별개의 상위 안전망).
+      // ★2026-08-13 두 가지가 바뀌었다.
+      //   ① 한계 출처: jnt_actfrcrange(+actuator_trnid 조회) → **actuator ctrlrange**.
+      //      종전 주석이 "모델이 바뀌면 조용히 틀린 축의 토크한계를 쓴다" 고 경고했는데,
+      //      발목을 tendon 액추에이터로 옮긴 것이 정확히 그 모델 변경이다 —
+      //      trnid 가 관절이 아니라 **tendon id** 를 돌려줘 엉뚱한 관절 한계를 읽게 된다.
+      //      ctrlrange 는 액추에이터당 하나라 조회 자체가 없어진다.
+      //   ② d->ctrl 은 이제 **드라이브 토크**다. 한계도 드라이브 기준이라 여기서 바로 자른다.
+      VectorXd u_drv(NU);
       for(int i=0;i<NU;i++){
-        // ★actuator_trnid 로 관절을 찾는다. "freejoint 다음이 순서대로 액추에이터 관절"
-        //   이라는 가정은 현재 MJCF 에선 맞지만(검증함), 모델이 바뀌면 조용히 틀린 축의
-        //   토크한계를 쓰게 된다. quad 도 같은 방식이다(quad_control.hpp:81 인근).
-        int jid = m->actuator_trnid[i*2];
-        double lim = (jid>=0 ? m->jnt_actfrcrange[jid*2+1] : 0.0) * cfg.tau_max_frac;
+        double lim = (m->actuator_ctrllimited[i] ? m->actuator_ctrlrange[i*2+1] : 0.0) * cfg.tau_max_frac;
         if(lim<=0) lim = 80.0;
-        tau_ctrl[i] = std::max(-lim, std::min(lim, d->ctrl[i]));
+        u_drv[i] = std::max(-lim, std::min(lim, d->ctrl[i]));
       }
+      // ★관절토크로 되돌려서 넘긴다 — joint_map(tau_ctrl_to_ch)이 **자기가 전단**하므로
+      //   드라이브 토크를 그대로 주면 전단이 두 번 걸려 τ_calf−2·τ_foot 이 나간다.
+      VectorXd tj = bipedwbic::drive_to_tau(u_drv);
+      for(int i=0;i<NU;i++) tau_ctrl[i] = tj[i];
       jm.q_ctrl_to_ch(q_ctrl.data(), q_ch.data());        // 위치/속도는 참고값(kp=kd=0 이라 무영향)
       jm.dq_ctrl_to_ch(dq_ctrl.data(), dq_ch.data());
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
@@ -319,7 +331,15 @@ int main(int argc, char** argv){
     if(lt - last_pub > 0.05){
       last_pub = lt;
       int n_ok=0, n_fault=0, n_dead=0, n_absent=0;
-      std::string health="[", inst="[", qs="[";
+      std::string health="[", inst="[", qs="[", qchs="[";
+      // ★2026-08-13 `q_leg_deg` 에 **채널각**을 넣고 있었다(모델각 계약 위반).
+      //   emb/interface/state_pub.py 규약: q_leg_deg = **모델각**(MJCF qpos 와 같은 좌표계).
+      //   채널각을 넣으면 뷰어·모니터가 **틀린 자세를 그린다** — gear_k(calf 1.5·foot 1.2)와
+      //   커플링만큼 어긋난다. 실기에서 자세를 화면으로 보며 판단하므로 직격이다.
+      //   ⇒ 여기서 한 번 변환하고, 채널각은 `q_ch_deg` 로 따로 낸다(캘리브레이션·진단용).
+      //   ⚠`q_ch_deg` 가 없으면 diag/couple_check.py 가 "구버전" 이라며 거부한다.
+      std::vector<double> q_leg(jm.n_leg);
+      jm.ch_to_q_joint(hs.q_deg.data(), q_leg.data());
       for(int i=0;i<jm.n_leg;i++){
         int ch = cfg.joints[i].channel;
         bool ins = cfg.installed_has(ch);
@@ -331,17 +351,18 @@ int main(int argc, char** argv){
         char b[64];
         std::snprintf(b,sizeof b,"%s\"%s\"", i?",":"", h); health += b;
         std::snprintf(b,sizeof b,"%s%s", i?",":"", ins?"true":"false"); inst += b;
-        std::snprintf(b,sizeof b,"%s%.2f", i?",":"", hs.q_deg[ch]); qs += b;
+        std::snprintf(b,sizeof b,"%s%.2f", i?",":"", q_leg[i]);      qs   += b;   // 모델각
+        std::snprintf(b,sizeof b,"%s%.2f", i?",":"", hs.q_deg[ch]);  qchs += b;   // 채널각
       }
-      health+="]"; inst+="]"; qs+="]";
+      health+="]"; inst+="]"; qs+="]"; qchs+="]";
       char buf[1600];
       std::snprintf(buf,sizeof buf,
-        "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,"
+        "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
         "\"rpy_deg\":[%.2f,%.2f,%.2f],\"tilt_deg\":%.2f,\"loop_hz\":%.1f,"
         "\"motors_on\":%s,\"health\":%s,\"installed\":%s,"
         "\"n_ok\":%d,\"n_fault\":%d,\"n_dead\":%d,\"n_absent\":%d,\"n_installed\":%d,"
         "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s,\"tilt_estop_ok\":%s}",
-        mode.c_str(), hw->name(), qs.c_str(), rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
+        mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(), rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
         rpy[2]*JointMap::R2D, tilt, hz_ema, (mode!="off"&&!wd)?"true":"false",
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,
         (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",

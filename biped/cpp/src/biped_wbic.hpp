@@ -9,6 +9,24 @@ using namespace Eigen;
 
 namespace bipedwbic {
 
+// ★관절토크 τ ↔ 드라이브토크 u (2026-08-13). 발목이 링키지 구동이라 두 좌표가 다르다.
+//     u_calf = τ_calf − τ_foot        u_foot = τ_foot        (hip·thigh 는 그대로)
+//   발목 드라이브 좌표가 raw각(q_calf+q_foot)이므로 일률보존에서 **전치**로 들어간다.
+//   축순서 = (hip,thigh,calf,foot) × 다리  ⇒  i%4==2 가 calf, 바로 다음이 foot.
+//   ⚠MJCF 에서 발목 액추에이터가 tendon(coef 1,1)에 물려 있어야 이 규약이 성립한다.
+//   ⚠실기 변환 emb/interface/joint_map.py:tau_ctrl_to_ch 와 **같은 전단**이다.
+//     둘이 갈리면 시뮬과 실기가 다른 로봇이 된다 — 한쪽만 고치지 말 것.
+inline VectorXd tau_to_drive(const VectorXd& tau){
+  VectorXd u=tau;
+  for(int i=0;i+1<tau.size();i++) if(i%4==2) u[i]=tau[i]-tau[i+1];
+  return u;
+}
+inline VectorXd drive_to_tau(const VectorXd& u){
+  VectorXd tau=u;
+  for(int i=0;i+1<u.size();i++) if(i%4==2) tau[i]=u[i]+u[i+1];
+  return tau;
+}
+
 struct WbicIn {
   int nv, nu, Kc;                 // 14, 8, 접촉수
   MatrixXd M;                     // nv×nv
@@ -29,7 +47,7 @@ struct WbicIn {
   bool com_x_track=false; double com_x_ref=0, com_vx_ref=0;   // ★평발 보행 전후 CoM 규제(발목ZMP 활용)
   bool com_xy_track=false; double com_xr=0,com_yr=0,com_vxr=0,com_vyr=0; double W_COMXY=140;  // ★ZMP프리뷰 CoM xy 추종
   VectorXd Qhome;                 // nu
-  VectorXd tau_peak;              // nu
+  VectorXd drv_peak;              // nu — ★**드라이브(모터)** 토크한계다. 관절토크 한계가 아니다
   std::vector<int> ankle_idx;     // 발목 관절
   // 게인
   double SW_KP, SW_KD, W_ORI, W_ANKLE, W_POST, W_LAM, STANCE_KD, MU_EFF, LAMZ_MIN;
@@ -103,8 +121,15 @@ inline VectorXd wbic_track(const WbicIn& in){
     VectorXd r=VectorXd::Zero(nz); r[o+2]=-1; Gr.push_back(r); hv.push_back(-in.LAMZ_MIN); }
   MatrixXd Tm=MatrixXd::Zero(nu,nz); Tm.leftCols(nv)=in.M.block(6,0,nu,nv);
   for(int k=0;k<Kc;k++) Tm.block(0,sl(k),nu,3)=-in.cjac[k].block(0,6,3,nu).transpose();
-  for(int i=0;i<nu;i++){ Gr.push_back(Tm.row(i)); hv.push_back(in.tau_peak[i]-in.h[6+i]);
-                         Gr.push_back(-Tm.row(i)); hv.push_back(in.tau_peak[i]+in.h[6+i]); }
+  // ★토크한계를 **드라이브 공간**에 건다 (2026-08-13). 실기 한계는 관절이 아니라 모터에 걸린다:
+  //   무릎 드라이브가 τ_calf−τ_foot 을 짊어지므로, 관절공간 박스는 실기가 못 내는 조합을
+  //   허용한다(집합이 박스가 아니라 전단된 평행사변형이다). calf 행만 전단하고 나머지는 그대로.
+  for(int i=0;i<nu;i++){
+    VectorXd r=Tm.row(i); double off=in.h[6+i];
+    if(i%4==2 && i+1<nu){ r-=Tm.row(i+1); off-=in.h[6+i+1]; }
+    Gr.push_back(r);  hv.push_back(in.drv_peak[i]-off);
+    Gr.push_back(-r); hv.push_back(in.drv_peak[i]+off);
+  }
   // eiquadprog: CE x+ce0=0 · CI x+ci0≥0
   P=(0.5*(P+P.transpose())).eval()+1e-8*MatrixXd::Identity(nz,nz);
   MatrixXd CE=A; VectorXd ce0=-bb;
@@ -117,7 +142,10 @@ inline VectorXd wbic_track(const WbicIn& in){
   if(st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL){
     VectorXd qdd=x.head(nv); tau=in.M.block(6,0,nu,nv)*qdd+in.h.segment(6,nu);
     for(int k=0;k<Kc;k++) tau-=in.cjac[k].block(0,6,3,nu).transpose()*x.segment(sl(k),3);
-    for(int i=0;i<nu;i++) tau[i]=std::max(-in.tau_peak[i],std::min(in.tau_peak[i],tau[i]));
+    // ★클립도 드라이브 공간에서. 관절공간 클립은 실기가 못 내는 토크를 통과시킨다.
+    VectorXd u=tau_to_drive(tau);
+    for(int i=0;i<nu;i++) u[i]=std::max(-in.drv_peak[i],std::min(in.drv_peak[i],u[i]));
+    tau=drive_to_tau(u);
   }
   return tau;
 }

@@ -448,12 +448,75 @@ def t_hold_no_ratchet():
           f"ch1 {drift.get(1, 0.0):+.2f}°")
 
 
+def t_vref_sweep_synth():
+    """★q̇_ref 훑기 — 참값 기지 합성으로 **I 는 되찾고 b 는 못 되찾는다**를 못박는다.
+
+    이 시험의 요점은 통과가 아니라 **한계를 기록**하는 것이다. 2026-08-14 에
+    "같은 런에서 b(점성)도 뽑을 수 있다" 를 넣으면서 합성으로 재 보니:
+        I  ±1%          — 준위 간 차이로 구해져 시간창 편향이 상쇄된다
+        b  −110%~+39%   — 절편의 미세 기울기라 상쇄되지 않는다(부호까지 뒤집힌 사례 있음)
+    R² 0.958 인데도 b 가 +51% 틀린 사례가 있었다 ⇒ **R² 는 방패가 아니다.**
+    그래서 b 는 값이 아니라 ×[0.5, 2] 괄호로만 낸다. 이 시험이 그 근거다.
+    """
+    import numpy as np
+    from act_measure_inertia_torque import _ddq_at_speed
+    D = np.pi / 180.0
+    I_T, B_T, TC = 0.0376, 0.0120, 0.62
+    dt, VCAP, TRAV = 0.002, 170.0, 60.0
+
+    def one(tau, d):
+        t, q, v = [0.0], [0.0], [0.0]
+        while t[-1] < 1.5:
+            dq = v[-1] * D
+            a = (d * tau - B_T * dq - TC * np.sign(dq if abs(dq) > 1e-6 else d)) / I_T
+            dq += a * dt
+            v.append(dq / D); q.append(q[-1] + dq / D * dt); t.append(t[-1] + dt)
+            if abs(q[-1]) >= TRAV or abs(v[-1]) >= VCAP:
+                break
+        n = np.random.default_rng(abs(hash((tau, d))) % 2 ** 31).normal(0, 0.01, len(q))
+        return np.array(t), np.array(q) + n, np.array(v)
+
+    lv = [0.90, 1.05, 1.20, 1.35, 1.50, 1.65]
+    runs = [{"dir": d, "tau": x, **dict(zip(("t", "q", "dq"), one(x, d)))}
+            for d in (1.0, -1.0) for x in lv]
+    rows = []
+    for vr in (40, 60, 80, 100, 120, 140):
+        ff = {}
+        for d, l in ((1.0, "+"), (-1.0, "-")):
+            pts = []
+            for r in runs:
+                if r["dir"] != d:
+                    continue
+                g = _ddq_at_speed(r["t"], r["q"], r["dq"], dt, vr, 0.04, 0.05)
+                if "fail" not in g:
+                    pts.append((r["tau"], g["ddq"] * d))
+            if len(pts) >= 3:
+                x = np.array([p[0] for p in pts]); y = np.array([p[1] for p in pts])
+                A = np.column_stack([x, np.ones_like(x)])
+                th, *_ = np.linalg.lstsq(A, y, rcond=None)
+                ff[l] = (1.0 / th[0], -th[1] / th[0])
+        if len(ff) == 2:
+            rows.append((vr, np.mean([f[0] for f in ff.values()]),
+                         np.mean([f[1] for f in ff.values()])))
+    assert len(rows) >= 3, f"유효 q̇_ref 가 {len(rows)}개뿐 — 훑기 자체가 안 돈다"
+    vv = np.array([r[0] for r in rows]); ic = np.array([r[2] for r in rows])
+    II = np.array([r[1] for r in rows])
+    A = np.column_stack([vv, np.ones_like(vv)])
+    th, *_ = np.linalg.lstsq(A, ic, rcond=None)
+    eI = II.mean() / I_T - 1.0
+    eb = (th[0] / D) / B_T - 1.0
+    assert abs(eI) < 0.05, f"I 오차 {eI:+.1%} — ±5% 를 넘으면 회귀다(종전 ±1%)"
+    print(f"  ✓ q̇_ref 훑기: I 오차 {eI:+.1%}(기준 5%) · "
+          f"b 오차 {eb:+.0%} ← **못 되찾는다. 괄호로만 쓸 것**")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
-               t_friction_full, t_limp_and_signal, t_hold_no_ratchet):
+               t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
+               t_vref_sweep_synth):
         try:
             fn()
         except Exception as e:

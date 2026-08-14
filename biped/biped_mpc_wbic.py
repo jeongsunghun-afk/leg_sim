@@ -11,7 +11,7 @@ from qpsolvers import solve_qp
 import biped_step as BS
 from biped_step import T_STEP, DS_FRAC, STEP_H, SW_KP, SW_KD, GVEC
 from biped_wbic import (STANCE_KD, W_ORI, W_POST, W_ANKLE, MU, MU_MARGIN,
-                        LAMZ_MIN, TAU_PEAK, Q_HOME, ANKLE_IDX, base_rpy)
+                        LAMZ_MIN, DRV_PEAK, Q_HOME, ANKLE_IDX, base_rpy, tau_to_drive)
 
 MPC_N, MPC_DT = 14, 0.02
 Q_DIAG = np.array([200,200,100, 0,0,200, 0,0,1, 10,10,1, 0.0])   # TROT_Q
@@ -218,9 +218,14 @@ class BipedMPCWBIC(BS.BipedStep):
             r=np.zeros(nz); r[o+2]=-1; rows.append(r); hh.append(-LAMZ_MIN)
         Tm=np.zeros((nu,nz)); Tm[:,:nv]=M[6:,:]
         for k in range(Kc): Tm[:,sl(k):sl(k)+3]=-cjac[k][:,6:].T
+        # ★토크한계를 **드라이브 공간**에 건다 (2026-08-13). 무릎 드라이브가 τ_calf−τ_foot 을
+        #   짊어지므로 관절공간 박스는 실기가 못 내는 조합을 허용한다. calf 행만 전단한다.
         for i in range(nu):
-            rows.append(Tm[i]); hh.append(self.tau_peak[i]-h[6+i])
-            rows.append(-Tm[i]); hh.append(self.tau_peak[i]+h[6+i])
+            shear = (i % 4 == 2 and i + 1 < nu)                 # calf 축만
+            ri = Tm[i] - Tm[i+1] if shear else Tm[i]
+            oi = h[6+i] - h[6+i+1] if shear else h[6+i]
+            rows.append(ri); hh.append(self.drv_peak[i]-oi)
+            rows.append(-ri); hh.append(self.drv_peak[i]+oi)
         G=np.array(rows); hh=np.array(hh)
         P=0.5*(P+P.T)+1e-8*np.eye(nz)
         _multi = any(n > 1 for n in foot_npts.values())        # ★실제 발당 2점 접지 시만 rank-deficient
@@ -229,7 +234,7 @@ class BipedMPCWBIC(BS.BipedStep):
         if x is None: return self.wbic_stance()
         qdd=x[:nv]; tau=M[6:,:]@qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:,6:].T @ x[sl(k):sl(k)+3]
-        d.ctrl[:]=np.clip(tau,-self.tau_peak,self.tau_peak); return True
+        d.ctrl[:]=np.clip(tau_to_drive(tau),-self.drv_peak,self.drv_peak); return True   # ★ctrl=드라이브 토크
 
     def reset(self):
         super().reset()

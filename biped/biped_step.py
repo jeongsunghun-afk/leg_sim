@@ -12,14 +12,14 @@ import os, time, numpy as np, mujoco, mujoco.viewer
 from qpsolvers import solve_qp
 import biped_wbic as BW
 from biped_wbic import (STANCE_KD, W_ORI, W_POST, W_ANKLE, MU, MU_MARGIN,
-                        LAMZ_MIN, TAU_PEAK, Q_HOME, ANKLE_IDX, base_rpy)
+                        LAMZ_MIN, DRV_PEAK, Q_HOME, ANKLE_IDX, base_rpy, tau_to_drive)
 
 # ── 게이트/스텝 파라미터 ──
 # ★교훈: 점 발 biped는 느린 게이트가 오히려 위험(두 발 같은 x=sagittal 제어불가라 대기시간만↑).
 #   빠른 스텝(진자 시상수 0.23s 이하)이 안전. 안전게이트(0.40/0.55) 시도=0.83s로 악화 확인.
 # ★T_STEP 0.24 → 0.38 (2026-08-06, C++ 기준으로 통일. cpp/src/biped_control.hpp:22-34)
 #   실측 ROTOR_I(7.4e-4 = 구 placeholder 의 7.4배)를 넣으면 반사관성이 7.4배가 되어
-#   0.24s 스텝의 스윙 가속에 필요한 토크가 tau_peak 을 넘어 QP 가 포화 → **2.18s 낙상**.
+#   0.24s 스텝의 스윙 가속에 필요한 토크가 드라이브 한계(DRV_PEAK)를 넘어 QP 가 포화 → **2.18s 낙상**.
 #   필요가속도 ∝ 1/T² 이므로 스텝을 늦추는 것이 해법이다. C++ 실측 스윕:
 #     ROTOR_I 1e-4/2e-4/4e-4/5e-4 = 15s 무낙상 · 6e-4 = 9.4s · 7.4e-4 = 2.18s 낙상
 #     7.4e-4 + T_STEP 0.32 = 15s 무낙상 tilt 2.7°(최량) · 0.40/0.50 = 낙상
@@ -229,13 +229,20 @@ class BipedStep(BW.BipedWBIC):
             for sx, sy in sgn:
                 r = np.zeros(nz); r[o]=sx; r[o+1]=sy; r[o+2]=-mu; rows.append(r); hh.append(0.0)
             r = np.zeros(nz); r[o+2]=-1; rows.append(r); hh.append(-LAMZ_MIN)
-        # 토크 한계: -τpk ≤ M[6:]q̈+h[6:]-ΣJᵀλ ≤ τpk
+        # 토크 한계: -upk ≤ u ≤ upk,  u = 전단(M[6:]q̈+h[6:]-ΣJᵀλ)
+        # ★2026-08-13 **드라이브 공간**으로 옮겼다. 실기 한계는 관절이 아니라 모터에 걸린다 —
+        #   무릎 드라이브가 τ_calf−τ_foot 을 짊어지므로 관절공간 박스는 실기가 못 내는
+        #   조합을 허용한다(집합이 박스가 아니라 전단된 평행사변형이다).
+        #   calf 행만 (row_calf − row_foot) 로 전단하고 나머지는 그대로다.
         Tm = np.zeros((nu, nz)); Tm[:, :nv] = M[6:, :]
         for k in range(Kc): Tm[:, sl(k):sl(k)+3] = -cjac[k][:, 6:].T
         h_act = h[6:]
         for i in range(nu):
-            rows.append(Tm[i]);  hh.append(TAU_PEAK[i]-h_act[i])
-            rows.append(-Tm[i]); hh.append(TAU_PEAK[i]+h_act[i])
+            shear = (i % 4 == 2 and i + 1 < nu)                 # calf 축만
+            ri = Tm[i] - Tm[i+1] if shear else Tm[i]
+            oi = h_act[i] - h_act[i+1] if shear else h_act[i]
+            rows.append(ri);  hh.append(DRV_PEAK[i]-oi)
+            rows.append(-ri); hh.append(DRV_PEAK[i]+oi)
         G = np.array(rows); hh = np.array(hh)
         P = 0.5*(P+P.T) + 1e-8*np.eye(nz)
         x = solve_qp(P, g, G, hh, A, b, solver='quadprog')
@@ -243,7 +250,7 @@ class BipedStep(BW.BipedWBIC):
             return self.wbic_stance()      # 폴백
         qdd = x[:nv]; tau = M[6:, :] @ qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:, 6:].T @ x[sl(k):sl(k)+3]
-        d.ctrl[:] = np.clip(tau, -TAU_PEAK, TAU_PEAK)
+        d.ctrl[:] = np.clip(tau_to_drive(tau), -DRV_PEAK, DRV_PEAK)   # ★ctrl=드라이브 토크
         return True
 
     def control(self, dt):

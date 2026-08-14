@@ -35,7 +35,12 @@
       <freejoint name="root" />
       <inertial pos="-0.072651 -4.4686e-05 2.7227e-06" mass="2.8" fullinertia="0.0029362 0.0016967 0.0017243 4.3897e-06 3.2284e-07 -3.3685e-10" />
       <site name="imu" pos="0 0 0.05" size="0.01" />   <!-- ★IMU 장착점(실기 반영) -->
-      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="base_collision" />
+      <!-- ★torso 충돌 ON (2026-08-13). 종전 contype=0 이라 몸통이 지면을 통과했고 넘어짐을
+           학습·평가할 수 없었다. 점발판과 **같은 비트마스크**를 쓴다(이 모델은 다리 메시가
+           충돌 OFF 라 기본값도 안전하지만, 두 MJCF 가 갈리면 그게 다음 사고다).
+           torso(2,2)·floor(3,3) ⇒ torso↔floor ✓ · 다리↔floor ✓ · torso↔다리 ✗.
+           density=0 유지 — 질량이 늘면 총질량 13.5707 kg 이 바뀌어 전부 어긋난다. -->
+      <geom type="mesh" contype="2" conaffinity="2" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="base_collision" />
         <body name="HL_hip_link" pos="-0.225 0.0225 0">
           <inertial pos="0.026196 0.039035 -5.8825e-05" mass="1.3" fullinertia="0.0005559 0.00078767 0.00044966 1.3767e-05 2.7997e-09 -1.4339e-09" />
           <joint name="HL_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.26 0.26" actuatorfrcrange="-84 84" />
@@ -46,7 +51,7 @@
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link_collision" />
             <body name="HL_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 0.000115677 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 -6.32969e-10 -0.00116384 -1.22739e-10" />
-              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-126 126" />
+              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 두 드라이브의 힘을 받는다. 근거는 점발판 주석 -->
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_calf_link_collision" />
               <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.39397e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
@@ -72,7 +77,7 @@
             <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link_collision" />
             <body name="HR_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 -0.000113252 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 5.2813e-10 -0.00116384 8.19537e-11" />
-              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-126 126" />
+              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 두 드라이브의 힘을 받는다. 근거는 점발판 주석 -->
               <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_calf_link_collision" />
               <body name="HR_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.394e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
@@ -89,11 +94,16 @@
           </body>
         </body>
     </body>
-    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" friction="1.6 0.05 0.001" solref="0.004 1" solimp="0.95 0.99 0.001" />
+    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" contype="3" conaffinity="3" friction="1.6 0.05 0.001" solref="0.004 1" solimp="0.95 0.99 0.001" />
     <light pos="0 0 3" dir="0 0 -1" />
   </worldbody>
   <option timestep="0.002" gravity="0 0 -9.81" />
   <default>
+    <!-- ★condim 3 유지. 2026-08-13 에 6 을 시도했다가 되돌렸다 — 근거·실측표는 점발판
+         (biped_from_quad.mjcf) 같은 자리 주석. **깨진 게 바로 이 모델의 stand 였다.**
+         ⚠이 모델은 발당 접촉구가 2개(sphere+sphere2)라 condim 3 에서도 두 점의 **차동 마찰**로
+           요 저항이 생긴다. 즉 "발이 자유롭게 헛돈다" 는 1점 점발 모델의 문제이지 여기 것이
+           아니다 — 실기 밑창에 가까운 쪽은 이 2점 모델이고, 그쪽은 이미 yaw 를 버틴다. -->
     <geom friction="1.3 0.02 0.001" condim="3" />
     <motor ctrllimited="true" ctrlrange="-200 200" />
   </default>
@@ -111,14 +121,16 @@
     </fixed>
   </tendon>
   <actuator>
-    <motor joint="HL_hip_joint" name="HL_hip" />
-    <motor joint="HL_thigh_joint" name="HL_thigh" />
-    <motor joint="HL_calf_joint" name="HL_calf" />
-    <motor joint="HL_foot_joint" name="HL_foot" />
-    <motor joint="HR_hip_joint" name="HR_hip" />
-    <motor joint="HR_thigh_joint" name="HR_thigh" />
-    <motor joint="HR_calf_joint" name="HR_calf" />
-    <motor joint="HR_foot_joint" name="HR_foot" />
+    <!-- ★2026-08-13 발목 액추에이터를 **tendon 으로 옮겼다**(실기 기구 커플링 반영).
+         점발판(biped_from_quad.mjcf)의 같은 블록과 **반드시 같이** 고칠 것. 근거는 그쪽 주석. -->
+    <motor joint="HL_hip_joint" name="HL_hip" ctrlrange="-84 84" />
+    <motor joint="HL_thigh_joint" name="HL_thigh" ctrlrange="-84 84" />
+    <motor joint="HL_calf_joint" name="HL_calf" ctrlrange="-126 126" />
+    <motor tendon="HL_foot_rotor" name="HL_foot" ctrlrange="-100.8 100.8" />
+    <motor joint="HR_hip_joint" name="HR_hip" ctrlrange="-84 84" />
+    <motor joint="HR_thigh_joint" name="HR_thigh" ctrlrange="-84 84" />
+    <motor joint="HR_calf_joint" name="HR_calf" ctrlrange="-126 126" />
+    <motor tendon="HR_foot_rotor" name="HR_foot" ctrlrange="-100.8 100.8" />
   </actuator>
   <!-- ★IMU 센서(실기 반영): 상태추정기 입력. framepos/framelinvel 은 GT 비교 전용. -->
   <sensor>

@@ -41,6 +41,13 @@ target_link_libraries(biped_deploy PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} dl)
 #   한 점 검증으로는 못 잡는 divergence 를 한계 박스 전 꼭짓점으로 훑는다.
 add_executable(biped_parity src/biped_parity.cpp)
 
+# ── ★평발 home 자세(Qflat8) 진단·재산출 — 기하조건 3개를 Newton 으로 푼다 ──────
+add_executable(flat_home src/flat_home.cpp)
+target_include_directories(flat_home PRIVATE ${MUJOCO_INCLUDE})
+target_link_libraries(flat_home PRIVATE ${MUJOCO_LIB})
+target_link_directories(flat_home PRIVATE ${ENV_PREFIX}/lib)
+set_target_properties(flat_home PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
+
 add_executable(biped_monitor src/biped_monitor.cpp)
 target_include_directories(biped_monitor PRIVATE ${EIGEN_INCLUDE} ${MUJOCO_INCLUDE})
 target_link_libraries(biped_monitor PRIVATE ${MUJOCO_LIB} glfw dl)

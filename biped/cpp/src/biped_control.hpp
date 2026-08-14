@@ -17,10 +17,17 @@ struct BipedControl {
   int sph[2], fbody[2];               // 발 sphere geom(tip)·contact body
   int sph2[2]={-1,-1}; bool has_heel=false;   // ★평발 heel 접촉구(foot_link 원점)
   int cmode=0;                        // 접촉모드: 0=1점(점발 stepping)·1=2점(평발 정적). 통합모델 기본 평발.
-  double Qflat8[8]={0,0.25,-0.50,-1.14626, 0,0.25,-0.50,-1.14626};   // ★평발 home(발목 눕힘, CoM 밑창중심)
+  // ★평발 home(발목 눕힘, CoM 밑창중심). **2026-08-13 새 CAD 로 재산출** — 구값
+  //   {0.25, −0.50, −1.14626} 은 구 CAD 유래이고, 2026-08-12 Qhome8 재산출(커밋 37a517e)
+  //   때 **여기가 빠졌다**(그 검증이 점발 8조건뿐이었다). 결과: 새 CAD 에서 CoM 이 밑창중심보다
+  //   **4.5cm 앞**(밑창 반길이 7.3cm → 전방여유 37.9%) → 전방 폭주로 1.29s 낙상.
+  //   ⚠밑창 기울기는 구값도 0 이었다 — 눈으로는 멀쩡해 보인다. 깨진 건 **전후 정렬**뿐이다.
+  //   재산출: cpp/src/flat_home.cpp (밑창수평 · CoM=밑창중심 · CoM높이 유지 3조건 Newton).
+  //   결과 CoM−밑창중심 0.00000 m(여유 100%) · CoM z 0.3649 유지 · base z 0.4451.
+  double Qflat8[8]={0,0.064256,-0.416657,-1.043858, 0,0.064256,-0.416657,-1.043858};
   // ── 파라미터 (Python 동일) ──
   // ★T_STEP 0.24 → 0.32 (2026-08-05). 실측 ROTOR_I(7.4e-4, 구 placeholder 의 7.4배)를
-  //   넣으면 반사관성이 7.4배가 되어 0.24s 스텝의 스윙 가속에 필요한 토크가 tau_peak 을
+  //   넣으면 반사관성이 7.4배가 되어 0.24s 스텝의 스윙 가속에 필요한 토크가 드라이브 한계(drv_peak)를
   //   넘어 QP 가 포화 → 2.18s 낙상. 필요가속도 ∝ 1/T² 이므로 스텝을 늦추는 것이 해법이다.
   //   ⚠ 스윙게인을 올리는 것은 역효과였다(SW_KP 800→1600/3200/5920 = 1.16/1.10/0.65s 낙상)
   //     — 대역 부족이 아니라 토크 포화이기 때문. 실측 스윕:
@@ -50,12 +57,15 @@ struct BipedControl {
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
-  // ★2026-08-06: 하드코딩 폐기 → init() 에서 **MJCF jnt_actfrcrange 에서 읽는다**
-  //   (quad 와 동일 패턴: quad/cpp/src/quad_control.hpp:81, quad_mpc_wbic_17dof.py:209)
-  //   종전 {84,84,126,96,...} 은 foot 이 96 = 12Nm×8 로, GEAR 를 8→8.4 로 고칠 때
-  //   따라가지 않아 tau_peak÷gear 가 11.43(≠모터 피크 12.0)이 돼 있었다.
-  //   ⇒ 감속비를 바꾸면 토크한계도 따라가야 한다. MJCF 를 단일 출처로 삼아 그걸 강제한다.
-  double tau_peak8[8]={84,84,126,100.8,84,84,126,100.8};   // init() 이 MJCF 값으로 덮어씀
+  // ★2026-08-06: 하드코딩 폐기 → init() 이 MJCF 에서 읽는다. 감속비를 바꾸면 토크한계도
+  //   따라가야 한다(종전 foot 96=12Nm×8 이 GEAR 8→8.4 를 안 따라가 11.43 이 돼 있었다).
+  // ★2026-08-13 **개명 tau_peak8 → drv_peak8 + 출처 변경**. 이건 관절토크 한계가 아니라
+  //   **드라이브(모터) 토크한계**다. 발목 액추에이터를 tendon 으로 옮기면서 둘이 갈라졌다:
+  //     calf **관절**은 무릎·발목 두 드라이브를 합쳐 226.8 을 받지만(jnt_actfrcrange),
+  //     무릎 **드라이브** 상한은 여전히 126 이다(actuator ctrlrange).
+  //   ⇒ 출처를 jnt_actfrcrange → **actuator ctrlrange** 로 옮긴다. 이름을 같이 바꾸는 건
+  //     의미가 달라졌기 때문이다 — 같은 이름으로 두면 다음 사람이 관절한계로 읽는다.
+  double drv_peak8[8]={84,84,126,100.8,84,84,126,100.8};   // init() 이 MJCF 값으로 덮어씀
   // ★2026-08-12 새 CAD(몸통 placeholder→실측)로 재산출. 구값 (0.05,−0.2) 폐기.
   //   고관절 부착점이 26cm 이동해 구 자세는 HOME 에서 CoM 이 지지중심보다 6cm 앞(구 1.6cm)이었고,
   //   그 오차가 nominal_off 에 스폰 시점에 굳어 매 스텝 반복 → 전방 폭주로 1초 내 낙상했다.
@@ -95,14 +105,14 @@ struct BipedControl {
 
   BipedControl(mjModel* m_, mjData* d_):m(m_),d(d_){
     nv=m->nv; nu=m->nu;
-    // ★tau_peak 을 MJCF 에서 읽는다(quad_control.hpp:81 과 동일 패턴).
-    //   hinge 관절만 골라 dof 순서(=actuator 순서)로 채운다. 값이 없으면(≤0) 무한대.
-    { int k=0;
-      for(int j=0;j<m->njnt && k<8;j++){
-        if(m->jnt_type[j]!=mjJNT_HINGE) continue;
-        double frc=m->jnt_actfrcrange[j*2+1];
-        tau_peak8[k++] = (frc>0) ? frc : 1e8;
-      }
+    // ★드라이브 토크한계를 MJCF **actuator ctrlrange** 에서 읽는다 (2026-08-13).
+    //   종전엔 jnt_actfrcrange 를 hinge 순서로 훑었는데, 발목이 tendon 액추에이터가 된
+    //   지금은 그 값이 드라이브 한계가 아니다(calf 관절 226.8 = 두 드라이브 합).
+    //   ctrlrange 는 **액추에이터당 하나**라 인덱스가 제어벡터와 그대로 맞는다 —
+    //   "hinge 를 순서대로 세면 액추에이터와 맞는다" 는 가정 자체가 사라져 더 안전하다.
+    for(int i=0;i<nu && i<8;i++){
+      double lim = m->actuator_ctrllimited[i] ? m->actuator_ctrlrange[i*2+1] : 0.0;
+      drv_peak8[i] = (lim>0) ? lim : 1e8;
     }
     sph[0]=mj_name2id(m,mjOBJ_GEOM,"HL_sphere"); sph[1]=mj_name2id(m,mjOBJ_GEOM,"HR_sphere");
     fbody[0]=mj_name2id(m,mjOBJ_BODY,"HL_foot_contact_link"); fbody[1]=mj_name2id(m,mjOBJ_BODY,"HR_foot_contact_link");
@@ -249,8 +259,17 @@ struct BipedControl {
     if(st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL){
       VectorXd qdd=x.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
       for(int k=0;k<K;k++) tau-=Js[k].block(0,6,3,nu).transpose()*x.segment(nv+3*k,3);
-      for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-tau_peak8[i],std::min(tau_peak8[i],tau[i]));
-    } else { for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-tau_peak8[i],std::min(tau_peak8[i],h[6+i])); }  // 실패=중력보상 홀드
+      set_ctrl_from_tau(tau);
+    } else { set_ctrl_from_tau(VectorXd(h.segment(6,nu))); }  // 실패=중력보상 홀드
+  }
+
+  // ★관절토크 → d->ctrl. MJCF 액추에이터가 **드라이브 좌표**라 전단 후 쓴다 (2026-08-13).
+  //   발목 모터가 tendon(coef 1,1)에 물려 있어 ctrl[foot] 이 calf·foot 두 DOF 에 같이 걸린다.
+  //   관절토크를 그대로 쓰면 무릎에 발목토크가 덤으로 실려 실기와 다른 로봇이 된다.
+  //   클립도 여기서 드라이브 한계로 — 실기 한계는 모터에 걸리지 관절에 걸리지 않는다.
+  void set_ctrl_from_tau(const VectorXd& tau){
+    VectorXd u=bipedwbic::tau_to_drive(tau);
+    for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-drv_peak8[i],std::min(drv_peak8[i],u[i]));
   }
 
   void set_contact_mode(int cm){ if(!has_heel||cm==cmode) return; cmode=cm; reset(); }   // 초기용(스냅)
@@ -412,7 +431,7 @@ struct BipedControl {
       double fq[4]; for(int i=0;i<4;i++) fq[i]=d->xquat[fbody[sw]*4+i];
       double oe[3]; mju_subQuat(oe,fq,ftgt); for(int i=0;i<3;i++) in.sw_oerr[i]=oe[i];
     }
-    in.Qhome=Map<const VectorXd>(Qcur(),nu); in.tau_peak=Map<VectorXd>(tau_peak8,nu);   // ★모드별 자세(평발=Qflat)
+    in.Qhome=Map<const VectorXd>(Qcur(),nu); in.drv_peak=Map<VectorXd>(drv_peak8,nu);   // ★모드별 자세(평발=Qflat)
     in.ankle_idx={ankle_idx[0],ankle_idx[1]};
     if(in_zmp_walk){              // ★ZMP 프리뷰: 전후(x)만 CoM 추종(밑창 ZMP). 측방(y)은 capture 발배치(밑창 좁음).
       in.com_x_track=true; in.com_x_ref=cxr; in.com_vx_ref=vxr;
@@ -423,7 +442,7 @@ struct BipedControl {
     double wori=(cmode==1&&has_heel)?FLAT_WORI:W_ORI;     // ★평발=base pitch 레벨링↑(밑창 ZMP로 pitch 유지)
     in.SW_KP=SW_KP; in.SW_KD=SW_KD; in.W_ORI=wori; in.W_ANKLE=wank; in.W_POST=W_POST;
     in.W_LAM=(cmode==1&&has_heel)?FLAT_WLAM:W_LAM; in.STANCE_KD=STANCE_KD; in.MU_EFF=MU_EFF; in.LAMZ_MIN=LAMZ_MIN;   // 평발=MPC추종↓, WBIC task 지배
-    VectorXd tau=wbic_track(in); for(int i=0;i<nu;i++) d->ctrl[i]=tau[i];
+    set_ctrl_from_tau(wbic_track(in));   // ★전단(관절토크→드라이브)은 한 곳에서만
   }
 
   // ZMP 레퍼런스(미래 tick fzkk): 초기 DS 리드인(중앙→첫지지발) 후 SS 계단

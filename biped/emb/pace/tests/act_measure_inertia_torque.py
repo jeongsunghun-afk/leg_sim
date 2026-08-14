@@ -263,6 +263,105 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         log(f"  [{name}] ⚠ {w}")
     res["warnings"] = warn
 
+    # ── ★q̇_ref 훑기 — **같은 런에서 b(점성)까지 뽑는다** (2026-08-14) ──────
+    #   위 회귀의 절편은 설계상 `b·q̇_ref + τ_c(q̇_ref) + τ_g` 라 셋이 뭉쳐 있다.
+    #   그런데 그건 **q̇_ref 의 일차식**이다. 같은 런을 여러 q̇_ref 에서 다시 읽어
+    #   절편을 q̇_ref 에 회귀하면 기울기가 곧 `b + dτ_c/dq̇` 다.
+    #   ⇒ **하드웨어를 다시 안 돌린다.** 런 하나에 여러 속도가 이미 다 들어 있다.
+    #
+    #   ★★그런데 이 b 는 **값이 아니라 괄호다.** 합성검증(참값 기지, 이 파일의
+    #     t_vref_sweep_synth)에서 I 는 ±1% 로 되찾는데 b 는 이렇게 갈렸다:
+    #         half_s   0.02      0.03      0.05      0.08
+    #         I 오차   −0.0%    −0.4%    +0.5%    +0.9%
+    #         b 오차  −57.2%   +39.3%   +22.5%   +36.0%
+    #       참값별(half_s=0.03): b=0.004 → **−110%(부호까지 뒤집힘)** · 0.008 → −19%
+    #                            0.012 → +39% · 0.020 → +39% · 0.040 → +5%
+    #     원인은 `_ddq_at_speed` 가 **고정 시간창**(±half_s)에서 q̈ 를 읽기 때문이다.
+    #     창 안에서 속도가 변하므로 `b·q̇_ref` 가 정확히 그 속도의 값이 아니고, 그
+    #     잔차가 q̇_ref 마다 달라 기울기에 그대로 실린다. I 는 **준위 간 차이**로
+    #     구해지니 이 편향이 상쇄되지만, b 는 **절편의 미세한 기울기**라 안 상쇄된다.
+    #     ⚠R² 는 방패가 안 된다 — 위 +51% 사례의 R² 가 **0.958** 이었다.
+    #   ⇒ 결론: **JDAMP 를 이걸로 못박지 말 것.** 다만 PACE 의 JDAMP 상자가 지금
+    #     ×0.1~10(폭 100배)이므로, ×[0.5, 2](폭 4배)로 **좁히는 근거**로는 쓸 수 있다.
+    #     그게 이 값의 유일한 용도다.
+    #
+    #   ★왜 지금 이게 필요한가 — JDAMP 는 **어느 방법으로도 못 얻고 있었다.**
+    #     각축 마찰법: 등속 구간에서 재므로 q̈=0, b 는 τ_c 와 완전히 섞인다(8축 전부 nan).
+    #     PACE(다축):  JDAMP↔JFRIC r=+0.93 축퇴라 평탄방향. 2026-08-14 적합에서
+    #                  JDAMP.foot 이 상자 **상한 95%**, JDAMP.hip 이 **하한 1%** 로 갈렸다.
+    #     이 방법만 q̈ 를 실제로 만들어 놓고 b 를 각축에서 직접 본다.
+    #
+    #   ⚠기울기는 `b + dτ_c/dq̇` 이지 b 가 아니다. 둘을 가르려면 **마찰-속도 곡선**이
+    #     필요한데 우리는 그걸 쟀다(act_measure_friction 의 속도 훑기):
+    #       calf 는 2~120dps 에서 평탄(±3%) ⇒ dτ_c/dq̇ ≈ 0 이라 기울기 = b 로 읽어도 된다.
+    #       thigh 는 40→60dps 에서 −30% 로 꺾인다 ⇒ **기울기를 b 로 읽으면 안 된다**(음수로 나온다).
+    #     그래서 아래는 기울기를 그대로 찍고, 판정은 사람이 그 곡선을 보고 한다.
+    #   ⚠I_ch 가 q̇_ref 마다 크게 달라지면 **공통속도법의 전제가 깨진 것**이다
+    #     (그 속도에 못 미친 런이 섞였거나 창이 겹쳤다). 그래서 같이 찍는다.
+    vsweep = [float(x) for x in cfg.get("vref_sweep_dps", []) if float(x) > 0]
+    if vsweep and runs:
+        rows = []
+        for vr in sorted(vsweep):
+            ff = {}
+            for d, lbl in ((+1.0, "+"), (-1.0, "−")):
+                pts = []
+                for r in runs:
+                    if r["dir"] != d:
+                        continue
+                    # dt 는 **그 런의 실측 중앙값** — 위 1차 회귀와 같은 값을 써야 한다
+                    dt_r = (float(np.median(np.diff(r["t"]))) if r["t"].size > 2 else hw.dt)
+                    g = _ddq_at_speed(r["t"], r["q"], r["dq"], dt_r, vr, skip_s, half_s)
+                    if "fail" not in g:
+                        pts.append((r["tau_cmd"], g["ddq"] * d))
+                if len(pts) < MIN_PTS:
+                    continue
+                x = np.array([p[0] for p in pts]); y = np.array([p[1] for p in pts])
+                A = np.column_stack([x, np.ones_like(x)])
+                th, *_ = np.linalg.lstsq(A, y, rcond=None)
+                if abs(th[0]) > 1e-9:
+                    ff[lbl] = (float(1.0 / th[0]), float(-th[1] / th[0]), len(pts))
+            if len(ff) == 2:      # 양방향 다 있을 때만 — 한쪽만이면 중력이 안 빠진다
+                rows.append({"vref": vr,
+                             "I_ch": float(np.mean([v[0] for v in ff.values()])),
+                             "intercept": float(np.mean([v[1] for v in ff.values()])),
+                             "n": int(sum(v[2] for v in ff.values()))})
+        res["vref_sweep"] = rows
+        if len(rows) >= 3:
+            vv = np.array([r["vref"] for r in rows]); ic = np.array([r["intercept"] for r in rows])
+            II = np.array([r["I_ch"] for r in rows])
+            A = np.column_stack([vv, np.ones_like(vv)])
+            th, *_ = np.linalg.lstsq(A, ic, rcond=None)
+            r2 = 1.0 - np.sum((ic - A @ th) ** 2) / max(np.sum((ic - ic.mean()) ** 2), 1e-12)
+            b_ch = float(th[0]) / DEG          # Nm/(deg/s) → Nm·s/rad
+            res["b_ch"] = b_ch
+            res["b_joint"] = b_ch * k_gear ** 2
+            res["b_r2"] = float(r2)
+            res["tau_c0"] = float(th[1])
+            I_spread = float((II.max() - II.min()) / max(abs(II.mean()), 1e-12))
+            res["I_vref_spread"] = I_spread
+            log(f"  [{name}] ★q̇_ref 훑기 — 같은 런을 {len(rows)} 속도에서 다시 읽었다")
+            log(f"           {'q̇_ref[dps]':>11}{'I_ch':>10}{'절편[Nm]':>11}{'n':>5}")
+            for r in rows:
+                log(f"           {r['vref']:>11.0f}{r['I_ch']:>10.5f}{r['intercept']:>11.3f}{r['n']:>5}")
+            log(f"           절편 기울기 = {b_ch:+.4f} Nm·s/rad(채널) "
+                f"= {res['b_joint']:+.4f}(관절, ×k²={k_gear**2:.2f}) · R²={r2:.4f}")
+            log(f"           절편0(q̇→0) = {th[1]:+.3f} Nm = τ_c(0)+τ_g")
+            # ★값이 아니라 **괄호**로 낸다. 합성검증에서 −110%~+39% 로 갈렸다(위 주석).
+            ok_b = (b_ch > 0) and (r2 >= 0.8) and (I_spread <= 0.15)
+            if ok_b:
+                res["b_joint_bracket"] = [res["b_joint"] * 0.5, res["b_joint"] * 2.0]
+                log(f"           ⇒ JDAMP 괄호(관절) **[{res['b_joint']*0.5:.4f}, "
+                    f"{res['b_joint']*2:.4f}]** — 못박는 값이 **아니다**.")
+                log(f"             합성검증 b 오차 −110%~+39% (I 는 ±1%). PACE 의 JDAMP "
+                    f"상자를 ×0.1~10 → 이 괄호로 좁히는 데만 쓸 것")
+            else:
+                why = ("기울기 음수" if b_ch <= 0 else
+                       f"직선성 R²={r2:.3f}<0.8" if r2 < 0.8 else
+                       f"I 가 속도마다 {I_spread*100:.0f}% 흔들림>15%")
+                log(f"           ✗b 괄호 없음 — {why}. **JDAMP 는 이 시험으로 못 얻었다**")
+            log(f"           ⚠기울기는 **b + dτ_c/dq̇** 다. 마찰-속도 곡선이 평탄한 축"
+                f"(calf: 2~120dps ±3%)만 b 로 읽을 것. thigh 는 40→60dps 에서 −30% 라 안 된다")
+
     # ── 유효성 판정 — 못 믿을 값은 **숫자를 내지 않는다** ──────────────────
     ok = len(fits) == 2
     if ok:

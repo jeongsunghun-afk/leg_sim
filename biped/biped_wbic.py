@@ -24,9 +24,12 @@ W_POST    = 1.0          # 관절 posture 가중(기본)
 W_ANKLE   = 20.0         # 발목(foot) posture 가중 ↑ (whip 억제)
 MU, MU_MARGIN = 0.8, 0.707     # μ_eff = 0.566 (덜 보수적, 뷰어 피드백. MJCF 물리 1.6)
 LAMZ_MIN  = 1.0
-# ⚠ 하위호환 폴백일 뿐이다. **실제로 쓰이는 값은 self.tau_peak(MJCF 에서 파생)** 이다.
+# ⚠ 하위호환 폴백일 뿐이다. **실제로 쓰이는 값은 self.drv_peak(MJCF 에서 파생)** 이다.
 #   MJCF 를 고치면 자동으로 따라가므로 여기를 손댈 일은 없다. (foot 100.8 = 12Nm × 8.4)
-TAU_PEAK  = np.array([84, 84, 126, 100.8, 84, 84, 126, 100.8])   # HL/HR × (hip,thigh,calf,foot)
+# ★2026-08-13 개명 TAU_PEAK → DRV_PEAK. 관절토크 한계가 아니라 **드라이브(모터)** 한계다.
+#   발목 액추에이터를 tendon 으로 옮기면서 둘이 갈라졌다 — calf **관절**은 무릎·발목 두
+#   드라이브를 합쳐 226.8 을 받지만, 무릎 **드라이브** 상한은 여전히 126 이다.
+DRV_PEAK  = np.array([84, 84, 126, 100.8, 84, 84, 126, 100.8])   # HL/HR × (hip,thigh,calf,foot)
 # ── 액추에이터 물리 — ★2026-08-06 C++ 기준으로 통일 (cpp/src/biped_control.hpp:51-61) ──
 #   출처: emb/pace/RESULTS.md — HL_hip·HR_hip 을 PACE 처프로 실측 식별.
 #   ⚠ 이 값들은 **C++ 가 기준**이다. 여기서 재유도하거나 되돌리지 말 것.
@@ -65,10 +68,38 @@ JDAMP, JFRIC = 0.09, 0.38
 #       정지 · 전진 0.05/0.10/0.15/0.20 · 후진 −0.10 · 측방 0.05 · 선회 0.2  → **8/8 무낙상**
 #       tilt 3.0~4.1°(구 모델 5~6°보다 낫다) · 측방드리프트 |y| ≤ 0.03 m (VX 0.20 만 0.55)
 Q_HOME = np.array([0.0, 0.203054, -0.671148, 0.0,  0.0, 0.203054, -0.671148, 0.0])
-# ★평발(flat-foot) home: 발목 -1.146으로 눕혀 heel(foot_joint)+toe 밑창을 지면과 수평.
-# thigh0.25·calf-0.50로 발을 뒤로 보내 CoM이 밑창중심(x0.053)에 정렬(앞뒤 마진 ±8cm). base~0.43.
-Q_HOME_FLAT = np.array([0.0, 0.25, -0.50, -1.14626,  0.0, 0.25, -0.50, -1.14626])
+# ★평발(flat-foot) home: 발목을 눕혀 heel(foot_joint)+toe 밑창을 지면과 수평 + CoM 을 밑창중심에.
+# ★2026-08-13 **새 CAD 로 재산출**. 구값 {0.25, −0.50, −1.14626} 은 구 CAD 유래이고,
+#   2026-08-12 Q_HOME 재산출(커밋 37a517e) 때 **여기가 빠졌다** — 그 검증이 점발 8조건뿐이었다.
+#   새 CAD 에서 구값은 CoM 이 밑창중심보다 **4.5cm 앞**(밑창 반길이 7.3cm → 전방여유 37.9%)
+#   이라 전방 폭주로 1.29s 낙상했다. ⚠밑창 기울기는 구값도 0 이었다 — 눈으로는 멀쩡해 보이고
+#   깨진 건 **전후 정렬**뿐이다. 그래서 오래 안 들켰다.
+#   재산출 도구: cpp/src/flat_home.cpp (밑창수평 · CoM=밑창중심 · CoM높이 유지 3조건 Newton).
+#   결과: CoM−밑창중심 0.00000 m(여유 100%) · CoM z 0.3649 유지 · base z 0.4451.
+#   ⚠C++ Qflat8(cpp/src/biped_control.hpp)과 **같이** 고칠 것. 한쪽만 고치면 파리티가 깨진다.
+Q_HOME_FLAT = np.array([0.0, 0.064256, -0.416657, -1.043858,  0.0, 0.064256, -0.416657, -1.043858])
 ANKLE_IDX = [3, 7]       # HL_foot, HR_foot
+
+
+# ★관절토크 τ ↔ 드라이브토크 u (2026-08-13). 발목이 링키지 구동이라 두 좌표가 다르다.
+#     u_calf = τ_calf − τ_foot        u_foot = τ_foot        (hip·thigh 는 그대로)
+#   발목 드라이브 좌표가 raw각(q_calf+q_foot)이므로 일률보존에서 **전치**로 들어간다.
+#   축순서 = (hip,thigh,calf,foot) × 다리  ⇒  [2::4] 가 calf, [3::4] 가 foot.
+#   ⚠MJCF 에서 발목 액추에이터가 tendon(coef 1,1)에 물려 있어야 이 규약이 성립한다.
+#   ⚠**같은 전단이 세 곳에 있다** — 여기 · C++ cpp/src/biped_wbic.hpp ·
+#     실기 emb/interface/joint_map.py:tau_ctrl_to_ch. 하나만 고치면 시뮬과 실기가 갈린다.
+def tau_to_drive(tau):
+    t = np.asarray(tau, float)
+    u = t.copy()
+    u[2::4] = t[2::4] - t[3::4]
+    return u
+
+
+def drive_to_tau(u):
+    v = np.asarray(u, float)
+    tau = v.copy()
+    tau[2::4] = v[2::4] + v[3::4]
+    return tau
 
 
 class BipedWBIC:
@@ -77,15 +108,18 @@ class BipedWBIC:
         self.d = mujoco.MjData(self.m)
         self.nv, self.nu = self.m.nv, self.m.nu          # 14, 8
         self.K = 2
-        # ★per-joint peak 토크를 **MJCF jnt_actfrcrange 에서 읽는다**(quad 와 동일 패턴:
-        #   quad/quad_mpc_wbic_17dof.py:209, quad/cpp/src/quad_control.hpp:81).
+        # ★드라이브 토크한계를 **MJCF actuator ctrlrange 에서 읽는다** (2026-08-13).
         #   하드코딩하면 감속비를 바꿀 때 따라가지 않는다 — 실제로 GEAR foot 8→8.4 로
-        #   고쳤을 때 tau_peak 96(=12Nm×8)이 그대로 남아 tau_peak÷gear 가 11.43 이 됐었다.
-        #   MJCF 를 단일 출처로 삼아 그 어긋남을 구조적으로 막는다.
-        self.tau_peak = np.array([self.m.jnt_actfrcrange[j, 1]
-                                  if self.m.jnt_actfrcrange[j, 1] > 0 else 1e8
-                                  for j in range(self.m.njnt)
-                                  if self.m.jnt_type[j] == mujoco.mjtJoint.mjJNT_HINGE])[:self.nu]
+        #   고쳤을 때 96(=12Nm×8)이 그대로 남아 peak÷gear 가 11.43 이 됐었다.
+        #   ⚠종전 출처(jnt_actfrcrange, hinge 순회)는 이제 틀리다. 발목이 tendon
+        #     액추에이터가 되면서 calf **관절** 한계가 226.8(=두 드라이브 합)이 됐기 때문이다.
+        #     ctrlrange 는 액추에이터당 하나라 인덱스가 제어벡터와 그대로 맞는다 —
+        #     "hinge 를 순서대로 세면 액추에이터와 맞는다" 는 가정 자체가 사라진다.
+        #   ⚠C++ cpp/src/biped_control.hpp 와 **같은 출처**여야 한다.
+        self.drv_peak = np.array([self.m.actuator_ctrlrange[i, 1]
+                                  if (self.m.actuator_ctrllimited[i]
+                                      and self.m.actuator_ctrlrange[i, 1] > 0) else 1e8
+                                  for i in range(self.nu)])
         self.sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in ['HL_sphere', 'HR_sphere']]
         self.fbody = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]
@@ -264,7 +298,10 @@ class BipedWBIC:
         tau = M[6:, :] @ qdd + h[6:]
         for k in range(K):
             tau -= Js[k][:, 6:].T @ x[nv + 3*k:nv + 3*k + 3]
-        d.ctrl[:] = np.clip(tau, -self.tau_peak, self.tau_peak)
+        # ★d.ctrl 은 이제 **드라이브 토크**다 (2026-08-13, MJCF 발목 액추에이터 tendon 이전).
+        #   관절토크를 그대로 쓰면 발목 모터가 tendon(coef 1,1)이라 무릎에 발목토크가 덤으로
+        #   실린다. 클립도 드라이브 한계로 — 실기 한계는 모터에 걸리지 관절에 걸리지 않는다.
+        d.ctrl[:] = np.clip(tau_to_drive(tau), -self.drv_peak, self.drv_peak)
         return True
 
 

@@ -35,7 +35,12 @@
       <freejoint name="root" />
       <inertial pos="-0.072651 -4.4686e-05 2.7227e-06" mass="2.8" fullinertia="0.0029362 0.0016967 0.0017243 4.3897e-06 3.2284e-07 -3.3685e-10" />
       <site name="imu" pos="0 0 0.05" size="0.01" />   <!-- ★IMU 장착점(실기 반영) -->
-      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="base_collision" />
+      <!-- ★torso 충돌 ON (2026-08-13). 종전 contype=0 이라 몸통이 지면을 통과했고 넘어짐을
+           학습·평가할 수 없었다. ⚠비트마스크로 **바닥하고만** 부딪히게 한다 — 다리 메시는
+           이 모델에서 충돌 ON(1,1)이라 기본값을 주면 torso↔대퇴 자기충돌까지 새로 생긴다.
+           torso(2,2)·floor(3,3) ⇒ torso↔floor ✓ · 다리↔floor ✓ · torso↔다리 ✗.
+           density=0 유지 — 질량이 늘면 총질량 13.5707 kg 이 바뀌어 전부 어긋난다. -->
+      <geom type="mesh" contype="2" conaffinity="2" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="base_collision" />
         <body name="HL_hip_link" pos="-0.225 0.0225 0">
           <inertial pos="0.026196 0.039035 -5.8825e-05" mass="1.3" fullinertia="0.0005559 0.00078767 0.00044966 1.3767e-05 2.7997e-09 -1.4339e-09" />
           <joint name="HL_hip_joint" pos="0 0 0" axis="1 0 0" range="-0.26 0.26" actuatorfrcrange="-84 84" />
@@ -46,7 +51,7 @@
             <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link_collision" />
             <body name="HL_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 0.000115677 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 -6.32969e-10 -0.00116384 -1.22739e-10" />
-              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-126 126" />
+              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
               <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_calf_link_collision" />
               <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.39397e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
@@ -71,7 +76,7 @@
             <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link_collision" />
             <body name="HR_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 -0.000113252 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 5.2813e-10 -0.00116384 8.19537e-11" />
-              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-126 126" />
+              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
               <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_calf_link_collision" />
               <body name="HR_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.394e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
@@ -87,11 +92,25 @@
           </body>
         </body>
     </body>
-    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" friction="1.6 0.05 0.001" solref="0.004 1" solimp="0.95 0.99 0.001" />
+    <geom name="floor" type="plane" size="0 0 0.1" material="floor_mat" contype="3" conaffinity="3" friction="1.6 0.05 0.001" solref="0.004 1" solimp="0.95 0.99 0.001" />
     <light pos="0 0 3" dir="0 0 -1" />
   </worldbody>
   <option timestep="0.002" gravity="0 0 -9.81" />
   <default>
+    <!-- ★condim 은 3 으로 **유지한다**. 2026-08-13 에 6 으로 올렸다가 **되돌렸다**.
+         올리려던 이유: condim 3 은 미끄럼 마찰만 쓴다. friction 둘째·셋째 항(비틀림 0.05·
+           구름 0.001)이 적혀 있는데 무시되고 있어, 발이 수직축으로 헛돌아 선회가 과대평가된다.
+         되돌린 이유: **WBIC 가 접촉을 3-DOF 점힘으로 푼다**(cjac 3×nv · λ 3벡터).
+           condim 4/6 은 제어기가 모르는 접촉 **모멘트**를 물리에만 추가해 모델이 어긋난다.
+           평발 2점 stand 실측(15초, Qflat8 재산출 후):
+               condim 3 → 무낙상 tilt 0.2° base z 0.438      ← 채택
+               condim 4 → 무낙상 tilt 2.0° base z 0.403      (10배 악화·3.5cm 침하)
+               condim 6 → **8.08s 낙상**                      (접촉 4→2 로 떨어지며 붕괴)
+           (condim 5 는 MuJoCo 가 거부한다.)
+         ⇒ 올리려면 **WBIC 접촉모델을 6-DOF 로 확장하는 것이 선행**이다. 물리만 올리면 손해다.
+         ⚠RL 은 이야기가 다르다 — 학습은 주어진 접촉모델에 맞춰 배우므로 6 으로 학습해도 된다.
+           단 그 정책은 이 WBIC 와 같은 모델 위에 있지 않다는 걸 알고 쓸 것.
+         ⚠solref="0.004 1" 은 timestep 0.002 의 정확히 2배 = 접촉 강성 한계선이다. -->
     <geom friction="1.3 0.02 0.001" condim="3" />
     <motor ctrllimited="true" ctrlrange="-200 200" />
   </default>
@@ -109,14 +128,25 @@
     </fixed>
   </tendon>
   <actuator>
-    <motor joint="HL_hip_joint" name="HL_hip" />
-    <motor joint="HL_thigh_joint" name="HL_thigh" />
-    <motor joint="HL_calf_joint" name="HL_calf" />
-    <motor joint="HL_foot_joint" name="HL_foot" />
-    <motor joint="HR_hip_joint" name="HR_hip" />
-    <motor joint="HR_thigh_joint" name="HR_thigh" />
-    <motor joint="HR_calf_joint" name="HR_calf" />
-    <motor joint="HR_foot_joint" name="HR_foot" />
+    <!-- ★2026-08-13 발목 액추에이터를 **tendon 으로 옮겼다**(실기 기구 커플링 반영).
+         실기 발목 드라이브는 raw 각(q_calf+q_foot)으로 돌아 관절토크를 [1,1] 로 낸다 —
+         무릎에도 같은 크기가 걸린다. joint 에 물리면 [0,1] 이라 실기가 못 내는 순수
+         발목토크가 된다. fixed tendon 의 모멘트암이 정확히 coef 벡터(1,1)라 `tendon=`
+         한 줄로 그 커플링이 재현되고, 로터 반사관성(tendon armature)과 **같은 좌표**에
+         모터가 작용해 물리적으로도 일관된다.
+         ⇒ **ctrl 은 이제 관절토크가 아니라 드라이브 토크다.** u_calf=τ_calf−τ_foot · u_foot=τ_foot.
+         ★ctrlrange = 드라이브별 실한계. 종전 기본 ±200 은 2.4배 과대였다.
+           컨트롤러는 토크한계를 **여기서** 읽는다(biped_control.hpp) — jnt_actfrcrange 가
+           아니다. calf **관절**은 두 드라이브를 합쳐 226.8 까지 받으므로 그건 드라이브
+           한계가 아니게 됐다. -->
+    <motor joint="HL_hip_joint" name="HL_hip" ctrlrange="-84 84" />
+    <motor joint="HL_thigh_joint" name="HL_thigh" ctrlrange="-84 84" />
+    <motor joint="HL_calf_joint" name="HL_calf" ctrlrange="-126 126" />
+    <motor tendon="HL_foot_rotor" name="HL_foot" ctrlrange="-100.8 100.8" />
+    <motor joint="HR_hip_joint" name="HR_hip" ctrlrange="-84 84" />
+    <motor joint="HR_thigh_joint" name="HR_thigh" ctrlrange="-84 84" />
+    <motor joint="HR_calf_joint" name="HR_calf" ctrlrange="-126 126" />
+    <motor tendon="HR_foot_rotor" name="HR_foot" ctrlrange="-100.8 100.8" />
   </actuator>
   <!-- ★IMU 센서(실기 반영): 상태추정기 입력. framepos/framelinvel 은 GT 비교 전용. -->
   <sensor>

@@ -248,8 +248,19 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         #   깎아 준위가 거짓이 된다 — 회귀의 x 가 틀리면 I 가 통째로 틀린다.
         _lo_b, _hi_b = (joint.get("_ch_box") or (-60.0, 60.0))
         _gmax = max(abs(grav_at(q)) for q in np.linspace(_lo_b, _hi_b, 41))
-        tau_max = tau_max + _gmax
-        log(f"  [{name}] 중력상쇄 켬 — |τ_g| 최대 {_gmax:.3f} Nm ⇒ 토크상한 {tau_max:.2f} Nm")
+        # ★상한은 **중력 + 최대준위 + 여유** 다 (2026-08-14 수정).
+        #   종전엔 `cfg.tau_max_nm(2.0) + |τ_g|max` 였는데, 그 2.0 은 **옛 상수준위**
+        #   (최대 1.35) 기준이다. 자동설계가 3.98 까지 올리면 명령이 잘린다:
+        #     HL_thigh 중력 6.71 + 준위 3.98 = 10.69  >  상한 2.0+6.71 = 8.71
+        #     ⇒ 1.98Nm 이 잘리고 남는 가진 2.00 → q̈ 가 11.8 rad/s² 에서 **포화**했다.
+        #       실측이 그대로 보였다: τ 2.98→13.09 · 3.48→12.70 · 3.98→12.64 (되레 감소)
+        #       회귀 기울기가 눌려 **I 가 +64% 로 과대평가**됐다.
+        #   ⚠clip 은 조용하다 — 명령이 잘려도 아무 말이 없고 q̈ 만 눕는다. 그래서
+        #     "포화했나" 를 아래에서 **명시적으로 검사**한다.
+        _need = _gmax + (max(levels) if levels else 0.0)
+        tau_max = _need + 0.5
+        log(f"  [{name}] 중력상쇄 켬 — |τ_g| 최대 {_gmax:.3f} + 준위최대 "
+            f"{max(levels) if levels else 0:.2f} ⇒ 토크상한 {tau_max:.2f} Nm")
         # ★**트립 예산**을 미리 확인한다 (2026-08-14). 종전엔 tau_max 만 올리고
         #   안전트립(τ_trip)과 대조하지 않아 **런 도중에** 죽었다:
         #     HL_thigh 중력 6.67 + 파단 0.73 + 가진 3.27 = 10.7Nm > τ_trip 8.0
@@ -422,6 +433,18 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         log(f"  [{name}] {lbl}방향: I_ch={f_['I_ch']:.5f} kg·m²(채널) · "
             f"절편={f_['intercept']:+.3f} Nm · R²={r2:.4f} · "
             f"cond={f_['cond']:.1f} (n={len(sel)})")
+    # ★**포화 검사** (2026-08-14). clip·전류한계·전압한계 어느 쪽이든 q̈ 가 τ 를 따라
+    #   안 오르면 회귀 기울기가 눌려 I 가 과대평가된다. 조용히 지나가면 안 된다.
+    for d, lbl in ((+1.0, "+"), (-1.0, "−")):
+        pts = sorted([(r["tau_cmd"], abs(r["ddq"])) for r in runs if r["dir"] == d])
+        if len(pts) < 4:
+            continue
+        top = pts[-3:]                       # 상위 3준위
+        if top[-1][1] <= top[0][1] * 1.02:   # 사실상 안 늘었다
+            warn.append(f"{lbl}방향 **q̈ 가 고τ에서 포화**했다 "
+                        f"(τ {top[0][0]:.2f}→{top[-1][0]:.2f} 인데 "
+                        f"q̈ {top[0][1]:.2f}→{top[-1][1]:.2f}) — I 가 과대평가된다. "
+                        f"토크상한·전류한계를 볼 것")
     res["fits"] = fits
     for w in warn:
         log(f"  [{name}] ⚠ {w}")

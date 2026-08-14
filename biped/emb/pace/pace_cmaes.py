@@ -519,6 +519,9 @@ def main() -> int:
     ap.add_argument("--ctrl-space", default="tendon", choices=("tendon", "joint"),
                     help="foot PD 가 재는 오차. tendon=raw각(q_foot+q_calf, **실기**) · "
                          "joint=관절각(2026-08-14 이전 동작). actuator_wrap 독스트링 참조")
+    ap.add_argument("--out", default=None, metavar="npz",
+                    help="산출물 경로. 기본은 <입력>_cmaes.npz 인데, 조건을 바꿔 여러 번 "
+                         "돌리면 **서로 덮어쓴다** — 통제군 비교를 하려면 반드시 나눌 것")
     ap.add_argument("--eval-only", action="store_true", help="초기값만 평가(CMA-ES 생략)")
     ap.add_argument("--st-T", type=float, default=4.0, help="셀프테스트 길이[s]")
     ap.add_argument("--st-dt", type=float, default=0.002,
@@ -675,7 +678,10 @@ def main() -> int:
         else:
             print("  ✅게인을 바꿔도 개선이 유지된다")
 
-    out = os.path.splitext(a.npz)[0] + "_cmaes.npz"
+    # ★조건별로 파일을 나눈다 (2026-08-14). 종전엔 입력 이름에서만 만들어서
+    #   `--ctrl-space joint` 통제군을 돌리면 앞 결과를 **말없이 덮어썼다**.
+    #   비교하려고 돌린 두 실행이 한 파일을 쓰면 비교 자체가 불가능하다.
+    out = a.out or (os.path.splitext(a.npz)[0] + "_cmaes.npz")
     np.savez(out, x=best, x0=x0, rms_fit=bestc, rms_holdout=hb,
              per_axis=a.per_axis, names=np.array(D["names"]),
              # ★상자를 같이 남긴다 (2026-08-14). 안 남겨서 "벽에 박혔는지" 를

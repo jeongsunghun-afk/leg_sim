@@ -67,7 +67,10 @@ static void safe_shutdown(HwIface& hw, int n){
       "\n!! Emb 는 마지막 명령을 1kHz 로 계속 재전송한다. **모터 전원을 차단할 것**.\n%s\n",
       std::string(68,'!').c_str(), std::string(68,'!').c_str());
   } else {
-    std::printf("[deploy] 종료 — 무여자(Kp=Kd=0) 명령 %d/25 회 기록 완료.\n", ok);
+    // ⚠"무여자" 라 쓰지 않는다 — SHM 에 드라이브 disable 경로가 **없다**(벤더 확인 2026-08-14).
+    //   보장되는 건 명령토크 0 까지고, 드라이브는 여전히 여자 상태다.
+    std::printf("[deploy] 종료 — 명령토크 0(Kp=Kd=τ=0) %d/25 회 기록 완료.\n"
+                "         ⚠드라이브는 여전히 여자 상태다 — 축이 안 풀리면 물리 리셋/전원 차단.\n", ok);
   }
 }
 

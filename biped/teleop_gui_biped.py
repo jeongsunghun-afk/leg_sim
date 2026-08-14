@@ -451,7 +451,7 @@ with dpg.window(tag='main'):
             dpg.add_text('(발끝 1점·동적)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
     dpg.add_text('복구 순서: Off 전원 → Home 복귀 → Hold → (접지·하중전달) → 2점 평발 stand'
-                 '   · Off=모터 토크차단(limp), 실HW=motor disable', color=(150, 155, 175))
+                 '   · Off=명령토크 0 (Kp=Kd=τ=0)', color=(150, 155, 175))
     dpg.add_text('⚠매달린 채로 stand/보행을 켜지 말 것 — GRF 를 전제한 QP 라 해가 안 나오고 '
                  '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home/hold 뿐.',
                  color=(210, 150, 90))

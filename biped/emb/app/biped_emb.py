@@ -63,7 +63,16 @@ def make_backend(cfg, force_mock: bool):
 
 
 def safe_shutdown(hw, jm):
-    """실제로 무여자 상태로 만들고 끝낸다.
+    """명령 버퍼를 무여자(Kp=Kd=τ=0)로 만들고 끝낸다.
+
+    ⚠⚠**이것이 "모터를 끈다" 는 뜻은 아니다** (2026-08-14 벤더 확인).
+      SHM 에는 드라이브를 **실제로 끄는 경로가 없다** — MD80 의 `MOTOR_ENABLE(0x00)`·
+      `CONTROL_SELECT(IDLE)` 은 CAN 프로토콜에는 있지만 **MCU 에 구현돼 있지 않다.**
+      `ucMode`/`ucCommand` 필드는 있으나 의미가 정의돼 있지 않다(ucStatus 와 같은 상황).
+      ⇒ 여기서 보장하는 것은 **"우리가 보내는 명령토크가 0"** 까지다.
+        드라이브는 여전히 여자(energized) 상태이고, 종료 뒤에도 축이 안 풀릴 수 있다.
+      ⇒ **확실한 해제는 물리 리셋/전원 차단뿐이다.** 실기 시험 전에 그 스위치 위치를
+        손 닿는 곳에 확인해 둘 것. (벤더가 나중에 추가할 수도 있다고 함)
 
     ★기존 종료는 `hw.enable(False); hw.close()` 뒤에 "종료(limp)" 를 찍었지만
       **거짓이었다.** bridge_enable(0) 은 g_enabled 플래그만 바꿀 뿐 SHM 명령버퍼를
@@ -77,7 +86,9 @@ def safe_shutdown(hw, jm):
         for _ in range(25):                     # enable=False → 브리지가 kp=kd=0 으로 기록
             hw.write_limp()
             time.sleep(0.002)
-        print("[biped_emb] 종료 — 무여자(Kp=Kd=0) 명령 25회 기록 완료.")
+        print("[biped_emb] 종료 — 명령토크 0(Kp=Kd=τ=0) 25회 기록 완료.\n"
+              "           ⚠드라이브는 **여전히 여자 상태**다(SHM 에 disable 경로 없음).\n"
+              "             축이 안 풀리면 물리 리셋/전원 차단이 유일한 해제 수단이다.")
     except Exception as e:
         print(f"[biped_emb] ⚠⚠ 종료 중 무여자 기록 실패({e}) — "
               f"Emb 가 마지막 명령을 계속 재전송한다. **모터 전원을 차단할 것**.")

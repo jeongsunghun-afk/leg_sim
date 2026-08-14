@@ -353,6 +353,20 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     else:
         f0 = {"hip": 0.38, "thigh": 0.38, "calf": 0.38, "foot": 0.44}   # 구 추정치
         JFRIC_SPAN[0] = None
+    # ★JDAMP 실측이 있으면 초기값을 그걸로 덮는다 (2026-08-14).
+    #   토크시험의 q̇_ref 훑기가 HL_foot 에서 b_joint ≈ 0.20 을 냈다(무릎 자유·고정
+    #   두 조건에서 0.214/0.202 로 재현). 그런데 종전 x0 은 0.02 였고 상자가
+    #   ×0.1~10 = [0.002, 0.2] 라 **실측이 천장에 딱 걸려 있었다.**
+    #   그 상태로 적합하면 CMA-ES 가 하한 0.002 로 내려가 버린다(A′·B′ 둘 다 그랬다).
+    #   ⚠이 값은 **괄호지 값이 아니다** — I 가 속도마다 21~24% 흔들려 가드가 b 를
+    #     거부했다. 그래도 "0.002 냐 0.2 냐" 는 100배 차이라 초기값·상자를 잡는 데는
+    #     충분하고, 안 넣으면 상자 밖에 최적이 있는 상태로 계속 돈다.
+    _md = (sp.get("friction") or {}).get("measured_damping_joint") or {}
+    if _md:
+        for c, v in _md.items():
+            c = int(c)
+            if c < len(names):
+                d0[kind_of(names[c])] = float(v)
     if per_axis:
         x0 = np.concatenate([[rot0], [d0[kind_of(x)] for x in names],
                              [f0[kind_of(x)] for x in names]])
@@ -404,7 +418,11 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         if "rotor" in pin:
             free[0] = False
         for i, L in enumerate(lab):
-            if L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
+            # kind 로 지정(hip → JDAMP.hip·JFRIC.hip 둘 다) 또는 **개별 라벨**로 지정
+            #   (JDAMP.foot → 그 하나만). 실측이 한쪽만 있을 때 개별 지정이 필요하다.
+            if L in pin:
+                free[i] = False
+            elif L.startswith(("JDAMP.", "JFRIC.")) and kind_of(L.split(".", 1)[1]) in pin:
                 free[i] = False
     return x0, lo, hi, free
 
@@ -593,9 +611,11 @@ def main() -> int:
         print(f"  ⇒ 양쪽이 같은 주파수 범위를 본다(처프의 tail 편향 제거)")
 
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
+    _lab_all = param_labels(D["names"], a.per_axis)
     for k in pin:
-        if k not in KINDS + ("rotor",):
-            raise SystemExit(f"✗ --pin {k} — {KINDS + ('rotor',)} 중 하나여야 한다")
+        if k not in KINDS + ("rotor",) and k not in _lab_all:
+            raise SystemExit(f"✗ --pin {k} — {KINDS + ('rotor',)} 또는 개별 라벨"
+                             f"(예: JDAMP.foot) 이어야 한다")
     x0, lo, hi, free = init_bounds(a.spec, D["names"], a.per_axis, pin)
     wrap = actuator_wrap(m, idx, D["names"], a.ctrl_space)
     _nw = sum(1 for w in wrap if w)

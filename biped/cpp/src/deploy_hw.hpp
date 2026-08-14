@@ -365,6 +365,17 @@ struct JointMap {
     ch_to_q_joint(q_ch, out);
     for(int i=0;i<n_leg;i++) out[i] *= D2R;
   }
+  // 보고 토크(채널) → **실제 관절토크**[Nm]. 실제 = 보고·k, 커플링은 (I+C)ᵀ.
+  // ★Python joint_map.ch_to_tau_joint 의 미러 (2026-08-13 추가 — C++ 에만 없었다).
+  //   각도와 **반대 방향**이다: 각도는 목적축에서 빼고, 토크는 소스축에 더한다.
+  void ch_to_tau_joint(const float* tau_ch, double* out) const {
+    std::vector<double> raw(n_leg);
+    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
+      raw[i] = (double)tau_ch[j.channel] * j.gear_k / j.sign; }
+    for(int i=0;i<n_leg;i++) out[i]=raw[i];
+    for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];
+      if(j.couple_src>=0) out[j.couple_src] = raw[j.couple_src] + j.couple_coef*raw[i]; }
+  }
   void ch_to_dq_ctrl(const float* dq_ch, double* out) const {
     std::vector<double> raw(n_leg);
     for(int i=0;i<n_leg;i++){ const auto& j=c->joints[i];

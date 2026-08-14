@@ -636,6 +636,22 @@ def main():
                   extra["dt_ms_nom"] = round(cfg_dt * 1e3, 3)
                   hz_ema = hz_true
               extra["write_fail"] = int(getattr(hw, "n_write_fail", 0))
+              # ★모니터링: 측정 vs 명령 (2026-08-13). 종전엔 **위치 실측 하나만** 나갔다.
+              #   그래서 "명령대로 따라오는가" 를 화면에서 볼 방법이 아예 없었다 —
+              #   속도·토크는 SHM 에서 이미 읽고 있었는데 발행만 안 하고 있었다.
+              #   단위 통일: 전부 **모델각(deg·deg/s)** · **관절토크(Nm)**. 채널각 아님.
+              #   ⚠명령값은 클램프·램프를 **거친 뒤**의 값이다(hw._log_cmd). 상위 목표를
+              #     그대로 쓰면 "안 따라온다" 는 오진이 난다 — 잘린 건 하드웨어 탓이 아니다.
+              try:
+                  extra["dq_leg_dps"] = [round(float(v), 2) for v in hw.dq_leg_dps()]
+                  extra["tau_leg_nm"] = [round(float(v), 3) for v in hw.tau_leg_nm()]
+                  extra["q_cmd_deg"]  = [round(float(v), 2) for v in hw.cmd_q_deg]
+                  extra["dq_cmd_dps"] = [round(float(v), 2) for v in hw.cmd_dq_dps]
+                  extra["tau_cmd_nm"] = [round(float(v), 3) for v in hw.cmd_tau_nm]
+                  extra["kp_leg"]     = [round(float(v), 1) for v in hw.cmd_kp]
+                  extra["kd_leg"]     = [round(float(v), 2) for v in hw.cmd_kd]
+              except Exception:
+                  pass          # 발행 실패가 제어를 멈추면 안 된다(state_pub 와 같은 원칙)
               # ★래치·워치독을 **밖으로 드러낸다** (2026-08-12).
               #   래치되면 OFF 외의 모든 모드요구가 OFF 로 되돌려진다. 그런데 그 사실이
               #   어디에도 안 나가서, 사용자에겐 "HOME 을 눌러도 안 바뀐다" 로만 보였다.

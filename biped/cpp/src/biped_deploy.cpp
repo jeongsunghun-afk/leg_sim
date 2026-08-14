@@ -122,7 +122,7 @@ int main(int argc, char** argv){
   //   운전자가 이 줄로 무엇이 올라왔는지 확인하는데 **거짓말을 하고 있었다.**
   //   cmode 는 heel 구 유무로 자동 결정된다(BipedControl: cmode = has_heel ? 1 : 0).
   std::printf("[deploy] 모델=%s (nq=%d nv=%d nu=%d) · cmode=%d **%s**\n",
-              mjcf.c_str(), m->nq, m->nv, m->nu, c.cmode,
+              mjcf.c_str(), (int)m->nq, (int)m->nv, (int)m->nu, c.cmode,   // ★mjtSize=long → %d 경고
               c.cmode==1 ? "2점 평발(정적 자세유지)" : "1점 점발(stepping 보행)");
 
   BipedEstimator est;
@@ -355,14 +355,34 @@ int main(int argc, char** argv){
         std::snprintf(b,sizeof b,"%s%.2f", i?",":"", hs.q_deg[ch]);  qchs += b;   // 채널각
       }
       health+="]"; inst+="]"; qs+="]"; qchs+="]";
-      char buf[1600];
+      // ★모니터링용 측정·명령 (2026-08-13). Python app(biped_emb.py)과 **같은 키·같은 단위**로 낸다
+      //   — 모니터가 두 제어기를 구분하지 않아도 되게. 모델각[deg·deg/s] · 관절토크[Nm].
+      //   ⚠이 경로는 **순수 토크모드**(kp=kd=0)라 위치·속도 "명령" 이 없다. q_ch/dq_ch 는
+      //     측정에서 만든 참고값이라 명령으로 내보내면 거짓말이 된다 ⇒ 토크만 명령으로 낸다.
+      //     kp/kd 를 0 으로 함께 내보내 모니터가 "위치명령 없음" 을 알 수 있게 한다.
+      std::vector<double> tau_meas(jm.n_leg);
+      jm.ch_to_tau_joint(hs.tau_nm.data(), tau_meas.data());
+      std::string dqs="[", taus="[", taucs="[", kps="[", kds="[";
+      for(int i=0;i<jm.n_leg;i++){
+        char b[64]; const char* sep = i?",":"";
+        std::snprintf(b,sizeof b,"%s%.2f", sep, dq_ctrl[i]*JointMap::R2D); dqs   += b;  // 측정 속도
+        std::snprintf(b,sizeof b,"%s%.3f", sep, tau_meas[i]);             taus  += b;  // 측정 토크
+        std::snprintf(b,sizeof b,"%s%.3f", sep, tau_ctrl[i]);             taucs += b;  // 명령 토크
+        std::snprintf(b,sizeof b,"%s0.0",  sep);                          kps   += b;
+        std::snprintf(b,sizeof b,"%s0.0",  sep);                          kds   += b;
+      }
+      dqs+="]"; taus+="]"; taucs+="]"; kps+="]"; kds+="]";
+      char buf[3072];   // ★1600 → 3072 (2026-08-13): 모니터링 배열 6개(q_ch·dq·tau·tau_cmd·kp·kd) 추가로 넘칠 수 있었다
       std::snprintf(buf,sizeof buf,
         "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
+        "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_leg\":%s,\"kd_leg\":%s,"
         "\"rpy_deg\":[%.2f,%.2f,%.2f],\"tilt_deg\":%.2f,\"loop_hz\":%.1f,"
         "\"motors_on\":%s,\"health\":%s,\"installed\":%s,"
         "\"n_ok\":%d,\"n_fault\":%d,\"n_dead\":%d,\"n_absent\":%d,\"n_installed\":%d,"
         "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s,\"tilt_estop_ok\":%s}",
-        mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(), rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
+        mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
+        dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
+        rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
         rpy[2]*JointMap::R2D, tilt, hz_ema, (mode!="off"&&!wd)?"true":"false",
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,
         (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",

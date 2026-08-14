@@ -30,6 +30,17 @@ class HwInterface:
         self.imu_deg = imu_deg
         self._raw = None
         self.n_write_fail = 0   # ★SHM 쓰기 실패 누적(부분실패는 위험한 방향으로 조용하다)
+        # ★마지막으로 **실제 나간** 명령을 모델각/관절토크로 기록한다 (2026-08-13).
+        #   왜 여기냐: 상위(app)가 만든 목표는 클램프·램프를 거치기 **전** 값이라,
+        #   그걸 그대로 표시하면 "명령대로 안 따라온다" 는 오진을 부른다. 실제로 나간 것과
+        #   측정을 나란히 놔야 추종오차가 의미를 가진다.
+        #   ⚠채널각이 아니라 **모델각**으로 둔다 — 측정(q_leg_deg)과 같은 단위여야 뺄 수 있다.
+        n = self.jm.n_leg
+        self.cmd_q_deg   = np.zeros(n)     # 위치명령[모델각 deg]
+        self.cmd_dq_dps  = np.zeros(n)     # 속도명령[모델각 deg/s] — 위치모드에선 0
+        self.cmd_tau_nm  = np.zeros(n)     # 토크 피드포워드[관절 Nm] — 위치모드에선 0
+        self.cmd_kp      = np.zeros(n)     # 그때 쓴 게인(모드에 따라 0=limp)
+        self.cmd_kd      = np.zeros(n)
 
     def init(self):
         self.be.init()
@@ -63,6 +74,28 @@ class HwInterface:
           RL·모델기반이 붙으면 바로 쓰게 되는 자리라 미리 맞춰 둔다.
         """
         return self.jm.ch_to_dq_ctrl(self._raw.dq_dps) * R2D
+
+    def tau_leg_nm(self) -> np.ndarray:
+        """다리 8관절 측정토크 [**관절 Nm**]. 드라이버 보고토크를 관절축으로 되돌린 값.
+
+        ★`ch_to_tau_joint` 에 위임한다 — gear_k 로 곱하고 커플링을 **전치로** 푼다.
+          여기 수식을 복사하면 안 된다(같은 실수를 GUI 한계·gen_emb_init_pose 에서 이미 했다).
+        ⚠보고토크의 **절대 스케일 α 는 미검증**이다(fCurrent 가 fTorque 복제라 독립 검증
+          수단이 없다). 추세·좌우대조·명령대비 편차를 보는 용도로 쓸 것.
+        """
+        return self.jm.ch_to_tau_joint(self._raw.tau_nm)
+
+    # ── 명령 기록 (모니터링용) ────────────────────────────────────────────
+    def _log_cmd(self, q_deg=None, dq_dps=None, tau_nm=None, kp=None, kd=None):
+        """실제로 나간 명령을 모델각/관절토크로 남긴다. 안 준 항목은 0 으로 둔다."""
+        n = self.jm.n_leg
+        self.cmd_q_deg  = np.asarray(q_deg,  float).copy() if q_deg  is not None else np.zeros(n)
+        self.cmd_dq_dps = np.asarray(dq_dps, float).copy() if dq_dps is not None else np.zeros(n)
+        self.cmd_tau_nm = np.asarray(tau_nm, float).copy() if tau_nm is not None else np.zeros(n)
+        self.cmd_kp = (np.full(n, kp, float) if np.isscalar(kp) else
+                       (np.asarray(kp, float).copy() if kp is not None else self.jm.kp_leg.copy()))
+        self.cmd_kd = (np.full(n, kd, float) if np.isscalar(kd) else
+                       (np.asarray(kd, float).copy() if kd is not None else self.jm.kd_leg.copy()))
 
     def ctrl_state(self):
         """모델기반용 상태: (q_rad[8], dq_rad[8], quat_wxyz[4], gyro_rad[3], acc[3], contact[2])."""
@@ -107,6 +140,7 @@ class HwInterface:
         lo = np.minimum(self.jm.jog_min, qm)
         hi = np.maximum(self.jm.jog_max, qm)
         qj = np.clip(qj, lo, hi)
+        self._log_cmd(q_deg=qj)                      # ★클램프 **후** = 실제 나간 값
         rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
         if rc not in (0, None):
             self.n_write_fail += 1
@@ -124,6 +158,7 @@ class HwInterface:
         if q_meas_joint_deg is not None:
             return self.write_ramped(q_leg_joint_deg, q_meas_joint_deg)
         qj = self.jm.clamp_jog_joint(q_leg_joint_deg)
+        self._log_cmd(q_deg=qj)
         rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
         if rc not in (0, None):
             self.n_write_fail += 1
@@ -132,6 +167,7 @@ class HwInterface:
     def write_hold(self, q_leg_joint_deg):
         """현재자세 홀드: **모델각** 입력, 관절한계 클램프 후 채널각으로 변환."""
         qj = self.jm.clamp_joint(q_leg_joint_deg)
+        self._log_cmd(q_deg=qj)
         rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
         if rc not in (0, None):
             self.n_write_fail += 1
@@ -142,6 +178,7 @@ class HwInterface:
         ★enable(False) 상태에서 브리지가 kp=kd=0 으로 쓰므로 위치값 자체는 무의미하지만,
           0 을 쓰면 재무장 순간 0 으로 튀는 명령이 남는다. 측정각을 유지하는 편이 안전하다."""
         z = np.zeros(self.jm.n_channel)
+        self._log_cmd(q_deg=self.jm.ch_to_q_joint(self._raw.q_deg), kp=0.0, kd=0.0)
         rc = self.be.write_pos(self._raw.q_deg.copy(), z, z)
         # ★limp 실패는 **가장 위험한 방향으로** 조용하다 — 남은 채널이 직전 명령을
         #   그대로 유지해 계속 힘을 낸다(shm_backend.write_pos 주석 참조).
@@ -155,6 +192,9 @@ class HwInterface:
 
     def write_torque(self, q_ctrl_rad, dq_ctrl_rad, tau_ctrl_nm, kp_leg=0.0, kd_leg=0.0):
         """모델기반: 컨트롤러 토크(Nm) → 채널 MIT. kp/kd=0 = 순수 토크."""
+        self._log_cmd(q_deg=np.asarray(q_ctrl_rad, float) * R2D,
+                      dq_dps=np.asarray(dq_ctrl_rad, float) * R2D,
+                      tau_nm=tau_ctrl_nm, kp=kp_leg, kd=kd_leg)
         q = self.jm.q_ctrl_to_ch(q_ctrl_rad)
         dq = self.jm.dq_ctrl_to_ch(dq_ctrl_rad)
         tau = self.jm.tau_ctrl_to_ch(tau_ctrl_nm)

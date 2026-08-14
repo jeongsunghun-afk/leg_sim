@@ -800,6 +800,24 @@ def main() -> int:
                             hw.tau_ff_fn = (lambda c, q, _c=ch:
                                             float(hw.grav_fn(_c, q)) if c == _c else 0.0)
                             hw.arm(ch, _kp_ch, _kd_ch)
+                        elif ch in _gt:
+                            # ★홀드 모드에도 **중력 FF 를 건다** (2026-08-14).
+                            #   종전엔 FF 설치가 `if a.solo` 안에만 있어서 --solo 를 빼면
+                            #   중력 보상이 **아예 없었다.** goto 가 brake_kp(30)만으로
+                            #   중력을 이기려다 뒤처진다:
+                            #     HL_calf 홀드 시작점 이동에서 추종오차 **12.09° > 12.0** 트립
+                            #     (명령 −50.41 · 측정 −38.31)
+                            #   foot 은 중력이 0.09Nm 이라 안 걸렸을 뿐이다.
+                            #   ⚠홀드 모드에서는 **실측 보정이 필요 없다.** 중력표는
+                            #     "다른 관절이 제자리에 잡혀 있다" 를 전제로 뽑은 것이고
+                            #     홀드가 정확히 그 조건이다. solo 에서만 표가 틀렸던 것이다
+                            #     (하위 관절이 늘어져 하중분포가 달라져서).
+                            #   ⇒ 표를 그대로 FF 로 쓴다. 보정 없이.
+                            hw.tau_ff_fn = (lambda c, q, _c=ch:
+                                            float(hw.grav_fn(_c, q)) if c == _c else 0.0)
+                            _log(f"  [{j['name']}] 중력 FF 켬(표 그대로 — 홀드 모드는 "
+                                 f"표의 전제가 성립한다)")
+                            hw.arm(ch, _kp_ch, _kd_ch)
                         # ★복귀는 **지그 유무와 무관하게 항상** 돈다(사용자 결정 2026-08-11).
                         #   지그가 물려 있으면 편차가 작아 즉시 끝나거나 생략된다.
                         #   궤적은 GUI 홈복귀와 **같은 구현**(control/home.py:HomeTrajectory).

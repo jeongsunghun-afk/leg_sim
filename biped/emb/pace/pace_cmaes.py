@@ -760,6 +760,23 @@ def report(names, x, per_axis, log=print):
             f"(커플링 계수 — 1.0 은 **가정**이지 실측이 아니다)")
 
 
+def src_hash() -> str:
+    """이 파일의 내용 해시 8자리. **출력만 보고 어느 코드가 돌았는지 알기 위해서**다.
+
+    ★왜 (2026-08-14) — 이 스크립트는 tools/pack_fit.sh 로 다른 기계에 복사해 돌린다.
+      그런데 재포장이 조용히 실패한 적이 있다(테스트가 CPU 경합으로 죽으면서 `&&`
+      사슬이 끊겨 pack_fit 이 아예 안 돌았다). 노트북에는 **옛 번들이 그대로** 있었고,
+      새로 넣은 `--pin 라벨=값` 이 "그런 인자 없다" 로 거절당했다.
+      붙여넣은 출력만 봐서는 원인을 알 수 없었다 — 값은 다 정상으로 보이니까.
+      ⇒ 헤더에 해시를 찍으면 **한눈에** 갈린다. 파일 하나만 보므로 번들 구조와 무관하다.
+    """
+    import hashlib
+    try:
+        return hashlib.sha256(open(__file__, "rb").read()).hexdigest()[:8]
+    except OSError:
+        return "unknown"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("npz", nargs="?", help="collect_multichirp.py 산출물")
@@ -804,7 +821,8 @@ def main() -> int:
 
     import mujoco
     m = load_fixed_base(a.mjcf)
-    print(f"■ 모델 {os.path.basename(a.mjcf)} (base 고정) — nq={m.nq} nv={m.nv} nu={m.nu}")
+    print(f"■ 모델 {os.path.basename(a.mjcf)} (base 고정) — nq={m.nq} nv={m.nv} nu={m.nu}"
+          f"   [코드 {src_hash()}]")
 
     if a.selftest:
         return selftest(m, a)

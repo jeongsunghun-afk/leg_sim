@@ -68,7 +68,7 @@ pre{background:var(--surf);border:1px solid var(--line);border-radius:8px;paddin
   <div class="tile"><div class="k">ROTOR_I</div><div class="v">7.33<span style="font-size:15px">e−4</span></div><div class="s">4출처 ±10% · 고정</div></div>
   <div class="tile"><div class="k">CAD 대조</div><div class="v">±8.3%</div><div class="s">calf·foot 4축</div></div>
   <div class="tile"><div class="k">JDAMP.foot</div><div class="v">0.110</div><div class="s">좌우 16% 일치</div></div>
-  <div class="tile"><div class="k">검증 RMS</div><div class="v">0.264°</div><div class="s">게인 2배 · +34%</div></div>
+  <div class="tile"><div class="k">검증 RMS</div><div class="v">0.251°</div><div class="s">게인 2배 · +31%</div></div>
   <div class="tile"><div class="k">지연</div><div class="v">8.39<span style="font-size:15px">ms</span></div><div class="s">±0.79 실측</div></div>
 </div>
 
@@ -76,8 +76,9 @@ pre{background:var(--surf);border:1px solid var(--line);border-radius:8px;paddin
 PACE 는 <b>시뮬이 실기를 따라가게</b> 하는 것을 목적으로 한다. 겹치는 곳에서 서로를
 검증하되, <b>적합이 좋은 쪽이 물리적으로 맞는 쪽이라는 보장은 없다</b> — §5 가 그 반례다.</div>
 
-<div class="note"><b>미확정 두 줄.</b> 마지막 적합(<code>fit_v2</code>)이 아직 안 끝났다.
-<code>JFRIC</code> 세 값과 <code>delay</code> 는 잠정치이고, 나머지는 전부 확정이다.</div>
+<div class="note ok"><b>최종 적합 = <code>fit_v2</code></b> · 적합 0.4050° ·
+hold-out <b>0.3967°</b> · 검증(게인 2배) <b>0.2508°</b>(+31.2%).
+<b>hold-out 이 적합보다 낮다</b> — 과적합이 없다는 가장 건강한 신호다.</div>
 
 
 <h2>1 · 구조 — 확정</h2>
@@ -291,10 +292,16 @@ thigh 시험구간 |τ_g| 6.67 Nm 이라 8.0 에서는 가진에 쓸 몫이 0.53
 
 
 <h2>7 · MJCF 반영</h2>
-<pre>dof_armature[i]     = ROTOR_I · N²        ROTOR_I = 7.327e-4,  N = 7·gear_k
-dof_damping.foot    = 0.110               (그 외 kind ≈ 0)
-dof_frictionloss    = §3 — fit_v2 확정 뒤 기입
-tendon_armature     = ROTOR_I · N²_foot   (dof_armature[foot] 은 0 으로)</pre>
+<table>
+<tr><th>kind</th><th class="n">N</th><th class="n">dof_armature</th><th class="n">dof_damping</th><th class="n">dof_frictionloss</th></tr>
+<tr><td class="ax">hip</td><td class="n">7</td><td class="n">0.03590</td><td class="n">0.0900 ⚠</td><td class="n">0.8270 ⚠</td></tr>
+<tr><td class="ax">thigh</td><td class="n">7</td><td class="n">0.03590</td><td class="n">0.1696</td><td class="n">0.5064</td></tr>
+<tr><td class="ax">calf</td><td class="n">10.5</td><td class="n">0.08078</td><td class="n">0.0092 ★</td><td class="n">0.5717</td></tr>
+<tr><td class="ax">foot</td><td class="n">8.4</td><td class="n"><b>0</b> ← tendon</td><td class="n">0.1100</td><td class="n">0.2517 ★</td></tr>
+</table>
+<p><code>tendon_armature</code>(foot) = <b>0.05170</b> · <code>delay</code> = 8.78 ms</p>
+<div class="note">⚠hip 두 값은 <b>고정한 것</b>이지 식별된 게 아니다(자극이 비용의 4% 뿐이다).
+★는 상자 벽에 박힌 값 — 그 방향으로 더 낮을 수 있다.</div>
 <div class="note"><code>foot_rotor_to_tendon</code> 이 <b>옮기는</b> 것이지 더하는 게 아니다 —
 <code>dof_armature[foot]</code> 을 0 으로 안 두면 이중 계상이다.</div>
 

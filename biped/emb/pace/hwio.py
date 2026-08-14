@@ -400,8 +400,15 @@ class Hardware:
                 # ★raw 채널배열을 함께 넘긴다 (2026-08-13). 종전엔 위치만 넘겨서
                 #   PACE 로 시험하는 동안 값 모니터의 속도·토크가 통째로 비었다.
                 #   변환(채널→모델각/관절토크)은 호출자가 JointMap 으로 한다.
+                # ★키 이름은 `leg_extra(jm, dq_ch=, tau_ch=, q_cmd_ch=)` 와 **정확히**
+                #   맞아야 한다 — 호출자가 `leg_extra(jm, **raw)` 로 펼친다.
+                #   2026-08-13 에 여기를 dq/tau/q_cmd 로 넣어 두 호출자
+                #   (actuator_test:670 · collect_multichirp:303)가 **둘 다** TypeError 로
+                #   죽었고, `except: pass` 에 먹혀 값 모니터가 조용히 비어 있었다.
+                #   `_ch` 접미사는 이 저장소의 각도층 규약이다(채널각임을 명시).
                 self.publish_fn(self._q, self._rpy, self._armed,
-                                {'dq': self._dq, 'tau': self._tau, 'q_cmd': self._q_cmd})
+                                {'dq_ch': self._dq, 'tau_ch': self._tau,
+                                 'q_cmd_ch': self._q_cmd})
             except Exception as e:
                 # ★조용히 삼키면 안 된다 (2026-08-14). 2026-08-13 에 publish_fn 에
                 #   4번째 인자를 추가했는데 오프라인 시험의 람다는 3개만 받았다.

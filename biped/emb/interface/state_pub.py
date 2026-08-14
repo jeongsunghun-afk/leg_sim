@@ -20,7 +20,8 @@ import numpy as np
 STATE_PATH = os.environ.get("QUAD_STATE", "/tmp/biped_state.json")
 
 
-def leg_extra(jm, dq_ch=None, tau_ch=None, q_cmd_ch=None, tau_cmd_ch=None, kp=None, kd=None):
+def leg_extra(jm, dq_ch=None, tau_ch=None, q_cmd_ch=None, tau_cmd_ch=None,
+              dq_cmd_ch=None, stt=None, kp=None, kd=None):
     """채널 배열 → 모니터가 쓰는 확장 키(**모델각·관절토크**). 없는 항목은 빼고 낸다.
 
     ★왜 여기 두나 (2026-08-13): PACE 하니스도 상태를 발행하는데(state_pub 를 분리한 이유가
@@ -38,6 +39,13 @@ def leg_extra(jm, dq_ch=None, tau_ch=None, q_cmd_ch=None, tau_cmd_ch=None, kp=No
         e["tau_leg_nm"] = [round(float(v), 3) for v in jm.ch_to_tau_joint(tau_ch)]
     if q_cmd_ch is not None:
         e["q_cmd_deg"] = [round(float(v), 2) for v in jm.ch_to_q_joint(q_cmd_ch)]
+    if dq_cmd_ch is not None:
+        # ★0 이면 **0 으로 낸다.** 키를 빼면 모니터가 곡선을 안 그려서 "명령 0" 과
+        #   "명령 모름" 이 화면에서 같아진다 — 전혀 다른 상태인데.
+        e["dq_cmd_dps"] = [round(float(v), 2) for v in jm.ch_to_dq_ctrl(dq_cmd_ch) * (180.0 / _np.pi)]
+    if stt is not None:
+        # ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit. 래치오프 원인의 단서.
+        e["stt_raw"] = [int(v) for v in _np.asarray(stt, int)[jm.ch]]
     if tau_cmd_ch is not None:
         # ★τ_ff 명령. PACE 는 이게 가진 본체다 — 위치만 보면 시험의 절반이 안 보인다.
         #   측정토크와 **같은 변환**(gear_k·커플링 전치)을 거쳐야 나란히 놓고 뺄 수 있다.

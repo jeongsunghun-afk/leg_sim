@@ -224,6 +224,12 @@ class Hardware:
         #   ⚠write_pos 경로는 드라이버에 tau=0 이 나가므로 거기서 0 으로 되돌린다.
         #     안 되돌리면 직전 처프의 τ_ff 가 홀드 구간까지 남아 거짓 명령으로 보인다.
         self._tau_cmd = np.zeros(self.n, np.float32)
+        # ★속도 명령. PACE 는 **어느 경로에서도 0 이 아닌 dq 를 보내지 않는다**
+        #   (_raw_write_ff 는 z 배열, write_pos 는 nullptr→0). 즉 **0 인 걸 알고 있다.**
+        #   ⇒ 안 쓰는 게 아니라 **0 으로 쓴다.** 키가 없으면 모니터가 곡선을 아예 안 그려서
+        #     "명령이 0" 과 "명령을 모름" 이 화면에서 구분되지 않는다.
+        #   ⚠나중에 dq 를 실제로 보내게 되면 **여기를 갱신할 것.** 안 하면 조용히 거짓말한다.
+        self._dq_cmd = np.zeros(self.n, np.float32)
         # ★상태 발행 훅 (2026-08-11) — PACE 시험 중에도 **뷰어가 자세를 볼 수 있게** 한다.
         #   writer 는 하나여야 해서 시험 중엔 biped_emb 를 끄는데, 그러면 발행자도 같이
         #   사라져 화면이 멎었다. 사람이 로봇 옆에서 토크시험을 돌리는 구간에서
@@ -414,6 +420,7 @@ class Hardware:
                 self.publish_fn(self._q, self._rpy, self._armed,
                                 {'dq_ch': self._dq, 'tau_ch': self._tau,
                                  'q_cmd_ch': self._q_cmd, 'tau_cmd_ch': self._tau_cmd,
+                                 'dq_cmd_ch': self._dq_cmd, 'stt': self._stt,
                                  'kp': self._wr_kp, 'kd': self._wr_kd})
             except Exception as e:
                 # ★조용히 삼키면 안 된다 (2026-08-14). 2026-08-13 에 publish_fn 에

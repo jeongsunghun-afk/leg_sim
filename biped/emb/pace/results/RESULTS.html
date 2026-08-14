@@ -58,6 +58,63 @@ pre code{border:0;background:none;padding:0}
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
 <p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(§4-②).</p>
 <p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
+<h2>0-b. 왜 각축이 필요했나 — 다축 PACE 의 세 한계</h2>
+<p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다
+(<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고 실제로 대부분을 이걸로 정했다.
+그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
+
+<h3>한계 ① 공선성 — 궤적으로는 <b>원리적으로</b> 못 가른다</h3>
+<p><code>JDAMP.foot</code> ↔ <code>JFRIC.foot</code> 상관 <b>r = +0.93</b>. 점성을 올리고 마찰을 내리면 궤적이 거의 같아진다.
+그래서 둘의 합만 정해지고 <b>나눔이 안 된다</b>(남은 불확실 −66 ~ +64%).</p>
+<p class="quote"><code>design_excitation.py</code> 가 <b>설계 단계에서 이미 예측했다.</b> 궤적 쪽 처방(dual·f0scale·f1scale)을
+전부 시도했지만 실패했다 — 가진을 어떻게 설계해도 안 갈린다. ⇒ <b>한쪽을 바깥에서 못박는 것 말고는 방법이 없다.</b></p>
+
+<h3>한계 ② 감도 불균형 — 안 움직여도 티가 안 난다</h3>
+<p>비용이 <b>8축·60창을 통째로 뭉친 단일 RMS</b> 다(<code>cost_of</code>: <code>sqrt(mean(r²))</code>). 자극이 큰 축이 비용을 지배한다.</p>
+<table><tr><th></th><th>값</th><th>결과</th></tr>
+<tr><td><code>JDAMP</code> 감도 / <code>ROTOR_I</code> 감도</td><td class="n"><b>1/16 ~ 1/87</b></td><td>감쇠를 크게 틀려도 RMS 가 거의 안 변한다</td></tr>
+<tr><td><b>hip 이 비용에서 차지하는 비중</b></td><td class="n"><b>4 %</b></td><td>hip 을 아무 값으로 둬도 통합 RMS 가 안 움직인다</td></tr></table>
+<p class="warn">⚠<b>hip 은 자유변수였는데도 씨앗에서 안 움직였다.</b> 금지된 게 아니라 <b>정보가 없어서</b>다.
+겉보기엔 "다축이 정한 값" 인데 실제로는 각축값이 그대로 통과한 것이다(§1 의 ⚠ 표시).</p>
+
+<h3>한계 ③ 자유변수가 <b>모델오차를 흡수한다</b></h3>
+<p>지연 <code>T_d</code> 를 자유롭게 두자 실측 밖으로 달아나면서 다른 값을 끌고 갔다.</p>
+<table><tr><th>상자</th><th>추정 T_d</th><th>RMS</th><th>ROTOR_I 오차</th></tr>
+<tr><td>2 ~ 16 ms (자유)</td><td><b>12.83 ms</b> ← 실측 8.39±0.79 <b>밖</b></td><td class="n">0.0615</td><td class="n no"><b>−6.7 %</b></td></tr>
+<tr><td>6.8 ~ 10 ms (실측으로 묶음)</td><td>9.46 ms</td><td class="n ok"><b>0.0449</b> (−27%)</td><td class="n ok"><b>+1.5 %</b> (4.5배 개선)</td></tr></table>
+<p><b>묶었더니 RMS 도 좋아지고 물리값도 맞았다.</b> 원문이 <code>T_d</code> 를 자유로 두는 건 그걸 따로 재지 않아서다 —
+<b>우리는 쟀으니 묶는다.</b> 실측이 있는 값을 자유로 두면 나머지가 그리로 흐른다.</p>
+<p class="warn">⇒ 여기서 <b>"RMS 가 낮다 ≠ 적합이 좋다"</b> 가 드러난다. 이 교훈은 hold-out 에서 한 번 더 반복된다
+(궤적 hold-out 이 네 번 연속 <b>틀린 구조</b>를 골랐다).</p>
+
+<h3>각축이 준 것 — 그리고 각축도 못 하는 것</h3>
+<p>각축(<code>--solo</code>)은 <b>한 축만 τ_ff 로 흔들고 나머지를 잡는다.</b> 다축이 못 가르는 것을 바깥에서 못박는 역할이다.</p>
+<table><tr><th>각축이 준 값</th><th>어떻게</th><th>다축의 어느 한계를 메웠나</th></tr>
+<tr><td><b><code>ROTOR_I</code> 7.327e-4</b></td><td>τ_ff 경로(순환 없음). foot 7.327e-4 · calf 공통속도법 7.340e-4 → <b>0.17% 일치</b></td><td>③ 씨앗을 참값에 놓음</td></tr>
+<tr><td><b>foot <code>damping</code> 0.110</b></td><td>토크시험 q̈~|q̇| 직접회귀 (HL 0.12 · HR 0.10)</td><td class="ok"><b>① 공선성을 밖에서 끊음</b></td></tr>
+<tr><td>쿨롱마찰(스윕·토크절편)</td><td>저속 평탄부 / 절편 q̇→0 외삽</td><td>① 상자·씨앗</td></tr>
+<tr><td><b><code>T_d</code> 8.39±0.79 ms</b></td><td>왕복지연 직접 실측</td><td class="ok"><b>③ 경계를 좁힘</b></td></tr></table>
+<p class="warn">⚠<b>각축도 만능이 아니다.</b></p>
+<ul>
+<li><b><code>thigh</code> 관성은 원리적으로 못 잰다.</b> <code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다(주기 0.90 s).
+런이 0.21~0.48 s 로 <b>주기의 39%</b> 라, <code>M⁻¹</code> 예측이 전제하는 t→0 극한이 깨진다.
+자유(0.189)와 고정(0.221) <b>사이 어디도 아닌 값</b>이 나온다 → CAD 를 쓴다.</li>
+<li><b>중력이 큰 축이 오염된다.</b> hip |τ_g| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데 시험은 ±53° 를 훑어
+잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다. ⇒ 남은 미해결이 전부 여기로 모인다.</li>
+</ul>
+
+<h3>그래서 최종값은 <b>출처가 셋으로 갈린다</b></h3>
+<pre>각축 직접측정  ──씨앗·상자──▶  다축 CMA-ES(9모수)  ──▶  fit_v2
+                                      │
+                    자극 있음 ────────┼──▶ 다축이 정함   thigh·calf·foot
+                    자극 없음(hip 4%) ┴──▶ 각축값 통과   hip ⚠</pre>
+<table><tr><th>고정의 정도</th><th>대상</th><th>뜻</th></tr>
+<tr><td><b>완전 고정</b></td><td><code>T_d</code>(6.8~10 ms) · foot <code>damping</code></td><td>실측이 있으니 흘러가지 못하게 묶음</td></tr>
+<tr><td><b>씨앗 + 상자</b>(×0.3~3)</td><td><code>ROTOR_I</code> · 전 축 <code>JDAMP</code>/<code>JFRIC</code></td><td>각축값 중심으로 다축이 그 안에서 정함</td></tr>
+<tr><td class="wa"><b>사실상 고정</b> ⚠</td><td><b>hip</b> <code>JDAMP</code>·<code>JFRIC</code></td><td>자유변수인데 자극이 없어 씨앗에 머묾</td></tr>
+<tr><td class="wa"><b>벽에 박힘</b> ★</td><td>calf <code>JDAMP</code> · foot <code>JFRIC</code></td><td>상자 하한까지 밀렸다 — "찾은 값" 이 아니라 <b>"더 못 내려간 값"</b></td></tr></table>
+<p><b>⇒ 아래 §1 의 표는 이 세 갈래의 결과</b>다. ⚠ 와 ★ 를 그렇게 읽을 것.</p>
+
 <h2>1. MJCF 에 넣을 값</h2>
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>

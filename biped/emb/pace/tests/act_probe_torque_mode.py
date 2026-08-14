@@ -220,12 +220,25 @@ def probe_torque_mode(hw, spec, joint, log=print) -> dict:
                     tau_at_move = _sw; moved = True
                     break                       # ★즉시 중단 → 다음 줄에서 토크 0
                 time.sleep(hw.dt)
-            # ★limp() 가 아니라 시험축만 푼다 (2026-08-11).
-            #   limp 는 **전 채널** kp=kd=0 이라 홀드축까지 놓는다. 다리가 없던 시절엔
-            #   그게 곧 안전이었지만 지금은 매단 다리가 떨어진다. 지그가 물려 있으면
-            #   안 떨어지지만, 지그 없이 --tests torque 를 돌리면 시행마다 다리가 주저앉는다.
-            hw.release_test_axis(ch)
-            time.sleep(0.4)
+            # ★파단 뒤에는 **놓지 말고 세운다** (2026-08-14). 종전엔 시험축을 무여자로
+            #   풀고 0.4초 기다렸는데, 그 사이 축이 **중력으로 자유낙하**한다.
+            #   중력이 작은 축(foot 0.09~0.24Nm)에서는 티가 안 났지만 thigh 는 그 자리
+            #   중력이 **−3.06Nm** 이라 0.4초에 80° 를 간다(I≈0.17 ⇒ 17rad/s²).
+            #   실측: 파단 검출 즉시 break 했는데도 +1.4° → **+41.97°** 로 40° 를 갔고
+            #   상자 [−60, +40] 를 넘어 SafetyAbort. 두 번 연속 **같은 값**이 나왔다.
+            #   ⇒ hwio.brake() 로 그 자리에 붙든다. 이건 2026-08-12 에 스윕이 같은 이유로
+            #     축을 날려서 만든 함수인데(calf 21.8° 관성주행) 여기만 안 쓰고 있었다.
+            #   ⚠tau_ff 로 중력을 계속 태워야 게인이 낮아도 버틴다.
+            # ⚠제동 게인은 **따로** 잡는다. kp_h 는 handoff 일 때만 채워지므로
+            #   (중력 ≤0.05Nm 축은 0) 그대로 쓰면 저중력 축에서 제동이 안 걸린다.
+            _bkp, _bkd = hw._hold_gain_of(ch)
+            try:
+                hw.brake(ch, _bkp, _bkd, hold_s=0.4,
+                         tau_ff_fn=lambda q, _c=ch: grav_at(q))
+            except Exception as _e:              # 제동 실패해도 시행 결과는 살린다
+                log(f"    ⚠제동 실패({type(_e).__name__}: {_e}) — 시험축을 푼다")
+                hw.release_test_axis(ch)
+                time.sleep(0.4)
             a = np.array(traj) if traj else np.zeros((1, 5))
             raw.append(a)                       # ★원시 궤적 보존(아래서 npz 로 저장)
             results.append({"dir": direction, "moved": moved, "tau_break": tau_at_move,

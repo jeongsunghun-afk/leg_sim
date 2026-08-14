@@ -73,31 +73,37 @@ sleep 2
 [ "$VIEW" = "1" ] && { pgrep -f biped_monitor >/dev/null && echo "✅ 자세 뷰어 RUNNING (3D, 표시 전용)" \
                        || { echo "❌ 자세 뷰어 DEAD"; tail -4 /tmp/biped_monitor.log; }; }
 pgrep -f teleop_gui_biped >/dev/null && echo "✅ GUI RUNNING" || { echo "❌ GUI DEAD"; tail -4 /tmp/teleop_gui_biped.log; }
-echo "종료: pkill -f teleop_gui_biped; pkill -f biped_monitor"
 
 # ── 값 모니터 (측정 vs 명령: 위치·속도·토크) ────────────────────────────────
 #   ★뷰어(biped_monitor)는 **자세만** 보여준다. 명령을 얼마나 못 따라오는지,
 #     토크가 어디서 커지는지는 안 보인다 — stand/토크제어에선 그게 판단의 핵심이다.
-#   ★일부러 **터미널** 프로그램이다(dearpygui 아님). Pi 4 에서 뷰어+GUI+500Hz 루프가
-#     이미 도는데, 루프가 밀리면 jog 속도제한이 뚫린다(app/biped_emb.py 페이싱 주석).
-#     세 번째 무거운 GUI 를 얹지 않는다. SSH 로도 볼 수 있다는 건 덤이다.
 #
-#   ★★**이 스크립트의 전경(foreground)에서 돈다** — 별도 창을 띄우지 않는다 (2026-08-13 수정).
-#     종전엔 x-terminal-emulator 로 창을 띄웠는데 안 떴다. 원인이 셋이었다:
-#       ① 이 기기의 x-terminal-emulator 는 **gnome-terminal.wrapper** 인데 코드가
-#          `$TE = "gnome-terminal"` 문자열만 비교해 폐기된 `-e` 분기로 갔다
-#       ② gnome-terminal 런처는 서버에 붙은 채 **반환하지 않는다**(창은 뜨는데 런처가 안 끝남)
-#       ③ 에러를 /dev/null 로 버려 ①②가 **조용히** 실패했다
-#     터미널 에뮬레이터마다 인자 규약이 달라 이 분기는 계속 깨진다. 의존을 없애는 게 답이다.
-#     운전자는 어차피 터미널에서 이 스크립트를 실행하므로, 그 자리를 모니터로 쓴다.
-#     ⇒ Ctrl-C 로 모니터만 빠져나온다. 뷰어·GUI 는 계속 돈다(setsid 로 떼어 놨다).
-#   MON=0 이면 종전처럼 프롬프트로 바로 돌아간다. MON_ARGS 로 옵션(예: "--ch --hz 20").
-if [ "${MON:-1}" = "1" ]; then
-  echo ""
-  echo "─────────────────────────────────────────────────────────────────────"
-  echo " 값 모니터 시작 — Ctrl-C 로 모니터만 종료(뷰어·GUI 는 계속 돈다)"
-  echo " 끄고 싶으면:  MON=0 ./run_hw.sh"
-  echo "─────────────────────────────────────────────────────────────────────"
-  sleep 1
-  cd "$HERE" && QUAD_STATE="$STATE" exec python3 monitor_state.py ${MON_ARGS:-}
-fi
+#   MON=1|graph (기본) 그래프 창 · MON=text 표(터미널, SSH 용) · MON=0 끔
+#   MON_ARGS 로 옵션 — 그래프: "--win 20 --hz 20" · 표: "--ch --hz 20"
+#
+#   ⚠**x-terminal-emulator 로 창을 띄우지 않는다** (2026-08-13). 그렇게 했다가 안 떴다:
+#     ① 이 기기의 그것은 gnome-terminal.wrapper 인데 코드가 `$TE = "gnome-terminal"`
+#        문자열만 비교해 폐기된 `-e` 분기로 갔고 ② gnome-terminal 런처는 서버에 붙은 채
+#        **반환하지 않으며** ③ 에러를 /dev/null 로 버려 ①②가 조용히 실패했다.
+#     에뮬레이터마다 인자 규약이 달라 그 분기는 계속 깨진다 ⇒ 의존을 없앴다.
+#     그래프 창은 **teleop GUI 와 같은 경로**(setsid + 명시적 DISPLAY)로 띄운다 — 검증된 방식이다.
+case "${MON:-1}" in
+  1|graph)   # ★기본 — **그래프 창**. 축을 고르면 그 축의 위치·속도·토크만 그린다.
+             #   GUI 와 **같은 방식**으로 띄운다(setsid + 명시적 DISPLAY). 그 경로는 검증돼 있다.
+    setsid bash -c "cd '$HERE'; QUAD_STATE='$STATE' DISPLAY='$DISPLAY' XAUTHORITY='$XAUTHORITY' \
+      '$PY_GUI' monitor_plot.py ${MON_ARGS:-} > /tmp/biped_monitor_plot.log 2>&1" </dev/null &
+    sleep 2
+    pgrep -f monitor_plot.py >/dev/null && echo "✅ 값 모니터(그래프) RUNNING" \
+      || { echo "❌ 값 모니터 DEAD"; tail -6 /tmp/biped_monitor_plot.log; }
+    echo "종료: pkill -f teleop_gui_biped; pkill -f biped_monitor; pkill -f monitor_plot.py"
+    ;;
+  text)      # 표 형태(터미널). SSH 전용이거나 GUI 를 더 못 얹을 때.
+    echo ""
+    echo " 값 모니터(표) 시작 — Ctrl-C 로 모니터만 종료(뷰어·GUI 는 계속 돈다)"
+    sleep 1
+    cd "$HERE" && QUAD_STATE="$STATE" exec python3 monitor_state.py ${MON_ARGS:-}
+    ;;
+  *)
+    echo "종료: pkill -f teleop_gui_biped; pkill -f biped_monitor"
+    ;;
+esac

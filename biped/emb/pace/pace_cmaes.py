@@ -365,13 +365,38 @@ def init_bounds(spec_path, names, per_axis, pin=()):
     _mc = (sp.get("friction") or {}).get("measured_coulomb_ch")
     if _mc:
         _gk = {int(j["ch"]): float(j.get("gear_k", 1.0)) for j in sp["joints"]}
-        _by_kind = {}
-        for c, v in _mc.items():
-            c = int(c)
-            if c < len(names):
-                _by_kind.setdefault(kind_of(names[c]), []).append(
-                    float(v) * _gk.get(c, 1.0))
-        f0 = {k: float(np.mean(v)) for k, v in _by_kind.items()}
+
+        def _kindmean(d):
+            """채널 dict → kind별 평균 [관절 Nm]. spec 은 채널토크라 ×gear_k."""
+            b = {}
+            for c, v in (d or {}).items():
+                c = int(c)
+                if c < len(names):
+                    b.setdefault(kind_of(names[c]), []).append(float(v) * _gk.get(c, 1.0))
+            return {k: float(np.mean(v)) for k, v in b.items()}
+
+        _sw = _kindmean(_mc)                                        # 위치모드 스윕
+        _dy = _kindmean((sp.get("friction") or {}).get("measured_coulomb_dyn_ch"))
+        # ★두 실측이 **최대 2배 벌어진다**. 어느 하나를 고르지 않고 **둘 다 담는다**
+        #   (2026-08-14).
+        #     kind    스윕     토크절편   비
+        #     thigh  0.670    0.409    1.64
+        #     calf   1.001    0.761    1.32
+        #     foot   0.745    0.359    2.08
+        #   갈리는 이유는 안다 — 스윕은 τ_c 와 b·q̇ 를 **뭉쳐** 재고, 토크절편은 q̇→0 으로
+        #   외삽해 τ_c 만 낸다. MuJoCo 의 frictionloss 정의에는 후자가 맞지만, thigh 의
+        #   절편은 방향편차 15.8% 로 게이트를 못 넘은 런에서 나왔다 — 못 믿는다.
+        #   ⇒ **씨앗은 기하평균, 상자는 둘을 감싸게** 잡는다. 고르는 건 적합에 맡긴다.
+        #     한쪽만 있으면(hip) 종전대로 그 값 ±비율이다.
+        f0, _span_lo, _span_hi = {}, {}, {}
+        for k in set(_sw) | set(_dy):
+            a, b = _sw.get(k), _dy.get(k)
+            if a and b:
+                f0[k] = float(np.sqrt(a * b))
+                _span_lo[k] = min(a, b) * (1.0 - 0.30)
+                _span_hi[k] = max(a, b) * (1.0 + 0.30)
+            else:
+                f0[k] = float(a or b)
         # ★±20% → **±30%** (2026-08-12, 실기 데이터로 스캔 후).
         #   깨끗한 수집본(500Hz·dt 오차 0%)에서 배율 스캔을 하니 최소가 **×0.8** 이었다:
         #     ×0.6 0.6689 · **×0.8 0.6628** · ×1.0 0.6780 · ×1.2 0.7103 · ×1.4 0.7541 (hold-out)
@@ -442,6 +467,13 @@ def init_bounds(spec_path, names, per_axis, pin=()):
         #     물리적 근거가 없고, 넓히면 JDAMP 와의 축퇴만 키운다).
         lo[sl] = x0[sl] * (1.0 - JFRIC_SPAN_DN[0])
         hi[sl] = x0[sl] * (1.0 + JFRIC_SPAN[0])
+        # 두 실측이 다 있는 kind 는 **둘을 감싸는** 상자로 덮어쓴다(위 주석)
+        _kk = names if per_axis else KINDS
+        for i, k in enumerate(_kk):
+            kk = kind_of(k) if per_axis else k
+            if kk in _span_lo:
+                lo[1 + nj + i] = _span_lo[kk]
+                hi[1 + nj + i] = _span_hi[kk]
     nb = len(names)
     x0 = np.concatenate([x0, np.zeros(nb), [DELAY0]])
     lo = np.concatenate([lo, np.full(nb, -BIAS_MAX), [DELAY_LO]])

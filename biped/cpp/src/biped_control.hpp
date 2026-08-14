@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 using namespace Eigen;
 
 struct BipedControl {
@@ -86,7 +87,21 @@ struct BipedControl {
   //   ⚠ 실측은 hip 2축·다리 미장착 상태. thigh/calf/foot 의 JDAMP/JFRIC 은 감속단이
   //     늘면 마찰도 늘어 달라진다(ROTOR_I 와 달리 공통 상수가 아님) → 장착 후 재측정.
   //   ⚠ GEAR foot 8 → 8.4 (총 감속비 8.4 = 7×1.2 추가단, 사용자 확인 2026-08-05).
-  double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.4e-4, JDAMP=0.09, JFRIC=0.38;
+  // ★★2026-08-14 **PACE 식별 최종값으로 전면 교체** (emb/pace/RESULTS.md §8).
+  //   종전엔 `JDAMP 0.09 / JFRIC 0.38` **스칼라 하나를 8축 전부에** 썼다 — 근거가
+  //   hip 2축·**다리 미장착** 실측이라 감속단이 다른 calf/foot 에 맞을 이유가 없었다.
+  //   (그 사실이 바로 위 주석에 "장착 후 재측정" 으로 이미 적혀 있었다.)
+  //   ROTOR_I 7.4e-4 → 7.327e-4 : foot τ_ff 7.327e-4 · calf 공통속도법 7.340e-4,
+  //     두 축·두 방법이 **0.17%** 로 만났다(순환 없는 경로의 독립 검증).
+  //   ⚠JFRIC 은 전 축이 종전보다 크다(0.66~2.2배) — **보행 거동이 바뀐다.**
+  //   ⚠hip 의 JDAMP·JFRIC 은 **식별된 게 아니라 고정한 값**이다(자극이 비용의 4% 뿐).
+  //   ★calf JDAMP(0.0092)·foot JFRIC(0.2517)는 **상자 벽에 박힌 값** — 더 낮을 수 있다.
+  //   ⚠foot 의 dof_armature 는 0 이다(tendon 으로 이전).
+  //   ⚠Python biped_wbic.py 와 **같은 값**이어야 한다. 한쪽만 고치면 파리티가 깨진다.
+  double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.327e-4;
+  //                 hip     thigh    calf     foot
+  double JDAMP[4]={0.0900, 0.1696, 0.0092, 0.1100};   // [Nm·s/rad] 관절축
+  double JFRIC[4]={0.8270, 0.5064, 0.5717, 0.2517};   // [Nm] 관절축 쿨롱마찰
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표
@@ -150,11 +165,18 @@ struct BipedControl {
     // ★env 오버라이드(quad_mpc_wbic_17dof.py:259-261 규약과 동일) — 재빌드 없이 스윕/회귀비교용.
     //   미지정이면 위 실측 기본값을 쓴다.
     if(const char* e=getenv("ROTOR_I")) ROTOR_I=atof(e);
-    if(const char* e=getenv("JDAMP"))   JDAMP  =atof(e);
-    if(const char* e=getenv("JFRIC"))   JFRIC  =atof(e);
+    //   ★kind 별 배열이 된 뒤로는 **전 축에 같은 값**을 덮는 뜻이다(스윕 편의).
+    //     축 하나만 바꾸려면 JDAMP_CALF 처럼 kind 별 변수를 쓴다.
+    if(const char* e=getenv("JDAMP")) for(int k=0;k<4;k++) JDAMP[k]=atof(e);
+    if(const char* e=getenv("JFRIC")) for(int k=0;k<4;k++) JFRIC[k]=atof(e);
+    { const char* kn[4]={"HIP","THIGH","CALF","FOOT"};
+      for(int k=0;k<4;k++){
+        char b[24];
+        std::snprintf(b,sizeof b,"JDAMP_%s",kn[k]); if(const char* e=getenv(b)) JDAMP[k]=atof(e);
+        std::snprintf(b,sizeof b,"JFRIC_%s",kn[k]); if(const char* e=getenv(b)) JFRIC[k]=atof(e); } }
     if(const char* e=getenv("GEAR_FOOT")) GEAR[3]=atof(e);
     for(int j=0;j<nu;j++){ double N=GEAR[j%4]; int dof=6+j;
-      m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP; m->dof_frictionloss[dof]=JFRIC; }
+      m->dof_armature[dof]=ROTOR_I*N*N; m->dof_damping[dof]=JDAMP[j%4]; m->dof_frictionloss[dof]=JFRIC[j%4]; }
     foot_rotor_to_tendon(); }
 
   // ★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 기구 커플링).

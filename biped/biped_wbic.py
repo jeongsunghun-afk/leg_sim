@@ -36,18 +36,33 @@ DRV_PEAK  = np.array([84, 84, 126, 100.8, 84, 84, 126, 100.8])   # HL/HR × (hip
 #     동기화 방향은 C++ → Python (emb/NEXT_HW.md §8). 종전 Python 값
 #     (ROTOR_I 1e-4 / JDAMP 0.1 / JFRIC 0.5 / foot 8.0)은 **실측·안정성 스윕 이전** 값이다.
 #
-#   ROTOR_I : 7.652e-4(HL) / 7.121e-4(HR) → 7.4e-4. 구 placeholder 1e-4 는 7.4배 과소였다.
-#             전 관절이 동일 모터(RO100)+공통 7:1 이고 관절별 추가 감속단만 붙으므로
+#   ROTOR_I : 전 관절이 동일 모터 + 공통 7:1 이고 관절별 추가 감속단만 붙으므로
 #             ROTOR_I(모터축 관성)는 **전 관절 공통 상수**다. armature = ROTOR_I·N².
-#   JDAMP   : 0.09 — 처프값. 등속스윕은 속도가 낮아 점성이 신호에 안 잡힌다(HR 은 음수).
-#   JFRIC   : 0.38 — 처프값(동적). 저속 정지·유지는 0.50~0.52 지만 Stribeck 때문이고
-#             보행은 동적 영역이라 처프값이 대표값이다.
-#   ⚠ 실측은 hip 2축·**다리 미장착** 상태다. thigh/calf/foot 의 JDAMP/JFRIC 은 감속단이
-#     늘면 마찰도 늘어 달라진다(ROTOR_I 와 달리 공통 상수가 아님) → 장착 후 재측정.
+#
+# ★★2026-08-14 **PACE 식별 최종값으로 전면 교체** (emb/pace/RESULTS.md §8).
+#   종전 값은 `JDAMP 0.09 / JFRIC 0.38` **스칼라 하나를 8축 전부에** 쓰고 있었다 —
+#   그 근거가 **hip 2축·다리 미장착** 실측이라, 감속단이 다른 calf/foot 에는 맞을 이유가
+#   없었다(그 사실이 종전 주석에도 "장착 후 재측정" 으로 적혀 있었다).
+#   지금은 8축을 다리 장착 상태에서 재고 kind 별로 넣는다.
+#
+#   ROTOR_I  7.4e-4 → **7.327e-4**  (foot τ_ff 경로 7.327e-4 · calf 공통속도법 7.340e-4,
+#            두 축·두 방법이 **0.17%** 로 만났다 — 순환 없는 경로의 독립 검증)
+#   JDAMP    0.09 스칼라 → kind 별 [0.0900, 0.1696, 0.0092, 0.1100]
+#   JFRIC    0.38 스칼라 → kind 별 [0.8270, 0.5064, 0.5717, 0.2517]
+#            ⚠**전 축이 종전보다 크다**(0.66~2.2배). 보행 거동이 바뀐다 — 회귀로 확인할 것.
+#
+#   ⚠신뢰도가 축마다 다르다. 아래 표의 표식을 그대로 옮긴다:
+#     ⚠hip 의 damping·frictionloss 는 **식별된 게 아니라 고정한 값**이다 —
+#       hip 자극이 비용의 4% 뿐이라 적합이 아무 값이나 고른다. 관성도 미측정.
+#     ★calf damping(0.0092)·foot frictionloss(0.2517)는 **상자 벽에 박힌 값**이라
+#       그 방향으로 더 낮을 수 있다.
+#   ⚠foot 의 dof_armature 는 **0** 이다 — tendon 으로 옮겨 갔다(_foot_rotor_to_tendon).
 GEAR    = np.array([7.0, 7.0, 10.5, 8.4])   # hip,thigh,calf,foot
                                             # ★foot 8.0→8.4 (총 8.4 = 7×1.2 추가단, 2026-08-05 확인)
-ROTOR_I = 7.4e-4
-JDAMP, JFRIC = 0.09, 0.38
+ROTOR_I = 7.327e-4                          # ★실측 확정(2026-08-14). 구 7.4e-4
+#          hip     thigh    calf     foot   ← kind 순. j%4 로 색인한다
+JDAMP = np.array([0.0900, 0.1696, 0.0092, 0.1100])   # [Nm·s/rad] 관절축
+JFRIC = np.array([0.8270, 0.5064, 0.5717, 0.2517])   # [Nm] 관절축 쿨롱마찰
 
 # home posture — ★2026-08-12 새 CAD(몸통 placeholder→실측)로 **재산출**. 구값 (0.05,−0.2) 폐기.
 #
@@ -149,8 +164,8 @@ class BipedWBIC:
             N = GEAR[j % 4]
             dof = 6 + j
             m.dof_armature[dof] = ROTOR_I * N * N
-            m.dof_damping[dof] = JDAMP
-            m.dof_frictionloss[dof] = JFRIC
+            m.dof_damping[dof] = JDAMP[j % 4]          # ★kind 별(2026-08-14 PACE 최종)
+            m.dof_frictionloss[dof] = JFRIC[j % 4]
         self._foot_rotor_to_tendon()
 
     def _foot_rotor_to_tendon(self):

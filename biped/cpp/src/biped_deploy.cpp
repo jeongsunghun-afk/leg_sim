@@ -379,14 +379,19 @@ int main(int argc, char** argv){
         "\"rpy_deg\":[%.2f,%.2f,%.2f],\"tilt_deg\":%.2f,\"loop_hz\":%.1f,"
         "\"motors_on\":%s,\"health\":%s,\"installed\":%s,"
         "\"n_ok\":%d,\"n_fault\":%d,\"n_dead\":%d,\"n_absent\":%d,\"n_installed\":%d,"
-        "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s,\"tilt_estop_ok\":%s}",
+        "\"est_x\":%.3f,\"est_z\":%.3f,\"estop\":%s,\"tilt_estop_ok\":%s,"
+        // ★WBIC QP 건강도 — **접지 판정의 유일한 지표**(biped_control.hpp 주석 참조).
+        //   발이 덜 닿으면 QP 가 매 틱 실패하고 중력보상 폴백으로 떨어지는데,
+        //   겉보기엔 안정돼 보인다. 이 셋이 그 상태를 드러낸다.
+        "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f]}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
         rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
         rpy[2]*JointMap::R2D, tilt, hz_ema, (mode!="off"&&!wd)?"true":"false",
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,
         (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",
-        imu_dead?"false":"true");
+        imu_dead?"false":"true",
+        c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2]);
       write_state(stt_p, buf);
     }
 

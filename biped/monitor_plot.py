@@ -64,7 +64,8 @@ LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c", "kp", "kd", "stt")
 
 
 def log_header(names):
-    h = ["t_s", "epoch", "mode", "loop_hz", "tilt_deg", "estop", "wd_trip", "write_fail"]
+    h = ["t_s", "epoch", "mode", "loop_hz", "tilt_deg", "estop", "wd_trip", "write_fail",
+         "qp_fail_pct", "qp_K", "qp_cerr_x", "qp_cerr_y", "qp_cerr_z"]
     for n in names:
         h += [f"{n}_{s}" for s in LOG_SUFFIX]
     return h
@@ -75,6 +76,8 @@ def log_row(t_s, mt, st, nj):
     r = [f"{t_s:.4f}", f"{mt:.4f}", st.get("mode", ""), st.get("loop_hz", ""),
          st.get("tilt_deg", ""), int(bool(st.get("estop_latched") or st.get("estop"))),
          int(bool(st.get("wd_trip"))), st.get("write_fail", "")]
+    _ce = st.get("qp_cerr") or ["", "", ""]
+    r += [st.get("qp_fail_pct", ""), st.get("qp_K", "")] + list(_ce)[:3]
     for i in range(nj):
         for k in LOG_KEYS:
             v = c[k][i]
@@ -308,6 +311,12 @@ def main() -> int:
             fl.append(f"write_fail={st['write_fail']}")
         if st.get("tilt_estop_ok") is False:
             fl.append("IMU 죽음 → tilt E-stop 무력")
+        _qf = st.get("qp_fail_pct")
+        if _qf is not None:
+            _ce = st.get("qp_cerr") or [0, 0, 0]
+            _cn = (sum(v * v for v in _ce)) ** 0.5 * 1e3
+            fl.append(f"QP실패 {_qf:.0f}% · K={st.get('qp_K','?')} · com_err {_cn:.0f}mm"
+                      + ("  ← 접지 불량(폐루프 죽음)" if _qf >= 50 else ""))
         _sr = col(st, "stt_raw", nj)
         _bad = [f"{names[k]}=0x{int(v):02X}" for k, v in enumerate(_sr) if v]
         if _bad:      # ERROR VECTOR 가 0 이 아닌 축 — 원값을 그대로 보여준다

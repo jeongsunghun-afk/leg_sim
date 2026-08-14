@@ -150,6 +150,15 @@ def main() -> int:
                 flags.append(paint(f"write_fail={st['write_fail']}", "r", col))
             if st.get("tilt_estop_ok") is False:
                 flags.append(paint("IMU 죽음 → tilt E-stop 무력", "y", col))
+            # ★QP 건강도 = **접지 판정**. 발이 덜 닿으면 QP 가 매 틱 실패하고 중력보상
+            #   폴백으로 떨어지는데 겉보기엔 안정돼 보인다(매달림 실측 95% vs 접지 0.05%).
+            _qf = st.get("qp_fail_pct")
+            if _qf is not None:
+                _ce = st.get("qp_cerr") or [0, 0, 0]
+                _cn = (sum(v * v for v in _ce)) ** 0.5 * 1e3
+                _t = (f"QP실패 {_qf:.0f}% · K={st.get('qp_K','?')} · com_err {_cn:.0f}mm")
+                flags.append(paint(_t + ("  ← 접지 불량(폐루프 죽음)" if _qf >= 50 else ""),
+                                   "R" if _qf >= 50 else ("y" if _qf >= 20 else "g"), col))
             out.append(("  " + "   ".join(flags) if flags else "  " + paint("이상 없음", "g", col)) + "\n")
 
             chh = "   q_ch" if a.ch else ""

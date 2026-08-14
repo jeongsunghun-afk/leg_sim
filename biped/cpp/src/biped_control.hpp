@@ -102,6 +102,13 @@ struct BipedControl {
   double q_from[8], q_to[8], q_live[8], cz_from=0, cz_to=0;                // 자세·높이 보간
   Matrix<double,2,3> lam; bool have_liftoff[2]={false,false}; Vector3d liftoff[2];
   Matrix3d I_body; double mass;
+  // ── WBIC QP 건강도 (접지 판정 지표) ──────────────────────────────────────
+  //   qp_rate = **최근 200틱** 실패율. 접지 정상 ~0 · 발이 안 닿으면 ~1 로 붙는다.
+  //   qp_K    = 그때 쓴 접촉점 수(평발 정상 4). 줄어들면 발이 뜬 것.
+  //   qp_cerr = CoM 추종오차[m]. 실패 중에는 **줄지 않고 고정**된다 — 그게 특징이다.
+  long qp_n=0, qp_fail=0, qp_w_n=0, qp_w_fail=0;
+  double qp_rate=0.0, qp_cerr[3]={0,0,0};
+  int qp_K=0;
 
   BipedControl(mjModel* m_, mjData* d_):m(m_),d(d_){
     nv=m->nv; nu=m->nu;
@@ -254,8 +261,24 @@ struct BipedControl {
     for(int i=0;i<nci;i++){ CI.row(i)=-Gr[i]; ci0[i]=hv[i]; }
     VectorXd x(nz); eiquadprog::solvers::EiquadprogFast qp; qp.reset(nz,neq,nci);
     auto st=qp.solve_quadprog(P,g,CE,ce0,CI,ci0,x);
-    if(getenv("WBIC_DBG")){ static int nf=0,nt=0; nt++; if(st!=eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL) nf++;
-      if(nt%200==0) std::fprintf(stderr,"[wbic_stance] K=%d QP실패 %d/%d · com_err=(%.3f,%.3f,%.3f)\n",K,nf,nt,com_ref_xy[0]-c[0],com_ref_xy[1]-c[1],com_ref_z-c[2]); }
+    // ★QP 건강도를 **항상** 집계해 밖으로 낸다 (2026-08-14). 종전엔 WBIC_DBG 일 때
+    //   stderr 로만 나가서 실기에서는 사실상 못 봤다.
+    //   ★이 지표가 **접지 여부를 그대로 가른다** — 매달림 시뮬 실측:
+    //       접지   K=4 · 실패 0.05% · com_err 6 mm
+    //       매달림 K=3 · 실패  95%  · com_err 127 mm 에서 **고정**(전혀 안 줄어듦)
+    //     발이 덜 닿으면 WBIC 가 요구하는 λ 를 지면이 못 내줘 해가 안 나오고, 폴백인
+    //     중력보상 홀드로 떨어진다. 그런데 겉보기엔 **안정돼 보인다** — 그게 위험하다.
+    //     "stand 가 되는 것처럼 보이는데 실은 폐루프가 죽은" 상태를 이 숫자로만 가른다.
+    //   ⚠누적률은 초기 과도에 희석된다 ⇒ **최근 창(200틱)** 비율을 따로 낸다.
+    qp_n++; qp_w_n++;
+    const bool qp_ok = (st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL);
+    if(!qp_ok){ qp_fail++; qp_w_fail++; }
+    qp_K = K;
+    qp_cerr[0]=com_ref_xy[0]-c[0]; qp_cerr[1]=com_ref_xy[1]-c[1]; qp_cerr[2]=com_ref_z-c[2];
+    if(qp_w_n>=200){ qp_rate = (double)qp_w_fail/(double)qp_w_n; qp_w_n=0; qp_w_fail=0; }
+    if(getenv("WBIC_DBG") && qp_n%200==0)
+      std::fprintf(stderr,"[wbic_stance] K=%d QP실패 %ld/%ld(최근 %.0f%%) · com_err=(%.3f,%.3f,%.3f)\n",
+                   K,qp_fail,qp_n,qp_rate*100.0,qp_cerr[0],qp_cerr[1],qp_cerr[2]);
     if(st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL){
       VectorXd qdd=x.head(nv); VectorXd tau=M.block(6,0,nu,nv)*qdd+h.segment(6,nu);
       for(int k=0;k<K;k++) tau-=Js[k].block(0,6,3,nu).transpose()*x.segment(nv+3*k,3);

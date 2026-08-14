@@ -4,3 +4,6 @@ renders/
 *.log
 MUJOCO_LOG.TXT
 cpp/build/
+
+# 값 모니터 CSV 기록 — 시험 산출물이라 저장소에 안 넣는다
+logs/

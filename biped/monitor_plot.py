@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import os
+import threading
 import time
 from collections import deque
 from datetime import datetime
@@ -221,46 +222,73 @@ def main() -> int:
         rec_start(a.log)
         dpg.set_item_label("rec_btn", "■ 기록 정지")
 
-    # ★표본율(--hz)은 **버퍼 길이**에만 쓴다. 실제 표본은 상태파일이 갱신될 때만 들어가므로
-    #   제어기 발행율(기본 50Hz)이 상한이다. 렌더는 dearpygui 의 vsync 에 맡긴다.
+    # ── 표집 스레드 ────────────────────────────────────────────────────────
+    #   ★★왜 스레드인가 (2026-08-13): 종전엔 렌더 루프 안에서 표집했다. 그러면 표본율이
+    #     **프레임율에 묶인다** — Pi 에서 3개 플롯을 그리면 ~10fps 라, 제어기가 50Hz 로
+    #     발행해도 10Hz 만 잡혔다(실측: writer 50Hz → CSV 10Hz).
+    #     ⚠상태파일은 **스트림이 아니라 스냅샷**이다. 덮어써지므로 나중에 몰아 읽을 수 없다
+    #       — 놓친 표본은 영영 없다. 그래서 "프레임당 여러 번 읽기" 로는 못 고친다.
+    #     ⇒ 표집을 렌더에서 떼어내 별도 스레드가 500Hz 로 폴링한다. 그래프는 느리게 그려도
+    #       **기록은 제어기 발행율을 그대로 따라간다.**
+    #   ⚠스레드는 dpg 를 절대 건드리지 않는다(dpg 호출은 메인 스레드 전용).
+    #     파이썬 자료구조만 만지고, 렌더 쪽과는 lock 으로 나눈다.
+    lock = threading.Lock()
+    stop_ev = threading.Event()
+    err_s = [""]
+    age_s = [1e9]
+
+    def sampler():
+        while not stop_ev.is_set():
+            try:
+                mt = os.path.getmtime(STATE)
+                age_s[0] = (time.time() - mt) * 1e3
+                # ★파일이 갱신됐을 때만 표본을 넣는다. 같은 값을 반복해 넣으면 그래프가
+                #   "제어기가 살아 있다" 는 착각을 준다 — STALE 은 곡선이 멈춰야 보인다.
+                if mt > last_mtime[0]:
+                    st = json.load(open(STATE))
+                    with lock:
+                        last_mtime[0] = mt
+                        if t0[0] is None:
+                            t0[0] = mt
+                        ts.append(mt - t0[0])
+                        for key, mk, ck, _u, _l, _fl in SIG:
+                            mv, cv = col(st, mk, nj), col(st, ck, nj)
+                            for k2 in range(nj):
+                                hist[key][0][k2].append(mv[k2])
+                                hist[key][1][k2].append(cv[k2])
+                        # ★기록도 신선한 표본에서만 — 그리고 표본당 **한 행**이다.
+                        if rec["w"] is not None:
+                            if rec["t0"] is None:
+                                rec["t0"] = mt
+                            rec["w"].writerow(log_row(mt - rec["t0"], mt, st, nj))
+                            rec["n"] += 1
+                            # 1초마다 flush — 매 행이면 느리고, 안 하면 죽을 때 끝이 날아간다
+                            if time.time() - rec["last_flush"] > 1.0:
+                                rec["f"].flush()
+                                rec["last_flush"] = time.time()
+                        st_cache.clear()
+                        st_cache.update(st)
+                err_s[0] = ""
+            except Exception as e:
+                err_s[0] = str(e)
+            time.sleep(0.002)          # 500Hz 폴링 상한. 실제 표본은 파일 갱신율이 정한다
+
+    threading.Thread(target=sampler, daemon=True).start()
+
     while dpg.is_dearpygui_running():
-        try:
-            mt = os.path.getmtime(STATE)
-            age_ms = (time.time() - mt) * 1e3
-            # ★파일이 갱신됐을 때만 표본을 넣는다. 같은 값을 반복해 넣으면 그래프가
-            #   "제어기가 살아 있다" 는 착각을 준다 — STALE 은 곡선이 멈춰야 보인다.
-            fresh = mt > last_mtime[0]
-            if fresh:
-                last_mtime[0] = mt
-                st = json.load(open(STATE))
-                if t0[0] is None:
-                    t0[0] = mt
-                ts.append(mt - t0[0])
-                for key, mk, ck, _u, _l, _fl in SIG:
-                    mv, cv = col(st, mk, nj), col(st, ck, nj)
-                    for i in range(nj):
-                        hist[key][0][i].append(mv[i])
-                        hist[key][1][i].append(cv[i])
-                # ★기록도 **신선한 표본에서만** — 그리고 표본당 **한 행**이다.
-                #   (이 블록이 위 for 루프 안에 있으면 한 표본이 3행으로 나간다.)
-                #   화면 프레임마다 쓰면 같은 값이 중복돼 표본율이 뻥튀기되고
-                #   수치미분·FFT 가 전부 틀어진다.
-                if rec["w"] is not None:
-                    if rec["t0"] is None:
-                        rec["t0"] = mt
-                    rec["w"].writerow(log_row(mt - rec["t0"], mt, st, nj))
-                    rec["n"] += 1
-                    # 1초마다 flush — 매 행이면 느리고, 안 하면 죽을 때 끝이 날아간다
-                    if time.time() - rec["last_flush"] > 1.0:
-                        rec["f"].flush()
-                        rec["last_flush"] = time.time()
-                st_cache.clear(); st_cache.update(st)
-            st = st_cache
-        except Exception as e:
+        if err_s[0] or not st_cache:
             dpg.set_value("hdr", f"상태파일을 못 읽는다: {STATE}")
-            dpg.set_value("flags", f"{e}   —   제어기가 떠 있는지: pgrep -f 'biped_emb.py|biped_deploy'")
+            dpg.set_value("flags", f"{err_s[0]}   —   제어기가 떠 있는지: "
+                                   f"pgrep -f 'biped_emb.py|biped_deploy'")
             dpg.render_dearpygui_frame()
             continue
+        with lock:                     # 스냅샷만 뜨고 바로 놓는다(렌더 중 lock 을 쥐지 않는다)
+            st = dict(st_cache)
+            tl = list(ts)
+            snap = {k: (list(hist[k][0][sel[0]]), list(hist[k][1][sel[0]])) for k, *_ in SIG}
+            rec_n, rec_t0, rec_path, rec_on = rec["n"], rec["t0"], rec["path"], rec["f"] is not None
+        age_ms = age_s[0]
+        mt = last_mtime[0]
 
         i = sel[0]
         stale = age_ms > STALE_MS
@@ -280,11 +308,11 @@ def main() -> int:
             fl.append("IMU 죽음 → tilt E-stop 무력")
         dpg.set_value("flags", "   ".join(fl) if fl else "이상 없음")
 
-        # 곡선 갱신 — None 표본은 건너뛴다(명령이 없는 순수 토크모드 대응)
-        tl = list(ts)
+        # 곡선 갱신 — None 표본은 건너뛴다(명령이 없는 순수 토크모드 대응).
+        #   snap 은 lock 안에서 뜬 스냅샷이다. 여기서 hist 를 직접 읽으면 표집 스레드와
+        #   경합해 길이가 어긋난 채 zip 되어 곡선이 시간축에서 밀린다.
         for key, _mk, _ck, _u, _l, floor in SIG:
-            for tag, buf in ((f"s_{key}_m", hist[key][0][i]), (f"s_{key}_c", hist[key][1][i])):
-                ys = list(buf)
+            for tag, ys in ((f"s_{key}_m", snap[key][0]), (f"s_{key}_c", snap[key][1])):
                 xy = [(x, y) for x, y in zip(tl, ys) if y is not None]
                 dpg.set_value(tag, [[p[0] for p in xy], [p[1] for p in xy]])
             if tl:
@@ -292,8 +320,8 @@ def main() -> int:
             # ★y축은 **0 을 항상 포함**하고 **최소폭**을 지킨다(SIG 의 마지막 값).
             #   fit_axis_data 만 쓰면 값이 0 근처일 때 축이 붕괴해 잡음이 산맥이 되고
             #   0 이 화면 밖으로 나가 음/양 감각이 사라진다.
-            vs = [v for _t, v in zip(tl, list(hist[key][0][i])) if v is not None]
-            vs += [v for _t, v in zip(tl, list(hist[key][1][i])) if v is not None]
+            vs = [v for v in snap[key][0] if v is not None]
+            vs += [v for v in snap[key][1] if v is not None]
             lo, hi = (min(vs), max(vs)) if vs else (0.0, 0.0)
             lo, hi = min(lo, 0.0), max(hi, 0.0)
             if hi - lo < floor:
@@ -316,11 +344,12 @@ def main() -> int:
         if qm is not None and qc is not None and kp is not None:
             eq = (qm - qc) * kp * KP_TO_NM_PER_DEG
         # 기록 상태 — 몇 표본 담겼는지가 보여야 "돌고 있나" 를 안 물어보게 된다.
-        if rec["f"] is not None:
-            dur = 0.0 if rec["t0"] is None else (mt - rec["t0"])
-            dpg.set_value("rec_info", f"● 기록중  {rec['n']}표본 · {dur:.1f}s · {rec['path']}")
-        elif rec["path"]:
-            dpg.set_value("rec_info", f"정지됨 — 저장: {rec['path']}")
+        if rec_on:
+            dur = 0.0 if rec_t0 is None else (mt - rec_t0)
+            hz = (rec_n / dur) if dur > 0.5 else 0.0
+            dpg.set_value("rec_info", f"● 기록중  {rec_n}표본 · {dur:.1f}s · {hz:.0f}Hz · {rec_path}")
+        elif rec_path:
+            dpg.set_value("rec_info", f"정지됨 — 저장: {rec_path}")
         else:
             dpg.set_value("rec_info", "미기록 (8축 전부 CSV 로 남는다. 화면은 한 축만 그려도)")
 
@@ -330,6 +359,8 @@ def main() -> int:
 
         dpg.render_dearpygui_frame()
 
+    stop_ev.set()       # 표집 스레드 정지 — rec 파일을 닫기 **전에** 세운다(경합 방지)
+    time.sleep(0.05)
     rec_stop()          # ★창을 닫아도 파일을 닫는다 — 안 닫으면 마지막 버퍼가 날아간다
     if rec["path"]:
         print(f"[monitor] 기록 저장: {rec['path']}")

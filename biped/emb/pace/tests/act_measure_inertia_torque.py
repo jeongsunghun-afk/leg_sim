@@ -177,6 +177,36 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     #   ⚠arm 은 지금 있는 자리를 래치하고 게인을 0→목표로 램프하므로 충격이 없다.
     hw.arm(ch, brake_kp, brake_kd)
 
+    # ★중력을 **명령에 실어 상쇄한다** (2026-08-14, 실기 HL_calf 에서 잡혔다).
+    #   `step_torque` 는 `_raw_write` 를 안 거치므로 hw.tau_ff_fn(중력 FF)이 **안 실린다** —
+    #   순수 명령토크다. 그래서 실제 순토크는 방향마다 다르다:
+    #       + 방향: τ − τ_c + |τ_g|      − 방향: τ − τ_c − |τ_g|
+    #   HL_calf 실측(2026-08-14): 마찰 f≈0.60 · 중력 g≈0.55 Nm 이라
+    #     + 는 저항이 0.04 Nm 뿐이라 **0.10s 만에 속도상한**에 닿고(창이 런 전체를 덮는다)
+    #     − 는 준위 1.05~1.20 사이에서야 파단해 낮은 준위 셋이 통째로 날아갔다
+    #       → −방향 유효표본 2개 < 3 → **회귀 자체를 못 했다.**
+    #   ⇒ 명령을 `τ_g(q) + direction·level` 로 준다. 그러면 순토크가 방향대칭이 되고,
+    #     회귀의 x 는 **가진준위 그대로**이며 절편에서 τ_g 가 빠진다(b·q̇_ref + τ_c 만 남는다).
+    #   ⚠q 마다 다시 읽어야 한다 — 70° 를 움직이는 동안 중력이 크게 변한다.
+    _gfn = getattr(hw, "grav_fn", None)
+
+    def grav_at(q):
+        """채널각 q 에서의 중력토크[Nm]. actuator_test 가 홈복귀 전에 **실측 보정**을
+        얹어 hw.grav_fn 에 넣어 둔다 — 표를 직접 읽으면 solo 자세에서 틀린다."""
+        if _gfn is not None:
+            return float(_gfn(ch, q))
+        return 0.0
+
+    if _gfn is None:
+        log(f"  [{name}] ⚠중력함수가 없다 — 상쇄 없이 돈다. 방향 비대칭이 남는다")
+    else:
+        # ★상한을 상쇄분만큼 올린다. 안 그러면 `step_torque` 의 clip 이 **가진을 먼저**
+        #   깎아 준위가 거짓이 된다 — 회귀의 x 가 틀리면 I 가 통째로 틀린다.
+        _lo_b, _hi_b = (joint.get("_ch_box") or (-60.0, 60.0))
+        _gmax = max(abs(grav_at(q)) for q in np.linspace(_lo_b, _hi_b, 41))
+        tau_max = tau_max + _gmax
+        log(f"  [{name}] 중력상쇄 켬 — |τ_g| 최대 {_gmax:.3f} Nm ⇒ 토크상한 {tau_max:.2f} Nm")
+
     n_rep = int(cfg.get("repeats", 1))
     runs = []
     try:
@@ -198,7 +228,8 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                     if t > 4.0:
                         hit = "시간초과"
                         break
-                    s = hw.step_torque(ch, direction * tau, tau_max)
+                    # ★중력상쇄 + 가진. tau_max 는 상쇄분만큼 여유가 있어야 한다.
+                    s = hw.step_torque(ch, grav_at(hw._q[ch]) + direction * tau, tau_max)
                     T.append(t); Q.append(s.q_deg); V.append(s.dq_dps); TAU.append(s.tau)
                     if abs(s.q_deg - q0) >= travel_d:
                         hit = "이동상한"
@@ -217,6 +248,18 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                 t = np.array(T); q = np.array(Q) - q0; v = np.array(V)
                 dt = float(np.median(np.diff(t))) if t.size > 2 else hw.dt
                 f1 = _ddq_at_speed(t, q, v, dt, vref, skip_s, half_s)
+                # ★창이 런의 대부분을 덮으면 **공통속도법이 아니다** (2026-08-14).
+                #   실기 HL_calf +방향에서 런 0.101s 에 창표본 46(=0.092s) 이 나왔다 —
+                #   창이 런의 91% 다. 그러면 q̈ 는 "q̇_ref 에서의 값" 이 아니라
+                #   **런 전체 평균가속도**이고, b·q̇_ref 가 절편으로 안 빠진다.
+                #   이 파일이 방법 ③ 을 버린 이유(런이 시상수의 7~14%)와 같은 병이다.
+                #   ⚠조용히 통과시키면 I 가 그럴듯한 값으로 나와서 더 위험하다.
+                if "fail" not in f1 and t.size > 2:
+                    _cov = f1["n_win"] * float(np.median(np.diff(t))) / max(float(t[-1]), 1e-9)
+                    if _cov > float(cfg.get("win_cover_max", 0.60)):
+                        f1 = {"fail": f"창이 런의 {_cov*100:.0f}% 를 덮는다"
+                                      f"(상한 {float(cfg.get('win_cover_max', 0.60))*100:.0f}%)"
+                                      f" — 런이 너무 짧다. 준위를 낮추거나 이동을 늘릴 것"}
                 sgn = '+' if direction > 0 else '−'
                 if "fail" in f1:
                     log(f"    {sgn} τ={tau:.2f}: ✗ {f1['fail']}  "

@@ -439,7 +439,14 @@ def init_bounds(spec_path, names, per_axis, pin=()):
             a, b = _sw.get(k), _dy.get(k)
             if a and b:
                 f0[k] = float(np.sqrt(a * b))
-                _span_lo[k] = min(a, b) * (1.0 - 0.30)
+                # ★아래쪽은 JFRIC_SPAN_DN 을 따른다 (2026-08-14 수정).
+                #   종전엔 여기가 −30% 하드코딩이라 **JFRIC_SPAN_DN 을 덮어썼다.**
+                #   0.50→0.75 로 넓혔는데 fit_v4 에서 JFRIC.foot 하한이 0.2516 으로
+                #   그대로였다 — 실측이 둘 다 있는 kind(thigh·calf·foot)는 전부 이 분기로
+                #   와서 넓히기가 **hip 에만** 먹었고 hip 은 애초에 고정이다.
+                #   즉 "탐색범위를 넓혔다" 는 세 축에서 아무 일도 안 했다.
+                #   ⚠위쪽은 ±30% 로 둔다 — 실측보다 큰 마찰은 물리적 근거가 없다.
+                _span_lo[k] = min(a, b) * (1.0 - JFRIC_SPAN_DN[0])
                 _span_hi[k] = max(a, b) * (1.0 + 0.30)
             else:
                 f0[k] = float(a or b)
@@ -671,7 +678,8 @@ def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
       출력에는 값만 있어서 **한참 뒤에야** 알았다. 탐색범위 끝에 붙은 값은 "최적이 탐색범위 밖" 이라는
       뜻이지 식별된 값이 아니다 — 그걸 결론으로 쓰면 안 된다. 그러니 값과 **같이** 찍는다.
     """
-    log(f"\n  {'파라미터':<16}{'하한':>11}{'값':>12}{'상한':>11}{'범위내':>8}  판정")
+    log(f"\n  {'파라미터':<16}{'하한':>11}{'값':>12}{'상한':>11}{'범위내':>8}  판정"
+        f"   (ᴸ = 로그 눈금 — 자릿수가 넓은 탐색범위)")
     wall = []
     for i, L in enumerate(labels):
         if L.startswith("bias"):
@@ -680,7 +688,17 @@ def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
             log(f"  {L:<16}{'':>11}{x[i]:>12.4g}{'':>11}{'고정':>8}  — 탐색 제외")
             continue
         a, b = float(lo[i]), float(hi[i])
-        u = (x[i] - a) / (b - a) if b > a else float("nan")
+        # ★자릿수가 넓은 탐색범위는 **로그로** 위치를 잰다 (2026-08-14).
+        #   JDAMP 는 0.0018~0.9 로 500배다. 선형 위치로는 0.0018 도 0.0035 도 전부 "0%" 라
+        #   **바닥에 박힌 것과 바닥에서 2배 올라온 것을 구별하지 못한다.**
+        #   실제로 fit_v4 의 JDAMP.calf(0.003535 = 하한의 1.96배)를 "범위 끝까지 밀렸다"
+        #   로 보고했다 — 하한을 5배 내렸는데 값은 2.8배만 내려가 **하한에서 오히려
+        #   멀어졌는데도** 그렇게 찍혔다. 그 말을 믿고 또 넓히면 헛돈다.
+        lg = a > 0 and b > 0 and (b / a) > 20.0
+        if lg:
+            u = float(np.log(max(x[i], a) / a) / np.log(b / a))
+        else:
+            u = (x[i] - a) / (b - a) if b > a else float("nan")
         if u >= 0.95 or u <= 0.05:
             v = "★범위 끝까지 밀렸다 — 최적이 범위 밖이다"
             wall.append(L)
@@ -688,7 +706,8 @@ def box_report(labels, x, x0, lo, hi, free=None, log=print) -> list:
             v = "△범위 끝 근처"
         else:
             v = "✓범위 안에서 정해졌다"
-        log(f"  {L:<16}{a:>11.4g}{x[i]:>12.4g}{b:>11.4g}{u:>7.0%}  {v}")
+        log(f"  {L:<16}{a:>11.4g}{x[i]:>12.4g}{b:>11.4g}{u:>7.0%}"
+            f"{'ᴸ' if lg else ' '} {v}")
     return wall
 
 

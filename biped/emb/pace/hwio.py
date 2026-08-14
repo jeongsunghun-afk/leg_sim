@@ -42,6 +42,23 @@ def _ip(a: np.ndarray) -> I32P:
     return a.ctypes.data_as(I32P)
 
 
+
+def raw_trace_dir(plotdir: str) -> str:
+    """원시궤적 npz 를 둘 디렉토리. **실기 경로는 그대로, 시험은 격리된다.**
+
+    ★왜 필요한가 (2026-08-14)
+      마찰시험이 `results/` 를 **하드코딩**해서 저장하고 있었다. 그런데 오프라인 시험은
+      plotdir 로 임시 디렉토리를 주는데도 이걸 무시하고 진짜 `results/` 에 썼다 —
+      **`test_hwio_offline.py` 를 돌릴 때마다 실기 데이터(sweep_ch03.npz)가 날아갔다.**
+      실제로 오늘 그걸로 커밋본을 덮어써서 `git checkout` 으로 되살렸다.
+    ⇒ 실기는 `plotdir = results/plots` 이므로 그 부모(results)를 쓰고,
+      그 관례가 아닌 경로(시험의 임시 디렉토리)는 **자기 자신**에 쓴다.
+      실기 저장 위치는 바뀌지 않는다.
+    """
+    import os
+    d = os.path.abspath(plotdir)
+    return os.path.dirname(d) if os.path.basename(d) == "plots" else d
+
 class SafetyAbort(RuntimeError):
     """안전조건 위반 — 호출측은 잡지 말고 종료시킬 것(limp 는 이미 수행됨)."""
 
@@ -211,6 +228,7 @@ class Hardware:
         self.publish_fn = None
         self.pub_period = 1.0 / 20.0
         self._pub_next = 0.0
+        self._pub_warned = False
 
         if lib.bridge_init(int(recv_wait_ms)) != 0:
             raise RuntimeError(
@@ -384,8 +402,16 @@ class Hardware:
                 #   변환(채널→모델각/관절토크)은 호출자가 JointMap 으로 한다.
                 self.publish_fn(self._q, self._rpy, self._armed,
                                 {'dq': self._dq, 'tau': self._tau, 'q_cmd': self._q_cmd})
-            except Exception:
-                pass
+            except Exception as e:
+                # ★조용히 삼키면 안 된다 (2026-08-14). 2026-08-13 에 publish_fn 에
+                #   4번째 인자를 추가했는데 오프라인 시험의 람다는 3개만 받았다.
+                #   그 TypeError 가 여기서 통째로 삼켜져 "상태파일이 안 생긴다" 로만
+                #   보였고, 원인을 찾는 데 한참 걸렸다.
+                #   발행 실패로 시험을 멈추지는 않되(그 판단은 유효하다) **한 번은 알린다.**
+                if not self._pub_warned:
+                    self._pub_warned = True
+                    print(f"  ⚠상태 발행 실패({type(e).__name__}: {e}) — 이후 조용히 넘어간다."
+                          f" publish_fn 시그니처는 (q_ch, rpy, armed, extras) 다")
         return q, dq, tau, cur
 
     def stale_ms(self) -> float:

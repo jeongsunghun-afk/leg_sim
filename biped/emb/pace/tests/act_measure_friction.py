@@ -532,8 +532,8 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
     #     그 두 점이 같은 이유로 오염됐다면 foot 값도 무효다.
     try:
         import os
-        _d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                          "results")
+        from hwio import raw_trace_dir
+        _d = raw_trace_dir(plotdir)      # ★실기는 results/ · 시험은 임시dir (덮어쓰기 방지)
         os.makedirs(_d, exist_ok=True)
         _p = os.path.join(_d, f"sweep_ch{ch:02d}.npz")
         np.savez(_p, cols=np.array(["t", "q", "dq", "tau", "cur"]),
@@ -543,7 +543,7 @@ def _sweeps(hw, ch, cfg, kp, kd, q_center, log, ff=None) -> dict[float, tuple[fl
                     np.column_stack([a["t"], a["q"], a["dq"], a["tau"], a["cur"]])
                     for v, d, a, _ in raw},
                  **{f"v{v:g}_d{'p' if d > 0 else 'm'}_mask": m for v, d, _, m in raw})
-        log(f"    원시 궤적 저장: results/sweep_ch{ch:02d}.npz ({len(raw)} 통과)")
+        log(f"    원시 궤적 저장: {os.path.join(os.path.basename(_d), f'sweep_ch{ch:02d}.npz')} ({len(raw)} 통과)")
     except Exception as e:
         log(f"    ⚠원시 궤적 저장 실패({type(e).__name__}: {e}) — 측정은 유효하다")
     return out

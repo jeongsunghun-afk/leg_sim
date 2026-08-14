@@ -253,7 +253,9 @@ def t_scalar_gain():
     path = os.path.join(tempfile.gettempdir(), "biped_state_pacetest.json")
     if os.path.exists(path):
         os.remove(path)
-    hw.publish_fn = lambda q_ch, rpy, on: publish_state(
+    # ★4번째 인자 extras 는 2026-08-13 에 추가됐다(값 모니터가 속도·토크를 받으려고).
+    #   `*_` 로 받아 두면 시그니처가 또 늘어도 시험이 조용히 깨지지 않는다.
+    hw.publish_fn = lambda q_ch, rpy, on, *_: publish_state(
         "pace:HL_foot", jm.ch_to_q_joint(np.asarray(q_ch, float)),
         np.asarray(rpy, float), 1.0 / hw.dt, on, "pace", path=path)
     hw.pub_period = 0.0                      # 테스트에서는 매 read 마다

@@ -51,6 +51,7 @@
 """
 from __future__ import annotations
 
+import os
 import time
 
 import numpy as np
@@ -288,6 +289,28 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     res = {"ch": ch, "name": name, "levels": levels, "runs":
            [{kk: vv for kk, vv in r.items() if kk not in ("t", "q", "dq", "tau")}
             for r in runs], "gear_k": k_gear}
+
+    # ★원시궤적을 남긴다 (2026-08-14). 토크 프로브는 남기는데 여기만 빠져 있었다.
+    #   ⚠지금 이게 없어서 **속도 의존성을 검증할 수 없다.** 2026-08-14 HL_foot 에서
+    #     q̇_ref 훑기가 I −20%(40→140dps) · 절편기울기 0.20 Nm·s/rad(관절) 을 냈고
+    #     두 조건(무릎 자유·고정)에서 재현됐다. 원인 후보가 셋인데(점성마찰 · 토크-속도
+    #     derating · 창 평균 편향) **원시 q̈~q̇ 곡선이 있어야** 가른다.
+    #   ⇒ 런마다 (t, q, dq, tau) 를 통째로 저장한다. 준위·방향·반복을 같이 넣어야
+    #     나중에 어느 런인지 안다.
+    try:
+        from hwio import raw_trace_dir
+        _d = raw_trace_dir(plotdir); os.makedirs(_d, exist_ok=True)
+        outp = os.path.join(_d, f"inertia_ch{ch:02d}.npz")
+        np.savez(outp, cols=np.array(["t", "q", "dq", "tau"]),
+                 gear_k=k_gear, vref=vref, levels=np.array(levels, float),
+                 tau_break=float(joint.get("_tau_break") or np.nan),
+                 hold=np.array(sorted(getattr(hw, "hold_ch", []) or []), int),
+                 **{f"r{i}": np.column_stack([r["t"], r["q"], r["dq"], r["tau"]])
+                    for i, r in enumerate(runs)},
+                 meta=np.array([[r["rep"], r["dir"], r["tau_cmd"]] for r in runs], float))
+        log(f"  [{name}] 원시 궤적 저장: {os.path.relpath(outp)} ({len(runs)} 런)")
+    except Exception as e:                       # 저장 실패가 시험을 죽이면 안 된다
+        log(f"  [{name}] ⚠원시 궤적 저장 실패: {type(e).__name__}: {e}")
 
     # ── 회귀: τ = I·q̈|q̇_ref + [b·q̇_ref + τ_c + τ_g] ────────────────────
     #   기울기가 곧 I. 절편은 준위 무관 상수(점성·마찰·중력의 합)다.

@@ -673,10 +673,28 @@ def main() -> int:
                         # ★스톨 감지용 중력 조회 — 표는 채널각으로 색인돼 있다.
                         #   이게 있어야 "정상 처짐" 과 "스톱에 밀어붙임" 이 구분된다.
                         _gt = spec["torque_mode"].get("tau_grav_table") or {}
-                        _gbias = {}                   # {ch: 실측−표 오프셋[Nm]}
-                        hw.grav_fn = (lambda c, q, _t=_gt, _b=_gbias:
-                                      (float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"]))
-                                       if c in _t else 0.0) + _b.get(c, 0.0))
+                        # ★보정은 **상수가 아니라 각도의 함수**다 (2026-08-14).
+                        #   종전엔 한 점에서 잰 오프셋을 전 구간에 썼다. calf·foot 은
+                        #   보정이 0.01~0.19Nm 이라 통했는데 **thigh 에서 무너졌다**:
+                        #     실측 +0.170 vs 표 +1.412 @ +36.41° → 보정 −1.242 Nm
+                        #   thigh 는 중력 기울기가 ~0.1 Nm/° 라 시험구간 ±50° 에서 중력이
+                        #   5Nm 변한다. 상수 오프셋으로는 못 따라간다. 실제로 파단이
+                        #   0.197Nm 에 뜨고(비정상적으로 낮다) 축이 상자를 넘어 달아났다.
+                        #   ⚠표가 틀린 건 **크기만이 아니라 모양**이다 — 표는 다른 관절이
+                        #     neutral 일 때 뽑았는데 solo 는 calf −61°·foot +52° 로 늘어져
+                        #     있어 thigh 가 지는 하중분포 자체가 다르다.
+                        #   ⇒ 여러 각도에서 재서 **보간**한다. 점이 1개면 종전과 같다.
+                        _gbias = {}                   # {ch: (q_pts[], corr_pts[])}
+                        def _grav(c, q, _t=_gt, _b=_gbias):
+                            base = (float(np.interp(q, _t[c]["q_ch"], _t[c]["tau"]))
+                                    if c in _t else 0.0)
+                            e = _b.get(c)
+                            if e is None:
+                                return base
+                            qp, cp = e
+                            # 바깥은 끝값 고정(np.interp 기본) — 외삽하지 않는다
+                            return base + float(np.interp(q, qp, cp))
+                        hw.grav_fn = _grav
                         _jig_precheck(hw, _jm, _tgt, spec, log=_log, tol_override=a.home_tol)
                         hw.arm(ch, _kp_ch, _kd_ch)
                         # ★홈복귀 **전에** 중력을 실측해 표를 보정한다 (2026-08-12).
@@ -713,10 +731,39 @@ def main() -> int:
                                      f"{hw.limits_for(ch).q_max:+.1f}] 끝이라 움직일 자리가"
                                      f" 없다. **표 값을 그대로 쓴다**(오차가 남을 수 있다).")
                                 _g_meas = _g_tbl
-                            _gbias[ch] = _g_meas - _g_tbl
+                            _qs_g, _cs_g = [_q_now], [_g_meas - _g_tbl]
                             _log(f"  중력 실측 {_g_meas:+.3f} vs 표 {_g_tbl:+.3f} Nm "
-                                 f"@ {_q_now:+.2f}° → 보정 {_gbias[ch]:+.3f} Nm")
-                            if abs(_gbias[ch]) > 3.0:
+                                 f"@ {_q_now:+.2f}° → 보정 {_cs_g[0]:+.3f} Nm")
+                            # ★추가 점 — 시험구간을 훑어 보정의 **모양**을 잡는다.
+                            _npt = int(spec["torque_mode"].get("grav_probe_points", 3))
+                            if _npt > 1:
+                                _Lg = hw.limits_for(ch)
+                                _m = 6.0                      # 상자 끝 여유
+                                _cand = np.linspace(_Lg.q_min + _m, _Lg.q_max - _m, _npt)
+                                for _qp in _cand:
+                                    if abs(_qp - _q_now) < 4.0:
+                                        continue              # 이미 잰 자리
+                                    try:
+                                        hw.goto(ch, float(_qp), _kp_ch, _kd_ch, speed_dps=15.0)
+                                        _gm = hw.measure_gravity(
+                                            ch, _kp_ch, _kd_ch,
+                                            ff_fn=lambda q: hw.grav_fn(ch, q))
+                                    except Exception as _e:
+                                        _log(f"    중력 탐침 {_qp:+.1f}° 실패({type(_e).__name__}) — 건너뛴다")
+                                        continue
+                                    if _gm != _gm:
+                                        continue
+                                    _gt_p = float(np.interp(_qp, _gt[ch]["q_ch"], _gt[ch]["tau"]))
+                                    _qs_g.append(float(_qp)); _cs_g.append(_gm - _gt_p)
+                                    _log(f"    보정 @{_qp:+7.1f}° = {_gm - _gt_p:+.3f} Nm")
+                                _o = np.argsort(_qs_g)
+                                _qs_g = list(np.asarray(_qs_g)[_o])
+                                _cs_g = list(np.asarray(_cs_g)[_o])
+                                _spread = max(_cs_g) - min(_cs_g)
+                                _log(f"  중력보정 {len(_qs_g)}점 · 폭 {_spread:.3f} Nm"
+                                     + ("  ★상수로는 못 맞는 축이다" if _spread > 0.5 else ""))
+                            _gbias[ch] = (np.asarray(_qs_g), np.asarray(_cs_g))
+                            if max(abs(np.asarray(_cs_g))) > 3.0:
                                 _log(f"  ⚠보정이 3Nm 을 넘는다 — 표를 다시 뽑을 것"
                                      f"(tools/gen_grav_table.py). 일단 진행한다.")
                             # ★기본 FF 로 건다 — 이 뒤 **모든 쓰기**가 자동으로 태운다

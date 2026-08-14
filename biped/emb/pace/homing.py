@@ -77,10 +77,23 @@ def goto_home(hw, jm, homer: HomeTrajectory, cfg: dict, q_box=None, log=print,
     #   명령은 계단이 없는데 **검사가 트립**했다(ch2 20.34° ∉ [−145.58, 18.52]).
     #   늘어진 calf 모델각이 −60.8° 로 관절한계 −59.6° 밖이라 생긴 일이다.
     #   ⇒ 같은 값을 두 곳에서 다르게 다루면 반드시 어긋난다. 하나로 만든다.
+    #   2026-08-14: 시작각까지 넓혀도 **그 뒤로 더 처지면** 트립한다. 전원을 껐다 켠 뒤
+    #   HR_hip 이 −15.15° 로 상자 [−14.90, +14.90] 를 0.25° 넘겨 홈복귀가 시작도 못 했다.
+    #   q_ch0 를 잡는 순간에는 안에 있었는데 무여자로 흘러내린 것이다 — hip 은 중력이
+    #   5.25Nm 이라 계속 처진다. ⇒ 넓힐 때 **여유**를 준다. 이건 한계 완화가 아니라
+    #   "출발점이 어디든 안으로 데려온다" 는 홈복귀의 목적 그 자체다(actuator_test 도
+    #   같은 이유로 arm 직전에 상자를 현재각까지 넓힌다).
+    #   ⚠여유는 **넓히는 쪽에만** 붙는다. 원래 상자가 더 넓으면 그대로 둔다.
+    _SAG = 2.0        # [deg] 잡은 뒤 더 처질 수 있는 폭
     box_eff = None
     if q_box is not None:
-        box_eff = {c: (min(lo, float(q_ch0[c])), max(hi, float(q_ch0[c])))
+        box_eff = {c: (min(lo, float(q_ch0[c]) - _SAG), max(hi, float(q_ch0[c]) + _SAG))
                    for c, (lo, hi) in q_box.items()}
+        _out = {c: float(q_ch0[c]) for c, (lo, hi) in q_box.items()
+                if not (lo <= float(q_ch0[c]) <= hi)}
+        if _out:
+            log("    ⚠출발각이 상자 밖이다 — 홈복귀 동안만 넓힌다: "
+                + " ".join(f"ch{c} {v:+.2f}°" for c, v in sorted(_out.items())))
     q_leg = np.asarray(jm.ch_to_q_joint(q_ch), float)      # ★측정각(모델각)에서 출발
     T = homer.start(q_leg)
     for nm, want, got in homer.clamped:
@@ -202,7 +215,16 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
       여기만 안 고쳐져 있었다. 종전 영점에서는 우연히 안 걸렸을 뿐이다.
     ⚠속도·토크·stale·추종오차는 축과 무관한 물리량이라 그대로 hw.lim 을 쓴다.
     """
+    # ★`hw.lim` 만 바꾸면 **안 먹는다** (2026-08-14 실기에서 잡혔다).
+    #   `hw._check` 는 `limits_for(c)` 를 쓰는데 그건 `lim_ch[c]` 를 **우선**한다.
+    #   collect_multichirp 는 채널별 상자를 등록하므로(로그 "채널별 한계 적용") 여기서
+    #   준 확장이 통째로 무시됐다 — 전원 재투입 후 HR_hip 이 −15.19° 로 처졌는데
+    #   홈복귀가 "∉ [−14.90, 14.90]" 으로 트립했다. 확장 경고는 찍혔는데도 그랬다.
+    #   ⚠이 파일 위쪽이 경고한 그 부류다("같은 값을 두 곳에서 다르게 다루면 반드시
+    #     어긋난다"). 그때 lim/box_eff 를 맞춰 뒀는데 **lim_ch 가 나중에 생기며 재발**했다.
+    #   ⇒ 둘 다 덮고 둘 다 되돌린다.
     saved = hw.lim
+    saved_ch = dict(hw.lim_ch)
     snap = []
     try:
         for c in (range(hw.n) if only_ch is None else (only_ch,)):
@@ -211,6 +233,7 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
             if q_box is not None and c in q_box:
                 lo, hi = q_box[c]
                 hw.lim = replace(saved, q_min=lo, q_max=hi)
+                hw.lim_ch[c] = replace(hw.limits_for(c), q_min=lo, q_max=hi)
             else:
                 hw.lim = saved
             hw._check(c, q, dq, tq, float(hw._q_cmd[c]))
@@ -285,3 +308,4 @@ def _trip_check(hw, q_box=None, only_ch=None) -> None:
         raise SafetyAbort(f"{e}\n  트립 순간 전 채널(채널각):\n{rows}") from None
     finally:
         hw.lim = saved
+        hw.lim_ch.clear(); hw.lim_ch.update(saved_ch)

@@ -61,9 +61,18 @@ start)
     #   ⚠awk 에 `fflush()` 를 넣는다 — stdout 이 파일이면 libc 가 블록 버퍼링으로
     #     바꾸는 그 문제가 awk 에도 똑같이 생긴다(2026-08-12 에 Emb 에서 겪었다).
     #   EMB_LOG_EVERY=1 로 두면 종전처럼 전량 기록한다(단기 정밀진단용).
+    # ★★카운터를 **패턴마다 따로** 둔다 (2026-08-14 개선). 하나를 공용으로 쓰면
+    #   **동결 때 불리하다** — `[STT]RxCnt` 가 멎어도 `[engRobot_Proc` 이 카운터를 계속
+    #   돌리므로, 드물게 나오는 STT 줄이 하필 건너뛰어질 수 있다.
+    #   이 로그의 존재 이유가 동결 진단이므로 그 경우에 유리한 쪽을 택한다.
+    #   패턴별이면 각 패턴이 **독립적으로** 1/n 로 남는다.
     _every=${EMB_LOG_EVERY:-500}
     ( cd "$EMB_DIR" && stdbuf -oL -eL "$EMB_BIN" 2>&1 \
-        | awk -v n="$_every" '/^\[STT\]RxCnt|^\[SET\]RxCnt|^\[engRobot_Proc/ { if (++c % n) next } { print; fflush() }' \
+        | awk -v n="$_every" '
+            /^\[STT\]RxCnt/    { if (++a % n) next }
+            /^\[SET\]RxCnt/    { if (++b % n) next }
+            /^\[engRobot_Proc/ { if (++d % n) next }
+            { print; fflush() }' \
         > "$LOG" & )
     sleep 2
     if ! running; then

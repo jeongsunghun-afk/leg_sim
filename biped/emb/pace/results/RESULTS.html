@@ -279,7 +279,12 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <pre>python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
 <p class="warn">⚠<code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다.</p>
 <h3>4-b. hip 좌우차 확정</h3>
-<p>위치스윕은 16% 차(0.928/0.803), 토크모드는 4% 차(0.888/0.852). 어느 쪽이 맞는지 미결. 구조가 다르다는 가설(HR 샤프트 경유 · HL 직결)을 확인하려면 반복 측정이 필요하다.</p>
+<p class="warn">⚠<b>2026-08-14 정정 — 이 절이 옛 숫자를 들고 있었다.</b> "위치스윕 16% 차(0.928/0.803)" 라고 적혀 있었는데 그 값은 재측정으로 대체됐다. 현재 <code>spec.yaml</code>:</p>
+<table>
+<tr><th></th><th>HL / HR</th><th>좌우차</th></tr>
+<tr><td>위치스윕 <code>measured_coulomb_ch</code></td><td class="n">0.854 / 0.800</td><td><b>7%</b></td></tr>
+<tr><td>토크모드 <code>measured_tau_break_ch</code></td><td class="n">0.888 / 0.852</td><td><b>4%</b></td></tr></table>
+<p>⇒ <b>모순이 거의 사라졌다</b> (16% vs 4% → 7% vs 4%). 두 방법이 같은 그림을 준다 — HL 이 HR 보다 4~7% 크다. 구조 가설(HR 샤프트 경유 · HL 직결)과 방향이 맞고, 직결 쪽이 다리 하중을 더 받는다는 설명과도 맞는다. ⇒ 우선순위를 내린다. 남은 건 크기 확정이지 모순 해소가 아니다.</p>
 <h2>5. 끝난 시험 — 결론만</h2>
 <p>여기 셋은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다.</p>
 <h3>✓ 백래시 — <b>측정 완료, 범인이 아니다</b></h3>

@@ -348,30 +348,20 @@ pre code{border:0;background:none;padding:0}
 <p>식별은 닫혔다 — 적합 0.280 · 따로 뺀 구간 0.304 · <b>게인 2배 검증 0.187</b>. 아래는 <b>값이 비거나 확인이 덜 된 것</b>이지 정확도를 막는 것이 아니다.</p>
 <table>
 <tr><th>#</th><th>무엇</th><th>어디서</th><th>비용</th><th>왜</th></tr>
-<tr><td><b>1</b></td><td>궤적 검증을 <code>--loss-space tendon</code> 으로 재실행</td><td>노트북</td><td><b>공짜</b></td><td>§6 의 0.411 은 손실공간 수정 <b>전</b> 값이다</td></tr>
-<tr><td><b>2</b></td><td><code>JFRIC.hip</code> 계통 보정 확인 (<code>0.827 → 0.724</code>)</td><td>노트북</td><td><b>공짜</b></td><td>세 축이 보인 PACE/스윕 비 0.876 을 hip 에도 적용 (§1-c)</td></tr>
+<tr><td><b>1</b></td><td><code>JFRIC.hip</code> 계통 보정 확인 (<code>0.827 → 0.724</code>)</td><td>노트북</td><td><b>공짜</b></td><td>세 축이 보인 PACE/스윕 비 0.876 을 hip 에도 적용 (§1-c)</td></tr>
+<tr><td>~~—~~</td><td>~~궤적 검증 재실행~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>끝났다</b> — 0.3064, 잔차 비 1.09 (§6)</td></tr>
 <tr><td class="n">3</td><td>HR_thigh 관성 측정</td><td>실기</td><td class="n">30분</td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙어 있다</td></tr>
 <tr><td class="n">4</td><td>Stribeck 크기 측정</td><td>실기</td><td class="n">30분</td><td><code>f_start</code> 를 낮춘 수집이 따로 필요. <b>급하지 않다</b></td></tr>
 <tr><td class="n">—</td><td>컨트롤러에 <code>fit_A</code> 반영</td><td class="n">—</td><td class="n">—</td><td><b>다른 세션 몫</b> (<code>biped_control.hpp</code>·MJCF tendon 주입)</td></tr></table>
-<h3>1 · 2 — 노트북에서 지금 할 수 있다</h3>
+<h3>1 — hip 마찰 계통 보정 (노트북, 공짜)</h3>
 <pre>PIN="hip,rotor,JDAMP.foot,coef,JDAMP.calf=0,JDAMP.thigh=0,delay=0.00839"
 BASE="biped/emb/pace/results"
 
-# 1 — 궤적 검증 (손실공간 수정 후 기준으로)
-.venv/bin/python biped/emb/pace/pace_cmaes.py $BASE/pace_multichirp.npz \
-    --holdout 0.2 --holdout-mode interleave --pin "$PIN" --loss-space tendon \
-    --validate $BASE/pace_multichirp_f0.6.npz --out fit_A_traj
-
-# 2 — hip 마찰 계통 보정
 .venv/bin/python biped/emb/pace/pace_cmaes.py $BASE/pace_multichirp.npz \
     --holdout 0.2 --holdout-mode interleave --loss-space tendon \
     --pin "$PIN,JFRIC.hip=0.724" \
     --validate $BASE/pace_multichirp_val.npz --out fit_A_hipcorr</pre>
-<p><b>판정 — 둘 다 검증 RMS 하나로 본다:</b></p>
-<table>
-<tr><th></th><th>기준</th><th>뜻</th></tr>
-<tr><td class="n">1</td><td class="n">0.28 근처면 통과</td><td>수정 전 판정("궤적에 안 얹혀 있다")이 지금도 성립</td></tr>
-<tr><td class="n">2</td><td class="n">0.187 근처 유지면 채택</td><td>나빠지면 외삽이 틀린 것 — 0.827 로 되돌린다</td></tr></table>
+<p><b>판정 — 검증 RMS 하나로 본다:</b> 0.187 근처 유지면 채택, 나빠지면 외삽이 틀린 것이니 0.827 로 되돌린다. §1-c 의 계통 보정을 실제로 확인하는 판이다 — <b>외삽은 검증으로 확인해야 채택할 수 있다.</b></p>
 <h3>3 — HR_thigh 관성 (실기)</h3>
 <p><code>t_ref→0</code> 외삽이 코드에 붙어 있으므로(§5 '관성 외삽') 돌리면 자동으로 같이 찍힌다. HL 은 그 방법으로 CAD 대비 +6.1% 였다. 좌우가 그만큼 맞으면 CAD 검증이 네 축으로 는다.</p>
 <h3>4 — Stribeck 크기 (실기, 급하지 않음)</h3>
@@ -592,10 +582,14 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <tr><td>적합 RMS</td><td><b>0.280°</b></td><td>파라미터를 찾는 데 쓴 48창</td></tr>
 <tr><td>따로 뺀 구간 RMS</td><td><b>0.304°</b></td><td>안 쓴 12창</td></tr>
 <tr><td><b>검증 ① 게인 2배</b></td><td><b>0.187°</b></td><td>같은 궤적 · <code>kp</code> ×2 로 따로 수집</td></tr>
-<tr><td>검증 ② 다른 궤적</td><td class="wa">0.411° ⚠</td><td><code>--f-scale 0.6</code> — <b>손실공간 수정 전 값이다</b></td></tr></table>
-<p class="warn">⚠<b>검증 ②는 아직 갱신 안 됐다.</b> <code>--loss-space tendon</code> 으로 다시 돌려야 한다:</p>
-<pre>--loss-space tendon --validate .../pace_multichirp_f0.6.npz --out fit_A_traj</pre>
-<p>수정 전 판정(*"본 적 없는 궤적에서 적합셋만큼 맞는다"*)은 그때 기준으로 유효했다 — 0.411 vs 적합 0.417 이었다. 수정 후 적합이 0.280 이므로 <b>같은 판정이 성립하려면 검증 ②도 0.28 근처로 내려와야 한다.</b> 안 내려오면 그건 새 정보다. ⚠검증 ①의 0.250 이 낮은 것도 게인이 2배라 추종이 조여진 탓이 크다 — ①과 ②의   절대값을 서로 비교하면 안 된다. ⚠<code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <b><code>f_start</code> 는 그대로</b>다(0.17 Hz). 저속 성분을 더한 게   아니라 고속 성분을 뺀 것이라, <b>Stribeck 구간은 이 시험으로 안 건드려졌다.</b></p>
+<tr><td><b>검증 ② 다른 궤적</b></td><td><b>0.306°</b></td><td><code>--f-scale 0.6</code>(148→89 dps) · 같은 게인</td></tr></table>
+<p class="warn">★<b>본 적 없는 두 조건이 똑같이 −25.5% 좋아졌다</b> — 손실공간 수정의 효과가 적합셋에만 나온 게 아니라는 뜻이다:</p>
+<table>
+<tr><th>검증</th><th><code>joint</code></th><th><b><code>tendon</code></b></th><th></th></tr>
+<tr><td>따로 뺀 구간</td><td class="n">0.4481</td><td><b>0.3039</b></td><td class="n">−32.2%</td></tr>
+<tr><td><b>게인 2배</b></td><td class="n">0.2516</td><td><b>0.1874</b></td><td><b>−25.5%</b></td></tr>
+<tr><td><b>다른 궤적</b></td><td class="n">0.4110</td><td><b>0.3064</b></td><td><b>−25.4%</b></td></tr></table>
+<p class="warn">⚠검증 ②는 <b>개선율(+22.7%)이 아니라 잔차 비</b>로 판정한다 — 느린 궤적은 틀린 θ 로도 초기 오차가 작아 개선 여지가 애초에 적다.     잔차 비 = 검증/적합 = 0.3064 / 0.2802 = <b>1.09</b>  (기준 ≤1.2) ✅ ⚠비가 0.99 → 1.09 로 <b>올랐다.</b> 적합이 검증보다 더 많이 좋아졌기 때문이고,   기준 안이라 문제는 아니다. 다음 판에서 1.2 를 넘으면 그때는 과적합 신호다. ⚠검증 ①의 0.250 이 낮은 것도 게인이 2배라 추종이 조여진 탓이 크다 — ①과 ②의   절대값을 서로 비교하면 안 된다. ⚠<code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <b><code>f_start</code> 는 그대로</b>다(0.17 Hz). 저속 성분을 더한 게   아니라 고속 성분을 뺀 것이라, <b>Stribeck 구간은 이 시험으로 안 건드려졌다.</b></p>
 <p class="warn">⚠따로 뺀 구간이 적합보다 나쁜 건 <b>빠른 자료에서 처음</b> 나타났다(옛 자료는 늘 반대였다). 속도가 2.6배 올라 고주파 끝에서 모델오차가 커진 탓으로 보인다. 다만 <b>검증 RMS 는 그대로 0.25</b> 라 예측력 자체는 안 나빠졌다.</p>
 <p class="warn">★<code>JDAMP.thigh</code> 를 0 으로 못박아도 잃는 게 없다는 증거 — 세 판의 검증 RMS:</p>
 <table>

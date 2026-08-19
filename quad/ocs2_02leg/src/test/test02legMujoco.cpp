@@ -438,6 +438,9 @@ int main(int argc, char** argv) {
         for (int q = 0; q < m->nq; ++q) d->qpos[q] = qpos0[q];
         for (int v2 = 0; v2 < m->nv; ++v2) d->qvel[v2] = 0.0;
         mj_forward(m, d);
+        for (int i = 0; i < 4; ++i) {  // ★발판도 리셋: 리셋 pose의 실제 발 위치로·lock 해제(다음 liftoff에 새로 커밋)
+          footSeed[i][0] = d->geom_xpos[3 * footGeom[i] + 0]; footSeed[i][1] = d->geom_xpos[3 * footGeom[i] + 1]; footLocked[i] = false;
+        }
         std::cerr << "  [RESET] 로봇 초기자세 복원(t=" << t << ")\n";
       }
       // ★GUI 라이브 게이트/모드 전환(Walk/Ready/Ground + 게이트 버튼): OCS2 런타임 mode-seq 삽입.

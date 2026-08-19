@@ -204,7 +204,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><code>frictionloss.thigh</code> 0.498</td><td>PACE — <code>damping</code>=0 고정 후 확정</td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>frictionloss.foot</code> 0.241</td><td><b>옛 자료</b> v5·v6 (자유인 두 판)</td><td><b>±0.4%</b></td><td class="ok">✅ 좋다 ◆</td></tr>
 <tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
-<tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ 못 믿는다</td></tr>
+<tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§4-3)</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
 <p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
 <h2>2. CAD 가 얼마나 안 맞나 (축별)</h2>
@@ -237,8 +237,9 @@ pre code{border:0;background:none;padding:0}
 <h2>4. 더 해야 할 시험</h2>
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td><b>1</b></td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td class="no"><code>damping.hip</code> · <code>thigh 관성</code> — <b>마지막 ❌</b></td></tr>
+<tr><td><b>1</b></td><td>thigh 관성 — <b>토크준위를 올려 런을 짧게</b></td><td>실기</td><td class="n">30분</td><td>진자 뒤처짐 해소(39%→8%)</td></tr>
 <tr><td class="n">2</td><td><code>delay</code> 재실측</td><td>실기</td><td class="n">20분</td><td>지연이 모델오차를 흡수 중(92%)</td></tr>
+<tr><td class="n">—</td><td>~~<code>damping.hip</code>~~</td><td class="n">—</td><td class="n">—</td><td><b>방법 없음 확정</b> → 도메인 랜덤화</td></tr>
 <tr><td class="n">3</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
 <p>✅<b><code>JDAMP.thigh = 0</code> 은 <code>fit_v8</code> 로 확정됐다</b> — 검증 RMS 0.2497 로 자유였을 때 (0.2490 / 0.2494)와 0.3% 안에서 같다. 자유차원 13 → <b>12</b>.</p>
 <p>⇒ 끝난 시험은 <b>§5</b> 에 결론만 남긴다. ⚠<b>hip 만 방법이 없다.</b> 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻어 기울기를   못 낸다. §4-2(중력 최소자세)가 그 축의 유일한 길이다.</p>
@@ -350,12 +351,23 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>다만 이번엔 주된 계통오차(발목 미끄러짐)가 <b>추종오차 기록으로 이미 배제</b>됐으므로 필수는 아니다. 더 좁은 오차한계가 필요할 때 돌리면 된다.</p>
 <pre>python3 diag/couple_magnitude.py --leg HL --k 1.0</pre>
 <p class="warn">⚠<code>k=1</code> 은 발목 명령이 무릎을 0.8배로 따라가 상자를 넘을 수 있다. 스윙을 작게 잡을 것. &lt;/details&gt;</p>
-<h3>3. 중력이 작은 자세에서 관성 재기</h3>
-<p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
-<p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
-<div class="quote">새 절차가 필요하다: 시험 자세를 <b>중력이 최소인 곳</b>으로 옮기고 거기서 훑는다.</div>
-<div class="quote">thigh 는 수직 근처, hip 은 롤축이 수평인 자세.</div>
-<p>이게 되면 위 표의 ❌ 넷 중 <b>셋이 채워진다.</b></p>
+<h3>3. ~~중력이 작은 자세~~ — <b>전제가 틀렸다. 축마다 원인이 다르다</b> (2026-08-14 정정)</h3>
+<p>종전엔 *"미해결 셋(hip 관성·thigh 관성·calf 감쇠)이 <b>전부 같은 원인</b>이다 — 중력이 크다"* 고 적고, 시험 자세를 중력 최소로 옮기자고 했다. <b>계산해 보니 틀렸다.</b></p>
+<table>
+<tr><th>축</th><th>종전 진단</th><th>실제</th></tr>
+<tr><td><code>thigh</code> 관성</td><td>중력이 크다</td><td>✗ <b>중력은 이미 해결됐다</b> — §2 가 *"중력창으로 방향편차를 15.8%→2.6% 로 잡았는데도 +31% 가 남는다"* 고 같은 문서에서 적고 있다. 원인은 <b>진자 뒤처짐</b></td></tr>
+<tr><td><code>hip</code> 감쇠</td><td>중력이 크다</td><td>✗ <b>중력은 상수 5.25 Nm</b> 이라 <code>(τ⁺−τ⁻)/2</code> 에서 상쇄된다. 원인은 <b>±6° 상자</b></td></tr>
+<tr><td><code>calf</code> 감쇠</td><td>중력이 크다</td><td>✓ 해결됨 — <code>JDAMP.calf = 0</code> (§0 ★)</td></tr></table>
+<p>그리고 <b>자세로는 못 줄인다.</b> MJCF 로 계산한 값:</p>
+<table>
+<tr><th></th><th>결과</th></tr>
+<tr><td><code>hip</code> τ_g</td><td>thigh·calf 를 어떻게 접어도 <b>5.25 Nm 불변</b> — 롤축이라 옆방향 모멘트팔이 안 변한다</td></tr>
+<tr><td><code>thigh</code> τ_g (스트로크 ±15°)</td><td>변화폭이 calf 자세와 무관하게 <b>1.5~1.7 Nm</b> (calf 40° 로 해도 10% 개선뿐)</td></tr></table>
+<p>#### 그래서 진짜 레버는 축마다 다르다</p>
+<p><b><code>thigh</code> 관성 — 런을 짧게.</b> 진자 주기 0.90 s 대비 런이 0.21~0.48 s(39%)라 <code>M⁻¹</code> 예측이 전제하는 <code>t→0</code> 극한이 깨진다. 중력최소 자세(thigh +20°·calf +20°)에서 τ_g 가 0.023 Nm 이고 <code>τ_trip</code> 12 Nm 이라 <b>예산이 11.7 Nm</b> 남는다. 유효관성 0.139 이므로</p>
+<p><code>q̈</code> 를 <b>84 rad/s²</b> 까지 쓸 수 있고, 그러면 <code>vref</code> 100 dps 도달 + 창(±50 ms)까지 <b>~70 ms</b> 로 끝난다 — 주기의 <b>8%</b>. 지금은 그 예산을 다 안 쓴다. ⇒ 고칠 것은 <b>자세가 아니라 토크준위</b>다(<code>auto_levels</code>).</p>
+<p><b><code>hip</code> 감쇠 — 방법이 없다.</b> 상자 ±6° 는 <b>자기충돌</b>이 정한 것이다(지그 접촉 11.5°, 처짐 2~3.5° 를 빼면 6° 가 상한). 등속 스윕은 <code>stroke/v &gt; 정착시간</code> 이라 <b>47 dps</b> 가 한계이고 거기서 점성 몫이 11% 다. 속도점도 2개(2·5dps)뿐이라 기울기를 못 낸다. ⇒ <b>도메인 랜덤화 대상으로 확정한다.</b> 더 팔 데가 없다.</p>
+<p class="warn">★교훈 — §4-1-b 와 <b>같은 실수</b>를 반복할 뻔했다. "중력이 원인" 이라는 진단이 문서에 적혀 있었고 나는 그걸 그대로 받아 실기 절차를 설계하려 했다. 그런데 같은 문서 §2 가 이미 반증을 적고 있었다. <b>실기를 설계하기 전에 그 진단이 자료로 뒷받침되는지부터 볼 것.</b></p>
 <h3>3-b. HR_thigh 관성 (미측정)</h3>
 <p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
 <h3>4. 다른 궤적으로 검증 한 번 더</h3>

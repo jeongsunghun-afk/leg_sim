@@ -794,6 +794,60 @@ def t_dead_axis_debounce():
           raised[:70] or "안 터졌다 — **완화가 과했다**")
 
 
+def t_names_resolve():
+    """★`X.attr` 의 뿌리 이름 `X` 가 그 파일에서 **정의되는가** (2026-08-14 신설).
+
+    2026-08-14 실기 — act_measure_inertia_torque 에 `hwio.save_npz(...)` 를 넣으면서
+    그 파일에 `hwio` import 를 안 했다. **원시 궤적 저장 줄**이라 관성 시험을 30분
+    돌리고 나서야 터졌고, 그 자리에서 **추적이 통째로 날아갔다**(전 채널 qall 포함).
+
+    ⚠이 부류를 오늘만 세 번 냈다:
+        design_excitation 의 split_params 4-튜플 · collect_multichirp 의 except hwio.* ·
+        여기. 전부 **드물게 실행되는 줄**이라 시험으로 안 덮인다.
+    ⇒ 실행 대신 **정적으로** 본다. except 절만 보던 검사를 속성 접근 전체로 넓힌다.
+    ⚠스코프는 여전히 안 본다(ast.walk 가 함수 안 import 도 센다) — 잡는 것은
+      "아무 데서도 정의 안 된 이름" 이다. 그것만으로 위 셋을 다 잡는다.
+    """
+    import ast as _ast
+    import builtins as _bi
+    bad = []
+    _files = [os.path.join(PACE, f) for f in sorted(os.listdir(PACE)) if f.endswith(".py")]
+    _td = os.path.join(PACE, "tests")
+    _files += [os.path.join(_td, f) for f in sorted(os.listdir(_td)) if f.endswith(".py")]
+    for _fp in _files:
+        _src = open(_fp, encoding="utf-8").read()
+        try:
+            _t = _ast.parse(_src)
+        except SyntaxError:
+            continue
+        _top = set(dir(_bi))
+        for _n in _ast.walk(_t):
+            if isinstance(_n, _ast.ImportFrom):
+                _top |= {a.asname or a.name for a in _n.names}
+            elif isinstance(_n, _ast.Import):
+                _top |= {(a.asname or a.name).split(".")[0] for a in _n.names}
+            elif isinstance(_n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                _top.add(_n.name)
+            elif isinstance(_n, _ast.Name) and isinstance(_n.ctx, _ast.Store):
+                _top.add(_n.id)
+            elif isinstance(_n, _ast.arg):
+                _top.add(_n.arg)
+            elif isinstance(_n, _ast.ExceptHandler) and _n.name:
+                _top.add(_n.name)
+            elif isinstance(_n, (_ast.Global, _ast.Nonlocal)):
+                _top |= set(_n.names)
+        for _n in _ast.walk(_t):
+            if not isinstance(_n, _ast.Attribute):
+                continue
+            _r = _n
+            while isinstance(_r, _ast.Attribute):
+                _r = _r.value
+            if isinstance(_r, _ast.Name) and _r.id not in _top:
+                bad.append(f"{os.path.relpath(_fp, PACE)}:{_n.lineno} {_r.id}.…")
+    check("`X.attr` 의 X 가 전부 정의된다", not bad,
+          "; ".join(sorted(set(bad))[:5]) or f"emb/pace/*.py + tests/ ({len(_files)}개)")
+
+
 def t_except_names_resolve():
     """★except 절이 잡는 이름이 그 파일에서 **해석 가능한가** (2026-08-14 신설).
 
@@ -926,7 +980,7 @@ if __name__ == "__main__":
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
                t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing,
-               t_except_names_resolve, t_save_npz_no_clobber, t_dead_axis_debounce,
+               t_except_names_resolve, t_names_resolve, t_save_npz_no_clobber, t_dead_axis_debounce,
                t_couple_magnitude_e2e):
         try:
             fn()

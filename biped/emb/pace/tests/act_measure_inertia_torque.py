@@ -57,7 +57,7 @@ import time
 import numpy as np
 from scipy.signal import savgol_filter
 
-from hwio import DEG, SafetyAbort
+from hwio import DEG, SafetyAbort, save_npz
 
 
 def _ddq_at_speed(t, q, dq, dt, vref_dps: float, skip_s: float,
@@ -394,7 +394,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         from hwio import raw_trace_dir
         _d = raw_trace_dir(plotdir); os.makedirs(_d, exist_ok=True)
         outp = os.path.join(_d, f"inertia_ch{ch:02d}.npz")
-        outp = hwio.save_npz(outp, log=log,
+        outp = save_npz(outp, log=log,
                  cols=np.array(["t", "q", "dq", "tau"]),
                  qall_cols=np.array(["채널각[deg]"]),   # qall{i} 는 [표본 × 채널]
                  gear_k=k_gear, vref=vref, levels=np.array(levels, float),

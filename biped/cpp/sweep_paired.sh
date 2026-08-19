@@ -54,7 +54,14 @@ JOBS="${JOBS:-4}"
 DEPLOY="EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1"
 NOISE_ENV="ENCQ_N=7.64e-5 ENCDQ_N=0.0368"
 
+# AGG_ONLY=1 이면 스윕을 다시 돌리지 않고 기존 TSV 만 재집계한다.
+#   ★집계 규칙을 고칠 때마다 스윕을 다시 돌릴 이유가 없다. 원본 TSV 는 그대로다.
+#   실제로 이게 필요했다 — 낙상시드를 빼는 규칙으로 바꾸자 189런의 **결론이 뒤집혔다**.
+AGG_ONLY="${AGG_ONLY:-0}"
+
+if [ "$AGG_ONLY" != 1 ]; then
 [ -x "$HERE/build/biped_sim" ] || { echo "✗ build/biped_sim 없음 — 먼저 빌드"; exit 1; }
+fi
 
 run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
   local out falls gx tilt
@@ -68,30 +75,81 @@ run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
 }
 export -f run_one; export HERE MJ MJLIB MODEL VX DUR DEPLOY NOISE_ENV
 
+if [ "$AGG_ONLY" != 1 ]; then
 { printf "T_STEP\tK_RETURN\tDWELL\tseed\tfalls\tgt_x\ttilt\n"
   for t in $TSTEPS; do for k in $KRETS; do for w in $DWELLS; do
     for s in $(seq 1 "$SEEDS"); do echo "$t $k $w $s"; done
   done; done; done | xargs -P "$JOBS" -n 4 bash -c 'run_one "$0" "$1" "$2" "$3"'
 } > "$OUT"
+else
+  [ -s "$OUT" ] || { echo "✗ AGG_ONLY=1 인데 $OUT 이 없다"; exit 1; }
+  echo "(AGG_ONLY=1 — 스윕은 건너뛰고 $OUT 만 재집계한다)"
+fi
 
-echo "== 셀별 집계 (낙상률 · 평균|드리프트| · 최대tilt) — 시드 $SEEDS 개 =="
+echo "== 셀별 집계 =="
 python3 - "$OUT" <<'PY' 2>/dev/null || echo "  (python3 없음 — 원본 TSV 를 직접 볼 것: $OUT)"
-import sys, collections
+import sys, collections, math
+
+# ═══ 왜 낙상시드를 드리프트 집계에서 빼는가 ═══
+#   낙상하면 sim 이 reset() 으로 로봇을 **원점으로 되돌린다**. 그 뒤 남은 시간 동안
+#   원점 근처에 있으니 |x| 가 **인위적으로 작게** 찍힌다. 그래서 낙상 많은 셀일수록
+#   드리프트가 좋아 보이는 역전이 생긴다(실측: DWELL=10 이 7/7 낙상인데 |x| 최소).
+#   ⇒ 드리프트·tilt 는 **살아남은 시드만** 집계한다. STABILITY_MAP 의 경고와 같은 규칙이다.
+
+ERR = 99          # run_one 이 출력 파싱에 실패했을 때 넣는 sentinel
+ALPHA = 0.05
+
+def binom_cdf(k, n, p):
+    return sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k + 1))
+
+def cp_upper(k, n, alpha=ALPHA):
+    """낙상률의 Clopper-Pearson 95% 상한. 0/7 이면 0.41 — 즉 n=7 로는 '0%' 를 못 주장한다."""
+    if k >= n: return 1.0
+    lo, hi = 0.0, 1.0
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if binom_cdf(k, n, mid) > alpha / 2: lo = mid
+        else: hi = mid
+    return (lo + hi) / 2
+
 rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])][1:]
 cell = collections.defaultdict(list)
 for r in rows:
     if len(r) < 7: continue
     cell[(r[0], r[1], r[2])].append((int(float(r[4])), abs(float(r[5])), float(r[6])))
-print(f"  {'T_STEP':<8}{'K_RET':<8}{'DWELL':<7}{'낙상률':<9}{'평균|x|':<10}{'최대tilt'}")
+
+nerr = sum(1 for v in cell.values() for f, _, _ in v if f == ERR)
+print("  ⚠드리프트·tilt 는 **낙상 안 한 시드만** 집계한다 — 낙상하면 reset() 이 원점으로")
+print("    되돌려 |x| 가 인위적으로 작게 찍힌다. 낙상 셀의 드리프트는 읽으면 안 된다.")
+print()
+print(f"  {'T_STEP':<8}{'K_RET':<8}{'DWELL':<7}{'falls':<8}{'상한95%':<10}"
+      f"{'|x|surv':<10}{'tilt_surv':<11}{'n_surv'}")
+
 out = []
 for k, v in cell.items():
+    n = len(v)
     nf = sum(1 for f, _, _ in v if f > 0)
-    out.append((nf / len(v), sum(x for _, x, _ in v) / len(v), max(t for _, _, t in v), k, len(v)))
-for rate, mx, mt, k, n in sorted(out):
-    mark = "  ★" if rate == 0 and mx < 0.10 else ""
-    print(f"  {k[0]:<8}{k[1]:<8}{k[2]:<7}{f'{int(rate*n)}/{n}':<9}{mx:<10.3f}{mt:<8.1f}{mark}")
-print("\n  ★ = 낙상 0 + 드리프트 10cm 미만. 이게 후보다.")
-print("  ⚠단일 셀이 0/N 이라도 N 이 작으면 우연이다 — 후보는 SEEDS 를 늘려 재확인할 것.")
+    surv = [(x, t) for f, x, t in v if f == 0]
+    dx = sum(x for x, _ in surv) / len(surv) if surv else None
+    mt = max(t for _, t in surv) if surv else None
+    out.append((nf / n, dx if dx is not None else float("inf"), nf, n, dx, mt, len(surv), k))
+
+for rate, _sort, nf, n, dx, mt, ns, k in sorted(out):
+    up = cp_upper(nf, n)
+    # ★ = 낙상 0 + 드리프트 10cm 미만 + 상한이 10% 아래(= 시드가 충분히 많다). 이게 채택 후보다.
+    mark = "  ★" if nf == 0 and dx is not None and dx < 0.10 and up < 0.10 else ""
+    sdx = f"{dx:.3f}" if dx is not None else "—전멸"
+    smt = f"{mt:.1f}" if mt is not None else "—"
+    print(f"  {k[0]:<8}{k[1]:<8}{k[2]:<7}{f'{nf}/{n}':<8}{f'≤{up*100:.0f}%':<10}"
+          f"{sdx:<10}{smt:<11}{ns}{mark}")
+
+print()
+print("  ★ = 낙상 0 · 생존드리프트 <10cm · 낙상률 95%상한 <10%. 셋 다여야 채택 후보다.")
+print("  ⚠'상한95%' 는 Clopper-Pearson. 0/7 은 상한 41% 라 0/7 끼리는 **구분이 안 된다** —")
+print("    후보를 가르려면 SEEDS 를 늘려야 한다(0/30 이면 상한 12%, 0/60 이면 6%).")
+if nerr:
+    print(f"  ✗ 파싱실패(falls={ERR}) {nerr}건 — 해당 런의 출력이 비었다. 원본 확인 필요.")
 PY
 echo
 echo "원본: $OUT"
+echo "재집계만: AGG_ONLY=1 $0 $OUT"

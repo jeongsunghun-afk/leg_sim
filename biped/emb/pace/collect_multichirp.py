@@ -354,12 +354,28 @@ def main() -> int:
         try:
             _la1 = os.getloadavg()[0]
             _ncpu = os.cpu_count() or 1
+            # ★문턱을 40% → 10% 로 내린다 (2026-08-14). biped_monitor 가 13.8% 였는데
+            #   40% 문턱을 못 넘어 조용히 지나갔다. 4코어에서 14% 는 무시할 양이 아니다.
             _busy = [r for r in _top_cpu()
-                     if r[0] > 40.0 and "RobotEmbedded" not in r[1]]
+                     if r[0] > 10.0 and "RobotEmbedded" not in r[1]]
             print(f"\n  ★CPU 부하 {_la1:.2f} / {_ncpu}코어"
                   + ("   ✓ 여유" if _la1 < _ncpu * 0.7 and not _busy else "   ⚠**높다**"))
             for _c, _n in _busy[:3]:
                 print(f"    ⚠{_n} 가 {_c:.0f}% 를 쓰고 있다 — 수집 전에 정리할 것")
+            # ★스케줄링을 같이 찍는다 (2026-08-14). 실측 결과 밀림은 **주기 예산 부족이
+            #   아니라 선점**이었다: 주기 중앙값이 공칭 그대로(2.50ms)고 누적 지연이 0 인데
+            #   20~45ms 짜리 멈춤이 12000틱 중 3~10회 났다.
+            #   ⇒ rate 를 낮춰도 안 낫는다. 선점을 줄여야 한다.
+            import resource as _res
+            _rt = _res.getrlimit(_res.RLIMIT_RTPRIO)[0]
+            _pol = {0: "SCHED_OTHER", 1: "SCHED_FIFO", 2: "SCHED_RR"}.get(
+                os.sched_getscheduler(0), "?")
+            print(f"    스케줄링 이 프로세스 {_pol} · RT 한도 {_rt}"
+                  + ("" if _rt else "  ⚠RT 불가 — 커널이 20~45ms 선점할 수 있다"))
+            if not _rt:
+                print("      근본 해결: /etc/security/limits.conf 에 `rtprio 90` 을 열고")
+                print("      **RobotEmbedded 를 먼저** 높은 RT 로, 이 스크립트를 그보다"
+                      " 낮게 둘 것. 순서를 뒤집으면 EtherCAT 루프를 선점해 더 나빠진다.")
             if _busy or _la1 > _ncpu:
                 print("    ⚠경합은 루프 밀림 → 명령 공백 → **드라이버 래치오프**다."
                       " Ctrl-C 로 지금 멈추는 편이 낫다. 5초 뒤 계속한다.")
@@ -517,8 +533,15 @@ def main() -> int:
         print(f"\n  ✓ 저장: {path}  ({_i} 표본)")
         _pct = 100.0 * _over / max(_i, 1)
         print(f"    루프 밀림 {_over}/{_i}틱 ({_pct:.1f}%) · 최대 {_lagmax:.1f}ms"
-              + ("   ✓ 실시간 유지" if _pct < 1.0 else
-                 "   ★밀린다 — rate_hz 를 낮출 것(명령 공백이 드라이버 워치독을 건드린다)"))
+              + ("   ✓ 실시간 유지" if _pct < 1.0 else "   △조금 밀린다"))
+        # ★"rate 를 낮춰라" 는 조언을 뺐다 (2026-08-14). 실측이 반박했다 —
+        #   주기 중앙값이 공칭 그대로고 누적 지연이 0 이면 **예산은 남는 것**이다.
+        #   문제는 드문 큰 멈춤이고 그건 rate 와 무관하다. 그 수를 대신 찍는다.
+        _big = int((np.diff(T_) - _dt_real > 0.020).sum()) if len(T_) > 2 else 0
+        _lagsum = float(T_[-1] - T_[0] - _dt_real * (len(T_) - 1)) if len(T_) > 2 else 0.0
+        print(f"    20ms 넘는 멈춤 {_big}회 · 누적 지연 {_lagsum:+.2f}s"
+              + ("   ✓ 예산은 남는다 — rate 문제가 아니다" if abs(_lagsum) < 0.5
+                 else "   ★누적된다 — 이때는 rate 를 낮출 것"))
         print(f"    최대 토크합 {_ipk[0]:.1f} Nm @ {_ipk[1]:.1f}s"
               f"  — 축별 최대 "
               + " ".join(f"{v:.1f}" for v in np.abs(TAU).max(axis=0)) + " Nm")

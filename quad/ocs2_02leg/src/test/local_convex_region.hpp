@@ -23,6 +23,7 @@ class LocalConvexRegion {
 
   // 파라미터 (제약이 읽음)
   const FootRegionAB& params(int i) const { return ab_[i]; }
+  int snapCount_ = 0; double snapDistMax_ = 0;   // ★진단(SNAP_DBG): seed가 unsafe라 walkable셀로 스냅된 횟수·최대거리
   double stanceEnd(int i) const { return stanceEnd_[i]; }
   bool valid(int i) const { return valid_[i]; }
 
@@ -30,6 +31,7 @@ class LocalConvexRegion {
   void updateFoot(int i, double seedX, double seedY, double stanceEndTime) {
     stanceEnd_[i] = stanceEndTime;
     double hSeed = sdf_->height(seedX, seedY);
+    const double seed0x = seedX, seed0y = seedY;   // ★스냅 계측용 원 seed
     // 1) nominal이 무효면 최근접 유효셀로 스냅(나선탐색)
     if (!walkable(seedX, seedY, hSeed)) {
       bool found = false;
@@ -41,6 +43,7 @@ class LocalConvexRegion {
             if (walkable(cx, cy, sdf_->height(cx, cy))) { seedX = cx; seedY = cy; hSeed = sdf_->height(cx, cy); found = true; }
           }
       if (!found) { valid_[i] = false; return; }
+      snapCount_++; double sd = std::hypot(seedX - seed0x, seedY - seed0y); if (sd > snapDistMax_) snapDistMax_ = sd;   // ★스냅 발생 계측
     }
     // 2) 씨앗서 ±x/±y로 박스 성장(테두리 walkable일 때만)
     double hx = CELL, hy = CELL;

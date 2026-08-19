@@ -873,6 +873,7 @@ int main(int argc, char** argv) {
   std::cerr << "  최종 base_x : " << d->qpos[0] << " m  (목표 " << 0.3 * simTime << ")\n";
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
   if (getenv("SWING_DBG")) std::cerr << "  스윙 추종오차 피크 : " << swingErrPk * 1000 << " mm\n";
+  if (getenv("SNAP_DBG") && region) std::cerr << "  SDF 발판스냅 : " << region->snapCount_ << "회, 최대이동 " << region->snapDistMax_ * 1000 << " mm\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
   if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";
   if (view) { mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate(); }

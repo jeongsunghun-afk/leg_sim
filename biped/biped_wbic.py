@@ -69,8 +69,13 @@ ROTOR_I = 7.327e-4                          # ★실측 확정(2026-08-14). 구 
 #   JFRIC.calf 0.572→0.537.  JFRIC.foot 만 옛 자료(fit_v6) 0.241 유지(§1 ◆).
 # ⚠JDAMP 는 **지연과 같은 것을 본다**(적합은 b + kp·T_d 의 합만 본다). 지연을 실측
 #   8.39ms 에 못박았기에 이 b 가 의미를 갖는다 — 자유로 두면 아무 값이나 된다.
-JDAMP = np.array([0.0900, 0.0000, 0.0000, 0.1100])   # [Nm·s/rad] 관절축
-JFRIC = np.array([0.8270, 0.6030, 0.5370, 0.2410])   # [Nm] 관절축 쿨롱마찰
+# ★★2026-08-19 **손실공간 변경** — foot 의 세 항 전부 tendon(모터축). RESULTS.md §1-b.
+#   모터 마찰·점성도 관절각이 아니라 raw각(q_foot+q_calf)에서 작용한다. 통제실험에서
+#   초기RMS −32% · 적합 −32.9% · 게인2배 검증 −25.5% 로 네 지표 전부 이겼고,
+#   무엇보다 **독립 실측(등속 스윕)과 −10~−14% 로 모였다**(종전 산포 −10~−68%).
+#   ⇒ 아래 배열의 **foot 칸은 관절이 아니라 tendon 으로 간다**.
+JDAMP = np.array([0.0900, 0.0000, 0.0000, 0.1100])   # hip~calf=관절축 · foot=tendon
+JFRIC = np.array([0.8270, 0.6040, 0.8710, 0.6390])   # [Nm] 쿨롱마찰 (foot 0.639=tendon)
 
 # home posture — ★2026-08-12 새 CAD(몸통 placeholder→실측)로 **재산출**. 구값 (0.05,−0.2) 폐기.
 #
@@ -204,11 +209,19 @@ class BipedWBIC:
             # 구 MJCF(tendon 없음) 호환 — 대각 armature 를 그대로 둔다. 커플링은 누락된 채다.
             print('  ⚠MJCF 에 *_foot_rotor tendon 이 없다 — calf↔foot 커플 반사관성 누락 상태로 돈다')
             return
+        # ★★2026-08-19 반사관성뿐 아니라 **점성·마찰도** 옮긴다(RESULTS.md §1-b).
+        #   모터의 마찰·점성도 관절각이 아니라 raw각에서 작용한다 — 논거가 armature 와 같다.
+        #   관절에 두면 무릎만 돌 때 발목 모터 마찰이 calf 에 반력을 못 준다(실측 0 이었다).
+        #   ⚠C++ biped_control.hpp:foot_rotor_to_tendon 과 **같이** 고칠 것.
         for j in range(self.nu):
-            if j % 4 == 3:                                # foot 축
-                m.dof_armature[6 + j] = 0.0               # ★대각에서 뺀다(tendon 으로 이전)
+            if j % 4 == 3:                                # foot 축 — 셋 다 대각에서 뺀다
+                m.dof_armature[6 + j] = 0.0
+                m.dof_damping[6 + j] = 0.0
+                m.dof_frictionloss[6 + j] = 0.0
         for t in tid:
-            m.tendon_armature[t] = ROTOR_I * GEAR[3] ** 2
+            m.tendon_armature[t] = ROTOR_I * GEAR[3] ** 2   # 0.0517
+            m.tendon_damping[t] = JDAMP[3]                   # 0.110
+            m.tendon_frictionloss[t] = JFRIC[3]              # 0.639
 
     # ── 초기화: home pose 스폰 + 발 착지 높이 + com_ref = 지지중심 ──
     def reset_stand(self):
@@ -332,9 +345,18 @@ class BipedWBIC:
         #   (hip 0.827)에선 그 미보상 외란 때문에 2점 stand 가 20.7s 에 넘어졌다.
         #   ⚠**2점 평발(cmode='2pt')에서만** 켠다 — 보행에선 음의 감쇠로 작용해 해롭다
         #     (배포경로 vx0.20 이 2회 낙상). 근거는 C++ 쪽 주석에 정리.
+        # ★2026-08-19 보상도 **손실이 있는 좌표**에서. foot 마찰은 tendon(raw각)에 있으므로
+        #   판단속도는 L̇ = q̇_calf + q̇_foot 이고, 결과는 coefᵀ=(1,1) 로 두 관절에 걸린다.
         if self.FRIC_COMP > 0 and self.contact_mode == '2pt':
-            tau = tau + self.FRIC_COMP * np.tile(JFRIC, 2) * np.tanh(
-                d.qvel[6:6 + self.nu] / self.FRIC_V0)
+            dq = d.qvel[6:6 + self.nu]
+            comp = np.zeros(self.nu)
+            for leg in range(2):
+                b = 4 * leg
+                for k in range(3):                                   # hip·thigh·calf = 관절축
+                    comp[b + k] = JFRIC[k] * np.tanh(dq[b + k] / self.FRIC_V0)
+                f = JFRIC[3] * np.tanh((dq[b + 2] + dq[b + 3]) / self.FRIC_V0)
+                comp[b + 2] += f; comp[b + 3] += f                   # tendon → coefᵀ
+            tau = tau + self.FRIC_COMP * comp
         d.ctrl[:] = np.clip(tau_to_drive(tau), -self.drv_peak, self.drv_peak)
         return True
 

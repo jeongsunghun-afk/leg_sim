@@ -26,7 +26,7 @@
   · 정적 컴플라이언스 1/k = |H| 저주파 점근값  ← 토션 히스테리시스 결과와 교차검증
   · 코히런스 스펙트럼     = 각 주파수의 신뢰도
 
-⚠ 진폭 제약: 출력축이 자유로우면 파단토크(0.62 Nm) 이하로 유지해야 회전하지 않는다.
+⚠ 진폭 제약: 출력축이 자유로우면 기동토크(0.62 Nm) 이하로 유지해야 회전하지 않는다.
   **클램프로 고정하면**(spec.frf.clamped: true) 그 제약이 풀려 토크를 2~3배 걸 수 있고
   SNR 이 그만큼 개선된다 — 이것이 가장 효과적인 개선책이다.
 
@@ -56,7 +56,7 @@ TEMPLATE = Template("""
   <tr><td>일시</td><td>{{ datetime }}</td></tr>
   <tr><td>축</td><td>{{ joint }} (SHM ch{{ ch }})</td></tr>
   <tr><td>토크 처프</td><td class="numeric">±{{ '%.2f' % amp }} Nm · {{ f0 }}→{{ f1 }} Hz · {{ '%.1f' % dur }} s × {{ reps }}회 평균</td></tr>
-  <tr><td>출력축 고정</td><td>{{ '클램프 고정 (고진폭 가능)' if clamped else '자유 (파단토크 이하로 제한)' }}</td></tr>
+  <tr><td>출력축 고정</td><td>{{ '클램프 고정 (고진폭 가능)' if clamped else '자유 (기동토크 이하로 제한)' }}</td></tr>
   <tr><td>실효 샘플링</td><td class="numeric">{{ '%.0f' % fs }} Hz (타이트 폴링)</td></tr>
 
   <tr><th colspan="2">결과 <span class="dim">(γ²≥{{ gmin }} 구간만)</span></th></tr>
@@ -221,9 +221,9 @@ def measure_frf(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     warn: list[str] = []
 
     log(f"  [{name}] FRF — ±{amp} Nm 처프 {f0}→{f1} Hz {dur}s × {reps}회"
-        f" ({'클램프 고정' if clamped else '자유(파단 이하)'})")
+        f" ({'클램프 고정' if clamped else '자유(기동 이하)'})")
     if not clamped:
-        warn.append("출력축이 자유롭다 — 진폭이 파단토크 이하로 제한되어 SNR 이 낮다. "
+        warn.append("출력축이 자유롭다 — 진폭이 기동토크 이하로 제한되어 SNR 이 낮다. "
                     "<b>클램프로 고정하면 2~3배 큰 토크를 걸 수 있어 가장 효과적</b>이다.")
 
     tl, xl, yl, rates = [], [], [], []

@@ -279,7 +279,7 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th></th><th>값</th></tr>
 <tr><td>위치스윕 <code>measured_coulomb_ch</code></td><td class="n">0.827</td></tr>
-<tr><td>토크모드 파단 <code>measured_tau_break_ch</code></td><td class="n">0.870</td></tr>
+<tr><td>토크모드 기동 <code>measured_tau_break_ch</code></td><td class="n">0.870</td></tr>
 <tr><td>차</td><td><b>5.2%</b></td></tr></table>
 <p>*"미검증"* 이라 적힌 것은 <b>PACE 가 못 움직였다</b>는 뜻이다(hip 이 비용의 4%).</p>
 <p>#### ★다만 여기서 하나 얻을 수 있다 — 계통 보정</p>
@@ -493,9 +493,9 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <tr><th>축약</th><th>HL / HR</th><th>좌우차</th></tr>
 <tr><td>전속도 JFRIC (시험 보고)</td><td class="n">0.928 / 0.803</td><td class="n">16%</td></tr>
 <tr><td><b>저속 2·5dps 평균</b> (<code>spec</code> 이 쓰는 값)</td><td class="n">0.854 / 0.800</td><td><b>7%</b></td></tr>
-<tr><td>토크모드 파단 <code>measured_tau_break_ch</code></td><td class="n">0.888 / 0.852</td><td><b>4%</b></td></tr>
-<tr><td>위치모드 파단 <code>measured_tau_static_ch</code></td><td class="n">1.129 / 1.176</td><td><b>4%</b></td></tr></table>
-<p class="warn">★<b>읽는 법이 여기 있다.</b> 저속으로 제한하면 HL 은 0.928→0.854 로 8% 내려가는데 HR 은 0.803→0.800 으로 거의 안 움직인다. 즉 <b>16% 중 절반 이상이 마찰 좌우차가 아니라 HL 의 속도의존분</b>이다. 파단토크 두 방법이 처음부터 4% 로 일치한 것과 맞는다.</p>
+<tr><td>토크모드 기동 <code>measured_tau_break_ch</code></td><td class="n">0.888 / 0.852</td><td><b>4%</b></td></tr>
+<tr><td>위치모드 기동 <code>measured_tau_static_ch</code></td><td class="n">1.129 / 1.176</td><td><b>4%</b></td></tr></table>
+<p class="warn">★<b>읽는 법이 여기 있다.</b> 저속으로 제한하면 HL 은 0.928→0.854 로 8% 내려가는데 HR 은 0.803→0.800 으로 거의 안 움직인다. 즉 <b>16% 중 절반 이상이 마찰 좌우차가 아니라 HL 의 속도의존분</b>이다. 기동토크 두 방법이 처음부터 4% 로 일치한 것과 맞는다.</p>
 <p>⇒ 남은 좌우차는 <b>4~7%</b> 이고 네 측정이 전부 같은 방향이다(HL &gt; HR). 구조 가설(HR 샤프트 경유 · HL 직결 — 직결 쪽이 다리 하중을 더 받는다)과 맞는다. ⇒ <b>모순은 없다.</b> 우선순위를 내린다.</p>
 <p>여기 셋은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다.</p>
 <h3>✓ 백래시 — <b>측정 완료, 범인이 아니다</b></h3>
@@ -508,7 +508,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다.</p>
 <p class="warn">⚠<b>당시엔 <code>coef</code> 가 유일하게 자릿수가 맞는 후보라고 적었는데, 그건 틀렸다.</b></p>
 <p><code>coef</code> 를 실제로 탐색변수로 넣어 보니 자유로 풀면 오히려 나빠진다(§5 두 번째 항목). 그리고 <code>coef</code> 를 낮췄을 때 개선이 나온 곳은 foot 이 아니라 <b>calf</b> 였다 — 잔차 지분이 큰 축이 곧 원인 축이라고 읽은 것이 오류였다. foot 잔차 0.68° 의 원인은 <b>아직 모른다.</b></p>
-<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다 — 다만 §5 '중력 최소자세' 가 그 전제를 뒤집었으니 같이 볼 것.</p>
+<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 기동(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다 — 다만 §5 '중력 최소자세' 가 그 전제를 뒤집었으니 같이 볼 것.</p>
 <h3>✓ <code>coef</code> PACE 식별 — <b>해봤다. 이 데이터로는 안 된다</b></h3>
 <p><code>coef</code> 를 탐색변수로 넣었다(<code>pace_cmaes.py</code>, <code>set_coupling_coef</code> + <code>retarget_coupling</code>).</p>
 <p><code>q_raw</code> 는 coef 가정과 무관하게 정확하므로 <code>q_foot_true = q_raw − c·q_calf</code> 로 다시 풀어 비교한다. <code>c=1</code> 이 항등이라는 것부터 확인했다 — 기존 결과가 소수 4자리까지 재현됐다.</p>

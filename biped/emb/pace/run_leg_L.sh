@@ -8,7 +8,7 @@
 #       그걸로 시험이 꺼지면 안 된다
 #     · 홀드축이 없으므로 "홀드축이 밀렸다"·"스톨" 트립이 원천적으로 안 난다
 #   ⚠하위 관절이 무여자라 I_link 강체가정이 깨진다 — **inertia·pace 에는 쓰지 말 것.**
-#     마찰·파단은 ±방향 차로 중력이 상쇄되므로 영향이 작다.
+#     마찰·기동은 ±방향 차로 중력이 상쇄되므로 영향이 작다.
 #
 # ★왜 이 방식인가 — 2026-08-12 에 모터로 잡는 방식이 반복 실패했다:
 #     두 다리가 안쪽으로 처져 **발끼리 부딪히고**(늘어진 자세에서 −27mm 침투),
@@ -66,14 +66,14 @@ sys.path[:0] = ["tests"]
 ch, tests = int(sys.argv[1]), sys.argv[2]
 sp_all = yaml.safe_load(open("spec.yaml"))
 if tests == "torque":
-    # ★토크 시험은 **각도를 안 흔든다.** 무여자(kp=kd=0)로 토크만 램프해 파단을 본다.
+    # ★토크 시험은 **각도를 안 흔든다.** 무여자(kp=kd=0)로 토크만 램프해 기동을 본다.
     #   그래서 작업자에게 알려야 할 것이 다르다: 얼마나 세게 미는가(swing)와,
     #   **움직이면 복원력이 0 이라 계속 흘러간다**는 점이다.
     tm = sp_all["torque_mode"]
     sw = float((tm.get("swing_by_ch") or {}).get(ch, tm.get("tau_max_nm", 1.4)))
     print(f"   토크 램프: 그 자리의 중력에서 **±{sw:g} Nm** 까지 "
           f"{tm.get('ramp_nm_per_s', 0.25)} Nm/s 로 올린다")
-    print(f"   ⚠**무여자다(kp=kd=0).** 파단하면 복원력이 없어 그대로 흘러간다 —")
+    print(f"   ⚠**무여자다(kp=kd=0).** 기동하면 복원력이 없어 그대로 흘러간다 —")
     print(f"     드리프트 감시가 잡지만, 손이 가까이 있으면 안 된다.")
 else:
     from act_measure_friction import swing_str
@@ -84,7 +84,7 @@ else:
     st, spd = m["sweep"]["stroke_deg"], m["sweep"]["speeds_dps"]
     print(f"   흔드는 폭·빠르기: ±{st/2:g}° 를 "
           + " · ".join(swing_str(st, float(v)).split("·")[1] for v in spd))
-    print(f"   파단푸시: {m['breakaway']['max_push_deg']:g}° 까지 "
+    print(f"   기동푸시: {m['breakaway']['max_push_deg']:g}° 까지 "
           f"{m['breakaway']['ramp_dps']:g}deg/s 로 밀어 봄 "
           f"(초과토크 상한 {m['breakaway'].get('tau_cap_nm', '없음')}Nm)")
 EOF

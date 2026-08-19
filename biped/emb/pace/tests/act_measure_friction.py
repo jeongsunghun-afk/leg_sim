@@ -91,8 +91,8 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
     ff = ff or (lambda q: 0.0)
     pos, neg, traces = [], [], []
     # ★모든 시행을 **같은 자리에서** 시작한다 (2026-08-12).
-    #   파단토크는 중력을 포함한 생값이다. 시행마다 자리가 옮겨가면 그만큼 밀린다.
-    #     HL_thigh 중력 기울기 **+0.10 Nm/°**, 파단푸시가 최대 8° 옮긴다 → 0.83 Nm.
+    #   기동토크는 중력을 포함한 생값이다. 시행마다 자리가 옮겨가면 그만큼 밀린다.
+    #     HL_thigh 중력 기울기 **+0.10 Nm/°**, 기동푸시가 최대 8° 옮긴다 → 0.83 Nm.
     #     실기 +dir 3시행이 −2.35 → −1.77 → −1.16 으로 **한 방향으로 밀렸다**
     #     (증분 +0.578, +0.609 — 위 계산과 일치). 산포가 아니라 드리프트다.
     #   ⚠이건 brake 도입의 부작용이다. limp 시절엔 매번 같은 처짐자리로 떨어져
@@ -120,14 +120,14 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
             #   (그래서 초기 구현은 τ_s < τ_c 라는 물리적으로 불가능한 값을 냈다).
             #   위치 노이즈는 ~0.01 deg 이므로 0.25 deg 면 25배 여유.
             thr_deg = float(cfg.get("move_thresh_deg", 0.25))
-            # ★푸시 **토크 상한** (2026-08-12). 파단푸시는 스톨 감지를 끄고 도는데
+            # ★푸시 **토크 상한** (2026-08-12). 기동푸시는 스톨 감지를 끄고 도는데
             #   (안 움직이는 축에 토크를 키우는 게 측정법 자체다), 그러면 상한이
             #   max_push_deg×kp 라는 **변위 상한 하나뿐**이 된다. hip 이 그게 위험하다:
             #     2.5° × kp 100Nm/rad = 4.36Nm, 중력 4.85 를 더해 피크 9.2Nm 을
             #     최대 4.2초(=2.5/0.6dps) 동안 문다. 실제로 2026-08-12 에 10.6Nm 로
             #     밀다 드라이버 파워단을 잃었다.
             #   ⇒ 중력 대비 초과분이 이 값을 넘으면 **그 시행만** 버리고 나온다.
-            #     마찰의 몇 배로 잡으면 정상 파단은 절대 못 건드린다(hip 0.88 vs 상한 2.5).
+            #     마찰의 몇 배로 잡으면 정상 기동은 절대 못 건드린다(hip 0.88 vs 상한 2.5).
             cap = cfg.get("tau_cap_nm")
             cap = float(cap) if cap is not None else None
             jammed = False
@@ -149,7 +149,7 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
                 if q_ref is not None and (s.q_deg - q_ref) * direction > thr_deg:
                     # ★검출 시점의 순간토크가 아니라 **그때까지의 최대토크**를 쓴다.
                     #   관절이 풀리는 순간 가속하면서 추종오차가 줄어 토크가 이미 떨어져 있다.
-                    #   정지마찰의 정의는 "파단 직전 버틴 최대토크" 다.
+                    #   정지마찰의 정의는 "기동 직전 버틴 최대토크" 다.
                     # ★t_ref 이후만 본다. 이전 코드의 `x.t >= samples[0].t` 는
                     #   Sample.t 가 monotonic 절대시각이라 **항상 참**이어서 필터가 없었고,
                     #   인가 램프 과도까지 peak-hold 에 섞였다.
@@ -162,12 +162,12 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
                     time.sleep(slp)
 
             # ★limp 하지 않는다 — thigh 는 여기서 146dps 로 자유낙하했다(brake 주석).
-            #   파단 판정은 이미 끝났고, 다음 시행의 arm() 이 현재각을 다시 래치한다.
+            #   기동 판정은 이미 끝났고, 다음 시행의 arm() 이 현재각을 다시 래치한다.
             hw.brake(ch, kp, kd, 0.3, tau_ff_fn=ff)
             if jammed:
                 log(f"    ⚠ {'+' if direction > 0 else '−'}dir trial{trial}: "
                     f"중력 대비 초과토크가 상한 {cap:.2f}Nm 에 걸려 중단 — **막힘**이다"
-                    f"(파단이면 마찰 근처에서 풀렸어야 한다). 이 시행 제외.")
+                    f"(기동이면 마찰 근처에서 풀렸어야 한다). 이 시행 제외.")
                 continue
             if tau_at_move is None:
                 log(f"    ⚠ {'+' if direction > 0 else '−'}dir trial{trial}: "
@@ -182,11 +182,11 @@ def _breakaway(hw, ch, cfg, kp, kd, log, ff=None,
 
 def _free_reference(hw, ch, kp, kd, ff, log, tau_s_hint=0.8, probe_deg=2.0,
                     step_deg=6.0, tries=4, q_hi=None) -> float:
-    """파단을 **양방향 다 움직이는 자리**에서 시작하도록 기준점을 고른다.
+    """기동을 **양방향 다 움직이는 자리**에서 시작하도록 기준점을 고른다.
 
-    ★왜 필요한가 (2026-08-12 HL_thigh) — 파단은 ±방향 차로 중력을 상쇄하므로
+    ★왜 필요한가 (2026-08-12 HL_thigh) — 기동은 ±방향 차로 중력을 상쇄하므로
       **한쪽만 막혀도 값이 통째로 안 나온다.** 실기에서 정확히 그랬다:
-        +dir 3시행 정상(파단 −2.60, 마찰 0.25) · −dir 3시행 전부 상한 2.5Nm 에 걸림
+        +dir 3시행 정상(기동 −2.60, 마찰 0.25) · −dir 3시행 전부 상한 2.5Nm 에 걸림
       중력모델은 무죄로 확인됐다 — FF −2.791 vs MuJoCo(실제 foot +60° 반영) −2.847,
       **0.056Nm 차이**다. 필요한 −dir 힘은 0.30Nm 인데 2.5 에서 막혔으니 진짜 간섭이다.
       가장 유력한 정체: 홈 근처로 내려오면 **늘어진 발이 바닥/스탠드에 닿아** 다리가
@@ -234,7 +234,7 @@ def _free_reference(hw, ch, kp, kd, ff, log, tau_s_hint=0.8, probe_deg=2.0,
             q = float(hw.read(ch)[0])
     raise RuntimeError(
         f"양방향이 다 열리는 자리를 {tries}번 시도해도 못 찾았다 (마지막 {q:+.2f}°).\n"
-        f"  파단은 ±상쇄가 전제라 한쪽만 막혀도 값이 안 나온다.\n"
+        f"  기동은 ±상쇄가 전제라 한쪽만 막혀도 값이 안 나온다.\n"
         f"  **기구를 볼 것** — 늘어진 발이 바닥·스탠드에 닿아 다리가 버팀대가 되면\n"
         f"  아래로만 막힌다(2026-08-12 HL_thigh 가 그랬다). 다리를 살짝 들어 줄 것.")
 
@@ -605,14 +605,14 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     #   그런데 --solo 는 하위 관절이 **무여자로 늘어져** 있다 — calf −61°·foot +60°.
     #   thigh 는 다리 전체를 드는 축이라 여기에 가장 민감하다: 표 1.05 vs 실측 1.90 Nm.
     #   그 0.85Nm 오차가 스톨 감지에서 **가짜 초과토크**가 되어 시험을 세 번 죽였다.
-    #   ⇒ 파단이 끝나면 (τ⁺+τ⁻)/2 로 **그 자리의 진짜 중력**을 알 수 있다(마찰이 상쇄됨).
+    #   ⇒ 기동이 끝나면 (τ⁺+τ⁻)/2 로 **그 자리의 진짜 중력**을 알 수 있다(마찰이 상쇄됨).
     #     표와의 차이를 상수 오프셋으로 얹는다. 곡선 모양은 표를, 높이는 실측을 믿는다.
     #   ⚠마찰 값 자체는 이 보정과 무관하다 — (τ⁺−τ⁻)/2 에서 중력은 어차피 빠진다.
     #     보정이 고치는 것은 **FF 여력과 스톨 판정**이다.
     #   ⚠actuator_test 가 **홈복귀 전에 이미** 실측 보정을 걸어 hw.grav_fn 에 넣어 뒀다.
     #     여기서 표를 새로 읽으면 그 보정이 사라진다 — 같은 값을 두 곳이 따로 만드는,
     #     오늘 여러 번 나온 그 구조다. ⇒ hw.grav_fn 이 있으면 **그걸 쓴다.**
-    #     _gb 는 파단 뒤 **추가 미세보정**(더 정확한 ± 평균)만 담는다.
+    #     _gb 는 기동 뒤 **추가 미세보정**(더 정확한 ± 평균)만 담는다.
     #   ⚠⚠원본을 **지금 붙들어 둔다**(_g0). `hw.grav_fn` 을 이름으로 참조하면
     #     호출 **시점**에 조회되는데, 아래에서 hw.grav_fn 을 _ff 를 부르는 람다로
     #     바꾸므로 _ff → _base → hw.grav_fn → _ff … **무한 재귀**가 된다.
@@ -643,7 +643,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # ★스톨 감지는 여기서만 끈다 — "안 움직이는 축에 토크를 키운다" 가 측정법 자체다.
     #   대신 _breakaway 안의 tau_cap_nm 이 상한을 쥔다(그 주석 참조). 둘은 한 쌍이다:
     #   cap 없이 이 with 만 쓰면 hip 보호가 통째로 사라진다.
-    # ★파단 전에 **양방향이 열리는 자리**를 고른다 (_free_reference 주석).
+    # ★기동 전에 **양방향이 열리는 자리**를 고른다 (_free_reference 주석).
     _q0 = _free_reference(hw, ch, kp, kd, _ff, log,
                           tau_s_hint=max(0.8, 2.0 * float(fr["breakaway"].get(
                               "tau_cap_nm", 2.5)) / 2.5),
@@ -661,11 +661,11 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     hw.wait_fresh(ch=ch)
     q_center = hw.read(ch)[0]
 
-    # ★중력 실측 보정 (위 _gb 주석). 파단 ± 평균이 그 자리의 중력이다.
+    # ★중력 실측 보정 (위 _gb 주석). 기동 ± 평균이 그 자리의 중력이다.
     _g_meas = (tp + tn) / 2.0
     _g_cur = _ff(q_center) - _gb[0]
     _gb[0] = _g_meas - _g_cur
-    log(f"    중력 미세보정 {_gb[0]:+.3f} Nm — 현재값 {_g_cur:+.3f} vs 파단 ± 평균 "
+    log(f"    중력 미세보정 {_gb[0]:+.3f} Nm — 현재값 {_g_cur:+.3f} vs 기동 ± 평균 "
         f"{_g_meas:+.3f} Nm @ {q_center:+.2f}°  (0 근처면 홈복귀 전 실측이 맞았다는 뜻)")
     if abs(_gb[0]) > 3.0:
         warn.append(f"중력 보정이 {_gb[0]:+.2f} Nm 로 크다 — 표를 다시 뽑을 것"
@@ -677,7 +677,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
     # ★탐색범위 끝에 **여유를 남긴다** (2026-08-12 실기 ch1 스톨).
     #   종전엔 중심을 [q_min+half, q_max-half] 로 클립했다 — 그러면 스윕 끝이 탐색범위
     #   경계와 **정확히 일치**한다. 실기에서 그대로 터졌다:
-    #     HL_thigh 탐색범위 [-60, +40], 파단 후 위치가 +20 이상 → 중심 +20.00 으로 클립
+    #     HL_thigh 탐색범위 [-60, +40], 기동 후 위치가 +20 이상 → 중심 +20.00 으로 클립
     #     → 스윕 [0, +40]. 그 +40 에서 기구 스톱을 밀며 스톨(초과 2.06Nm, -1.5dps).
     #   ⇒ 양끝 MARGIN 을 비우고, 그래도 안 들어가면 **스트로크를 줄인다.**
     #     조용히 줄이지 않는다 — 줄인 사실과 실제 구간을 로그에 찍는다.
@@ -776,7 +776,7 @@ def measure_actuator_friction(hw, spec, joint, plotdir, log=print) -> str:
                f"±상쇄 전제가 깨졌다는 뜻이다.\n"
                f"      점검 순서: ①속도별 '중력+bias' 가 일정한가(변하면 창 비대칭·자세이동)\n"
                f"                 ②최고속 점이 튀지 않는가(가속토크 혼입)\n"
-               f"                 ③파단 ± 가 한쪽으로 쏠리지 않는가(간섭)\n"
+               f"                 ③기동 ± 가 한쪽으로 쏠리지 않는가(간섭)\n"
                f"      **이 실행의 JFRIC/JDAMP 는 쓰지 말 것.**")
         warn.append(msg.replace("**", "").replace("\n", "<br>"))
         log(f"    ✗✗ {msg}")

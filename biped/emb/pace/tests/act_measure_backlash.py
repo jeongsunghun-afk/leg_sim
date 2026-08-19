@@ -9,7 +9,7 @@
   그 뒤 **순수 토크모드(Kp=Kd=0, fTorque)가 동작하고 크기도 ±0.005 Nm 로 정확함**을
   확인했다 → 토크가 독립 입력이 되었고, 표준 토션 히스테리시스 시험이 성립한다.
 
-원리 — 관절이 **회전하지 않는 범위**(파단토크 이하)에서 토크를 왕복시키면
+원리 — 관절이 **회전하지 않는 범위**(기동토크 이하)에서 토크를 왕복시키면
 q-τ 평면에 히스테리시스 루프가 그려진다. 그 모양으로 두 성분이 갈린다:
 
     백래시        : 강성이 ~0 인 **평탄 구간**. 토크는 거의 안 변하는데 q 가 움직인다.
@@ -20,7 +20,7 @@ q-τ 평면에 히스테리시스 루프가 그려진다. 그 모양으로 두 �
 ⇒ 국소강성 |dτ/dq| 이 물린 구간 대비 임계 이하로 떨어지는 구간의 **폭이 백래시**다.
   평탄 구간이 없으면 백래시는 유의미하지 않고 루프 폭은 마찰 히스테리시스다.
 
-⚠ 안전: τ_max 를 **실측 파단토크보다 확실히 낮게** 둔다(회전 금지). 파단 최저값이
+⚠ 안전: τ_max 를 **실측 기동토크보다 확실히 낮게** 둔다(회전 금지). 기동 최저값이
   0.528 Nm 였으므로 기본 0.45 Nm. 회전이 감지되면(누적 이동이 탄성범위 초과) 즉시 중단.
   다리 미장착 상태가 이 시험에 가장 안전하다.
 """
@@ -45,7 +45,7 @@ TEMPLATE = Template("""
   <tr><td>일시</td><td>{{ datetime }}</td></tr>
   <tr><td>축</td><td>{{ joint }} (SHM ch{{ ch }})</td></tr>
   <tr><td>토크 왕복</td><td class="numeric">±{{ '%.2f' % tau_max }} Nm @ {{ '%.2f' % ramp }} Nm/s × {{ cycles }}주기</td></tr>
-  <tr><td>파단토크(참조)</td><td class="numeric">{{ '%.2f' % tau_break }} Nm — 이보다 낮게 유지해 회전 방지</td></tr>
+  <tr><td>기동토크(참조)</td><td class="numeric">{{ '%.2f' % tau_break }} Nm — 이보다 낮게 유지해 회전 방지</td></tr>
 
   <tr><th colspan="2">결과</th></tr>
   <tr><td><b>백래시</b> (평탄구간 폭)</td><td class="numeric">{{ lash_str }}</td></tr>
@@ -174,9 +174,9 @@ def measure_backlash(hw, spec, joint, plotdir, log=print) -> tuple[str, dict]:
     warn: list[str] = []
 
     if tau_max >= 0.85 * tau_break:
-        warn.append(f"τ_max({tau_max}) 가 파단토크({tau_break})에 너무 가깝다 — 회전 위험")
+        warn.append(f"τ_max({tau_max}) 가 기동토크({tau_break})에 너무 가깝다 — 회전 위험")
     log(f"  [{name}] 토션 히스테리시스 — ±{tau_max} Nm @ {ramp} Nm/s × {cycles}주기")
-    log(f"           (파단 {tau_break} Nm 이하로 유지 → 회전 없이 탄성·유격만 본다)")
+    log(f"           (기동 {tau_break} Nm 이하로 유지 → 회전 없이 탄성·유격만 본다)")
 
     # 토크 파형: 0 → +max → −max → +max → … → 0
     segs = [(0.0, tau_max)]

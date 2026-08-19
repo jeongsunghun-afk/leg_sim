@@ -185,7 +185,7 @@ def _gain(v):
 
 
 def _torque_html(r: dict) -> str:
-    """토크모드 프로브 결과를 리포트 조각으로. **파단토크는 채널토크다** — k 배해야 관절값.
+    """토크모드 프로브 결과를 리포트 조각으로. **기동토크는 채널토크다** — k 배해야 관절값.
 
     ★2026-08-11: 이 함수가 없어서 torque 결과가 리포트에 전혀 안 남았다.
       다른 시험은 (html, res) 를 돌려주는데 probe_torque_mode 만 res 만 돌려주는
@@ -198,23 +198,23 @@ def _torque_html(r: dict) -> str:
         f"<td class=numeric>{t['tau_break']*k:.3f}</td>"
         f"<td class=numeric>{t['tau_peak']:.3f}</td>"
         f"<td class=numeric>{t['dq_max']:.1f}</td>"
-        f"<td>{'파단' if t['moved'] else '미동'}</td></tr>"
+        f"<td>{'기동' if t['moved'] else '미동'}</td></tr>"
         for t in r.get("trials", []) if t.get("tau_break") is not None)
     tb = r.get("tau_break_mean")
     concl = ""
     if tb:
         vals = [t["tau_break"] for t in r["trials"] if t.get("tau_break")]
         sd = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
-        concl = (f"<p><b>평균 파단토크 {tb:.3f} ± {sd:.3f} Nm(채널)</b> → "
+        concl = (f"<p><b>평균 기동토크 {tb:.3f} ± {sd:.3f} Nm(채널)</b> → "
                  f"관절 <b>{tb*k:.3f} Nm</b> (k={k}) · "
                  f"모터축 <b>{tb*k/float(r.get('gear', 8.4)):.4f} Nm</b></p>")
     ok = r.get("supported")
     return f"""
 <h2>{r['name']} (ch{r['ch']}) — 순수 토크모드 프로브</h2>
-<p class=dim>Kp=Kd=0 으로 두고 τ_ff 만 올려 파단(breakaway)을 찾는다. 움직이면 드라이버가
-τ_ff 를 실제로 쓴다는 뜻이고, 그 파단토크는 위치모드로 잰 정지마찰과 <b>일치해야</b> 한다.</p>
+<p class=dim>Kp=Kd=0 으로 두고 τ_ff 만 올려 기동(breakaway)을 찾는다. 움직이면 드라이버가
+τ_ff 를 실제로 쓴다는 뜻이고, 그 기동토크는 위치모드로 잰 정지마찰과 <b>일치해야</b> 한다.</p>
 <p><b>{'✅ 순수 토크모드 지원됨' if ok else '❌ 미지원(τ_ff 무시)'}</b></p>
-<table><tr><th>방향</th><th>파단τ[Nm 채널]</th><th>파단τ[Nm 관절]</th>
+<table><tr><th>방향</th><th>기동τ[Nm 채널]</th><th>기동τ[Nm 관절]</th>
 <th>최대τ</th><th>최대q̇[dps]</th><th>결과</th></tr>{rows}</table>
 {concl}
 <div class=warn><b>해석 주의</b><ul>
@@ -416,7 +416,7 @@ def _sweep_hold_kp(hw, spec, j, gains_csv: str, cfg):
       calf 변형이 그대로 섞인다. calf 는 모터로 잡혀 있고 모터 홀드는 **스프링**이다.
           Δq_ch_foot = τ · k_f²/(k_c²·kp_src)
       판정문턱 0.312° 를 순전히 탄성으로 채우는 토크가 kp_src=80 에서 0.681 Nm 인데
-      실측 파단이 0.64~0.73 Nm 이라 **구분이 안 된다**(kp 80 이 하필 맞바꿈점이다).
+      실측 기동이 0.64~0.73 Nm 이라 **구분이 안 된다**(kp 80 이 하필 맞바꿈점이다).
 
     ⇒ kp_src 를 바꾸면 갈린다:
         탄성이면  τ_break ∝ kp_src   (40→0.34 · 80→0.68 · 160→1.36)
@@ -471,7 +471,7 @@ def _sweep_hold_kp(hw, spec, j, gains_csv: str, cfg):
         hw.hold_kp[src_ch] = kp0        # ★어떤 경로로 끝나도 원상복구
     out = out or (rows[-1][3] if rows else None)
 
-    print(f"\n{'='*70}\n  판정 — {j['name']} 파단토크가 마찰인가 강성인가\n{'='*70}")
+    print(f"\n{'='*70}\n  판정 — {j['name']} 기동토크가 마찰인가 강성인가\n{'='*70}")
     print(f"  {'kp_src':>7}{'탄성예측':>10}{'실측':>9}{'실측/예측':>11}")
     for g, pred, tb, _ in rows:
         print(f"  {g:>7.0f}{pred:>10.3f}"
@@ -514,7 +514,7 @@ def main() -> int:
                          "홈복귀도 측정축만 움직이고, 트립 검사도 측정축만 본다. "
                          "⚠하위 관절이 무여자라 I_link 강체가정이 깨진다 — inertia·pace 에는 쓰지 말 것.")
     ap.add_argument("--sweep-hold-kp", default=None, metavar="G1,G2,...",
-                    help="★파단토크가 마찰인지 **직렬 강성**인지 가르는 시험. 시험축의 "
+                    help="★기동토크가 마찰인지 **직렬 강성**인지 가르는 시험. 시험축의 "
                          "커플링 원천축(couple_from, foot→calf)의 홀드게인을 이 값들로 "
                          "바꿔가며 토크프로브를 반복한다. τ_break 이 게인에 비례하면 "
                          "탄성(=강성을 잰 것), 안 변하면 마찰이다. 예: --sweep-hold-kp 40,80,160")
@@ -678,7 +678,7 @@ def main() -> int:
                         #   보정이 0.01~0.19Nm 이라 통했는데 **thigh 에서 무너졌다**:
                         #     실측 +0.170 vs 표 +1.412 @ +36.41° → 보정 −1.242 Nm
                         #   thigh 는 중력 기울기가 ~0.1 Nm/° 라 시험구간 ±50° 에서 중력이
-                        #   5Nm 변한다. 상수 오프셋으로는 못 따라간다. 실제로 파단이
+                        #   5Nm 변한다. 상수 오프셋으로는 못 따라간다. 실제로 기동이
                         #   0.197Nm 에 뜨고(비정상적으로 낮다) 축이 탐색범위를 넘어 달아났다.
                         #   ⚠표가 틀린 건 **크기만이 아니라 모양**이다 — 표는 다른 관절이
                         #     neutral 일 때 뽑았는데 solo 는 calf −61°·foot +52° 로 늘어져
@@ -703,7 +703,7 @@ def main() -> int:
                         #   그 1.27Nm 이 홈복귀 중 스톨 감지의 가짜 초과토크가 되어
                         #   시험을 죽였다(실측 3.75Nm: 진짜 대비 초과 0.85=마찰인데
                         #   표 대비로는 2.12 > 2.0).
-                        #   ⚠파단 뒤에 보정하는 것으로는 늦다 — 홈복귀부터 필요하다.
+                        #   ⚠기동 뒤에 보정하는 것으로는 늦다 — 홈복귀부터 필요하다.
                         #   ⚠MuJoCo 확인: 이 오차는 축 각도에 거의 무관하다
                         #     (thigh 0~32° 에서 −1.30~−0.92). 상수 오프셋으로 충분하다.
                         # ★정렬 탐색범위를 **현재 측정각까지 늘린다** (2026-08-12 실기 HR_calf).
@@ -794,7 +794,7 @@ def main() -> int:
                                 _log(f"  ⚠보정이 3Nm 을 넘는다 — 표를 다시 뽑을 것"
                                      f"(tools/gen_grav_table.py). 일단 진행한다.")
                             # ★기본 FF 로 건다 — 이 뒤 **모든 쓰기**가 자동으로 태운다
-                            #   (홈복귀·arm·verify_driver_live·파단·스윕 전부).
+                            #   (홈복귀·arm·verify_driver_live·기동·스윕 전부).
                             #   호출부마다 꿰다가 verify_driver_live 를 빠뜨려 thigh 가
                             #   17.5° 튀었다. grav_fn 이 갱신되면 여기도 따라간다.
                             hw.tau_ff_fn = (lambda c, q, _c=ch:
@@ -849,7 +849,7 @@ def main() -> int:
                         #   HOME 은 thigh 중력토크 −2.06Nm 이라 kp50 에서 2.36° 처진다.
                         #   thigh 를 **중력중립각**으로 옮기면 그 토크가 0 이 되어 처짐 자체가
                         #   없어진다(막는 게 아니라 없애는 쪽). foot 중력은 0.033→0.038Nm 로
-                        #   사실상 그대로라 파단 측정에는 영향이 없고, 링크 간섭도 없다.
+                        #   사실상 그대로라 기동 측정에는 영향이 없고, 링크 간섭도 없다.
                         # ★--solo 면 다른 축을 못 움직이므로 자세 덮어쓰기가 무의미하다.
                         _hp = {} if a.solo else _c.get("hold_pose", {})
                         _pose = _hp.get(f"{a.pose}_deg")
@@ -919,8 +919,8 @@ def main() -> int:
                         res = _sweep_hold_kp(hw, spec, j, a.sweep_hold_kp, _jointmap()[1])
                     else:
                         res = probe_torque_mode(hw, spec, j)
-                    # ★파단토크를 관성시험에 넘긴다 — 준위를 축별로 자동설계하려면
-                    #   그 축 자신의 파단값이 필요하다(HL 0.674 · HR 0.753 로 다르다).
+                    # ★기동토크를 관성시험에 넘긴다 — 준위를 축별로 자동설계하려면
+                    #   그 축 자신의 기동값이 필요하다(HL 0.674 · HR 0.753 로 다르다).
                     j["_tau_break"] = res.get("tau_break_mean")
                     fragments.append(_torque_html(res))
                     summary.append(("torque", res))
@@ -965,7 +965,7 @@ def main() -> int:
                 print(f"  {r['name']:9s} 관성  측정 실패(표본 부족)")
         elif kind == "torque":
             tb = f"{r['tau_break_mean']:.3f} Nm" if r["tau_break_mean"] else "—"
-            print(f"  {r['name']:9s} 토크모드  {'지원됨' if r['supported'] else '미지원'}  파단토크={tb}")
+            print(f"  {r['name']:9s} 토크모드  {'지원됨' if r['supported'] else '미지원'}  기동토크={tb}")
         elif kind == "backlash":
             bl = f"{r['backlash_deg']:.4f}deg" if r["backlash_deg"] is not None else "유의미한 유격 없음"
             st = f"{r['stiffness_nm_per_deg']:.3f}Nm/deg" if r["stiffness_nm_per_deg"] else "—"

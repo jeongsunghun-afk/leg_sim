@@ -5,7 +5,7 @@
   위치처프 식별은 **순환**이다. 드라이버가 돌려주는 τ 가 `kp·err + kd·derr` 로
   R² 0.97 재구성되므로(지연 10ms 정렬), 그 τ 로 회귀하면 우리 게인의 그림자를
   식별하게 된다. `kp=kd=0` 이면 재구성할 항이 없고 **우리가 넣은 τ_ff 가 곧 입력**이다.
-  2026-08-11 실기에서 HL_foot 이 평균 0.674 Nm(채널)에 파단 → **순수 토크모드 지원 확인**.
+  2026-08-11 실기에서 HL_foot 이 평균 0.674 Nm(채널)에 기동 → **순수 토크모드 지원 확인**.
   그 경로가 열렸으니 관성도 같은 경로로 잰다.
 
 원리 — **공통속도법(matched-speed)**. 운동방정식:
@@ -23,7 +23,7 @@
 ★쓰지 않는 방법 넷 (전부 실패를 확인했다):
   ⓪ **τ 를 q̈ 에 회귀**(x=q̈) — 잡음이 x 축에 있어 감쇠한다. τ_c 산포 12% 에서 −19%.
      0% 산포에서는 멀쩡해 보여(편향 +0.02%) 합성검증만으로는 안 드러난다.
-     **실기의 지배적 오차원이 마찰 산포**(파단토크 CV 15.6%)라는 걸 알고서야 보였다.
+     **실기의 지배적 오차원이 마찰 산포**(기동토크 CV 15.6%)라는 걸 알고서야 보였다.
   ① 단순 "τ vs 평균 q̈" — **+20.3% 편향**(합성). 준위가 높을수록 속도가 빨라져
      b·q̇ 손실이 커지고 q̈ 가 눌린다. 그 압축이 기울기를 부풀린다.
   ② 4모수 전역회귀(I·q̈ + b·q̇ + τ_c·sgn + τ_g) — **cond 1e15**. q̈·q̇·sgn 이 전부
@@ -40,7 +40,7 @@
       준위 [0.90,1.10,1.30] → I 오차 +0.5% / +0.8%  (양방향)
       준위 [0.80,0.95,1.10,1.25] → +0.7% / +0.9%
 
-⚠ 순수 토크는 **자기제한이 없다.** 위치피드백이 0 이라 파단을 넘는 토크는 계속 가속한다.
+⚠ 순수 토크는 **자기제한이 없다.** 위치피드백이 0 이라 기동을 넘는 토크는 계속 가속한다.
   방어는 넷:
     ① 이동 상한(`travel_deg`) 도달 즉시 토크 0 → 위치게인으로 **제동**
     ② `hwio._check` 가 매 틱 위치·속도·토크 한계를 강제
@@ -93,14 +93,14 @@ def design_levels(tau_break, I_ch, vref_dps, travel_deg, vel_cap_dps,
                   skip_s=0.04, half_s=0.05, n=6, u_lo_frac=0.30, margin=0.7):
     """순토크 u=τ−τ_c 의 가용 구간에서 준위를 자동으로 뽑는다.
 
-    ★축마다 파단토크가 다르므로 상수 준위표는 못 쓴다 — HL 0.674 · HR 0.753 이었고,
-      HL 기준으로 잡은 0.90 은 HR 에겐 파단의 20% 위밖에 안 돼 Stribeck 구간이었다.
+    ★축마다 기동토크가 다르므로 상수 준위표는 못 쓴다 — HL 0.674 · HR 0.753 이었고,
+      HL 기준으로 잡은 0.90 은 HR 에겐 기동의 20% 위밖에 안 돼 Stribeck 구간이었다.
 
     제약 넷 (하나라도 어기면 창이 못 잡히거나 런이 탈락한다):
       ① 창이 과도구간 뒤:    t_ref = q̇_ref·I/u ≥ skip+half   → u ≤ q̇_ref·I/(skip+half)
       ② 창 끝이 속도상한 전: v(t_ref+half) ≤ vcap            → u ≤ (vcap−q̇_ref)·I/half
       ③ q̇_ref 까지 이동이 범위 안:                            → u ≥ q̇_ref²·I/(2·travel·margin)
-      ④ 파단 근처 회피(Stribeck):                             → u ≥ u_lo_frac·τ_c
+      ④ 기동 근처 회피(Stribeck):                             → u ≥ u_lo_frac·τ_c
     """
     v = vref_dps * DEG
     u_hi = min(v * I_ch / (skip_s + half_s),
@@ -132,19 +132,19 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     log(f"           모든 준위에서 **같은 속도**의 q̈ 를 읽는다 ⇒ b·q̇ 가 절편으로 빠진다.")
     log(f"           회귀는 q̈~τ (x=τ 정확·y=q̈ 잡음) 로 한다 — 반대로 놓으면 감쇠한다")
 
-    # ── 준위 자동설계 (측정된 파단토크 기준) ──────────────────────────────
+    # ── 준위 자동설계 (측정된 기동토크 기준) ──────────────────────────────
     tau_break = joint.get("_tau_break")            # torque 시험이 같은 실행에서 채워준다
-    # ★이번 실행에서 토크 프로브를 안 돌렸으면 **spec 의 실측 파단토크**를 쓴다
+    # ★이번 실행에서 토크 프로브를 안 돌렸으면 **spec 의 실측 기동토크**를 쓴다
     #   (2026-08-14). 종전엔 `--tests inertia` 단독이면 tau_break 가 None 이라 상수
     #   준위로 떨어졌는데, 그 상수는 **HL_foot 기준**이다. thigh 에 걸면 이렇게 된다:
-    #     준위 [0.9~1.35] · thigh 파단 0.711 → 순토크 0.19~0.64
+    #     준위 [0.9~1.35] · thigh 기동 0.711 → 순토크 0.19~0.64
     #     실측: 8런 중 7런이 "q̇_ref 미도달", +방향 유효표본 1개 → 회귀 불가
-    #   파단토크는 이미 8축 다 재서 spec 에 있다. 안 쓸 이유가 없다.
+    #   기동토크는 이미 8축 다 재서 spec 에 있다. 안 쓸 이유가 없다.
     if tau_break is None:
         _tbs = (spec.get("friction") or {}).get("measured_tau_break_ch") or {}
         if int(ch) in _tbs:
             tau_break = float(_tbs[int(ch)])
-            log(f"  [{name}] 파단토크를 spec 실측값에서 가져온다: {tau_break:.3f} Nm "
+            log(f"  [{name}] 기동토크를 spec 실측값에서 가져온다: {tau_break:.3f} Nm "
                 f"(이번 실행에서 --tests torque 를 안 돌렸다)")
     if tau_break and cfg.get("auto_levels", True):
         I_des = float(I_pred_joint or 0.054) / max(k_gear ** 2, 1e-9)
@@ -154,13 +154,13 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             float(cfg.get("u_lo_frac", 0.30)))
         if auto:
             levels = auto
-            log(f"  [{name}] 준위 자동설계 — 파단 {tau_break:.3f} Nm 기준 · "
+            log(f"  [{name}] 준위 자동설계 — 기동 {tau_break:.3f} Nm 기준 · "
                 f"순토크 u {ulo:.3f}~{uhi:.3f} (비 {uhi/ulo:.2f})")
         else:
             log(f"  [{name}] ⚠준위 자동설계 불가(u 구간 없음 {ulo:.3f}~{uhi:.3f}) — spec 값 사용")
     elif not tau_break:
-        log(f"  [{name}] ★★파단토크를 모른다 — spec 상수 준위 {levels} 를 쓴다.\n"
-            f"           ⚠이 상수는 **HL_foot 기준**이다. 파단이 더 큰 축에 걸면 순토크가\n"
+        log(f"  [{name}] ★★기동토크를 모른다 — spec 상수 준위 {levels} 를 쓴다.\n"
+            f"           ⚠이 상수는 **HL_foot 기준**이다. 기동이 더 큰 축에 걸면 순토크가\n"
             f"             거의 0 이 되어 런이 전부 탈락한다(2026-08-14 thigh 에서 8런 중 7런).\n"
             f"           ⇒ `--tests torque,inertia` 로 돌리거나 spec 의\n"
             f"             friction.measured_tau_break_ch 에 그 축을 넣을 것.")
@@ -227,7 +227,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
     #       + 방향: τ − τ_c + |τ_g|      − 방향: τ − τ_c − |τ_g|
     #   HL_calf 실측(2026-08-14): 마찰 f≈0.60 · 중력 g≈0.55 Nm 이라
     #     + 는 저항이 0.04 Nm 뿐이라 **0.10s 만에 속도상한**에 닿고(창이 런 전체를 덮는다)
-    #     − 는 준위 1.05~1.20 사이에서야 파단해 낮은 준위 셋이 통째로 날아갔다
+    #     − 는 준위 1.05~1.20 사이에서야 기동해 낮은 준위 셋이 통째로 날아갔다
     #       → −방향 유효표본 2개 < 3 → **회귀 자체를 못 했다.**
     #   ⇒ 명령을 `τ_g(q) + direction·level` 로 준다. 그러면 순토크가 방향대칭이 되고,
     #     회귀의 x 는 **가진준위 그대로**이며 절편에서 τ_g 가 빠진다(b·q̇_ref + τ_c 만 남는다).
@@ -263,7 +263,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             f"{max(levels) if levels else 0:.2f} ⇒ 토크상한 {tau_max:.2f} Nm")
         # ★**트립 예산**을 미리 확인한다 (2026-08-14). 종전엔 tau_max 만 올리고
         #   안전트립(τ_trip)과 대조하지 않아 **런 도중에** 죽었다:
-        #     HL_thigh 중력 6.67 + 파단 0.73 + 가진 3.27 = 10.7Nm > τ_trip 8.0
+        #     HL_thigh 중력 6.67 + 기동 0.73 + 가진 3.27 = 10.7Nm > τ_trip 8.0
         #     → "토크 한계 |−10.36| > 8.0 이 50ms 지속" 으로 2번째 준위에서 중단
         #   중력이 작은 축은 예산이 남아 안 걸렸을 뿐이다(foot 0.24+0.6+0.73=1.6).
         #   ⇒ 필요 첨두를 계산해 **준위를 깎는다.** 못 깎으면 그 자리에서 멈춘다 —
@@ -626,14 +626,14 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             res["intercept_mean"] = ic
             tb = joint.get("_tau_break")
             if tb:
-                # τ_c(q̇_ref) = 절편 − b·q̇_ref. 정지마찰(파단)보다 낮으면 Stribeck.
+                # τ_c(q̇_ref) = 절편 − b·q̇_ref. 정지마찰(기동)보다 낮으면 Stribeck.
                 log(f"  [{name}] 절편 {ic:+.3f} Nm = b·q̇_ref + τ_c(q̇={vref:.0f}dps) + τ_g")
-                log(f"           vs **자기 파단토크(정지마찰) {tb:.3f} Nm** → "
+                log(f"           vs **자기 기동토크(정지마찰) {tb:.3f} Nm** → "
                     f"{(ic/tb-1)*100:+.0f}%"
                     + ("  ⇒ 운동마찰이 정지마찰보다 낮다(Stribeck)" if ic < tb * 0.95 else ""))
             else:
                 log(f"  [{name}] 절편 {ic:+.3f} Nm = b·q̇_ref + τ_c + τ_g "
-                    f"(파단토크 미측정 — `--tests torque,inertia` 로 같이 돌리면 대조된다)")
+                    f"(기동토크 미측정 — `--tests torque,inertia` 로 같이 돌리면 대조된다)")
         if I_pred_joint:
             dd = (I_joint / float(I_pred_joint) - 1.0) * 100.0
             res.update(I_pred_joint=float(I_pred_joint), err_pct=dd)
@@ -677,7 +677,7 @@ def _html(name, ch, runs, res, k):
         if "dir_spread" in res:
             concl += (f"<p>방향간 I 편차 <b>{res['dir_spread']*100:.1f}%</b> (기준 15%) · "
                       f"절편 {res.get('intercept_mean', float('nan')):+.3f} Nm "
-                      f"= b·q̇_ref + τ_c + τ_g — 파단토크와 대조할 것</p>")
+                      f"= b·q̇_ref + τ_c + τ_g — 기동토크와 대조할 것</p>")
     warns = "".join(f"<li>{w}</li>" for w in res.get("warnings", []))
     warns = f"<div class=warn><b>경고</b><ul>{warns}</ul></div>" if warns else ""
     return f"""

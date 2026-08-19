@@ -337,7 +337,7 @@ def t_friction_full():
 
     fr = spec["friction"]                                    # ── SHRINK ──
     fr.pop("by_ch", None)
-    # 파단이 **일어나도록** 잡는다: 스텁 마찰 0.65Nm ÷ kp 30Nm/rad = 1.24° 가 필요하다.
+    # 기동이 **일어나도록** 잡는다: 스텁 마찰 0.65Nm ÷ kp 30Nm/rad = 1.24° 가 필요하다.
     # 램프도 느려야 한다 — q_ref 는 t>0.3s 에 래치되므로 그 전에 풀리면 검출을 못 한다
     # (1.24° ÷ 2dps = 0.62s > 0.3s ✓). 종전 0.6°/6dps 는 0.31Nm 이라 영영 안 풀렸다.
     fr["breakaway"].update(max_push_deg=4.0, ramp_dps=2.0, trials=1)

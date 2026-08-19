@@ -50,7 +50,7 @@ HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GU
 | 값 | **단일 출처** | 나머지는 |
 |---|---|---|
 | 액추에이터 파라미터(`armature`·`damping`·`frictionloss`·`delay`·`coef`) | `emb/pace/RESULTS.md` | 인용만 하고 **복사하지 말 것** |
-| 마찰·파단토크 실측 | `emb/pace/spec.yaml` 의 `friction.measured_*` | RESULTS 는 그 스냅숏이다 |
+| 마찰·기동토크 실측 | `emb/pace/spec.yaml` 의 `friction.measured_*` | RESULTS 는 그 스냅숏이다 |
 | 각도규약·부호·감속비 | `emb/config/biped_emb.yaml` | 문서는 설명만 |
 
 ---

@@ -140,8 +140,27 @@ struct BipedControl {
   //   ±0.79ms 만으로 hip 은 ±0.079(그 축 감쇠의 ±88%)를 덮는다.
   //   ⇒ **지연을 실측 8.39ms 에 못박았기에** 이 b 값들이 의미를 갖는다. 지연을 자유로
   //     두면 b 는 아무 값이나 된다. LAT_COMP_MS 기본 8.4 가 그 실측값이다.
-  double JDAMP[4]={0.0900, 0.0000, 0.0000, 0.1100};   // [Nm·s/rad] 관절축
-  double JFRIC[4]={0.8270, 0.6030, 0.5370, 0.2410};   // [Nm] 관절축 쿨롱마찰
+  //
+  // ★★2026-08-19 **손실공간 변경 — foot 의 세 항 전부 tendon(모터축)** (RESULTS.md §1-b).
+  //   종전엔 반사관성만 tendon 으로 옮기고 damping·frictionloss 는 관절에 남겼다.
+  //   **물리 논거가 완전히 같은데** 오래 안 보였다 — 모터의 마찰·점성도 관절각이 아니라
+  //   raw각(q_foot + q_calf)에서 작용한다. MuJoCo 로 직접 잰 반력:
+  //       무릎만 회전 시   종전 dof: foot −0.037 · **calf 0** ← 틀림
+  //                       tendon  : foot −0.109 · **calf −0.109** ✓
+  //   무릎이 돌면 발목 모터 마찰이 calf 에도 반력을 줘야 하는데 0 이었다. 반대로 raw 가
+  //   안 도는데 관절이 도는 경우엔 **없는 소산**을 넣고 있었다.
+  //   ⚠각축(--solo) 측정에선 q̇_calf=0 이라 raw=관절각이어서 **차이가 안 난다.**
+  //     그래서 여태 안 드러났다 — armature 와 똑같은 사연이다.
+  //   통제실험(같은 코드, --loss-space 만 다름): 초기RMS −32% · 적합 −32.9% ·
+  //     따로 뺀 구간 −32.2% · **게인 2배 검증 −25.5%** — 네 지표 전부 tendon 이 이긴다.
+  //   ★진짜 근거는 **독립 실측과 맞아졌다**는 것이다(각축 등속스윕, PACE 와 무관한 시험):
+  //       thigh −9.9% · calf −13.0% · foot −14.3%  ⇒ 산포 −10~−68% 가 −10~−14% 로 모였다.
+  //     "JFRIC.calf 가 스윕 대비 −46%" 미해결이 이걸로 풀렸다 — 원인은 calf 가 아니라
+  //     **foot 의 손실이 잘못된 좌표에 있던 것**이었다.
+  //
+  //   ⇒ 아래 배열의 **foot 칸은 관절이 아니라 tendon 으로 간다**(foot_rotor_to_tendon).
+  double JDAMP[4]={0.0900, 0.0000, 0.0000, 0.1100};   // [Nm·s/rad] hip~calf=관절축 · foot=tendon
+  double JFRIC[4]={0.8270, 0.6040, 0.8710, 0.6390};   // [Nm] 쿨롱마찰 (foot 0.639=tendon)
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표
@@ -238,8 +257,15 @@ struct BipedControl {
     if(t[0]<0||t[1]<0){   // 구 MJCF(tendon 없음) 호환 — 커플링 누락 상태로 돈다
       fprintf(stderr,"  ⚠MJCF 에 *_foot_rotor tendon 이 없다 — calf↔foot 커플 반사관성 누락\n");
       return; }
-    for(int j=0;j<nu;j++) if(j%4==3) m->dof_armature[6+j]=0.0;   // ★대각에서 뺀다
-    for(int k=0;k<2;k++) m->tendon_armature[t[k]]=ROTOR_I*GEAR[3]*GEAR[3]; }
+    // ★반사관성뿐 아니라 **점성·마찰도** 옮긴다(2026-08-19, §1-b). 셋 다 모터축에서 작용한다.
+    //   ⚠**옮기는** 것이지 더하는 게 아니다 — 관절 쪽을 0 으로 안 두면 이중 계상이다.
+    for(int j=0;j<nu;j++) if(j%4==3){
+      m->dof_armature[6+j]=0.0; m->dof_damping[6+j]=0.0; m->dof_frictionloss[6+j]=0.0; }
+    for(int k=0;k<2;k++){
+      m->tendon_armature[t[k]]     = ROTOR_I*GEAR[3]*GEAR[3];   // 0.0517
+      m->tendon_damping[t[k]]      = JDAMP[3];                  // 0.110
+      m->tendon_frictionloss[t[k]] = JFRIC[3];                  // 0.639
+    } }
 
   double footz(int leg){ return d->geom_xpos[sph[leg]*3+2]; }
   Vector3d spos(int leg){ return Vector3d(d->geom_xpos[sph[leg]*3],d->geom_xpos[sph[leg]*3+1],d->geom_xpos[sph[leg]*3+2]); }
@@ -395,10 +421,21 @@ struct BipedControl {
   double FRIC_COMP=1.0, FRIC_V0=0.20; int FRIC_STANCE_ONLY=1, FRIC_ALL_MODES=0;
   void set_ctrl_from_tau(const VectorXd& tau){
     VectorXd t=tau;
-    if(FRIC_COMP>0 && (cmode==1 || FRIC_ALL_MODES)) for(int i=0;i<nu;i++){
+    // ★★2026-08-19 보상도 **손실이 있는 좌표**에서 해야 한다(§1-b 로 손실공간이 바뀌었다).
+    //   foot 마찰은 이제 관절이 아니라 tendon(raw각)에 있다. 그러니
+    //     ① 판단 속도는 관절속도가 아니라 **raw 속도** L̇ = q̇_calf + q̇_foot 이고
+    //     ② 결과 토크는 coefᵀ=(1,1) 로 **calf·foot 두 관절에 동시에** 걸린다.
+    //   종전처럼 foot 관절에만 걸면 calf 쪽 몫이 통째로 빠지고, 무릎만 도는 구간에서는
+    //   부호까지 틀린다(그게 §1-b 가 지적한 바로 그 오류다).
+    if(FRIC_COMP>0 && (cmode==1 || FRIC_ALL_MODES)) for(int leg=0; leg<2; leg++){
       // cmode=1(2점 평발)은 양발 지지 · 1점 점발은 swing 다리만 제외한다
-      if(FRIC_STANCE_ONLY && cmode!=1 && (i/4)==swing) continue;
-      t[i] += FRIC_COMP*JFRIC[i%4]*std::tanh(d->qvel[6+i]/FRIC_V0);
+      if(FRIC_STANCE_ONLY && cmode!=1 && leg==swing) continue;
+      const int b=4*leg;
+      for(int k=0;k<3;k++)                                   // hip·thigh·calf — 관절축
+        t[b+k] += FRIC_COMP*JFRIC[k]*std::tanh(d->qvel[6+b+k]/FRIC_V0);
+      const double draw = d->qvel[6+b+2] + d->qvel[6+b+3];   // L̇ (coef=1,1)
+      const double f = FRIC_COMP*JFRIC[3]*std::tanh(draw/FRIC_V0);
+      t[b+2] += f; t[b+3] += f;                              // coefᵀ 로 두 관절에
     }
     VectorXd u=bipedwbic::tau_to_drive(t);
     for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-drv_peak8[i],std::min(drv_peak8[i],u[i]));

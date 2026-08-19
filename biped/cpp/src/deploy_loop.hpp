@@ -48,6 +48,7 @@ struct DeployLoop {
     if(getenv("EST_ANCHOR")) est.k_anchor = atof(getenv("EST_ANCHOR"));
     if(getenv("EST_ALPHA"))  est.alpha    = atof(getenv("EST_ALPHA"));
     if(getenv("EST_JAC_CONTACT")) est.jac_at_contact = atoi(getenv("EST_JAC_CONTACT"))!=0;
+    if(getenv("EST_DWELL")) est.dwell_steps = atoi(getenv("EST_DWELL"));
     bool kin = getenv("LAT_COMP_KIN") && atoi(getenv("LAT_COMP_KIN"))!=0;
     if(LCOMP>0 && !kin) dpred=mj_makeData(m);   // kin 이면 dpred 없이 외삽 분기로 간다
   }

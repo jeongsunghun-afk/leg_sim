@@ -18,6 +18,8 @@ cd "$(dirname "$0")"                       # simulation/biped/cpp
 PT=../biped_from_quad.mjcf                 # 1점 점발 (보행 배포 모델)
 FF=../biped_flatfoot.mjcf                  # 2점 평발 (정적 자세유지 · 실기 첫 목표)
 DUR=${DUR:-15}
+# ★실기 배포 조건 — 한 곳에서만 정의한다(줄마다 복붙하면 하나만 고치는 사고가 난다)
+DEPLOY_ENV="EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1"
 
 echo "▶ 빌드(biped_sim)…"
 cmake --build build --target biped_sim -j >/dev/null 2>&1 || { echo "❌ BUILD FAIL"; exit 1; }
@@ -61,6 +63,17 @@ echo "▶ 2점 평발 자세유지 (실기 첫 목표)"
 #     원인 후보: WBIC 는 접촉을 **3-DOF 점힘**으로 푸는데 평발은 면접촉이다
 #     (condim 3→6 이 이 stand 를 가장 먼저 깨뜨린 것과 같은 뿌리로 보인다).
 run "flat stand 60s" $FF "CONTACT=1" 0.00 60 2.0 -0.05 0.05 0.42
+echo "▶ 1점 점발 — 제자리 stepping (실기 두 번째 목표. 보행의 출발점)"
+#   ★2026-08-14 신설. 배포 계획이 "2점=stand 전용 · 1점=제자리 stepping→느린 보행" 인데
+#     **제자리 stepping 항목이 없었다.** 첫 보행 동작인데 게이트가 안 보고 있었다.
+#   ⚠제자리인지 보려면 **거리 상한**이 필요하다. 다른 보행 항목은 하한(min_x)만 본다 —
+#     "안 넘어지고 앞으로 갔나" 만 물어서, 제자리 명령에 흘러가도 안 걸린다.
+#   기준: GT 60s 는 8.4cm. 배포경로는 **43cm 흐른다**(추정 −0.03 vs 실제 0.43) —
+#     leg-odometry 드리프트를 추정기가 못 보고, 컨트롤러는 그 추정을 믿어 안 되잡는다.
+#     ⇒ EST 줄은 지금 **의도적으로 red** 다. 실기에서 로봇이 제자리를 벗어난다는 뜻이다.
+run "step in place"     $PT ""                 0.00 60 3.0 -0.20 0.20 0.50
+run "EST step in place" $PT "$DEPLOY_ENV"      0.00 60 3.0 -0.20 0.20 0.50
+
 echo "▶ 1점 점발 보행"
 run "walk v0.05"   $PT ""          0.05 $DUR 5   0.60  99   0.50
 run "walk v0.15"   $PT ""          0.15 $DUR 5   1.80  99   0.50
@@ -73,8 +86,8 @@ echo "▶ 배포경로 (추정 폐루프 EST_CTRL)"
 #     종전엔 지연도 보상도 없이 돌아서, **실기가 실제로 겪는 조건을 한 번도 안 봤다.**
 #     (지연보상은 그때 실기 바이너리에 아예 없었다. biped_deploy.cpp 주석 참조.)
 #     보상 없이 이 조건을 걸면 vx 0.15/0.20 에서 낙상한다 — 그게 이 줄의 존재 이유다.
-run "EST v0.15"    $PT "EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1" 0.15 $DUR 5  1.80  99   0.50
-run "EST v0.20"    $PT "EST_CTRL=1 ACT_LAT_MS=8.4 LAT_COMP_MS=8.4 LAT_COMP_KIN=1" 0.20 $DUR 5  2.40  99   0.50
+run "EST v0.15"    $PT "$DEPLOY_ENV" 0.15 $DUR 5  1.80  99   0.50
+run "EST v0.20"    $PT "$DEPLOY_ENV" 0.20 $DUR 5  2.40  99   0.50
 
 echo "──────────── PASS=$pass  FAIL=$fail ────────────"
 [ $fail = 0 ] && { echo "✅ ALL PASS — 회귀 없음"; exit 0; } || { echo "❌ REGRESSION — 위 실패 항목 확인"; exit 1; }

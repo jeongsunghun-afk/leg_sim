@@ -577,7 +577,19 @@ def main() -> int:
             raise _abort
             print("    **데이터는 이미 저장됐다** — 자세만 정리하면 된다.")
 
-    print(f"    다음: ~/.venv-mujoco/bin/python pace_cmaes.py {path}")
+    # ★★수집 직후 **커밋 명령을 찍는다** (2026-08-14).
+    #   results/*.npz 는 git 추적 대상이라 커밋하면 되돌릴 수 있다. 그런데 커밋 **사이**가
+    #   무방비다 — 2026-08-14 에 트립본(386표본)이 완주본(12000표본)을 덮었고,
+    #   그 시점의 커밋에도 이미 트립본이 들어 있어 git 으로 못 되돌렸다.
+    #   save_npz 의 _abort 분리·.prev 백업이 있어도 창은 남는다.
+    #   ⚠자동 커밋은 안 한다 — 이 저장소는 여러 세션이 동시에 만진다. `git add -A` 가
+    #     남의 작업까지 끌어간 전례가 있다. **파일을 지정한 명령만** 보여 준다.
+    _rel = os.path.relpath(path, os.path.join(HERE, "..", ".."))
+    print(f"\n  ★**지금 커밋할 것** — 30초 실기 수집 + 래치오프 위험을 들인 자료다."
+          f" 다음 수집이 덮기 전에:")
+    print(f"    cd {os.path.abspath(os.path.join(HERE, '..', '..'))}")
+    print(f"    git add {_rel} && git commit -m '수집: {os.path.basename(path)}'")
+    print(f"\n    다음: ~/.venv-mujoco/bin/python pace_cmaes.py {path}")
     return 0
 
 

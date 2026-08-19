@@ -183,6 +183,8 @@ struct BipedControl {
     if(getenv("K_CAP"))    K_CAP   =atof(getenv("K_CAP"));
     if(getenv("FRIC_COMP")) FRIC_COMP=atof(getenv("FRIC_COMP"));   // ★마찰 전방보상 배율(0=끔)
     if(getenv("FRIC_V0"))   FRIC_V0  =atof(getenv("FRIC_V0"));
+    if(getenv("FRIC_STANCE_ONLY")) FRIC_STANCE_ONLY=atoi(getenv("FRIC_STANCE_ONLY"));
+    if(getenv("FRIC_ALL_MODES"))   FRIC_ALL_MODES  =atoi(getenv("FRIC_ALL_MODES"));
     if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
@@ -352,11 +354,36 @@ struct BipedControl {
   //   채터링이 난다. v0 는 그 전환폭이다(FRIC_V0, 기본 0.05 rad/s).
   //   ⚠**과보상은 자기가진**이 된다(마찰보다 크게 밀면 진동). 그래서 배율을 노출한다.
   //   ⚠Python biped_wbic.py 와 같은 식이어야 파리티가 유지된다.
-  double FRIC_COMP=0.0, FRIC_V0=0.05;
+  //
+  // ★★**스탠스 다리에만 건다**(FRIC_STANCE_ONLY, 기본 1). 2026-08-14 실측 근거:
+  //   전 관절에 걸었더니 stand 는 고쳐지는데(20.7s→60s) **보행이 5개 실패**했다
+  //   (v0.15 낙상 · 전진거리 0.82→0.32). 이유가 분명하다 —
+  //   스윙 중엔 q̇ 가 커서 `tanh→1` 이라 마찰 전량을 더해주는데, 스윙 다리는
+  //   이미 마찰을 이기고 자유롭게 돌고 있다. 거기에 더하면 **과보상 = 에너지 주입**이다.
+  //   반대로 문제가 난 자리는 스탠스다: 지지 다리는 CoM 을 미세하게 되잡아야 하는데
+  //   그 보정토크가 마찰 밴드(hip 0.827Nm)에 먹혀 버린다.
+  //   ⇒ 마찰이 **해가 되는 곳에만** 보상한다. 2점 평발(cmode=1)은 양발이 스탠스다.
+  //
+  // ★★**2점 평발(cmode=1)에서만 켠다.** 1점 점발 보행에서는 필요 없고 오히려 해롭다 —
+  //   실측(2026-08-14):
+  //     보상 OFF : 보행 3속도 + 선회·측방 + 배포경로 2속도 **전부 통과**
+  //     보상 ON  : 배포경로 vx0.20 이 **2회 낙상**(x 2.77 → 0.00)
+  //   이유가 물리적으로 분명하다. `τ += JFRIC·tanh(q̇/v0)` 는 **운동 방향으로 미는 항**,
+  //   즉 **음의 감쇠**다. 안정여유를 깎으므로 지연 8.4ms 와 만나면 발산 쪽으로 간다.
+  //   보행은 애초에 마찰이 문제가 아니었다(스윙은 이미 마찰을 이기고, 스탠스는 지지력이
+  //   커서 마찰 밴드가 상대적으로 작다). 문제는 **정적 균형 조절**이다 —
+  //   2점 stand 는 CoM 을 미세하게 되잡아야 하는데 그 보정토크가 마찰에 먹힌다.
+  //   ⇒ 마찰이 해가 되는 **그 모드에서만** 보상한다.  `FRIC_ALL_MODES=1` 로 강제 가능.
+  //   ★V0 0.05 → **0.20**: 0.05 는 전환이 급해 스탠스에서도 음의감쇠가 세다
+  //     (배포 vx0.15 낙상). 0.20 이 stand tilt 0.1° 로 가장 좋았다.
+  double FRIC_COMP=1.0, FRIC_V0=0.20; int FRIC_STANCE_ONLY=1, FRIC_ALL_MODES=0;
   void set_ctrl_from_tau(const VectorXd& tau){
     VectorXd t=tau;
-    if(FRIC_COMP>0) for(int i=0;i<nu;i++)
+    if(FRIC_COMP>0 && (cmode==1 || FRIC_ALL_MODES)) for(int i=0;i<nu;i++){
+      // cmode=1(2점 평발)은 양발 지지 · 1점 점발은 swing 다리만 제외한다
+      if(FRIC_STANCE_ONLY && cmode!=1 && (i/4)==swing) continue;
       t[i] += FRIC_COMP*JFRIC[i%4]*std::tanh(d->qvel[6+i]/FRIC_V0);
+    }
     VectorXd u=bipedwbic::tau_to_drive(t);
     for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-drv_peak8[i],std::min(drv_peak8[i],u[i]));
   }

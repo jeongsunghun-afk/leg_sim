@@ -139,6 +139,9 @@ class BipedWBIC:
                                   if (self.m.actuator_ctrllimited[i]
                                       and self.m.actuator_ctrlrange[i, 1] > 0) else 1e8
                                   for i in range(self.nu)])
+        # ★마찰 전방보상 게인 — C++ 기본값과 **같아야** 파리티가 유지된다(env 이름도 동일).
+        self.FRIC_COMP = float(os.environ.get('FRIC_COMP', 1.0))
+        self.FRIC_V0 = float(os.environ.get('FRIC_V0', 0.20))
         self.sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in ['HL_sphere', 'HR_sphere']]
         self.fbody = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]
@@ -320,6 +323,14 @@ class BipedWBIC:
         # ★d.ctrl 은 이제 **드라이브 토크**다 (2026-08-13, MJCF 발목 액추에이터 tendon 이전).
         #   관절토크를 그대로 쓰면 발목 모터가 tendon(coef 1,1)이라 무릎에 발목토크가 덤으로
         #   실린다. 클립도 드라이브 한계로 — 실기 한계는 모터에 걸리지 관절에 걸리지 않는다.
+        # ★마찰 전방보상 — C++ biped_control.hpp:set_ctrl_from_tau 와 **같은 식**이어야 한다.
+        #   WBIC 는 관절 쿨롱마찰을 모른다(JFRIC 은 모델에만 들어간다). 축별 실측 마찰
+        #   (hip 0.827)에선 그 미보상 외란 때문에 2점 stand 가 20.7s 에 넘어졌다.
+        #   ⚠**2점 평발(cmode='2pt')에서만** 켠다 — 보행에선 음의 감쇠로 작용해 해롭다
+        #     (배포경로 vx0.20 이 2회 낙상). 근거는 C++ 쪽 주석에 정리.
+        if self.FRIC_COMP > 0 and self.contact_mode == '2pt':
+            tau = tau + self.FRIC_COMP * np.tile(JFRIC, 2) * np.tanh(
+                d.qvel[6:6 + self.nu] / self.FRIC_V0)
         d.ctrl[:] = np.clip(tau_to_drive(tau), -self.drv_peak, self.drv_peak)
         return True
 

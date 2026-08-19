@@ -429,6 +429,7 @@ int main(int argc, char** argv) {
   const bool pace = mpcThread && !getenv("NO_PACE");
   const auto tWall0 = std::chrono::steady_clock::now();
   int falls = 0; double t = 0;
+  double swingErrPk = 0;   // ★스윙 추종오차 피크(SWING_DBG)
   double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     if (cmdfile && step % 20 == 0) {            // ★GUI: 50Hz로 명령 갱신(v/vy/w)
@@ -626,6 +627,7 @@ int main(int argc, char** argv) {
       static double wbcTsum = 0; static long wbcN = 0;
       auto tw0 = std::chrono::steady_clock::now();
       vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
+      if (getenv("SWING_DBG") && wbcL.swingErrCur_ > swingErrPk) swingErrPk = wbcL.swingErrCur_;
       wbcTsum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw0).count(); wbcN++;
       if (getenv("WBC_TIME") && wbcN % 3000 == 0) fprintf(stderr, "[WBCT] WBC avg=%.3f ms (n=%ld, 1kHz budget=1ms)\n", wbcTsum / wbcN, wbcN);
       // ★표준 저수준(Bellicoso2016·legged_control): τ = τ_ff + τ_pd
@@ -870,6 +872,7 @@ int main(int argc, char** argv) {
   std::cerr << "\n===== 결과 =====\n";
   std::cerr << "  최종 base_x : " << d->qpos[0] << " m  (목표 " << 0.3 * simTime << ")\n";
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
+  if (getenv("SWING_DBG")) std::cerr << "  스윙 추종오차 피크 : " << swingErrPk * 1000 << " mm\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
   if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";
   if (view) { mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate(); }

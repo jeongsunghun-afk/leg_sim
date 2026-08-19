@@ -155,6 +155,7 @@ class WbcLegged {
   }
 
   double swingKp_ = 350, swingKd_ = 30;
+  double swingErrCur_ = 0;   // ★진단: 현 스텝 스윙발 추종오차 max||posD-posM|| (SWING_DBG)
   bool swingFF_ = false;  // ★스윙 가속도 ff(eq19). SWING_FF=1로 켬(accD=J·u̇_des, jAccel 노이즈로 12-DOF선 버징 미개선)
   double wSwing_ = 100, wBase_ = 1, wForce_ = 0.01;
   double stanceKd_ = 0.0;   // ★stance 접촉 속도댐핑(baumgarte): J q̈ = -J̇v - KD·Jv. 착지 잔류속도→슬립 저감. 0=기존
@@ -283,7 +284,9 @@ class WbcLegged {
   std::pair<matrix_t, vector_t> swingTask() {  // 스케줄 스윙발: Cartesian PD (닿아 있어도 들어올림)
     int ns = 0; for (int i = 0; i < nc_; ++i) if (swingC_[i]) ns++;
     matrix_t a = matrix_t::Zero(3 * ns, nx_); vector_t b(3 * ns); int jc = 0;
+    swingErrCur_ = 0;
     for (int i = 0; i < nc_; ++i) if (swingC_[i]) {
+      { double e = (posD_[i] - posM_[i]).norm(); if (e > swingErrCur_) swingErrCur_ = e; }
       // ★eq19: r̈_des(ff) + Kp·posErr + Kd·velErr  (ff가 스윙 운동 담당 → 피드백 부담↓ → 버징↓)
       vector3_t accel = (swingFF_ ? accD_[i] : vector3_t::Zero()) + swingKp_ * (posD_[i] - posM_[i]) + swingKd_ * (velD_[i] - velM_[i]);
       a.block(3 * jc, 0, 3, nv_) = j_.middleRows(3 * i, 3);

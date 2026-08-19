@@ -54,7 +54,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>④</td><td><code>τ_c</code> 쿨롱마찰</td><td><b>PACE</b> (각축과 25% 차)</td><td class="wa">⚠ ③과 맞바꿔져 나눔이 안 됨</td></tr>
 <tr><td>⑤</td><td><code>g(q)</code> 중력</td><td><b>중력표 + 자세별 실측보정</b></td><td class="ok">✅ 시험 내부용 (MJCF 는 CAD 가 계산)</td></tr>
 <tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
-<tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>관성 대조</b> 비 1.06 · PACE 자유탐색으로 재확인</td><td class="ok">✅ 1.0 유지 (자유로 풀면 성적이 나빠짐)</td></tr>
+<tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>경사계 실측</b> — 무릎 80.5° 훑어 발바닥 절대각 불변</td><td class="ok">✅ <b>c = 1 확정</b> (오차 ≲ 4%)</td></tr>
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
 <p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(<b>§4-1</b> 재수집 또는 <b>§4-1-b</b> 일정속도 시험).</p>
 <p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
@@ -207,9 +207,8 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
 <tr><td><b>1</b></td><td>재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td><code>JDAMP.thigh</code>(±61%) 분해</td></tr>
-<tr><td><b>2</b></td><td><code>coef</code> 크기 — 경사계</td><td>실기</td><td class="n">10분</td><td>마지막 미측정 구조값</td></tr>
-<tr><td class="n">3</td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> · <code>thigh 관성</code></td></tr>
-<tr><td class="n">4</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
+<tr><td><b>2</b></td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> · <code>thigh 관성</code></td></tr>
+<tr><td class="n">3</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
 <p>⇒ <b>넷 다 실기다.</b> 오프라인 적합으로 뽑을 건 다 뽑았다 — 남은 건 데이터 문제다. 끝난 시험은 <b>§5</b> 에 결론만 남긴다.</p>
 <h3>1. 재수집 — <b>원래 설계 주파수를 쓰는 것</b>이 먼저다</h3>
 <p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
@@ -249,23 +248,54 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
 <div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
 <div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
-<h3>2. <code>coef</code> 크기 — 경사계로 재기 (<b>엔코더 밖으로 나가는 유일한 길</b>)</h3>
-<p><code>couple_check.py</code> 로는 <b>원리적으로 못 잰다.</b> 2026-08-14 실기 결과가 케이스 <b>(A)</b> 다:</p>
+<h3>2. ~~<code>coef</code> 크기~~ — <b>측정 완료. c = 1</b> (2026-08-14)</h3>
+<div class="quote"><b><code>c</code> 가 무엇인가</b> (2026-08-14 실제로 헷갈린 지점이라 여기 못박는다)</div>
+<div class="quote">```</div>
+<div class="quote">q_raw_foot = q_foot + c·q_calf        ⇔        q_foot = q_raw_foot − c·q_calf</div>
+<div class="quote">```</div>
+<div class="quote"><code>q_raw_foot</code> 은 발목 <b>모터축</b>각(엔코더가 읽는 값), <code>q_foot</code> 은 발목 <b>관절각</b></div>
+<div class="quote">(<b>정강이 기준</b>, MJCF 의 joint 값), <code>q_calf</code> 는 무릎 관절각이다.</div>
+<div class="quote">발목 모터를 세워두면 <code>Δq_foot = −c·Δq_calf</code> 이므로:</div>
+<p>&gt;</p>
+<div class="quote">**<code>c</code> = 무릎이 1° 돌 때 발목 *관절각*이 몇 ° 돌아가는가** (부호 반대). 비율이다.</div>
+<p>&gt;</p>
+<div class="quote">무릎 +80.5° · 발목 모터 고정일 때:</div>
+<p>&gt;</p>
+<div class="quote">| <code>c</code> | 발목 <b>관절각</b>(정강이 기준) | 발바닥 <b>절대각</b>(공간 기준) |</div>
+<div class="quote">|---|---|---|</div>
+<div class="quote">| <b>1.0</b> | <b>−80.5°</b> | <b>0°</b> ← 자세 유지 |</div>
+<div class="quote">| 0.9 | −72.5° | +8° |</div>
+<div class="quote">| 0 | 0° (정강이에 붙어 감) | +80.5° |</div>
+<p>&gt;</p>
+<div class="quote">⚠*"발이 자세를 유지한다"* 는 <b>결과이지 정의가 아니다</b> —</div>
+<div class="quote"><code>발_절대각 = q_calf + q_foot = q_calf·(1−c)</code> 라서 <code>c=1</code> 에서 0 이 되는 것뿐이다.</div>
+<div class="quote">정강이 기준으로는 −80.5° 나 돌아가는데 정강이 자체가 +80.5° 돌아 상쇄된다.</div>
+<div class="quote">⚠<code>c</code> 는 <b>감속비와 무관하다.</b> 같은 두 축에 원인이 다른 값이 겹쳐 있다 —</div>
+<div class="quote"><code>gear_k</code>(calf 1.5 · foot 1.2)는 드라이버가 전 축을 7:1 로 착각해 생긴 <b>배율</b>이고,</div>
+<div class="quote"><code>c</code> 는 <b>링키지 커플링 비율</b>이다.</div>
+<p><code>diag/couple_magnitude.py --leg HL</code> (k=0 영점시험). 발목을 <b>채널각 고정</b>으로 잡고 무릎만 손으로 훑은 뒤 발바닥 절대각을 읽었다.</p>
 <table>
-<tr><th></th><th>무릎 스윙</th><th><code>foot_ch</code> 기울기</th></tr>
-<tr><td>HL</td><td class="n">115.9°</td><td class="n">+0.0001</td></tr>
-<tr><td>HR</td><td class="n">148.9°</td><td class="n">+0.0000</td></tr></table>
-<p>엔코더가 모터축에 있어 커플링을 아예 못 본다(<code>\|c\| &lt; 2e-4</code>). 기울기가 실제 크기와 무관하게 0 이므로 이 도구는 (A)/(B) 만 가르고 크기는 못 낸다. *(다만 이 결과가 <b>raw각 PD 법칙이 옳다</b>는 걸 게인 2배 검증과 독립적으로 뒷받침한다 — 엔코더 좌표가 곧 tendon 좌표다.)*</p>
-<p>절차:</p>
-<p>1. 발목을 <b>채널각 고정</b>으로 잡는다 ← 결정적. 평소 명령경로로 잡으면 <code>coef=1</code> 보상이    걸려 재려는 대상이 정확히 상쇄된다. 2026-08-10 에 부호를 반대로 판정한 게 이 함정이다 2. 무릎만 크게(100° 이상) 돌린다 3. 발바닥 절대각을 휴대폰 경사계로 읽는다</p>
-<p><code>Δ발_절대각 = Δq_calf·(1 − c)</code> 이므로 100° 스윙에서:</p>
+<tr><th></th><th>값</th></tr>
+<tr><td>무릎 스윙</td><td>채널 <b>120.8°</b> = 관절 <b>80.5°</b></td></tr>
+<tr><td>발목 채널</td><td>래치 <code>+2.48°</code> → 종료 <code>+2.48°</code> (<b>추종오차 ≈ 0</b>, τ −0.03)</td></tr>
+<tr><td>발바닥 절대각 변화</td><td><b>없음</b></td></tr>
+<tr><td>⇒</td><td><b>c = 1</b></td></tr></table>
+<p><code>Δ발_절대각 = Δq_calf·(1−c)</code> 이므로 이 스윙에서 <code>c</code> 가 1 이 아니었다면:</p>
 <table>
-<tr><th><code>coef</code></th><th>발바닥 절대각 변화</th></tr>
-<tr><td class="n">1.00</td><td><b>0°</b></td></tr>
-<tr><td class="n">0.90</td><td class="n">10°</td></tr>
-<tr><td class="n">0.76</td><td class="n">24°</td></tr></table>
-<p>경사계 분해능 0.5° 면 넉넉하다. 2026-08-10 의 *"육안 일치"* 는 무릎을 30° 만 돌렸다면</p>
-<p><code>c=0.9</code> 여도 3° 라 놓칠 수 있는 크기다 — <b>육안 관측은 <code>c=1</code> 의 증거로 약하다.</b></p>
+<tr><th><code>c</code></th><th>예상 Δtilt 크기</th></tr>
+<tr><td class="n">1.00</td><td class="n">0°</td></tr>
+<tr><td class="n">0.95</td><td><b>4°</b></td></tr>
+<tr><td class="n">0.90</td><td><b>8°</b></td></tr>
+<tr><td class="n">0.76</td><td><b>19°</b></td></tr></table>
+<p>⇒ 육안으로 3° 를 가른다고 보면 <b>|1−c| ≲ 0.04</b>. 경사계 수치를 읽었다면 ±1°/80.5° 로 <b>≲ 0.012</b> 까지 좁혀진다.</p>
+<p class="warn">★<b>가장 위험한 실패 방식이 배제됐다.</b> 발목이 밀리면 <code>Δtilt</code> 가 줄어 <code>c</code> 가 1 쪽으로 <b>가짜로</b> 수렴한다 — "c=1 확인" 이 측정 실패에서 나오는 것이다. 그런데 발목 채널이 래치값에 그대로 있었고 토크도 −0.03 이었다. 안 밀렸다.</p>
+<p class="warn">⚠<b>2026-08-10 의 "육안 일치" 와는 근거의 무게가 다르다.</b> 그때는 무릎을 30° 정도만 돌렸을 것으로 보이는데, 그러면 <code>c=0.9</code> 여도 3° 라 놓칠 수 있다. 이번은 80.5° 다.</p>
+<p>⇒ <b>저장소의 마지막 미측정 구조 파라미터가 닫혔다.</b> <code>couple_coef: 1.0</code> (config) 과 MJCF tendon <code>coef="1"</code> 을 그대로 둔다. PACE 도 <code>--pin coef</code> 로 계속 고정한다.</p>
+<p>&lt;details&gt;&lt;summary&gt;남은 것 — <code>--k 1.0</code> 눈금 판 (선택)&lt;/summary&gt;</p>
+<p><code>k=0</code> 과 <code>k=1</code> 의 <code>Δtilt</code> 차이는 <code>c</code> 와 무관하게 정확히 <code>Δq_calf</code> 여야 한다. 그게 맞으면 경사계·스윙각·미끄러짐까지 <b>계측계 전체</b>가 검증된다.</p>
+<p>다만 이번엔 주된 계통오차(발목 미끄러짐)가 <b>추종오차 기록으로 이미 배제</b>됐으므로 필수는 아니다. 더 좁은 오차한계가 필요할 때 돌리면 된다.</p>
+<pre>python3 diag/couple_magnitude.py --leg HL --k 1.0</pre>
+<p class="warn">⚠<code>k=1</code> 은 발목 명령이 무릎을 0.8배로 따라가 상자를 넘을 수 있다. 스윙을 작게 잡을 것. &lt;/details&gt;</p>
 <h3>3. 중력이 작은 자세에서 관성 재기</h3>
 <p class="warn">⚠<b>정확도에는 거의 영향이 없다</b> — hip·thigh 는 합쳐서 오차의 2~4% 뿐이다. 값이 비어 있는 걸 채우는 작업이지 RMS 를 줄이는 작업이 아니다.</p>
 <p>미해결 셋(<code>hip 관성</code>·<code>thigh 관성</code>·<code>calf 감쇠</code>)이 <b>전부 같은 원인</b>이다. 중력이 큰 축은 중력 잔차가 방향 비대칭으로 남아 게이트를 못 넘는다(thigh |τ_g| 6.35 Nm · hip 5.5 Nm).</p>
@@ -350,7 +380,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <h2>6. 확정된 구조 (참고)</h2>
 <table>
 <tr><th>항목</th><th>결론</th></tr>
-<tr><td>calf→foot 커플링</td><td><b>실재, <code>coef</code> = 1 로 둔다</b> — 자유로 풀면 1.064 로 가지만 성적이 나빠진다</td></tr>
+<tr><td>calf→foot 커플링</td><td><b>실재, c = 1 — 경사계로 실측 확정</b> (2026-08-14). PACE 자유탐색(1.064)은 성적이 나빠져 기각</td></tr>
 <tr><td>엔코더</td><td><b>모터축(raw각)</b> — 커플링을 안 본다 (케이스 A, 기울기 +0.0000/+0.0001)</td></tr>
 <tr><td>foot PD 오차</td><td><b>raw각</b> — 게인 2배 검증 + 케이스 A, <b>독립 근거 둘</b></td></tr>
 <tr><td>MJCF</td><td><code>&lt;fixed&gt;</code> tendon, coef 1·1</td></tr></table>

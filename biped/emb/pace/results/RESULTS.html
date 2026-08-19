@@ -269,22 +269,23 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b><code>tendon</code></b>(수정)</td><td>foot −0.107</td><td>foot −0.109 · <b>calf −0.109</b> ✓</td></tr></table>
 <p>무릎이 돌면 발목 모터 마찰이 <b>calf 에도 반력을 줘야</b> 하는데 종전 배치는 0 이었다. 반대로 calf 가 돌아 foot 관절이 반대로 도는데 raw 는 그대로일 때(모터는 안 도는데) 모델이 마찰을 물었다 — <b>없는 소산을 넣은 것</b>이다.</p>
 <p class="warn">⚠<b>축별(<code>--solo</code>) 측정에서는 차이가 없다</b> — 타축 고정이라 <code>q̇_calf = 0</code> 이고 raw각 = 관절각이다. 그래서 여태 안 드러났다. armature 와 <b>똑같은 사연</b>이다.</p>
-<p>#### 결과 — 적합 전 씨앗값에서 이미 갈렸다</p>
+<p>#### 결과 — <b>통제실험</b>으로 가렸다 (같은 코드 <code>402a805f</code> · <code>--loss-space</code> 만 다름)</p>
 <table>
-<tr><th></th><th><code>fit_v9</code>(joint)</th><th><b><code>fit_A</code>(tendon)</b></th><th></th></tr>
-<tr><td>초기값 RMS</td><td class="n">0.5626</td><td><b>0.3811</b></td><td class="n">−32% (적합 전)</td></tr>
-<tr><td>적합 RMS</td><td class="n">0.4173</td><td><b>0.2802</b></td><td><b>−33%</b></td></tr>
-<tr><td>따로 뺀 구간</td><td class="n">0.4479</td><td><b>0.3039</b></td><td class="n">−32%</td></tr>
-<tr><td><b>게인 2배 검증</b></td><td><b>0.2502</b></td><td><b>0.1874</b></td><td><b>−25%</b></td></tr></table>
+<tr><th></th><th><b>A <code>tendon</code></b></th><th>B <code>joint</code>(통제군)</th><th></th></tr>
+<tr><td>초기값 RMS</td><td><b>0.3811</b></td><td class="n">0.5626</td><td class="n">−32% (<b>적합 전에 이미</b>)</td></tr>
+<tr><td>적합 RMS</td><td><b>0.2802</b></td><td class="n">0.4173</td><td><b>−32.9%</b></td></tr>
+<tr><td>따로 뺀 구간</td><td><b>0.3039</b></td><td class="n">0.4481</td><td class="n">−32.2%</td></tr>
+<tr><td><b>게인 2배 검증</b></td><td><b>0.1874</b></td><td class="n">0.2516</td><td><b>−25.5%</b></td></tr></table>
+<p class="warn">★<b>B 가 <code>fit_v9</code> 을 소수 4자리까지 재현한다</b>(0.4173/0.4481 vs 0.4173/0.4479). 코드 버전 사이에 바뀐 것이 손실공간뿐이라는 뜻이라 비교가 오염되지 않았다. ⇒ A 가 <b>네 지표 전부</b>에서 이긴다. 구조 선택은 <b>미지 게인 검증</b>으로 가려야 한다는 원칙(§5 '제어공간')을 그대로 따랐다.</p>
 <p>#### ★그리고 마찰이 <b>독립 실측과 맞아졌다</b> — 이게 진짜 근거다</p>
 <table>
-<tr><th><code>JFRIC</code></th><th><code>fit_v9</code></th><th><b><code>fit_A</code></b></th><th>각축 스윕 실측</th><th>차</th></tr>
-<tr><td>thigh(커플 없음)</td><td class="n">0.603 (65%)</td><td class="n">0.6036 (65%)</td><td class="n">0.670</td><td><b>−9.9%</b></td></tr>
-<tr><td><b>calf</b>(커플)</td><td class="n">0.537 (31%)</td><td><b>0.8714</b> (61%)</td><td class="n">1.001</td><td><b>−13.0%</b></td></tr>
-<tr><td><b>foot</b>(커플)</td><td class="n">0.197 (12%, <b>벽 근처</b>)</td><td><b>0.6387</b> (63%)</td><td class="n">0.745</td><td><b>−14.3%</b></td></tr></table>
+<tr><th><code>JFRIC</code></th><th>B <code>joint</code></th><th><b>A <code>tendon</code></b></th><th>각축 스윕 실측</th><th>차</th></tr>
+<tr><td>thigh(커플 없음)</td><td class="n">0.6045 (65%)</td><td class="n">0.6036 (65%)</td><td class="n">0.670</td><td><b>−9.9%</b></td></tr>
+<tr><td><b>calf</b>(커플)</td><td class="n">0.5359 (31%)</td><td><b>0.8714</b> (61%)</td><td class="n">1.001</td><td><b>−13.0%</b></td></tr>
+<tr><td><b>foot</b>(커플)</td><td class="n">0.1976 (12%, <b>벽 근처</b>)</td><td><b>0.6387</b> (63%)</td><td class="n">0.745</td><td><b>−14.3%</b></td></tr></table>
 <p>세 축이 전부 <b>−10~−14%</b> 로 모였다. 축마다 제각각이던 것이 <b>하나의 계통 편차</b>가 됐고, 크기·방향이 Stribeck(유한속도 실측이 τ_c 를 과대평가)과 맞는다. 탐색범위 벽에 붙은 값도 하나도 없다(61~65%).</p>
 <p>⇒ <b>"<code>JFRIC.calf</code> 가 스윕 대비 −46%" 라는 미해결 항목이 이걸로 풀렸다</b> (−46% → −13%).   원인은 calf 가 아니라 <b>foot 의 손실이 잘못된 좌표에 있던 것</b>이었다.</p>
-<p class="warn">⚠<code>--loss-space joint</code> 로 통제군을 돌릴 수 있다(파일명이 자동으로 갈린다).   <code>fit_v9</code> 이 사실상 그 통제군이다 — 코드 해시 <code>8cb78db3</code> 은 이 수정 이전이다.</p>
+<p class="warn">⚠<b>"모였다" 의 기준은 각축 스윕 실측</b>이다(<code>spec.yaml</code> 의 <code>friction.measured_coulomb_ch</code> × <code>gear_k</code>). PACE 와 <b>완전히 독립적인 측정</b>이다 — 다른 시험(등속 스윕)·다른 자료· 다른 계산 경로다. 수정 전 산포는 −10~<b>−68%</b> 였고 지금은 −10~−14% 다. ⚠<b>−12% 를 "Stribeck 이다" 로 확정하면 안 된다.</b> Stribeck 크기를 직접 잰 적이 없다 (<code>f_start</code> 를 낮춘 수집이 필요하다). 지금 확인된 것은 <b>"세 축이 같은 편차를 보인다"</b> 까지다 — 다른 계통 원인(스윕의 중력보정 잔차 등)도 같은 모양을 낼 수 있다.</p>
 <h2>2. CAD 가 얼마나 안 맞나 (축별)</h2>
 <p>실측 관성 vs <b>그 자세의 다물체 예측</b>.</p>
 <table>

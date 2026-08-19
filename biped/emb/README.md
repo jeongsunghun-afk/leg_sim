@@ -7,6 +7,87 @@ biped **모델기반 제어기(MPC+WBIC)** 를 RGA `RobotSharedMem`(Gait) 실모
 > 모델기반 Stand/Walk 는 배선 완료(`control/model_ctrl.py`) — jog 로 부호·오프셋·한계 확정 후 실행.
 > 언어=Python 우선(검증된 컨트롤러·루프·GUI 재사용). RT 부족 시 C++ 이관(`RobotTestGait` 골격 참조).
 
+## 입출력 인자 — **md80 ↔ MCU ↔ Emb ↔ 우리** 파이프라인
+
+각 경계에서 **무엇이 어떤 단위·좌표로 오가는지**가 이 프로젝트가 반복해서 걸린 지점이다.
+같은 "각도" 가 단계마다 뜻이 다르다.
+
+### 층위와 경계
+
+```
+ 우리 (Python/C++)        모델각 q_joint  [deg]   ← MJCF 관절각
+    │  joint_map.q_joint_to_ch          ★커플링 되먹임 + 부호·감속비 + offset
+    ▼
+ 채널각 q_ch [deg]  ─ SHM(MotGeneral_t, **float16**) ─▶  RobotEmbedded (1 kHz 폴링)
+                                                          │  EtherCAT 사이클
+                                                          ▼
+                                                        MCU  ─ FDCAN ─▶  **md80 드라이버**
+                                                                          (MIT 임피던스 모드)
+ ◀───────────────  역경로로 같은 필드가 돌아온다  ───────────────
+```
+
+왕복지연 **8.39 ± 0.79 ms** (직접 실측 — `act_measure_latency.py`).
+
+### 쓰기 — `bridge_write_mit(q_des_deg, dq_des_dps, tau_ff_nm, kp, kd, n)`
+
+채널마다 `MotGeneral_t` 하나를 채워 `RobotMemGait_SetMotorCommand16` 으로 넣는다.
+
+| SHM 필드 | 넣는 값 | 단위 | 비고 |
+|---|---|---|---|
+| `ucDevID` | 채널 index | — | 0~9 |
+| `ucMode` | **1** | — | MIT/임피던스 고정 |
+| `fPosition` | `q_des` | **채널 deg** | `enable=0` 이면 마지막 값 유지 |
+| `fVelocity` | `dq_des` | 채널 dps | 안 주면 0 |
+| `fTorque` | `tau_ff` | **Nm(채널)** | 감속기 **전** |
+| `fGainKp` / `fGainKd` | 게인 | 채널 | `enable=0` 이면 **0 = limp** |
+| `fGainKi` | 0 | — | 미사용 |
+
+⚠**전부 `float16` 이다.** 분해능이 값 크기에 비례한다:
+
+| 값 | 격자 |
+|---|---|
+| 각도 100° | **0.0625°** |
+| 각도 180° | 0.125° |
+| 토크 20 Nm | 0.0156 Nm |
+| 게인 100 | 0.0625 |
+
+⇒ 발목 마찰 데드밴드가 0.85° 인 것에 비하면 각도 격자는 문제가 아니다. 다만
+**0.0625° 미만의 명령 변화는 전달되지 않는다** — 미세 보정을 설계할 때 하한이다.
+
+### 읽기 — `bridge_read(q_deg, dq_dps, tau_nm, cur_a, rpy, acc, gyro, conn, stt)`
+
+| | 단위 | 비고 |
+|---|---|---|
+| `q` / `dq` | **채널 deg / dps** | 드라이버가 보고하는 값 |
+| `tau` | **Nm(채널)** | 감속기 전 |
+| `cur` | A | |
+| `rpy` / `acc` / `gyro` | deg / — / — | ⚠**전부 0 이다** — `IMU_RECOVERY.md` 참조(미해결) |
+| `conn` / `stt` | int | ⚠ 래치오프를 **안 알려준다**(정상값 그대로) |
+
+### ★각도 좌표가 셋이다 — 헷갈리면 반드시 틀린다
+
+| 좌표 | 정의 | 어디서 쓰나 |
+|---|---|---|
+| **모델각** `q_joint` | MJCF 관절각 | 제어기·시뮬 |
+| **raw각** `q_raw` | `q_foot + coef·q_calf` (발목만) | **엔코더가 실제로 재는 값** |
+| **채널각** `q_ch` | `sign·gear_k·q_raw + offset` | SHM·드라이버 |
+
+```
+쓰기:  q_joint ──커플링 되먹임──▶ q_raw ──sign·gear_k, offset──▶ q_ch ──▶ SHM
+읽기:  SHM ──▶ q_ch ──역변환──▶ q_raw ──커플링 풀기──▶ q_joint
+```
+
+⚠**`gear_k` 는 감속비가 아니다.** 드라이버가 전 축을 7:1 로 착각해서 생긴 **배율**이다
+(`calf` 1.5 = 10.5/7 · `foot` 1.2 = 8.4/7). 실제 감속비는 `N = 7·gear_k`.
+⚠**`coef` 는 그것과 무관한 링키지 커플링**이다(값 1.0, 경사계로 실측 확정).
+원인이 다른 둘이 같은 두 축(calf·foot)에 겹쳐 있어 특히 헷갈린다.
+⚠쓰기 마지막에 채널각을 **±180 으로 포화**시킨다 — Emb 가 초과분을 클램프가 아니라
+**래핑**하므로(`halGait.cpp:666-671`) 181° 가 −179° 로 뒤집혀 반대편으로 날아간다.
+
+상세는 `emb/RL_INTERFACE.md`(각도규약 전문) · `emb/pace/RESULTS.md` §1-b(커플링과 손실 좌표).
+
+---
+
 ## 데이터 흐름
 ```
 RobotSharedMem(모터·IMU)                          GUI(teleop_emb)

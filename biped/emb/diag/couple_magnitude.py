@@ -176,16 +176,18 @@ def main() -> int:
         print(f"  ⇒ 발목이 무릎을 따라간다. c=1 이면 Δtilt = {a.k:g}+1−1 = "
               f"{a.k:g}×Δq_calf 만큼 돈다")
 
+    sf, g = spec["safety"], spec["gains"]
+    box = at._ch_limit_box(spec, pin_home=True)
+    lo_f, hi_f = box[fi]
+
     # 홀드: 시험 다리의 calf 만 자유. 나머지 전부(반대다리 · hip · thigh)를 잡는다.
     #   ★thigh 를 반드시 잡아야 한다 — 절대각 관계가 "대퇴 고정" 을 전제한다.
     # ★관절이 정의된 채널만 잡는다. spec.shm.n_channel 은 **10** 인데 관절은 8 이다
     #   (ch8·9 는 미사용). range(n_ch) 로 잡으면 _ch_limit_box 에 없어 KeyError 다.
     #   미사용 채널은 kp=kd=0 으로 두는 게 맞다 — 잡을 것이 없다.
+    #   ⚠box 를 쓰므로 **box 정의 뒤**에 와야 한다(2026-08-14 NameError 로 한 번 터졌다).
     hold = tuple(c for c in range(min(n_ch, len(jm.names)))
                  if c not in (ci, fi) and c in box)
-    sf, g = spec["safety"], spec["gains"]
-    box = at._ch_limit_box(spec, pin_home=True)
-    lo_f, hi_f = box[fi]
     lim = hwio.Limits(q_min=lo_f, q_max=hi_f,
                       tau_trip=float(sf["tau_trip_nm"]), tau_trip_ms=float(sf["tau_trip_ms"]),
                       vel_trip=float(sf["vel_trip_dps"]), err_max=float(sf["err_max_deg"]),
@@ -251,11 +253,11 @@ def main() -> int:
                               f" **넘었다 — 여기부터 무효**다. 되돌리거나 다시 시작할 것.")
                     clipped[0] = True
                 s = hw.step(fi, q_cmd, kp, kd)
-                trace.append((time.monotonic() - t0, q_ch_calf, s.q, q_cmd, s.tau))
+                trace.append((time.monotonic() - t0, q_ch_calf, s.q_deg, q_cmd, s.tau))
                 if len(trace) % 200 == 0:
                     print(f"\r  무릎 ch {q_ch_calf:+7.2f}° (관절 {q_ch_calf/s_calf:+7.2f}°)"
                           f" · 스윙 {(max(x[1] for x in trace)-min(x[1] for x in trace)):6.2f}°"
-                          f" · 발목 {s.q:+7.2f}° τ {s.tau:+5.2f}  ", end="", flush=True)
+                          f" · 발목 {s.q_deg:+7.2f}° τ {s.tau:+5.2f}  ", end="", flush=True)
         except KeyboardInterrupt:
             print("\n  ── 정지 ──")
         except hwio.SafetyAbort as e:
@@ -267,8 +269,8 @@ def main() -> int:
             aborted[0] = True
         thigh_drift = {c: float(hw._q[c]) - thigh0[c] for c in thigh_ch}
 
-    if len(trace) < 50:
-        print("✗ 표본이 너무 적다"); return 1
+    if not trace:
+        print("✗ 표본이 하나도 없다 — arm 직후에 끝났다"); return 1
     T = np.array(trace, float)
     qc = T[:, 1]
     i_lo, i_hi = int(np.argmin(qc)), int(np.argmax(qc))
@@ -282,12 +284,32 @@ def main() -> int:
              tau_foot=T[:, 4], k=a.k, ratio=ratio, s_calf=s_calf, s_foot=s_foot,
              leg=a.leg, span_ch=span_ch, span_joint=span_j, clipped=clipped[0])
 
+    if len(T) < 50:
+        # ★저장 뒤에 판정한다 (2026-08-14). 종전엔 여기서 바로 return 이라
+        #   **왜 일찍 끝났는지 볼 자료가 사라졌다.** 조기 트립은 원인 규명이 전부다.
+        print(f"\n  ✗ 표본이 {len(T)}개뿐이다(≥50 필요) — 시작 직후 끝났다.")
+        print(f"     추적은 저장했다: {out}")
+        if aborted[0]:
+            print("     안전트립이 원인이다. 위 트립 메시지를 볼 것.")
+        if clipped[0]:
+            print(f"     발목 명령이 상자 [{lo_f:.1f},{hi_f:.1f}] 를 넘었다 —"
+                  f" k={a.k:g} 이면 무릎 스윙이 발목 명령을 끌고 간다. --k 0 은 안 그렇다.")
+        return 1
+
     print(f"\n■ 무릎 스윙 — 채널 {span_ch:+.2f}° = **관절 {span_j:+.2f}°**")
     print(f"  (양 끝: ch {qc[i_lo]:+.2f}° @ t={T[i_lo,0]:.1f}s  ↔  "
           f"{qc[i_hi]:+.2f}° @ t={T[i_hi,0]:.1f}s)")
     print(f"  ✓ 저장: {out}")
 
     bad = False
+    # ★스윙이 0 이면 여기서 멈춘다 (2026-08-14). 종전엔 아래 0.5/|span| 에서
+    #   ZeroDivisionError 로 터졌다 — "무릎을 안 움직였다" 는 **사용자 실수**인데
+    #   추적(traceback)이 뜨면 코드 고장으로 읽힌다. 원인을 그대로 말해 준다.
+    if abs(span_j) < 1e-6:
+        print("\n  ✗ 무릎이 움직이지 않았다 — 스윙 0°. 측정이 성립하지 않는다.")
+        print("     ch{} 가 자유인지 확인하고, 무릎을 손으로 양 끝까지 옮긴 뒤"
+              " Ctrl-C 할 것.".format(ci))
+        return 1
     if abs(span_j) < a.min_span:
         print(f"  ⚠스윙이 {abs(span_j):.1f}° 로 작다(권장 ≥{a.min_span:.0f}°). "
               f"경사계 0.5° 오차가 Δc {0.5/abs(span_j):.3f} 로 번진다")

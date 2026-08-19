@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import ctypes as C
 import os
+import io
+import contextlib
 import sys
 
 import numpy as np
@@ -713,13 +715,81 @@ def t_coef_plumbing():
           f"최대차 {np.max(np.abs(np.asarray(mj.wrap_prm) - w0)):.3e}")
 
 
+def t_couple_magnitude_e2e():
+    """★diag/couple_magnitude.py 의 main() 을 **끝까지** 돌린다 (2026-08-14 신설).
+
+    왜 이게 필요했나 — 이 스크립트가 실기에서 **네 번 연속** 터졌고 매번 한 줄씩만
+    나아갔다: hold_kp dict → n_channel(10) vs 관절(8) → box 정의 순서 → …
+    형식오류 하나 고치고 사용자가 로봇 앞에서 다시 돌리는 왕복이 네 번이다.
+    스텁 플랜트가 이미 있는데 안 쓴 것이 문제였다. 여기서 한 번에 다 잡는다.
+
+    ⚠물리 검증이 아니다. **코드경로가 끝까지 도는지**만 본다(이 파일의 다른 시험과 같다).
+    """
+    import ctypes as C
+    import builtins
+    import importlib
+
+    spec = yaml.safe_load(open(os.path.join(PACE, "spec.yaml"), encoding="utf-8"))
+    n = int(spec["shm"]["n_channel"])
+    home, jm = _home_targets()
+    fake = FakeLib(n, q_init=list(home) + [0.0] * (n - len(home)), dt=1 / 500.)
+
+    sys.path.insert(0, os.path.join(os.path.dirname(PACE), "diag"))
+    cm = importlib.import_module("couple_magnitude")
+
+    import hwio
+    real_cdll, real_step, real_argv, real_input = C.CDLL, hwio.Hardware.step, sys.argv, builtins.input
+    calls = [0]
+
+    def counting_step(self, ch, q_cmd_deg, kp, kd, tau_ff=None):
+        calls[0] += 1
+        if calls[0] > 120:                       # 손으로 Ctrl-C 친 것과 같은 자리
+            raise KeyboardInterrupt
+        # ★무릎(ch2)을 손으로 미는 것을 흉내낸다. 자유축이라 스텁 플랜트는 안 움직이고,
+        #   스윙이 0 이면 분석 경로(스윙폭·예측표·c 계산)를 아예 못 밟는다.
+        fake.q[2] += 0.15                        # 120스텝 → 채널 18° = 관절 12°
+        #   ⚠k=1 이면 발목 명령이 0.8배로 따라간다 — 상자를 넘지 않을 만큼만 민다
+        return real_step(self, ch, q_cmd_deg, kp, kd, tau_ff)
+
+    ok, why = True, ""
+    for _k in (0.0, 1.0):                        # 영점시험 · 눈금 둘 다
+        calls[0] = 0
+        C.CDLL = lambda path: fake
+        hwio.Hardware.step = counting_step
+        sys.argv = ["couple_magnitude.py", "--leg", "HL", "--k", str(_k)]
+        builtins.input = lambda *_a, **_kw: ""    # 경사계 입력은 건너뛴다
+        _out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(_out):
+                rc = cm.main()
+            if rc != 0:
+                ok, why = False, f"k={_k:g} 반환 {rc}\n{_out.getvalue()[-400:]}"
+        except Exception as e:                    # noqa: BLE001 — 무엇이든 잡아서 보고
+            ok, why = False, f"k={_k:g} {type(e).__name__}: {e}"
+        finally:
+            C.CDLL, hwio.Hardware.step = real_cdll, real_step
+            sys.argv, builtins.input = real_argv, real_input
+        if not ok:
+            break
+        _t = _out.getvalue()
+        for _need in ("홀드 ch", "발목 홀드게인", "무릎 스윙", "발목 추종오차"):
+            if _need not in _t:
+                ok, why = False, f"k={_k:g} 출력에 '{_need}' 가 없다"
+                break
+        if not ok:
+            break
+
+    check("couple_magnitude main() 왕복(k=0·1)", ok, why or "두 판 다 끝까지 돈다")
+
+
 if __name__ == "__main__":
     print("=" * 66)
     print("hwio 오프라인 스모크 — 스텁 SHM 위에서 실행경로를 끝까지 밟는다")
     print("=" * 66)
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
-               t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing):
+               t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing,
+               t_couple_magnitude_e2e):
         try:
             fn()
         except Exception as e:

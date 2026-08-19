@@ -74,7 +74,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
 <tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>경사계 실측</b> — 무릎 80.5° 훑어 발바닥 절대각 불변</td><td class="ok">✅ <b>c = 1 확정</b> (오차 ≲ 4%)</td></tr>
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
-<p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(<b>§4-1</b> 재수집 또는 <b>§4-1-b</b> 일정속도 시험).</p>
+<p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(§5 '재수집' · '일정속도 시험').</p>
 <p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
 <h3>★<code>b</code> 는 왜 안 잡히나 — <b>찾으려는 값이 없다</b> (2026-08-14)</h3>
 <p>일정속도 스윕은 <code>q̈ = 0</code> 이라 관성이 사라진다. 그러면 <code>f(q̇) = τ_c + b·q̇</code> 이고 <b>기울기가 곧 <code>b</code></b> 다. 저장된 스윕 자료(<code>results/sweep_ch*.npz</code>)를 전 축에 대해 풀었다:</p>
@@ -140,7 +140,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b><code>T_d</code> 8.39±0.79 ms</b></td><td>왕복지연 직접 실측</td><td><b>③ 경계를 좁힘</b></td></tr></table>
 <p><b>⚠각축도 만능이 아니다:</b></p>
 <p>- <b><code>thigh</code> 관성은 원리적으로 못 잰다.</b> <code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다   (주기 0.90 s). 런이 0.21~0.48 s 로 <b>주기의 39%</b> 라, <code>M⁻¹</code> 예측이 전제하는 t→0 극한이   깨진다. 자유(0.189)와 고정(0.221) <b>사이 어디도 아닌 값</b>이 나온다 → CAD 를 쓴다.</p>
-<p>- <b>중력이 큰 축이 오염된다.</b> hip \|τ_g\| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데   시험은 ±53° 를 훑어 잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다.   ⇒ 남은 미해결이 전부 여기로 모인다(§4-3).</p>
+<p>- <b>중력이 큰 축이 오염된다.</b> hip \|τ_g\| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데   시험은 ±53° 를 훑어 잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다.   ⇒ 남은 미해결이 전부 여기로 모인다(§5).</p>
 <h3>그래서 최종값은 <b>출처가 셋으로 갈린다</b></h3>
 <pre>  각축 직접측정 (--solo)
         │   초기값(출발점) 과 탐색범위(허용 범위) 를 준다
@@ -202,7 +202,7 @@ pre code{border:0;background:none;padding:0}
 <p class="warn">★<b>뜻밖의 확인</b> — 지연을 실측에 묶자 <code>JFRIC.thigh</code> 가 0.498 → <b>0.603</b> 으로 올라 각축 스윕 실측(0.670) 대비 −26% → <b>−10%</b> 가 됐다. 물리값에 묶으니 마찰도 물리값 쪽으로 왔다. <code>fit_v9</code> 이 더 물리적인 적합이라는 <b>독립 근거</b>다.</p>
 <p>⇒ <b>지연 재실측은 불필요하다.</b> 지연 정밀도가 필요한 건 <code>JDAMP</code> 식별인데, 그건 이제 전부 다른 근거로 정해졌다(스윕 기울기 · 각축 실측 · hip 은 방법 없음 확정).</p>
 <p class="warn">★<code>damping.thigh</code> = <b>0 (잠정)</b> — 스윕이 Stribeck 최저점 <b>아래</b>(≤40dps)까지만 갔다(§0 ★). 음이 아닌 값 중 최선이지만 80~120dps 에서 올라갈 수 있다. ⚠<code>frictionloss.thigh</code> 는 <code>fit_v8</code>(thigh 도 0 고정)로 다시 정해야 한다 — 지금 0.592 는 <code>b</code> 가 자유였던 판의 값이다.</p>
-<h3>네 번의 적합에서 얼마나 흔들렸나</h3>
+<h3>적합 열 판에서 얼마나 흔들렸나</h3>
 <table>
 <tr><th>값</th><th>v2</th><th>v3</th><th>v4</th><th>v5</th><th>v6</th><th>산포</th><th>읽는 법</th></tr>
 <tr><td><code>JFRIC.calf</code></td><td class="n">0.572</td><td class="n">0.586</td><td class="n">0.573</td><td class="n">0.573</td><td class="n">0.572</td><td><b>2%</b></td><td class="ok">✅ 확정</td></tr>
@@ -229,7 +229,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td class="n">0.77 rad/s (시험)</td><td class="n">0.122 Nm</td><td class="n">19%</td></tr>
 <tr><td class="n">1.55 (×2)</td><td class="n">0.244 Nm</td><td><b>38%</b></td></tr>
 <tr><td class="n">2.32 (×3)</td><td class="n">0.366 Nm</td><td><b>57%</b></td></tr></table>
-<p>지금 게인·속도에서는 아무 쌍이나 써도 되지만, <b>더 빨리 걸으면 달라진다.</b> §4-1 재수집(진폭 확대 = 속도 확대)이 1순위인 이유가 이것이다 — 속도를 넓히면 이 직선 위의 어느 점인지가 정해진다.</p>
+<p>지금 게인·속도에서는 아무 쌍이나 써도 되지만, <b>더 빨리 걸으면 달라진다.</b> §5 '재수집'(진폭 확대 = 속도 확대)이 1순위인 이유가 이것이다 — 속도를 넓히면 이 직선 위의 어느 점인지가 정해진다.</p>
 <p class="warn">★ = 그 판에서 탐색범위 끝에 붙어 있었다(그 값은 "찾은 값" 이 아니다).</p>
 <p>⇒ <b><code>JDAMP.thigh</code> 가 2배로 흔들리는 동안 <code>JFRIC.thigh</code> 는 11% 안이다.</b> 둘의 합만 정해지고 나눔이 안 된다 — 한계 ①(r=+0.93)이 thigh 에서 그대로 살아 있다.</p>
 <p>⇒ <b><code>JDAMP.calf</code> 는 반대다.</b> 하한을 0.009→0.0018 로 5배 내려도 계속 바닥을 따라 내려갔는데(0.0097→0.0035→0.0021), 짝인 <code>JFRIC.calf</code> 는 <b>2% 도 안 움직였다.</b> 맞바꿈이면 짝이 같이 움직여야 한다. 안 움직인다 ⇒ <b>calf 점성감쇠는 정말 0 이다.</b> 탐색범위 인공물이 아니라 결과다.</p>
@@ -253,7 +253,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><code>frictionloss.thigh</code> 0.603</td><td>PACE(<code>fit_v9</code>) — 스윕 실측 0.670 대비 <b>−10%</b></td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>frictionloss.foot</code> 0.241</td><td><b>옛 자료</b> v5·v6 (자유인 두 판)</td><td><b>±0.4%</b></td><td class="ok">✅ 좋다 ◆</td></tr>
 <tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
-<tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§4-3)</td></tr>
+<tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§5)</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
 <p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
 <h2>2. CAD 가 얼마나 안 맞나 (축별)</h2>
@@ -283,63 +283,21 @@ pre code{border:0;background:none;padding:0}
 <tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.5 Hz</td><td class="n">0.94</td><td class="ok">✅ 약간 과감쇠</td></tr></table>
 <p>foot 만 ζ 0.94 로 조금 높다. 굳이 맞추려면 <b>kd 2.0 → 1.5</b>. 급하지 않다.</p>
 <p>시험용 게인은 별도다 — 식별 처프는 kp 를 낮추고(궤적이 명령에 붙으면 파라미터 정보가 사라진다), 홈복귀는 배포 게인을 쓴다.</p>
-<h2>4. 더 해야 할 시험</h2>
+<h2>4. 남은 것 — <b>셋뿐이다</b></h2>
+<p>식별은 닫혔다. 세 조건(따로 뺀 구간 0.448 · 게인 2배 0.250 · 다른 궤적 0.411)에서 전부 일반화된다. 아래는 <b>값이 비어 있거나 설명이 안 되는 것</b>이지 정확도를 막는 것이 아니다.</p>
 <table>
-<tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td>순위</td><td>무엇</td><td>어디서</td><td>비용</td><td>얻는 것</td></tr>
-<tr><td><b>1</b></td><td>검증 강화 — 다른 궤적으로 한 번 더</td><td>실기</td><td class="n">30분</td><td>지금 검증은 <b>게인만</b> 바꿨다</td></tr>
-<tr><td class="n">2</td><td><code>JFRIC.calf</code> 가 스윕 대비 −46% 인 이유</td><td>오프라인</td><td class="n">—</td><td>유일하게 큰 불일치</td></tr>
-<tr><td class="n">—</td><td>~~thigh 관성~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>t_ref→0 외삽으로 +6.1%</b></td></tr>
-<tr><td class="n">—</td><td>~~<code>delay</code> 재실측~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>불필요</b> — 실측 고정으로 충분</td></tr>
-<tr><td class="n">—</td><td>~~<code>damping.hip</code>~~</td><td class="n">—</td><td class="n">—</td><td class="no">❌ <b>방법 없음 확정</b> → 도메인 랜덤화</td></tr></table>
-<p>✅<b><code>JDAMP.thigh = 0</code> 은 <code>fit_v8</code> 로 확정됐다</b> — 검증 RMS 0.2497 로 자유였을 때 (0.2490 / 0.2494)와 0.3% 안에서 같다. 자유차원 13 → <b>12</b>.</p>
-<p>⇒ 끝난 시험은 <b>§5</b> 에 결론만 남긴다. ⚠<b>hip 만 방법이 없다.</b> 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻어 기울기를   못 낸다. §4-2(중력 최소자세)가 그 축의 유일한 길이다.</p>
-<p class="warn">⚠<b>thigh 의 0 은 잠정이다.</b> 확정하려면 스윕을 <b>80~120 dps</b> 로 올려야 하고   (calf 가 그 속도에서 평탄함을 보여 답이 나왔다), 그러려면 스트로크가 40°→56° 쯤   필요하다. 44° 에서 간섭 전례가 있으니 <b>육안 확인이 먼저</b>다. 우선순위는 낮다 —   지금 게인·속도에서는 어느 값이든 검증 RMS 가 같다(0.249).</p>
-<h3>1. ~~재수집(진폭·주파수)~~ — <b>수집 성공. 그러나 <code>b</code> 는 여전히 안 잡힌다</b></h3>
-<p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
-<p><b>① 지금 자료는 <code>--f-scale 0.4</code> 예비주행이다.</b> 파일명 <code>pace_multichirp_f0.4_dqfix</code> 의</p>
-<p><code>f0.4</code> 가 그것이다(도움말: *"첫 주행은 0.4~0.6 으로 예비주행할 것"*).</p>
-<p><code>f_end</code> 가 설계값 1.30 Hz 가 아니라 <b>0.52 Hz</b> 이고, thigh 피크속도가 <b>55 dps</b> 로 속도상한 200 의 <b>27%</b> 뿐이다. 진폭을 늘리기 전에 <b>설계 주파수를 쓰는 것</b>이 먼저다.</p>
-<table>
-<tr><th>구간</th><th>f [Hz]</th><th>명령 A</th><th>실측 A</th><th>추종</th><th>실측 q̇ 95%</th></tr>
-<tr><td class="n">0~5s</td><td class="n">0.20</td><td class="n">14.9°</td><td class="n">12.3°</td><td class="n">0.83</td><td class="n">23 dps</td></tr>
-<tr><td class="n">12~17s</td><td class="n">0.34</td><td class="n">18.0°</td><td class="n">15.4°</td><td class="n">0.86</td><td class="n">36 dps</td></tr>
-<tr><td class="n">25~30s</td><td class="n">0.49</td><td class="n">18.0°</td><td class="n">15.9°</td><td class="n">0.88</td><td class="n">51 dps</td></tr></table>
-<p><b>② 막고 있는 건 thigh 가 아니라 foot 채널이다.</b> <code>--f-scale 1.0</code> 에서 <b>foot 채널 277 dps</b> 로 상한 200 을 넘는다 — calf 커플링 때문에 모델각(115)의 <b>2.4배</b>다 (<code>q_ch_foot = (q_foot + q_calf)·s·k</code>). thigh 는 138 dps 로 여유가 있다.</p>
-<p>⇒ <b><code>calf</code>·<code>foot</code> 은 이미 ✅ 확정이니 그쪽 속도예산을 <code>thigh</code> 로 넘긴다.</b></p>
-<p>#### 바꿀 두 줄 (<code>spec.yaml</code> 의 <code>pace_multi</code>)</p>
-<pre>  amp_deg: [5, 20, 9, 7, 5, 20, 9, 7]
-  f_end_hz:   [1.80, 1.25, 0.90, 0.95, 1.85, 1.30, 0.95, 1.00]</pre>
-<table>
-<tr><th>축</th><th><code>amp</code></th><th><code>f_end</code></th><th>채널속도</th><th>근거</th></tr>
-<tr><td>hip</td><td class="n">5 (그대로)</td><td class="n">1.80 (그대로)</td><td class="n">53</td><td>자기충돌 상한 — 손대지 않는다</td></tr>
-<tr><td><b>thigh</b></td><td class="n">18 → <b>20</b></td><td class="n">1.30 → <b>1.25</b></td><td class="n">138 → <b>148</b></td><td>목표 축</td></tr>
-<tr><td>calf</td><td class="n">16 → <b>9</b></td><td class="n">1.40 → <b>0.90</b></td><td class="n">197 → <b>72</b></td><td>확정됨 — 예산 양보</td></tr>
-<tr><td>foot</td><td class="n">13 → <b>7</b></td><td class="n">1.50 → <b>0.95</b></td><td class="n">277 ★ → <b>70</b></td><td>확정됨 — 상한 초과 해소</td></tr></table>
-<p><code>--dry</code> 검증: 최대 <b>148 dps · 여유 26%</b> · 축간 상관 0.264 → <b>0.177</b>(개선).</p>
-<p class="warn">⚠<b>2026-08-14 결과 — 수집은 성공했지만 목적은 달성 못 했다.</b> thigh 피크속도가 55 → 148 dps (실측 95% 기준 44.9 → 114.8, <b>2.6배</b>)로 올랐고 30초 두 셋(식별·검증)을 다 받았다. 그런데 같은 자료로 두 번 적합하니:</p>
-<table>
-<tr><th></th><th><code>fit_v7</code></th><th><code>fit_v7b</code></th><th></th></tr>
-<tr><td>적합 RMS</td><td class="n">0.4178</td><td class="n">0.4106</td><td class="n">1.7% 차</td></tr>
-<tr><td>검증(게인 2배)</td><td class="n">0.2494</td><td class="n">0.2490</td><td><b>0.2% 차</b></td></tr>
-<tr><td><code>JDAMP.thigh</code></td><td class="n">0.0701</td><td class="n">0.0110</td><td><b>6.4배 차</b></td></tr>
-<tr><td><code>delay</code></td><td class="n">7.83</td><td class="n">9.64</td><td class="n">3자 맞바꿈</td></tr></table>
-<p>씨앗만 다른데 파라미터가 6.4배 갈리고 RMS 는 1.7% 밖에 안 갈린다. ⇒ <b>속도로는 안 된다.</b> 이유는 §0 ★ — 애초에 맞는 <code>b</code> 가 없다. ⇒ 처프는 속도를 올리면 가속도가 <b>제곱으로</b> 따라와, 점성/관성 비가 5% → <b>3.6%</b> 로   오히려 나빠졌다. 이 방향으로는 더 갈 데가 없다.</p>
-<p class="warn">★그래도 자료는 값을 했다 — 검증 RMS 0.249 는 종전과 같고, <code>q̇</code> 범위가 2.6배 넓어져 <b>시험 속도범위가 실제 보행에 가까워졌다.</b> 외삽 폭이 준 것 자체가 이득이다.</p>
-<p class="warn">⚠<b>thigh 20° 는 근거 있는 상한이다</b> — <code>±20° = 40° pp</code> 로 각축 스윕에서 이미 검증된</p>
-<p><code>sweep.stroke_deg: 40.0</code> 과 같다. 44° 는 *"늘어진 다리가 아래쪽에서 간섭"* 전례가 있어 넘지 않는다.</p>
-<p class="warn">⚠<b>착수 전 확인</b> — <code>thigh ±20°</code> 와 <code>calf ±9°</code> 동시 스윙이 지그·바닥에 닿지 않는지 <b>눈으로</b> 볼 것. MuJoCo 는 발 구 4개만 모델링하므로 "접촉 0" 은 증거가 아니다.</p>
-<pre># ① 설계 재검사 (하드웨어 미접촉)
-python3 collect_multichirp.py --dry
-# ② 수집 — 식별셋과 검증셋 둘 다 받아야 비교가 성립한다
-python3 collect_multichirp.py --rate 400
-python3 collect_multichirp.py --rate 400 --gains validate</pre>
-<p class="warn">⚠<code>--rate 400</code> — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다. ⚠진폭이 커지면 RMS(°) 자체가 커진다. <b>데이터셋 간 RMS 비교는 정규화할 것.</b></p>
-<h3>1-b. ~~일정속도 시험~~ — <b>이미 돼 있었다. 답은 "b 가 없다"</b> (2026-08-14)</h3>
-<p>*"일정 속도로 유지하며 토크를 재면 절편이 <code>frictionloss</code> · 기울기가 <code>damping</code> 이다"* — 맞는 처방이고, 그 시험이 <b>이미 <code>--solo</code> 스윕으로 돌아 있었다.</b> 자료도 남아 있다 (<code>results/sweep_ch*.npz</code>). 나는 그걸 새로 하자고 제안할 뻔했다.</p>
-<p>결과는 §0 ★ 의 표다 — <b>기울기가 전 축에서 0 이거나 음수</b>이고 thigh 는 −0.160 이다. ⇒ 양수 <code>b</code> 가 존재하지 않는다. 다시 재도 음수가 나온다. <b>실기를 헛돌릴 뻔했다.</b></p>
-<p class="warn">★교훈: 새 시험을 설계하기 전에 <b>이미 있는 자료로 그 질문에 답할 수 있는지</b> 먼저 볼 것. 이 저장소는 각축 시험을 다 돌려 놓았고 원시 궤적까지 저장한다.</p>
-<h3>2. ~~<code>coef</code> 크기~~ — <b>측정 완료. c = 1</b> (2026-08-14)</h3>
+<tr><th></th><th>무엇</th><th>왜 막혔나</th><th>할 수 있나</th></tr>
+<tr><td>①</td><td><b><code>damping.hip</code></b> · <code>frictionloss.hip</code></td><td>상자 ±6°(자기충돌)라 스윕 속도점이 2개뿐 — 기울기를 못 낸다</td><td class="no">❌ <b>방법 없음</b> → 도메인 랜덤화</td></tr>
+<tr><td>②</td><td><b><code>JFRIC.calf</code> 가 각축 스윕 대비 −46%</b></td><td>유일하게 큰 불일치. thigh 는 −10% 로 맞는데 calf 만 안 맞는다</td><td>오프라인 분석</td></tr>
+<tr><td>③</td><td><b>HR_thigh 관성 미측정</b></td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙었으니 다음 실기에서 같이 하면 된다</td><td>실기 30분</td></tr></table>
+<p class="warn">⚠②가 가장 흥미롭다 — 같은 방법·같은 자료인데 thigh 는 맞고 calf 만 안 맞는다.</p>
+<p><code>gear_k</code> 1.5 환산이 어딘가 한 번 더 곱해지거나 빠졌을 가능성부터 볼 것.</p>
+<p class="warn">⚠<b>Stribeck 크기는 아직 안 쟀다.</b> <code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <code>f_start</code>(0.17 Hz)는 그대로라 저속 성분이 안 늘었다. 재려면 <code>f_start</code> 를 낮춘 수집이 따로 필요하다. 다만 지금 세 검증이 다 통과했으므로 <b>급하지 않다.</b></p>
+<h3>③ HR_thigh 관성 (미측정)</h3>
+<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
+<h2>5. 끝난 시험 — 결론만</h2>
+<p>여기 것들은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다 — 이 기록이 오늘만 네 번 헛된 실기를 막았다.</p>
+<h3>✓ <code>coef</code> 크기 — <b>경사계로 c = 1 확정</b></h3>
 <div class="quote"><b><code>c</code> 가 무엇인가</b> (2026-08-14 실제로 헷갈린 지점이라 여기 못박는다)</div>
 <div class="quote">```</div>
 <div class="quote">q_raw_foot = q_foot + c·q_calf        ⇔        q_foot = q_raw_foot − c·q_calf</div>
@@ -402,7 +360,51 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>다만 이번엔 주된 계통오차(발목 미끄러짐)가 <b>추종오차 기록으로 이미 배제</b>됐으므로 필수는 아니다. 더 좁은 오차한계가 필요할 때 돌리면 된다.</p>
 <pre>python3 diag/couple_magnitude.py --leg HL --k 1.0</pre>
 <p class="warn">⚠<code>k=1</code> 은 발목 명령이 무릎을 0.8배로 따라가 상자를 넘을 수 있다. 스윙을 작게 잡을 것. &lt;/details&gt;</p>
-<h3>3. ~~중력이 작은 자세~~ — <b>전제가 틀렸다. 축마다 원인이 다르다</b> (2026-08-14 정정)</h3>
+<h3>✓ 재수집(진폭·주파수) — <b>수집 성공, 그러나 <code>b</code> 는 안 잡힌다</b></h3>
+<p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
+<p><b>① 지금 자료는 <code>--f-scale 0.4</code> 예비주행이다.</b> 파일명 <code>pace_multichirp_f0.4_dqfix</code> 의</p>
+<p><code>f0.4</code> 가 그것이다(도움말: *"첫 주행은 0.4~0.6 으로 예비주행할 것"*).</p>
+<p><code>f_end</code> 가 설계값 1.30 Hz 가 아니라 <b>0.52 Hz</b> 이고, thigh 피크속도가 <b>55 dps</b> 로 속도상한 200 의 <b>27%</b> 뿐이다. 진폭을 늘리기 전에 <b>설계 주파수를 쓰는 것</b>이 먼저다.</p>
+<table>
+<tr><th>구간</th><th>f [Hz]</th><th>명령 A</th><th>실측 A</th><th>추종</th><th>실측 q̇ 95%</th></tr>
+<tr><td class="n">0~5s</td><td class="n">0.20</td><td class="n">14.9°</td><td class="n">12.3°</td><td class="n">0.83</td><td class="n">23 dps</td></tr>
+<tr><td class="n">12~17s</td><td class="n">0.34</td><td class="n">18.0°</td><td class="n">15.4°</td><td class="n">0.86</td><td class="n">36 dps</td></tr>
+<tr><td class="n">25~30s</td><td class="n">0.49</td><td class="n">18.0°</td><td class="n">15.9°</td><td class="n">0.88</td><td class="n">51 dps</td></tr></table>
+<p><b>② 막고 있는 건 thigh 가 아니라 foot 채널이다.</b> <code>--f-scale 1.0</code> 에서 <b>foot 채널 277 dps</b> 로 상한 200 을 넘는다 — calf 커플링 때문에 모델각(115)의 <b>2.4배</b>다 (<code>q_ch_foot = (q_foot + q_calf)·s·k</code>). thigh 는 138 dps 로 여유가 있다.</p>
+<p>⇒ <b><code>calf</code>·<code>foot</code> 은 이미 ✅ 확정이니 그쪽 속도예산을 <code>thigh</code> 로 넘긴다.</b></p>
+<p>#### 바꿀 두 줄 (<code>spec.yaml</code> 의 <code>pace_multi</code>)</p>
+<pre>  amp_deg: [5, 20, 9, 7, 5, 20, 9, 7]
+  f_end_hz:   [1.80, 1.25, 0.90, 0.95, 1.85, 1.30, 0.95, 1.00]</pre>
+<table>
+<tr><th>축</th><th><code>amp</code></th><th><code>f_end</code></th><th>채널속도</th><th>근거</th></tr>
+<tr><td>hip</td><td class="n">5 (그대로)</td><td class="n">1.80 (그대로)</td><td class="n">53</td><td>자기충돌 상한 — 손대지 않는다</td></tr>
+<tr><td><b>thigh</b></td><td class="n">18 → <b>20</b></td><td class="n">1.30 → <b>1.25</b></td><td class="n">138 → <b>148</b></td><td>목표 축</td></tr>
+<tr><td>calf</td><td class="n">16 → <b>9</b></td><td class="n">1.40 → <b>0.90</b></td><td class="n">197 → <b>72</b></td><td>확정됨 — 예산 양보</td></tr>
+<tr><td>foot</td><td class="n">13 → <b>7</b></td><td class="n">1.50 → <b>0.95</b></td><td class="n">277 ★ → <b>70</b></td><td>확정됨 — 상한 초과 해소</td></tr></table>
+<p><code>--dry</code> 검증: 최대 <b>148 dps · 여유 26%</b> · 축간 상관 0.264 → <b>0.177</b>(개선).</p>
+<p class="warn">⚠<b>2026-08-14 결과 — 수집은 성공했지만 목적은 달성 못 했다.</b> thigh 피크속도가 55 → 148 dps (실측 95% 기준 44.9 → 114.8, <b>2.6배</b>)로 올랐고 30초 두 셋(식별·검증)을 다 받았다. 그런데 같은 자료로 두 번 적합하니:</p>
+<table>
+<tr><th></th><th><code>fit_v7</code></th><th><code>fit_v7b</code></th><th></th></tr>
+<tr><td>적합 RMS</td><td class="n">0.4178</td><td class="n">0.4106</td><td class="n">1.7% 차</td></tr>
+<tr><td>검증(게인 2배)</td><td class="n">0.2494</td><td class="n">0.2490</td><td><b>0.2% 차</b></td></tr>
+<tr><td><code>JDAMP.thigh</code></td><td class="n">0.0701</td><td class="n">0.0110</td><td><b>6.4배 차</b></td></tr>
+<tr><td><code>delay</code></td><td class="n">7.83</td><td class="n">9.64</td><td class="n">3자 맞바꿈</td></tr></table>
+<p>씨앗만 다른데 파라미터가 6.4배 갈리고 RMS 는 1.7% 밖에 안 갈린다. ⇒ <b>속도로는 안 된다.</b> 이유는 §0 ★ — 애초에 맞는 <code>b</code> 가 없다. ⇒ 처프는 속도를 올리면 가속도가 <b>제곱으로</b> 따라와, 점성/관성 비가 5% → <b>3.6%</b> 로   오히려 나빠졌다. 이 방향으로는 더 갈 데가 없다.</p>
+<p class="warn">★그래도 자료는 값을 했다 — 검증 RMS 0.249 는 종전과 같고, <code>q̇</code> 범위가 2.6배 넓어져 <b>시험 속도범위가 실제 보행에 가까워졌다.</b> 외삽 폭이 준 것 자체가 이득이다.</p>
+<p class="warn">⚠<b>thigh 20° 는 근거 있는 상한이다</b> — <code>±20° = 40° pp</code> 로 각축 스윕에서 이미 검증된</p>
+<p><code>sweep.stroke_deg: 40.0</code> 과 같다. 44° 는 *"늘어진 다리가 아래쪽에서 간섭"* 전례가 있어 넘지 않는다.</p>
+<p class="warn">⚠<b>착수 전 확인</b> — <code>thigh ±20°</code> 와 <code>calf ±9°</code> 동시 스윙이 지그·바닥에 닿지 않는지 <b>눈으로</b> 볼 것. MuJoCo 는 발 구 4개만 모델링하므로 "접촉 0" 은 증거가 아니다.</p>
+<pre># ① 설계 재검사 (하드웨어 미접촉)
+python3 collect_multichirp.py --dry
+# ② 수집 — 식별셋과 검증셋 둘 다 받아야 비교가 성립한다
+python3 collect_multichirp.py --rate 400
+python3 collect_multichirp.py --rate 400 --gains validate</pre>
+<p class="warn">⚠<code>--rate 400</code> — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다. ⚠진폭이 커지면 RMS(°) 자체가 커진다. <b>데이터셋 간 RMS 비교는 정규화할 것.</b></p>
+<h3>✓ 일정속도 시험 — <b>이미 돼 있었다</b></h3>
+<p>*"일정 속도로 유지하며 토크를 재면 절편이 <code>frictionloss</code> · 기울기가 <code>damping</code> 이다"* — 맞는 처방이고, 그 시험이 <b>이미 <code>--solo</code> 스윕으로 돌아 있었다.</b> 자료도 남아 있다 (<code>results/sweep_ch*.npz</code>). 나는 그걸 새로 하자고 제안할 뻔했다.</p>
+<p>결과는 §0 ★ 의 표다 — <b>기울기가 전 축에서 0 이거나 음수</b>이고 thigh 는 −0.160 이다. ⇒ 양수 <code>b</code> 가 존재하지 않는다. 다시 재도 음수가 나온다. <b>실기를 헛돌릴 뻔했다.</b></p>
+<p class="warn">★교훈: 새 시험을 설계하기 전에 <b>이미 있는 자료로 그 질문에 답할 수 있는지</b> 먼저 볼 것. 이 저장소는 각축 시험을 다 돌려 놓았고 원시 궤적까지 저장한다.</p>
+<h3>✓ 중력 최소자세 — <b>전제가 틀렸다</b></h3>
 <p>종전엔 *"미해결 셋(hip 관성·thigh 관성·calf 감쇠)이 <b>전부 같은 원인</b>이다 — 중력이 크다"* 고 적고, 시험 자세를 중력 최소로 옮기자고 했다. <b>계산해 보니 틀렸다.</b></p>
 <table>
 <tr><th>축</th><th>종전 진단</th><th>실제</th></tr>
@@ -418,14 +420,12 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p><b><code>thigh</code> 관성 — 런을 짧게.</b> 진자 주기 0.90 s 대비 런이 0.21~0.48 s(39%)라 <code>M⁻¹</code> 예측이 전제하는 <code>t→0</code> 극한이 깨진다. 중력최소 자세(thigh +20°·calf +20°)에서 τ_g 가 0.023 Nm 이고 <code>τ_trip</code> 12 Nm 이라 <b>예산이 11.7 Nm</b> 남는다. 유효관성 0.139 이므로</p>
 <p><code>q̈</code> 를 <b>84 rad/s²</b> 까지 쓸 수 있고, 그러면 <code>vref</code> 100 dps 도달 + 창(±50 ms)까지 <b>~70 ms</b> 로 끝난다 — 주기의 <b>8%</b>. 지금은 그 예산을 다 안 쓴다. ⇒ 고칠 것은 <b>자세가 아니라 토크준위</b>다(<code>auto_levels</code>).</p>
 <p><b><code>hip</code> 감쇠 — 방법이 없다.</b> 상자 ±6° 는 <b>자기충돌</b>이 정한 것이다(지그 접촉 11.5°, 처짐 2~3.5° 를 빼면 6° 가 상한). 등속 스윕은 <code>stroke/v &gt; 정착시간</code> 이라 <b>47 dps</b> 가 한계이고 거기서 점성 몫이 11% 다. 속도점도 2개(2·5dps)뿐이라 기울기를 못 낸다. ⇒ <b>도메인 랜덤화 대상으로 확정한다.</b> 더 팔 데가 없다.</p>
-<p class="warn">★교훈 — §4-1-b 와 <b>같은 실수</b>를 반복할 뻔했다. "중력이 원인" 이라는 진단이 문서에 적혀 있었고 나는 그걸 그대로 받아 실기 절차를 설계하려 했다. 그런데 같은 문서 §2 가 이미 반증을 적고 있었다. <b>실기를 설계하기 전에 그 진단이 자료로 뒷받침되는지부터 볼 것.</b></p>
-<h3>3-b. HR_thigh 관성 (미측정)</h3>
-<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
-<h3>4. 다른 궤적으로 검증 한 번 더</h3>
+<p class="warn">★교훈 — §5 '일정속도 시험' 과 <b>같은 실수</b>를 반복할 뻔했다. "중력이 원인" 이라는 진단이 문서에 적혀 있었고 나는 그걸 그대로 받아 실기 절차를 설계하려 했다. 그런데 같은 문서 §2 가 이미 반증을 적고 있었다. <b>실기를 설계하기 전에 그 진단이 자료로 뒷받침되는지부터 볼 것.</b></p>
+<h3>✓ 다른 궤적 검증 — <b>끝났다</b> (<code>fit_v10</code>)</h3>
 <p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>
 <pre>python3 collect_multichirp.py --rate 400 --f-scale 0.6 --gains validate</pre>
 <p class="warn">⚠<code>--rate 400</code> 권장 — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다.</p>
-<h3>4-b. hip 좌우차 확정</h3>
+<h3>✓ hip 좌우차 — <b>모순 없음</b></h3>
 <p class="warn">⚠<b>2026-08-14 — "16% 차" 는 재측정으로 사라진 게 아니라 <code>축약 방식의 차이</code>였다.</b></p>
 <p><code>measured_coulomb_ch</code> 는 최초 커밋(<code>e1105cd</code>)부터 <b>한 번도 안 바뀌었다</b> (0.854/0.800). 0.928/0.803 은 시험이 보고한 전속도 JFRIC 이고, spec 은 의도적으로 <b>저속만</b> 쓴다 (hip 은 <code>2·5dps 평균</code>). 저속 제한이 점성 오염을 빼므로 그게 참 쿨롱에 가깝다.</p>
 <table>
@@ -436,7 +436,6 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <tr><td>위치모드 파단 <code>measured_tau_static_ch</code></td><td class="n">1.129 / 1.176</td><td><b>4%</b></td></tr></table>
 <p class="warn">★<b>읽는 법이 여기 있다.</b> 저속으로 제한하면 HL 은 0.928→0.854 로 8% 내려가는데 HR 은 0.803→0.800 으로 거의 안 움직인다. 즉 <b>16% 중 절반 이상이 마찰 좌우차가 아니라 HL 의 속도의존분</b>이다. 파단토크 두 방법이 처음부터 4% 로 일치한 것과 맞는다.</p>
 <p>⇒ 남은 좌우차는 <b>4~7%</b> 이고 네 측정이 전부 같은 방향이다(HL &gt; HR). 구조 가설(HR 샤프트 경유 · HL 직결 — 직결 쪽이 다리 하중을 더 받는다)과 맞는다. ⇒ <b>모순은 없다.</b> 우선순위를 내린다.</p>
-<h2>5. 끝난 시험 — 결론만</h2>
 <p>여기 셋은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다.</p>
 <h3>✓ 백래시 — <b>측정 완료, 범인이 아니다</b></h3>
 <p>HL_foot 토션 히스테리시스: <b>백래시 0.0667° ± 0.0034 (채널)</b> · 강성 <b>14.55 Nm/deg</b> (834 Nm/rad) · 주기간 강성 산포 1% — 깨끗한 측정이다.</p>
@@ -448,7 +447,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>⇒ foot 잔차 0.68° 는 백래시로도 유연성으로도 설명 안 된다.</p>
 <p class="warn">⚠<b>당시엔 <code>coef</code> 가 유일하게 자릿수가 맞는 후보라고 적었는데, 그건 틀렸다.</b></p>
 <p><code>coef</code> 를 실제로 탐색변수로 넣어 보니 자유로 풀면 오히려 나빠진다(§5 두 번째 항목). 그리고 <code>coef</code> 를 낮췄을 때 개선이 나온 곳은 foot 이 아니라 <b>calf</b> 였다 — 잔차 지분이 큰 축이 곧 원인 축이라고 읽은 것이 오류였다. foot 잔차 0.68° 의 원인은 <b>아직 모른다.</b></p>
-<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다(<b>§4-3</b> 과 같은 문제).</p>
+<p class="warn">⚠<b>calf 는 못 쟀다</b> — <code>평탄 구간 미검출 · 강성 —  · 루프폭 1.478°</code>. 시험이 성립하지 않았다. 로그가 이유를 보여준다: <b>중력보정 폭 1.101 Nm 이 시험 진폭 ±0.45 Nm 의 2.4배</b>다. 보정 오차가 얹히면 파단(0.665~0.719)을 넘어 축이 미끄러진다. 루프폭 1.478° 가 회전 감시 한계 1.5° 에 거의 닿은 것이 그 증거다. ⇒ calf 백래시를 재려면 <b>중력이 작은 자세</b>가 먼저다 — 다만 §5 '중력 최소자세' 가 그 전제를 뒤집었으니 같이 볼 것.</p>
 <h3>✓ <code>coef</code> PACE 식별 — <b>해봤다. 이 데이터로는 안 된다</b></h3>
 <p><code>coef</code> 를 탐색변수로 넣었다(<code>pace_cmaes.py</code>, <code>set_coupling_coef</code> + <code>retarget_coupling</code>).</p>
 <p><code>q_raw</code> 는 coef 가정과 무관하게 정확하므로 <code>q_foot_true = q_raw − c·q_calf</code> 로 다시 풀어 비교한다. <code>c=1</code> 이 항등이라는 것부터 확인했다 — 기존 결과가 소수 4자리까지 재현됐다.</p>
@@ -467,7 +466,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <div class="quote"><code>coef</code> 는 할 일이 없어진다.</div>
 <div class="quote">⇒ *"탐색범위 벽에 박힌 값은 식별된 값이 아니다"* 는 <b>격자 훑기에도 똑같이 적용된다.</b></div>
 <div class="quote"><code>tests/scan_coef_jdamp.py</code> 에 행 최소가 격자 경계면 판정을 보류하는 가드를 넣었다.</div>
-<p><code>coef</code> 크기를 정말 재려면 <b>엔코더 밖</b>으로 나가야 한다 — <b>§4-2</b> 참조.</p>
+<p><code>coef</code> 크기를 정말 재려면 <b>엔코더 밖</b>으로 나가야 한다 — §5 '<code>coef</code> 크기' 참조(경사계로 끝났다).</p>
 <h3>✓ <code>JDAMP.calf</code>·<code>JFRIC.foot</code> 탐색범위 — <b>셋이 갈렸다</b> (<code>fit_v5</code>)</h3>
 <p>열어 보니 셋이 갈렸다:</p>
 <table>

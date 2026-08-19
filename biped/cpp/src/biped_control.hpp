@@ -106,13 +106,26 @@ struct BipedControl {
   //     두 축·두 방법이 **0.17%** 로 만났다(순환 없는 경로의 독립 검증).
   //   ⚠JFRIC 은 전 축이 종전보다 크다(0.66~2.2배) — **보행 거동이 바뀐다.**
   //   ⚠hip 의 JDAMP·JFRIC 은 **식별된 게 아니라 고정한 값**이다(자극이 비용의 4% 뿐).
-  //   ★calf JDAMP(0.0092)·foot JFRIC(0.2517)는 **탐색범위 끝에 붙은 값** — 더 낮을 수 있다.
   //   ⚠foot 의 dof_armature 는 0 이다(tendon 으로 이전).
   //   ⚠Python biped_wbic.py 와 **같은 값**이어야 한다. 한쪽만 고치면 파리티가 깨진다.
+  //
+  // ★2026-08-14 **fit_v2 → fit_v6** 로 갱신(emb/pace/RESULTS.md §1). 바뀐 것:
+  //     JDAMP.calf  0.0092★ → **0** (확정)  · JDAMP.thigh 0.1696 → 0.022
+  //     JFRIC.thigh 0.5064  → 0.592         · JFRIC.foot  0.2517★ → 0.241
+  //   v6 은 **탐색범위 경고 0건** — 자유변수가 전부 범위 안에 앉은 첫 판이다.
+  //   종전 ★표시(범위 끝에 붙은 값)가 둘 다 해소됐다:
+  //     calf JDAMP 는 다섯 판 내내 바닥으로 밀렸다 ⇒ 0 으로 못박아도 성적이 안 나빠졌다
+  //       (적합 0.4039 · 따로 뺀 구간 0.3933 — 다섯 판 중 **최고**). ⇒ 0 확정.
+  //     foot JFRIC 은 자유였던 v5·v6 이 0.240/0.241 로 **±0.4%** 일치.
+  //
+  // ⚠★**thigh 의 두 값은 짝으로만 의미가 있다.** 다섯 판에서 b 가 0.022~0.180 으로
+  //   **8.1배** 흔들리는 동안 `b·q̇ + τ_c` 는 ±4.9% 다(q̇=0.773 rad/s). 적합이 직선
+  //   `b·q̇ + τ_c ≈ 0.64` 위를 미끄러질 뿐이다. 한쪽만 바꾸면 **총 손실이 깨진다** —
+  //   도메인 랜덤화도 이 직선을 따라 해야 한다. 시험속도(q̇≈0.77) 밖에선 갈린다.
   double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.327e-4;
   //                 hip     thigh    calf     foot
-  double JDAMP[4]={0.0900, 0.1696, 0.0092, 0.1100};   // [Nm·s/rad] 관절축
-  double JFRIC[4]={0.8270, 0.5064, 0.5717, 0.2517};   // [Nm] 관절축 쿨롱마찰
+  double JDAMP[4]={0.0900, 0.0220, 0.0000, 0.1100};   // [Nm·s/rad] 관절축
+  double JFRIC[4]={0.8270, 0.5920, 0.5720, 0.2410};   // [Nm] 관절축 쿨롱마찰
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표

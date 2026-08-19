@@ -61,8 +61,12 @@ GEAR    = np.array([7.0, 7.0, 10.5, 8.4])   # hip,thigh,calf,foot
                                             # ★foot 8.0→8.4 (총 8.4 = 7×1.2 추가단, 2026-08-05 확인)
 ROTOR_I = 7.327e-4                          # ★실측 확정(2026-08-14). 구 7.4e-4
 #          hip     thigh    calf     foot   ← kind 순. j%4 로 색인한다
-JDAMP = np.array([0.0900, 0.1696, 0.0092, 0.1100])   # [Nm·s/rad] 관절축
-JFRIC = np.array([0.8270, 0.5064, 0.5717, 0.2517])   # [Nm] 관절축 쿨롱마찰
+# ★2026-08-14 fit_v2 → **fit_v6**. C++ biped_control.hpp 와 **같은 값**이어야 한다.
+#   JDAMP.calf 0.0092★→0 확정 · JDAMP.thigh 0.1696→0.022 · JFRIC.thigh 0.5064→0.592
+#   JFRIC.foot 0.2517★→0.241.  v6 은 탐색범위 경고 0건(★가 전부 해소된 첫 판).
+# ⚠thigh 의 두 값은 **짝으로만** 의미가 있다 — b 가 8.1배 흔들려도 b·q̇+τ_c 는 ±4.9%.
+JDAMP = np.array([0.0900, 0.0220, 0.0000, 0.1100])   # [Nm·s/rad] 관절축
+JFRIC = np.array([0.8270, 0.5920, 0.5720, 0.2410])   # [Nm] 관절축 쿨롱마찰
 
 # home posture — ★2026-08-12 새 CAD(몸통 placeholder→실측)로 **재산출**. 구값 (0.05,−0.2) 폐기.
 #

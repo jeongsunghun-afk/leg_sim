@@ -37,7 +37,25 @@ pre code{border:0;background:none;padding:0}
 </style></head>
 <body><div class="wrap">
 <h1>액추에이터 식별 — 최종값 (2026-08-14)</h1>
-<p><code>fit_v9</code> 기준(빠른 재수집 자료 · 지연을 실측에 못박음). 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다. 신뢰도는 <b>네 번의 적합(v2·v3·v4·v5)에서 얼마나 흔들렸나</b>로 매겼다 — 한 번의 오차막대보다 그게 정직하다.</p>
+<p><code>fit_v9</code> 기준(빠른 재수집 자료 · 지연을 실측에 못박음). 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다. 신뢰도는 <b>적합 열 판(v2~v10)에서 얼마나 흔들렸나</b>로 매겼다 — 한 번의 오차막대보다 그게 정직하다.</p>
+<h2>한눈에</h2>
+<table>
+<tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
+<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
+<tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b></td><td class="n">0.603</td></tr>
+<tr><td>calf</td><td class="n">0.0808</td><td><b>0</b></td><td class="n">0.537</td></tr>
+<tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.241</td></tr></table>
+<p><code>tendon_armature</code>(foot) <b>0.0517</b> · <code>delay</code> <b>8.39 ms</b> · <code>coef</code> <b>1.0</b> · <code>ROTOR_I</code> <b>7.327e-4</b></p>
+<p><b>검증 — 세 조건에서 전부 일반화된다:</b></p>
+<table>
+<tr><th></th><th>RMS</th><th>무엇을 바꿨나</th></tr>
+<tr><td>적합</td><td class="n">0.417°</td><td class="n">—</td></tr>
+<tr><td>따로 뺀 구간</td><td class="n">0.448°</td><td>안 쓴 12창</td></tr>
+<tr><td>게인 2배</td><td><b>0.250°</b></td><td><code>kp</code> ×2 로 따로 수집</td></tr>
+<tr><td>다른 궤적</td><td><b>0.411°</b></td><td>최고속 148→89 dps</td></tr></table>
+<p class="warn">⚠<b>남은 셋</b> — <code>damping.hip</code>(측정 방법 없음 확정) · <code>frictionloss.hip</code>(미검증) ·</p>
+<p><code>JFRIC.calf</code> 가 각축 스윕 대비 −46%. 앞의 둘은 <b>도메인 랜덤화 대상</b>이다.</p>
+<p class="warn">⚠<b>여기 숫자를 다른 문서로 복사하지 말 것.</b> 액추에이터 파라미터의 단일 출처는 이 문서이고, 실측 원본의 단일 출처는 <code>spec.yaml</code> 의 <code>friction.measured_*</code> 다. 복사하면 반드시 갈라진다 — 2026-08-14 에 실제로 그렇게 hip 값이 세 군데에서 달라졌다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
 <pre> τ_cmd(t − T_d)  =  [ I_link + I_rot·N² ]·q̈  +  b·q̇  +  τ_c·sgn(q̇)  +  g(q)

@@ -31,6 +31,30 @@ Python·C++ 어느 컨트롤러든 **같은 GUI·JSON 채널**(/tmp/biped_cmd.js
 HW는 **센서만 붙이면 full state**. GT 대비 오차 추출(sim 검증·GUI 표시). `--est-ctrl`=폐루프 검증.
 `deploy/robot_interface.py`(LowCmd/LowState·StateEstimator)·`biped_deploy.py`(배포 루프)·`README.md`(A~E 체크리스트). 상세=`deploy/README.md`.
 
+## 문서 안내 — **무엇을 하려는지로 고른다**
+
+| 하려는 것 | 문서 | 줄 |
+|---|---|---|
+| 실기를 **지금 켠다** | [`emb/RUNBOOK.md`](emb/RUNBOOK.md) — 터미널별 실행 순서 | 452 |
+| 실기 **인터페이스**를 이해한다 | [`emb/README.md`](emb/README.md) — SHM↔제어기 배선·ModeFSM | 103 |
+| **액추에이터 값**을 MJCF 에 넣는다 | [`emb/pace/RESULTS.md`](emb/pace/RESULTS.md) — **최종 파라미터·신뢰도·근거** | 856 |
+| 그 값을 **어떻게 쟀는지** 본다 | [`emb/pace/README.md`](emb/pace/README.md) — 측정 절차·도구 | 181 |
+| **RL 정책**을 실기에 올린다 | [`emb/RL_INTERFACE.md`](emb/RL_INTERFACE.md) — 각도규약·커플링·한계 | 560 |
+| RL **레퍼런스 궤적**을 쓴다 | [`ref_lib/README.md`](ref_lib/README.md) — DTC 교사 핸드오프 | 41 |
+| **얼마나 빨리/크게** 걸을 수 있나 | [`cpp/STABILITY_MAP.md`](cpp/STABILITY_MAP.md) — 속도×스텝시간 안정영역 | 421 |
+| sim → **실모터**로 옮긴다 | [`deploy/README.md`](deploy/README.md) — 플랜트 교체·상태추정 | 118 |
+| **다음 실기 세션**을 준비한다 | [`emb/NEXT_HW.md`](emb/NEXT_HW.md) — 체크리스트(다리 장착 이후) | 964 |
+| **IMU 가 0** 이다 | [`emb/IMU_RECOVERY.md`](emb/IMU_RECOVERY.md) — 원인·조치(미실시) | 238 |
+
+**단일 출처 규칙** — 같은 값이 두 문서에 있으면 반드시 갈라진다. 실제로 그랬다:
+| 값 | **단일 출처** | 나머지는 |
+|---|---|---|
+| 액추에이터 파라미터(`armature`·`damping`·`frictionloss`·`delay`·`coef`) | `emb/pace/RESULTS.md` | 인용만 하고 **복사하지 말 것** |
+| 마찰·파단토크 실측 | `emb/pace/spec.yaml` 의 `friction.measured_*` | RESULTS 는 그 스냅숏이다 |
+| 각도규약·부호·감속비 | `emb/config/biped_emb.yaml` | 문서는 설명만 |
+
+---
+
 ## 파일 (활성)
 **Python**
 | 파일 | 역할 |

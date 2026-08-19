@@ -354,15 +354,23 @@ pre code{border:0;background:none;padding:0}
 <tr><td>HR_calf</td><td class="n">0.0991</td><td class="n">0.1046</td><td><b>+5.5%</b></td></tr>
 <tr><td>HL_foot</td><td class="n">0.0533</td><td class="n">0.0489</td><td><b>−8.3%</b></td></tr>
 <tr><td>HR_foot</td><td class="n">0.0533</td><td class="n">0.0545</td><td><b>+2.2%</b></td></tr>
-<tr><td>HL_thigh</td><td class="n">0.1887</td><td class="n">0.2479</td><td class="no">+31% ❌ 원리적 한계</td></tr>
+<tr><td>HL_thigh</td><td class="n">0.1887</td><td class="n">0.2479</td><td class="no">+31% ❌ <b>무효</b></td></tr>
+<tr><td>HR_thigh</td><td class="n">0.1887</td><td class="n">−0.157</td><td class="no">❌ <b>무효</b>(2026-08-14)</td></tr>
 <tr><td>HL/HR_hip</td><td class="n">—</td><td class="n">—</td><td>미측정</td></tr></table>
 <p><b>calf·foot 넷이 ±8.3% 안이고 부호가 갈린다</b> ⇒ 계통오차가 아니라 산포. <b>CAD 질량·관성은 맞다.</b></p>
-<p class="warn">⚠<b>thigh 는 <code>--solo</code> 로 못 잰다 — 원리적 한계다</b> (2026-08-14 확인). 중력창을 넣어 방향편차를 15.8% → <b>2.6%</b> 로 잡았는데도 +31% 가 남는다. 이유:</p>
-<div class="quote"><code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다. 주기 ≈ 2π√(L/g) = <b>0.90 s</b> 인데</div>
-<div class="quote">런 길이가 0.21~0.48 s — <b>주기의 39%</b> 다. <code>M⁻¹</code> 예측은 "모든 자유 dof 가 같이</div>
-<div class="quote">가속" 하는 <b>t→0 극한</b>인데, 그만큼 긴 런에서는 calf 가 뒤처지고 thigh 가 그</div>
-<div class="quote">관성을 끌고 간다. 자유(0.189)와 고정(0.221) 사이 어디도 아닌 값이 나온다.</div>
-<p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>물리적으로 고정</b>해야 한다 (홀드는 유한 강성이라 안 된다).</p>
+<p class="warn">⚠<b>thigh 는 <code>--solo</code> 로 못 잰다</b> — 2026-08-14 에 HR 을 돌려 <b>확정</b>했다.</p>
+<p>원인은 종전에 적은 진자 주기(런이 주기의 39%)보다 <b>더 직접적이다</b>:</p>
+<p><code>--solo</code> 는 아래 링크를 <code>kp=kd=0</code> 으로 <b>놓으므로</b>, calf·foot 이 thigh 가속에 따라 같이 흔들려 <b>유효관성이 방향에 따라 달라진다.</b></p>
+<table>
+<tr><th></th><th>HL_thigh</th><th>HR_thigh</th></tr>
+<tr><td>+ 방향</td><td class="n">0.1858 ± 0.034</td><td>≈ 0.42</td></tr>
+<tr><td>− 방향</td><td class="n">0.3370 ± 0.091</td><td>≈ 0.08</td></tr>
+<tr><td><b>방향간 편차</b></td><td><b>58%</b></td><td><b>446%</b></td></tr>
+<tr><td>게이트(15%)</td><td>✗</td><td>✗</td></tr></table>
+<p><b>둘 다 게이트를 못 넘는다.</b> <code>run_leg_*.sh</code> 헤더가 *"하위 관절이 무여자라 I_link 강체가정이 깨진다 — inertia 에 쓰지 말 것"* 이라 적어 둔 그대로였다.</p>
+<p class="warn">⚠<code>t_ref→0</code> 외삽도 이걸 못 고친다 — 합쳐서 +6% 로 보이지만 <b>+방향만 −16% · −방향만 +11%</b> 로 28% 갈린다. 두 방향의 평균이 우연히 CAD 근처에 온 것이다(§4-3).</p>
+<p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>기구적으로 고정</b>해야 한다 (모터 홀드는 유한 강성이고, 2026-08-12 에 드라이버 파워단을 5회 죽였다).</p>
+<p class="warn">★<b>CAD 는 간접적으로도 검증된다</b> — PACE 가 실기 자료로 모델을 맞추는데 <b>thigh 잔차가 제곱오차의 9% 뿐</b>이다(§6 축별 RMS). CAD 가 크게 틀렸다면 그 축 잔차가 컸을 것이다. ⇒ 직접 측정은 확인일 뿐 새 정보가 아닐 가능성이 크다.</p>
 <h2>3. 모터 게인 — <b>바꿀 필요 없다</b> (2026-08-14 <code>fit_A_hipcorr</code> 로 재계산)</h2>
 <p>배포 게인을 식별값으로 다시 평가했다. <code>JFRIC</code> 이 크게 바뀌었고(foot 0.241→0.639)</p>
 <p><code>JDAMP</code> 가 0 이 됐지만 <b>결론은 그대로</b>다.</p>

@@ -56,13 +56,7 @@ target_link_libraries(flat_home PRIVATE ${MUJOCO_LIB})
 target_link_directories(flat_home PRIVATE ${ENV_PREFIX}/lib)
 set_target_properties(flat_home PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
 
-add_executable(biped_monitor src/biped_monitor.cpp)
-target_include_directories(biped_monitor PRIVATE ${EIGEN_INCLUDE} ${MUJOCO_INCLUDE})
-target_link_libraries(biped_monitor PRIVATE ${MUJOCO_LIB} glfw dl)
-target_link_directories(biped_sim PRIVATE ${ENV_PREFIX}/lib)
-set_target_properties(biped_sim PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
-
-# ── 뷰어(biped_view) — GLFW 가 있을 때만 빌드한다 ─────────────────────────────
+# ── GLFW 타겟(biped_view · biped_monitor) — GLFW 가 있을 때만 빌드한다 ────────
 #   ★조건부인 이유: GLFW 는 렌더링 전용이라 헤드리스 검증(biped_sim·parity)에는 불필요하다.
 #     무조건 타겟으로 두면 GLFW 가 없는 환경에서 CMake 가 **generate 단계에서 실패**해
 #     biped_sim 조차 빌드되지 않는다(로봇 Pi 에서 실제로 그랬다 — 노트북은 conda 로
@@ -72,13 +66,24 @@ find_path(GLFW_INCLUDE GLFW/glfw3.h PATHS ${ENV_PREFIX}/include /usr/include)
 find_library(GLFW_LIB glfw PATHS ${ENV_PREFIX}/lib /usr/lib)   # 기본 검색경로가
                                                                # aarch64/x86_64 를 알아서 찾는다
 if(GLFW_INCLUDE AND GLFW_LIB)
-  message(STATUS "glfw: ${GLFW_LIB} → biped_view 빌드")
+  message(STATUS "glfw: ${GLFW_LIB} → biped_view · biped_monitor 빌드")
+  # ★2026-08-19 biped_monitor 를 **이 안으로 옮겼다.** 종전엔 가드 밖에 있으면서
+  #   `glfw` 를 **이름으로** 링크해, GLFW 없는 환경에서 컴파일 단계에 죽었다
+  #   (노트북 실측: biped_sim 은 빌드됐는데 전체 `cmake --build` 가 Error 2).
+  #   biped_view 만 조건부로 만든 그 수정에서 monitor 를 빠뜨린 것이다.
+  #   ⚠둘 다 렌더링 전용이라 헤드리스 검증(biped_sim·parity·sweep)에는 불필요하다.
+  add_executable(biped_monitor src/biped_monitor.cpp)
+  target_include_directories(biped_monitor PRIVATE ${EIGEN_INCLUDE} ${MUJOCO_INCLUDE} ${GLFW_INCLUDE})
+  target_link_libraries(biped_monitor PRIVATE ${MUJOCO_LIB} ${GLFW_LIB} dl)
+  target_link_directories(biped_monitor PRIVATE ${ENV_PREFIX}/lib)
+  set_target_properties(biped_monitor PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
+
   add_executable(biped_view src/biped_view.cpp)
   target_include_directories(biped_view PRIVATE ${EIGEN_INCLUDE} ${EIQP_INCLUDE} ${MUJOCO_INCLUDE} ${GLFW_INCLUDE})
   target_link_libraries(biped_view PRIVATE ${EIQP_LIB} ${MUJOCO_LIB} ${GLFW_LIB})
   target_link_directories(biped_view PRIVATE ${ENV_PREFIX}/lib)
   set_target_properties(biped_view PROPERTIES BUILD_RPATH ${ENV_PREFIX}/lib)
 else()
-  message(STATUS "glfw 없음 → biped_view 건너뜀(헤드리스 타겟은 정상 빌드). "
+  message(STATUS "glfw 없음 → biped_view·biped_monitor 건너뜀(헤드리스 타겟은 정상 빌드). "
                  "뷰어가 필요하면: sudo apt install -y libglfw3-dev")
 endif()

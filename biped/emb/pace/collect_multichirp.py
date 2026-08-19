@@ -131,6 +131,35 @@ def apply_mirror(dev, names, mode):
     return out
 
 
+def _top_cpu():
+    """(%CPU, 명령) 상위 목록. ps 한 번이면 되고 새 의존성이 없다.
+
+    ⚠**자기 자신과 ps 를 뺀다.** 안 빼면 ps 가 300%, 이 스크립트가 89% 로 잡혀
+      매번 "경합" 오탐이 난다(2026-08-14 실제로 그랬다). 재는 행위가 재는 값을
+      바꾸는 부류라 PID 로 거른다.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["ps", "-eo", "pid,pcpu,comm", "--sort=-pcpu"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    _me = {os.getpid(), os.getppid()}
+    rows = []
+    for ln in out.strip().split("\n")[1:12]:
+        try:
+            pid, c, nm = ln.split(None, 2)
+        except ValueError:
+            continue
+        nm = nm.strip()
+        if int(pid) in _me or nm in ("ps", "sh", "bash"):
+            continue
+        rows.append((float(c), nm))
+        if len(rows) >= 5:
+            break
+    return rows
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--spec", default=os.path.join(HERE, "spec.yaml"))
@@ -317,6 +346,27 @@ def main() -> int:
         hw.arm(ch_all[0], kp[ch_all[0]], kd[ch_all[0]])
         goto_home(hw, jm, make_homer(jm, cfg_all, hw.dt), cfg_all, q_box=box,
                   log=lambda m: print(f"  [multichirp]{m}"))
+        # ★★가진 직전 **CPU 부하**를 본다 (2026-08-14 실기).
+        #   오늘 25/30초에서 ch1 이 래치오프했다. 원인은 진폭이 아니라 **경합**이었다 —
+        #   biped_sim 이 101% 로 돌고 있었고 루프 밀림이 53%(최대 79ms)까지 갔다.
+        #   400Hz 는 주기 2.5ms 인데 79ms 면 32주기치 명령 공백이다. 워치독이 문다.
+        #   ⇒ 30초짜리 실기 수집을 시작하기 전에 한 줄로 확인한다. 늦게 아는 것보다 낫다.
+        try:
+            _la1 = os.getloadavg()[0]
+            _ncpu = os.cpu_count() or 1
+            _busy = [r for r in _top_cpu()
+                     if r[0] > 40.0 and "RobotEmbedded" not in r[1]]
+            print(f"\n  ★CPU 부하 {_la1:.2f} / {_ncpu}코어"
+                  + ("   ✓ 여유" if _la1 < _ncpu * 0.7 and not _busy else "   ⚠**높다**"))
+            for _c, _n in _busy[:3]:
+                print(f"    ⚠{_n} 가 {_c:.0f}% 를 쓰고 있다 — 수집 전에 정리할 것")
+            if _busy or _la1 > _ncpu:
+                print("    ⚠경합은 루프 밀림 → 명령 공백 → **드라이버 래치오프**다."
+                      " Ctrl-C 로 지금 멈추는 편이 낫다. 5초 뒤 계속한다.")
+                time.sleep(5.0)
+        except Exception:
+            pass
+
         print(f"\n  가진 시작 — {T:.0f}s. Ctrl+C 로 언제든 중단(limp).")
 
         # ★배열을 **미리 잡는다**. 여유 20% (루프가 밀리면 표본이 적어질 뿐 넘지 않는다)
@@ -334,8 +384,15 @@ def main() -> int:
         import gc as _gc
         _gc_was = _gc.isenabled()
         _gc.disable()
+        # ★★트립해도 **모은 것까지는 저장한다** (2026-08-14 실기).
+        #   이 파일은 이미 "30초를 멀쩡히 수집하고도 통째로 버렸다" 는 교훈을 담고
+        #   있는데(아래 저장부 주석), 그 수정이 **정상 종료 경로에만** 적용됐다.
+        #   루프 중 SafetyAbort 는 여전히 저장을 건너뛰었다 — 오늘 25/30초를 그렇게 잃었다.
+        #   트립한 수집일수록 원인 규명에 그 추적이 필요하다. 저장하고 나서 다시 던진다.
+        _abort = None
         t0 = time.perf_counter()
-        while True:
+        try:
+          while True:
             t = time.perf_counter() - t0
             if t >= T:
                 break
@@ -407,6 +464,9 @@ def main() -> int:
                 # ★밀린 틱을 센다. 명령 공백이 드라이버 워치독을 건드릴 수 있다.
                 _over += 1
                 _lagmax = max(_lagmax, -slp * 1e3)
+        except hwio.SafetyAbort as _e:
+            _abort = _e
+            print(f"\n  ⚠트립 — {_i}/{_N} 표본({_i*hw.dt:.1f}/{T:.0f}s)까지 저장한다.")
 
         if _gc_was:
             _gc.enable()
@@ -443,7 +503,9 @@ def main() -> int:
         kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
-        np.savez(path, t=T_, q=Qm, q_cmd=QC,
+        np.savez(path, aborted=bool(_abort), abort_msg=str(_abort or ""),
+                 lag_ticks=_over, lag_max_ms=_lagmax,
+                 t=T_, q=Qm, q_cmd=QC,
                  dq=DQ, tau_ch=TAU, cur_ch=CUR,
                  stt=STT, conn=CONN,
                  kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
@@ -466,6 +528,12 @@ def main() -> int:
                       log=lambda m: print(f"  [multichirp]{m}"))
         except Exception as e:
             print(f"\n  ⚠수집 후 홈복귀 실패({type(e).__name__}: {e})")
+        if _abort is not None:
+            # ★저장·홈복귀를 **마친 뒤에** 실패로 끝낸다. 순서가 중요하다 — 여기서
+            #   먼저 던지면 위의 저장이 또 날아간다(그게 오늘 25초를 잃은 방식이다).
+            print(f"\n  ✗ **트립으로 중단된 수집이다** — npz 는 {_i * hw.dt:.1f}s 분량이다.")
+            print("     적합에 쓰기 전에 aborted 플래그와 루프 밀림을 확인할 것.")
+            raise _abort
             print("    **데이터는 이미 저장됐다** — 자세만 정리하면 된다.")
 
     print(f"    다음: ~/.venv-mujoco/bin/python pace_cmaes.py {path}")

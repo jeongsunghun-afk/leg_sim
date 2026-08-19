@@ -366,7 +366,20 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                     log(f"    {sgn} τ={tau:.2f}: ✗ {f1['fail']}  "
                         f"(런 {t[-1]:.3f}s/{len(T)}표본 · {hit})")
                     continue
+                # ★★창이 **과도구간 안**에 들어갔는지 본다 (2026-08-14 실기).
+                #   design_levels 의 제약 ①이 t_ref ≥ skip+half 를 보장하는데, 그 설계는
+                #   **I_pred** 로 한다. 실제 유효관성이 그보다 작으면(--solo 에서 아래 링크가
+                #   따라오는 방향) 축이 예상보다 빨리 q̇_ref 에 닿아 **t_ref 가 하한 아래**로 간다.
+                #   2026-08-14 HR_thigh: 설계 하한 0.09s 인데 실측 t_ref 가 0.059~0.087s 였고,
+                #   그 런들의 q̈ 가 부호까지 뒤집혔다(+0.54, −27.32 …). 조용히 통과했다.
+                #   ⇒ 런마다 찍고, 그런 런은 회귀에서 뺄 수 있게 표시한다.
+                _floor = skip_s + half_s
+                _win_bad = bool(f1["t_at"] < _floor)
+                if _win_bad:
+                    log(f"           ⚠t_ref {f1['t_at']:.3f}s < 설계하한 {_floor:.3f}s"
+                        f" — **창이 과도구간에 걸렸다.** 이 런의 q̈ 는 믿을 수 없다")
                 runs.append({"rep": rep, "dir": direction, "tau_cmd": tau,
+                             "win_bad": _win_bad,
                              "signed_tau": direction * tau,
                              "ddq": f1["ddq"], "v_at": f1["v_at"], "t_at": f1["t_at"],
                              "n_win": f1["n_win"], "v_max": f1["v_max"],

@@ -181,6 +181,8 @@ struct BipedControl {
     //   추정기 수정과 반드시 짝지어 재튜닝해야 한다.
     if(getenv("K_RETURN")) K_RETURN=atof(getenv("K_RETURN"));
     if(getenv("K_CAP"))    K_CAP   =atof(getenv("K_CAP"));
+    if(getenv("FRIC_COMP")) FRIC_COMP=atof(getenv("FRIC_COMP"));   // ★마찰 전방보상 배율(0=끔)
+    if(getenv("FRIC_V0"))   FRIC_V0  =atof(getenv("FRIC_V0"));
     if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
@@ -336,8 +338,26 @@ struct BipedControl {
   //   발목 모터가 tendon(coef 1,1)에 물려 있어 ctrl[foot] 이 calf·foot 두 DOF 에 같이 걸린다.
   //   관절토크를 그대로 쓰면 무릎에 발목토크가 덤으로 실려 실기와 다른 로봇이 된다.
   //   클립도 여기서 드라이브 한계로 — 실기 한계는 모터에 걸리지 관절에 걸리지 않는다.
+  // ★마찰 전방보상 (2026-08-14 신설). 기본 **꺼짐**(FRIC_COMP=1 로 켠다).
+  //
+  //   왜 필요한가 — **WBIC 는 관절 쿨롱마찰을 전혀 모른다.** JFRIC 은 여태 모델에
+  //   (`dof_frictionloss`) 넣기만 하고 토크 계산엔 쓰이지 않았다. 마찰이 작을 땐
+  //   무시해도 됐지만 실측값(hip 0.827)에선 안 된다:
+  //       JFRIC 0.30 / 0.38  → 2점 stand 60s 무낙상
+  //       JFRIC 축별 실측     → **20.7s 낙상**
+  //   즉 "예전엔 됐다" 는 마찰을 **과소평가한 모델** 덕이었다. 모델이 정확해지자
+  //   원래부터 없던 보상 부재가 드러난 것이다 — 되돌릴 회귀가 아니다.
+  //
+  //   보상식: τ += JFRIC·tanh(q̇/v0).  sign(q̇) 을 그대로 쓰면 q̇≈0 에서 부호가 튀어
+  //   채터링이 난다. v0 는 그 전환폭이다(FRIC_V0, 기본 0.05 rad/s).
+  //   ⚠**과보상은 자기가진**이 된다(마찰보다 크게 밀면 진동). 그래서 배율을 노출한다.
+  //   ⚠Python biped_wbic.py 와 같은 식이어야 파리티가 유지된다.
+  double FRIC_COMP=0.0, FRIC_V0=0.05;
   void set_ctrl_from_tau(const VectorXd& tau){
-    VectorXd u=bipedwbic::tau_to_drive(tau);
+    VectorXd t=tau;
+    if(FRIC_COMP>0) for(int i=0;i<nu;i++)
+      t[i] += FRIC_COMP*JFRIC[i%4]*std::tanh(d->qvel[6+i]/FRIC_V0);
+    VectorXd u=bipedwbic::tau_to_drive(t);
     for(int i=0;i<nu;i++) d->ctrl[i]=std::max(-drv_peak8[i],std::min(drv_peak8[i],u[i]));
   }
 

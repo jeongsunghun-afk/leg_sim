@@ -26,7 +26,7 @@
 #
 # ═══ 사용 ═══
 #   ./sweep_paired.sh [출력.tsv]
-#   격자: TSTEPS="0.26 0.30 0.34" KRETS="0.10 0.15 0.20" DWELLS="0 5 10" SEEDS=5
+#   격자: TSTEPS="0.26 0.30 0.34" KRETS="0.10 0.15 0.20" ALPHAS="0.4 0.7 1.0" SEEDS=5
 #   그 외: VX=0.00 DUR=40 JOBS=8
 #
 #   ★노트북(다중코어)에서 JOBS 를 코어수-2 로 주고 돌릴 것. 최종 채택점만 Pi 에서 재확인.
@@ -44,7 +44,11 @@ MODEL="${MODEL:-$HERE/../biped_from_quad.mjcf}"
 
 TSTEPS="${TSTEPS:-0.26 0.30 0.34}"
 KRETS="${KRETS:-0.10 0.15 0.20}"
-DWELLS="${DWELLS:-0 5 10}"
+# ★2026-08-19 3번째 격자축을 **DWELL → EST_ALPHA** 로 교체했다. dwell 은 기각됐고
+#   (배포조건에서 추정오차 2.6배·낙상 6/8), 대신 **저역통과 alpha 가 진범**으로 나왔다:
+#     alpha 0.2→0.235 · 0.4(기본)→0.182 · 0.7→0.104 · **1.0→0.034 m** (추정오차, 단조)
+#   ⚠옛 TSV 는 3열이 DWELL 이다. 집계는 **헤더를 읽어** 구분하니 섞어 쓰지만 말 것.
+ALPHAS="${ALPHAS:-0.4 0.7 1.0}"
 SEEDS="${SEEDS:-5}"
 VX="${VX:-0.00}"
 DUR="${DUR:-40}"
@@ -63,10 +67,10 @@ if [ "$AGG_ONLY" != 1 ]; then
 [ -x "$HERE/build/biped_sim" ] || { echo "✗ build/biped_sim 없음 — 먼저 빌드"; exit 1; }
 fi
 
-run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
+run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_ALPHA $4=seed
   local out falls gx tilt
   out=$(cd "$HERE" && env LD_LIBRARY_PATH="$MJLIB:${LD_LIBRARY_PATH:-}" $DEPLOY $NOISE_ENV \
-        T_STEP="$1" K_RETURN="$2" EST_DWELL="$3" SEED="$4" \
+        T_STEP="$1" K_RETURN="$2" EST_ALPHA="$3" SEED="$4" \
         timeout 600 ./build/biped_sim "$MODEL" "$VX" "$DUR" 2>/dev/null | tail -n 1)
   falls=$(sed -n 's/.*falls=\([0-9]*\).*/\1/p' <<<"$out")
   gx=$(sed -n 's/.*GT=(\([^,]*\),.*/\1/p' <<<"$out")
@@ -76,8 +80,8 @@ run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
 export -f run_one; export HERE MJ MJLIB MODEL VX DUR DEPLOY NOISE_ENV
 
 if [ "$AGG_ONLY" != 1 ]; then
-{ printf "T_STEP\tK_RETURN\tDWELL\tseed\tfalls\tgt_x\ttilt\n"
-  for t in $TSTEPS; do for k in $KRETS; do for w in $DWELLS; do
+{ printf "T_STEP\tK_RETURN\tALPHA\tseed\tfalls\tgt_x\ttilt\n"
+  for t in $TSTEPS; do for k in $KRETS; do for w in $ALPHAS; do
     for s in $(seq 1 "$SEEDS"); do echo "$t $k $w $s"; done
   done; done; done | xargs -P "$JOBS" -n 4 bash -c 'run_one "$0" "$1" "$2" "$3"'
 } > "$OUT"
@@ -112,7 +116,10 @@ def cp_upper(k, n, alpha=ALPHA):
         else: hi = mid
     return (lo + hi) / 2
 
-rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])][1:]
+_all = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+# ★3열의 의미는 파일마다 다르다(옛 파일=DWELL · 새 파일=ALPHA). **헤더에서 읽는다.**
+KNOB = _all[0][2] if _all and len(_all[0]) > 2 else "KNOB"
+rows = _all[1:]
 cell = collections.defaultdict(list)
 for r in rows:
     if len(r) < 7: continue
@@ -122,8 +129,8 @@ nerr = sum(1 for v in cell.values() for f, _, _ in v if f == ERR)
 print("  ⚠드리프트·tilt 는 **낙상 안 한 시드만** 집계한다 — 낙상하면 reset() 이 원점으로")
 print("    되돌려 |x| 가 인위적으로 작게 찍힌다. 낙상 셀의 드리프트는 읽으면 안 된다.")
 print()
-print(f"  {'T_STEP':<8}{'K_RET':<8}{'DWELL':<7}{'falls':<8}{'상한95%':<10}"
-      f"{'|x|surv':<10}{'tilt_surv':<11}{'n_surv'}")
+print(f"  {'T_STEP':<8}{'K_RET':<8}{KNOB:<7}{'falls':<8}{'상한95%':<10}"
+      f"{'|x|surv':<10}{'tilt_surv':<11}{'n_surv'}".replace("DWELL  ", f"{KNOB:<7}"))
 
 out = []
 for k, v in cell.items():

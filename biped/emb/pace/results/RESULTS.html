@@ -37,7 +37,7 @@ pre code{border:0;background:none;padding:0}
 </style></head>
 <body><div class="wrap">
 <h1>액추에이터 식별 — 최종값 (2026-08-14)</h1>
-<p><code>fit_v8</code> 기준(빠른 재수집 자료). 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다. 신뢰도는 <b>네 번의 적합(v2·v3·v4·v5)에서 얼마나 흔들렸나</b>로 매겼다 — 한 번의 오차막대보다 그게 정직하다.</p>
+<p><code>fit_v9</code> 기준(빠른 재수집 자료 · 지연을 실측에 못박음). 각 값은 <b>가장 믿을 만한 출처 하나</b>를 골라 적었다. 신뢰도는 <b>네 번의 적합(v2·v3·v4·v5)에서 얼마나 흔들렸나</b>로 매겼다 — 한 번의 오차막대보다 그게 정직하다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
 <pre> τ_cmd(t − T_d)  =  [ I_link + I_rot·N² ]·q̈  +  b·q̇  +  τ_c·sgn(q̇)  +  g(q)
@@ -145,13 +145,34 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
 <tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
-<tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b> ★</td><td class="n">0.498</td></tr>
-<tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td class="n">0.510</td></tr>
+<tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b> ★</td><td class="n">0.603</td></tr>
+<tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td class="n">0.537</td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td><b>0.241</b> ◆</td></tr></table>
-<p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>9.75 ms</b> ⚠</p>
+<p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.39 ms</b>(실측 고정)</p>
 <p>◆<code>frictionloss.foot</code> 만 <b>옛 자료(<code>fit_v6</code>)의 0.241</b> 을 쓴다. 새 수집은 foot 진폭을 13°→7° 로 <b>일부러 줄였으므로</b>(속도예산을 thigh 로 넘겼다) 그 축의 정보가 줄었다. 새 자료의 값은 0.185(11%, 벽 근처)로 내려가는데, 옛 자료는 자유였던 두 판이 0.240/0.241 로 <b>±0.4%</b> 일치했다. 정보가 많은 쪽을 쓴다. ⚠나머지는 섞지 않았다 — <code>thigh</code>·<code>calf</code> 의 마찰은 <code>damping</code>=0 과 <b>짝</b>이라 같은 판에서 와야 한다.</p>
-<p class="warn">⚠<code>delay</code> 9.75 ms 가 탐색범위 92%(상한 10.0)에 붙었다. 실측 8.39±0.79 의 2σ 안이긴 하나,</p>
-<p><code>JDAMP</code> 를 빼는 만큼 지연이 그 자리를 메우고 있다(v7 7.83 → v7b 9.64 → v8 9.75). <b>모델오차가 지연으로 흘러드는 중</b>이라는 신호다 — 다음 수집 때 지연을 다시 실측해 상한을 좁히는 게 좋다.</p>
+<h3>★<code>JDAMP</code> 와 <code>delay</code> 는 <b>같은 것을 본다</b> (2026-08-14)</h3>
+<p>제어법칙 <code>τ = kp·(q_cmd(t−T_d) − q) − kd·q̇</code> 에서 지연을 1차로 펴면:</p>
+<pre>q_cmd(t − T_d) ≈ q_cmd(t) − T_d·q̇_cmd
+⇒ τ ≈ kp(q_cmd − q) − kd·q̇  −  kp·T_d·q̇_cmd     ← 추종이 좋으면 q̇_cmd ≈ q̇
+                                └── 감쇠계수 kp·T_d 와 구별 불가 ──┘</pre>
+<p><code>T_d = 9.75 ms</code> 기준으로 축별 크기를 보면 왜 <code>JDAMP</code> 가 안 잡히는지 분명하다:</p>
+<table>
+<tr><th>축</th><th><code>kp</code>[Nm/rad]</th><th><b><code>kp·T_d</code></b>(지연이 만드는 감쇠)</th><th><code>JDAMP</code>(진짜)</th><th>비</th></tr>
+<tr><td>hip</td><td class="n">100</td><td><b>0.975</b></td><td class="n">0.090</td><td><b>10.8배</b></td></tr>
+<tr><td>thigh</td><td class="n">50</td><td><b>0.488</b></td><td class="n">0</td><td>∞</td></tr>
+<tr><td>calf</td><td class="n">56.2</td><td><b>0.548</b></td><td class="n">0</td><td>∞</td></tr>
+<tr><td>foot</td><td class="n">31.7</td><td><b>0.309</b></td><td class="n">0.110</td><td class="n">2.8배</td></tr></table>
+<p><b>진짜 감쇠는 지연이 만드는 감쇠의 10~30% 짜리 보정항</b>이다. 그리고 지연 실측오차 ±0.79 ms 만으로도 <code>JDAMP</code> 범위를 덮는다 — hip 은 <code>100×0.79ms = ±0.079</code> 로 그 축 감쇠(0.090)의 <b>±88%</b> 다. §0-b 의 *"hip 은 자유변수였는데도 초기값에서 안 움직였다"* 가 이걸로 설명된다.</p>
+<p>적합이 실제로 보는 건 <b>합</b>이다. 세 판에서 <code>b</code> 는 0~0.070(무한대 비), <code>T_d</code> 는 25% 갈리는데 <code>b + kp·T_d</code> 는 <b>6.5%</b> 안이다:</p>
+<table>
+<tr><th>판</th><th><code>b</code></th><th><code>T_d</code>[ms]</th><th><code>kp·T_d</code></th><th><code>b + kp·T_d</code></th></tr>
+<tr><td><code>fit_v7</code></td><td class="n">0.0701</td><td class="n">7.83</td><td class="n">0.3915</td><td class="n">0.4616</td></tr>
+<tr><td><code>fit_v7b</code></td><td class="n">0.0110</td><td class="n">9.64</td><td class="n">0.4820</td><td class="n">0.4930</td></tr>
+<tr><td><code>fit_v8</code></td><td class="n">0 (고정)</td><td class="n">9.75</td><td class="n">0.4875</td><td class="n">0.4875</td></tr></table>
+<p>⇒ <b>지연도 이 자료로는 식별 불가다.</b> 실측 8.39 에 못박는 게 맞다 —</p>
+<p><code>fit_v9</code> 이 그렇게 했고 검증 RMS 가 0.2502 로 자유였을 때(0.2490~0.2497)와 같다.</p>
+<p class="warn">★<b>뜻밖의 확인</b> — 지연을 실측에 묶자 <code>JFRIC.thigh</code> 가 0.498 → <b>0.603</b> 으로 올라 각축 스윕 실측(0.670) 대비 −26% → <b>−10%</b> 가 됐다. 물리값에 묶으니 마찰도 물리값 쪽으로 왔다. <code>fit_v9</code> 이 더 물리적인 적합이라는 <b>독립 근거</b>다.</p>
+<p>⇒ <b>지연 재실측은 불필요하다.</b> 지연 정밀도가 필요한 건 <code>JDAMP</code> 식별인데, 그건 이제 전부 다른 근거로 정해졌다(스윕 기울기 · 각축 실측 · hip 은 방법 없음 확정).</p>
 <p class="warn">★<code>damping.thigh</code> = <b>0 (잠정)</b> — 스윕이 Stribeck 최저점 <b>아래</b>(≤40dps)까지만 갔다(§0 ★). 음이 아닌 값 중 최선이지만 80~120dps 에서 올라갈 수 있다. ⚠<code>frictionloss.thigh</code> 는 <code>fit_v8</code>(thigh 도 0 고정)로 다시 정해야 한다 — 지금 0.592 는 <code>b</code> 가 자유였던 판의 값이다.</p>
 <h3>네 번의 적합에서 얼마나 흔들렸나</h3>
 <table>
@@ -198,10 +219,10 @@ pre code{border:0;background:none;padding:0}
 <tr><th>값</th><th>출처</th><th>오차</th><th>믿을 수 있나</th></tr>
 <tr><td><code>ROTOR_I</code> 7.327e-4</td><td>각축 토크시험 4곳</td><td><b>±10%</b></td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>damping.foot</code> 0.110</td><td>각축 토크시험 좌우</td><td><b>±0.012</b> (11%)</td><td class="ok">✅ 좋다</td></tr>
-<tr><td><code>delay</code> 8.13 ms</td><td>직접 실측 8.39±0.79 (차 0.26)</td><td><b>±0.79</b></td><td class="ok">✅ 좋다</td></tr>
-<tr><td><code>frictionloss.calf</code> 0.510</td><td>PACE — 새 자료 3판 0.507~0.539</td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>delay</code> <b>8.39 ms</b></td><td><b>실측 그대로 고정</b> — 적합으로는 식별 불가(위 ★)</td><td class="n">±0.79</td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>frictionloss.calf</code> 0.537</td><td class="wa">PACE(<code>fit_v9</code>) — 스윕 실측 1.001 대비 −46% ⚠</td><td class="n">±3%</td><td class="wa">⚠ 보통</td></tr>
 <tr><td><b><code>damping.calf</code> 0</b></td><td>전부 바닥, 짝은 불변. v6 에서 0 고정해도 성적 유지</td><td>상한 0.002</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
-<tr><td><code>frictionloss.thigh</code> 0.498</td><td>PACE — <code>damping</code>=0 고정 후 확정</td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
+<tr><td><code>frictionloss.thigh</code> 0.603</td><td>PACE(<code>fit_v9</code>) — 스윕 실측 0.670 대비 <b>−10%</b></td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>frictionloss.foot</code> 0.241</td><td><b>옛 자료</b> v5·v6 (자유인 두 판)</td><td><b>±0.4%</b></td><td class="ok">✅ 좋다 ◆</td></tr>
 <tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§4-3)</td></tr>
@@ -237,10 +258,12 @@ pre code{border:0;background:none;padding:0}
 <h2>4. 더 해야 할 시험</h2>
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td><b>1</b></td><td>thigh 관성 — <b>토크준위를 올려 런을 짧게</b></td><td>실기</td><td class="n">30분</td><td>진자 뒤처짐 해소(39%→8%)</td></tr>
-<tr><td class="n">2</td><td><code>delay</code> 재실측</td><td>실기</td><td class="n">20분</td><td>지연이 모델오차를 흡수 중(92%)</td></tr>
-<tr><td class="n">—</td><td>~~<code>damping.hip</code>~~</td><td class="n">—</td><td class="n">—</td><td><b>방법 없음 확정</b> → 도메인 랜덤화</td></tr>
-<tr><td class="n">3</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
+<tr><td>순위</td><td>무엇</td><td>어디서</td><td>비용</td><td>얻는 것</td></tr>
+<tr><td><b>1</b></td><td>검증 강화 — 다른 궤적으로 한 번 더</td><td>실기</td><td class="n">30분</td><td>지금 검증은 <b>게인만</b> 바꿨다</td></tr>
+<tr><td class="n">2</td><td><code>JFRIC.calf</code> 가 스윕 대비 −46% 인 이유</td><td>오프라인</td><td class="n">—</td><td>유일하게 큰 불일치</td></tr>
+<tr><td class="n">—</td><td>~~thigh 관성~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>t_ref→0 외삽으로 +6.1%</b></td></tr>
+<tr><td class="n">—</td><td>~~<code>delay</code> 재실측~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>불필요</b> — 실측 고정으로 충분</td></tr>
+<tr><td class="n">—</td><td>~~<code>damping.hip</code>~~</td><td class="n">—</td><td class="n">—</td><td class="no">❌ <b>방법 없음 확정</b> → 도메인 랜덤화</td></tr></table>
 <p>✅<b><code>JDAMP.thigh = 0</code> 은 <code>fit_v8</code> 로 확정됐다</b> — 검증 RMS 0.2497 로 자유였을 때 (0.2490 / 0.2494)와 0.3% 안에서 같다. 자유차원 13 → <b>12</b>.</p>
 <p>⇒ 끝난 시험은 <b>§5</b> 에 결론만 남긴다. ⚠<b>hip 만 방법이 없다.</b> 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻어 기울기를   못 낸다. §4-2(중력 최소자세)가 그 축의 유일한 길이다.</p>
 <p class="warn">⚠<b>thigh 의 0 은 잠정이다.</b> 확정하려면 스윕을 <b>80~120 dps</b> 로 올려야 하고   (calf 가 그 속도에서 평탄함을 보여 답이 나왔다), 그러려면 스트로크가 40°→56° 쯤   필요하다. 44° 에서 간섭 전례가 있으니 <b>육안 확인이 먼저</b>다. 우선순위는 낮다 —   지금 게인·속도에서는 어느 값이든 검증 RMS 가 같다(0.249).</p>

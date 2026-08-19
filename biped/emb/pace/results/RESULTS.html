@@ -153,8 +153,18 @@ pre code{border:0;background:none;padding:0}
 <h3>★<code>JDAMP</code> 와 <code>delay</code> 는 <b>같은 것을 본다</b> (2026-08-14)</h3>
 <p>제어법칙 <code>τ = kp·(q_cmd(t−T_d) − q) − kd·q̇</code> 에서 지연을 1차로 펴면:</p>
 <pre>q_cmd(t − T_d) ≈ q_cmd(t) − T_d·q̇_cmd
-⇒ τ ≈ kp(q_cmd − q) − kd·q̇  −  kp·T_d·q̇_cmd     ← 추종이 좋으면 q̇_cmd ≈ q̇
-                                └── 감쇠계수 kp·T_d 와 구별 불가 ──┘</pre>
+⇒ τ ≈ kp(q_cmd − q) − kd·q̇  −  kp·T_d·q̇_cmd
+       └ 위치항 ┘              └── 새 속도항 ──┘</pre>
+<p class="warn">⚠<b><code>kp</code> 는 하나다.</b> 새 게인이 생긴 게 아니라, <code>kp</code> 가 곱해지는 대상이 <code>q_cmd</code> 였고 그 안의 시간지연이 <b>속도 성분을 뱉어낸</b> 것이다.</p>
+<p class="warn">⚠⚠<b>그리고 동등성은 근사다 — 주파수에 의존한다.</b> 새 항은 <code>q̇_cmd</code>(명령속도)이지</p>
+<p><code>q̇</code>(실제속도)가 아니다. <code>q̇_cmd</code> 중 <b><code>q̇</code> 와 위상이 같은 성분만</b> 감쇠로 작동하고, 직각 성분은 감쇠가 아니라 <b>유효 강성·관성을 바꾼다.</b></p>
+<p>동상 비율은 <code>cos(폐루프 위상지연)</code> 이다. thigh 로 계산하면:</p>
+<table>
+<tr><th>폐루프 고유진동수 <code>√(kp/I)</code> = √(50/0.18)</th><th><b>2.65 Hz</b></th></tr>
+<tr><td>처프 끝 <code>f = 1.25 Hz</code> → <code>r = 0.47</code>, ζ≈0.7</td><td>위상지연 <b>≈ 40°</b></td></tr>
+<tr><td><b>동상 비율 <code>cos 40°</code></b></td><td><b>0.77</b></td></tr></table>
+<p>즉 <code>kp·T_d</code> 의 <b>약 77% 만</b> 감쇠로 작동한다. 저주파에서는 1.0 에 가깝고 대역에 가까울수록 줄어든다.</p>
+<p class="warn">★<b>이것이 수치 확인이 딱 안 맞은 이유다</b> — 예측 <code>Δb = −kp·ΔT_d = −0.0905</code> 인데 실제는 <code>−0.0591</code>(<b>65%</b>)이었다. <code>cos 40° = 0.77</code> 에 <code>JFRIC</code> 이 같이 움직인 몫을 더하면 그 정도다. <b>동등성을 정확한 등식으로 쓰면 안 된다.</b></p>
 <p><code>T_d = 9.75 ms</code> 기준으로 축별 크기를 보면 왜 <code>JDAMP</code> 가 안 잡히는지 분명하다:</p>
 <table>
 <tr><th>축</th><th><code>kp</code>[Nm/rad]</th><th><b><code>kp·T_d</code></b>(지연이 만드는 감쇠)</th><th><code>JDAMP</code>(진짜)</th><th>비</th></tr>
@@ -162,7 +172,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>thigh</td><td class="n">50</td><td><b>0.488</b></td><td class="n">0</td><td>∞</td></tr>
 <tr><td>calf</td><td class="n">56.2</td><td><b>0.548</b></td><td class="n">0</td><td>∞</td></tr>
 <tr><td>foot</td><td class="n">31.7</td><td><b>0.309</b></td><td class="n">0.110</td><td class="n">2.8배</td></tr></table>
-<p><b>진짜 감쇠는 지연이 만드는 감쇠의 10~30% 짜리 보정항</b>이다. 그리고 지연 실측오차 ±0.79 ms 만으로도 <code>JDAMP</code> 범위를 덮는다 — hip 은 <code>100×0.79ms = ±0.079</code> 로 그 축 감쇠(0.090)의 <b>±88%</b> 다. §0-b 의 *"hip 은 자유변수였는데도 초기값에서 안 움직였다"* 가 이걸로 설명된다.</p>
+<p><b>진짜 감쇠는 지연이 만드는 감쇠의 10~30% 짜리 보정항</b>이다. (동상 비율 0.77 을 곱해도 hip 은 <code>0.975×0.77 = 0.75</code> 로 여전히 <code>JDAMP</code> 0.090 의 <b>8배</b>다 — 근사의 부정확성이 결론을 안 바꾼다.) 그리고 지연 실측오차 ±0.79 ms 만으로도 <code>JDAMP</code> 범위를 덮는다 — hip 은 <code>100×0.79ms = ±0.079</code> 로 그 축 감쇠(0.090)의 <b>±88%</b> 다. §0-b 의 *"hip 은 자유변수였는데도 초기값에서 안 움직였다"* 가 이걸로 설명된다.</p>
 <p>적합이 실제로 보는 건 <b>합</b>이다. 세 판에서 <code>b</code> 는 0~0.070(무한대 비), <code>T_d</code> 는 25% 갈리는데 <code>b + kp·T_d</code> 는 <b>6.5%</b> 안이다:</p>
 <table>
 <tr><th>판</th><th><code>b</code></th><th><code>T_d</code>[ms]</th><th><code>kp·T_d</code></th><th><code>b + kp·T_d</code></th></tr>

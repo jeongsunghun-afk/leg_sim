@@ -178,7 +178,11 @@ def main() -> int:
 
     # 홀드: 시험 다리의 calf 만 자유. 나머지 전부(반대다리 · hip · thigh)를 잡는다.
     #   ★thigh 를 반드시 잡아야 한다 — 절대각 관계가 "대퇴 고정" 을 전제한다.
-    hold = tuple(c for c in range(n_ch) if c not in (ci, fi))
+    # ★관절이 정의된 채널만 잡는다. spec.shm.n_channel 은 **10** 인데 관절은 8 이다
+    #   (ch8·9 는 미사용). range(n_ch) 로 잡으면 _ch_limit_box 에 없어 KeyError 다.
+    #   미사용 채널은 kp=kd=0 으로 두는 게 맞다 — 잡을 것이 없다.
+    hold = tuple(c for c in range(min(n_ch, len(jm.names)))
+                 if c not in (ci, fi) and c in box)
     sf, g = spec["safety"], spec["gains"]
     box = at._ch_limit_box(spec, pin_home=True)
     lo_f, hi_f = box[fi]
@@ -215,6 +219,8 @@ def main() -> int:
             _lo, _hi = box[c]
             hw.lim_ch[c] = replace(lim, q_min=float(_lo), q_max=float(_hi))
         hw.lim_ch[fi] = replace(lim, q_min=lo_f, q_max=hi_f)
+        print(f"  홀드 ch {list(hold)} · 자유 ch [{ci}] · 시험축 ch {fi}"
+              f"   (전체 {n_ch}채널 중 관절 {len(jm.names)}개)")
         q_foot0 = hw.arm(fi, kp, kd)
         hw.read(fi)
         q_calf0 = float(hw._q[ci])

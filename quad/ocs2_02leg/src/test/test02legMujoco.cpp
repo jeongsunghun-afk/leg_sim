@@ -532,6 +532,7 @@ int main(int argc, char** argv) {
         const double oX = cmdfile ? d->qpos[0] : centroidal_model::getBasePose(x0, info)(0);
         const double oY = cmdfile ? d->qpos[1] : centroidal_model::getBasePose(x0, info)(1);
         const double oYaw = cmdfile ? z : 0.0;   // z=현재 yaw(quat2zyx)
+        const double tRef = cmdfile ? t : 0.0;   // ★로봇-상대(cmdfile)=현재시점 오프셋 기준·절대(고정VX)=0. 참조 이중계산(폭주) 방지
         // ★smooth heightmap(box-avg ±SW): legged_perceptive "smooth_planar" 대응. 원 mj_ray 계단 날카로움 완화
         //   → base z가 계단 앞서 점진 상승(급점프 전복 방지). pitch도 step=0.3 넓은 차분(legged_perceptive 동일).
         const double SW = getenv("SMOOTH_W") ? std::atof(getenv("SMOOTH_W")) : 0.14;
@@ -563,10 +564,11 @@ int main(int argc, char** argv) {
         const int N = 11; std::vector<scalar_t> tt(N); std::vector<vector_t> xs(N), us(N);
         for (int n = 0; n < N; ++n) {
           double tn = t + (double)n * H / (N - 1);
+          const double tau = tn - tRef;   // ★참조 적분은 시작시점 기준 경과시간(절대 tn 아님)
           vector_t xn = x0;                                                     // nominal 자세·momentum, base만 지형적응
-          double yawN = oYaw + wCmd * tn;                                       // ★GUI 선회(yaw-rate 적분)
-          double bx = oX + vxEff * tn * std::cos(oYaw + 0.5 * wCmd * tn) - vyCmd * tn * std::sin(oYaw);
-          double by = oY + vxEff * tn * std::sin(oYaw + 0.5 * wCmd * tn) + vyCmd * tn * std::cos(oYaw);
+          double yawN = oYaw + wCmd * tau;                                       // ★GUI 선회(yaw-rate 적분)
+          double bx = oX + vxEff * tau * std::cos(oYaw + 0.5 * wCmd * tau) - vyCmd * tau * std::sin(oYaw);
+          double by = oY + vxEff * tau * std::sin(oYaw + 0.5 * wCmd * tau) + vyCmd * tau * std::cos(oYaw);
           double nX = (hS(bx - STEP, by) - hS(bx + STEP, by)) / (2 * STEP);      // n=[-∂h/∂x,-∂h/∂y,1]=법선(smooth·넓은차분)
           double nY = (hS(bx, by - STEP) - hS(bx, by + STEP)) / (2 * STEP);
           double vx_ = std::cos(yawN) * nX + std::sin(yawN) * nY;               // (Rz(yaw)ᵀ·n).x

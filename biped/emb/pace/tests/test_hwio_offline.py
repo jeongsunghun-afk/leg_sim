@@ -24,6 +24,7 @@ import ctypes as C
 import os
 import io
 import contextlib
+import builtins as builtins_mod
 import sys
 
 import numpy as np
@@ -715,6 +716,47 @@ def t_coef_plumbing():
           f"최대차 {np.max(np.abs(np.asarray(mj.wrap_prm) - w0)):.3e}")
 
 
+def t_except_names_resolve():
+    """★except 절이 잡는 이름이 그 파일에서 **해석 가능한가** (2026-08-14 신설).
+
+    2026-08-14 실기 — collect_multichirp 이 `except hwio.SafetyAbort` 를 썼는데
+    그 파일은 `from hwio import SafetyAbort` 라 `hwio` 라는 이름이 없다.
+    **트립이 실제로 나야 실행되는 줄**이라 평소엔 안 걸린다. 그래서 트립이 났을 때
+    NameError 로 덮여 20초치 수집을 잃었다 — 자료를 지키려고 넣은 코드가 자료를 지웠다.
+
+    ⚠오류 처리 경로는 **성공 경로보다 덜 실행되는데 더 중요하다.** 정적으로 본다.
+    """
+    import ast as _ast
+    bad = []
+    for _f in sorted(os.listdir(PACE)):
+        if not _f.endswith(".py"):
+            continue
+        _src = open(os.path.join(PACE, _f), encoding="utf-8").read()
+        try:
+            _tree = _ast.parse(_src)
+        except SyntaxError:
+            continue
+        _top = set(dir(builtins_mod))
+        for _n in _ast.walk(_tree):
+            if isinstance(_n, _ast.ImportFrom):
+                _top |= {a.asname or a.name for a in _n.names}
+            elif isinstance(_n, _ast.Import):
+                _top |= {(a.asname or a.name).split(".")[0] for a in _n.names}
+            elif isinstance(_n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                _top.add(_n.name)
+        for _n in _ast.walk(_tree):
+            if not isinstance(_n, _ast.ExceptHandler) or _n.type is None:
+                continue
+            _ts = _n.type.elts if isinstance(_n.type, _ast.Tuple) else [_n.type]
+            for _t in _ts:
+                _r = _t
+                while isinstance(_r, _ast.Attribute):
+                    _r = _r.value
+                if isinstance(_r, _ast.Name) and _r.id not in _top:
+                    bad.append(f"{_f}:{_n.lineno} except {_ast.unparse(_t)}")
+    check("except 이름이 전부 해석된다", not bad, "; ".join(bad) or "emb/pace/*.py 전부")
+
+
 def t_couple_magnitude_e2e():
     """★diag/couple_magnitude.py 의 main() 을 **끝까지** 돌린다 (2026-08-14 신설).
 
@@ -796,7 +838,7 @@ if __name__ == "__main__":
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
                t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing,
-               t_couple_magnitude_e2e):
+               t_except_names_resolve, t_couple_magnitude_e2e):
         try:
             fn()
         except Exception as e:

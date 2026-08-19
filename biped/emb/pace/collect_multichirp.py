@@ -464,7 +464,7 @@ def main() -> int:
                 # ★밀린 틱을 센다. 명령 공백이 드라이버 워치독을 건드릴 수 있다.
                 _over += 1
                 _lagmax = max(_lagmax, -slp * 1e3)
-        except hwio.SafetyAbort as _e:
+        except SafetyAbort as _e:          # ★이 파일은 `from hwio import ...` 다
             _abort = _e
             print(f"\n  ⚠트립 — {_i}/{_N} 표본({_i*hw.dt:.1f}/{T:.0f}s)까지 저장한다.")
 

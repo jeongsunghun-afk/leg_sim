@@ -210,6 +210,19 @@ OCS2/TAMOLS 참조 → RL. NMPC 완성 후 or 병행.
 - **12-DOF↔16-DOF**: 16-DOF가 기본(config·URDF). 12-DOF=`02leg_ocs2_12dof.urdf`+git이력 보존. Phase 3 헤더=`src/test/`(mj_terrain_sdf·foot_terrain_clearance·foot_terrain_placement·local_convex_region), 인터페이스/CMake 변경=`src/patch/`.
 - **상태추정·좌표 브리지**: 배포 시 `state_estimator.hpp` KF 재사용, base quat wxyz↔xyzw·pin↔mjcf 리맵은 `quad_centroidal.py` 패턴.
 
+## 5. 보행 강건성 영상 (2026-08-19)
+
+D1(OCS2 NMPC+WBC) 실시간 폐루프에서 **walk·trot·bound** 게이트별 측방 push 외란 복구를 오프스크린 캡처(MuJoCo `mjr_readPixels`, 빨간 화살표+HUD `PUSH NN` 시각화). 각 게이트가 실제 복구하는 범위로 push 강도를 맞춤(헤드리스 사전검증, falls=0).
+
+| 게이트 | 파일 | 속도 VX | 측방 push | 결과 |
+|---|---|---|---|---|
+| walk(static_walk) | `docs/videos/d1_robustness_walk.mp4` | 0.3 | 150N ×3 | falls=0, tilt ≤5° |
+| trot | `docs/videos/d1_robustness_multipush.mp4` | 0.4 | 200N ×3 | falls=0 |
+| bound | `docs/videos/d1_robustness_bound.mp4` | 0.5 | 150N ×3 | falls=0, tilt ≤7° |
+
+- 재현: `PUSH`/`PUSH_AX`(1=측방)/`PUSH_T`/`PUSH_REP`/`PUSH_EVERY`/`PUSH_DUR` env + `VIDEO=<raw> VIDEO_N=<frames>` → ffmpeg `-vf vflip` 인코딩. push 시각화=`test02legMujoco.cpp` 렌더 블록(c43d60f).
+- 강도 차이=게이트 특성: walk(정적 크롤=베이스 안정)·trot(가장 강건, 200N)·bound(고유 pitch 진동 tilt~6°이라 push 효과 일부 묻힘, 화살표로 시점 명확).
+
 ## 참조
 - Grandia 2023 "Perceptive Locomotion through NMPC"(OCS2).
 - legged_control(qiayuanl)·legged_perceptive — OCS2 quadruped WBC/perceptive 구현 참조(로컬 클론).

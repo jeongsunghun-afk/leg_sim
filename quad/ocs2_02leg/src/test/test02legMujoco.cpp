@@ -319,7 +319,15 @@ int main(int argc, char** argv) {
   // 전진 목표 (VX env, 기본 0.3; stance 격리시 VX=0). ★GUI 배선: CMDFILE(teleop_gui JSON) 라이브 구동
   double vx = getenv("VX") ? std::atof(getenv("VX")) : 0.3;
   double vyCmd = 0.0, wCmd = 0.0;
+  double vxTgt = vx, vyTgt = 0.0, wTgt = 0.0;   // ★GUI 원시 명령 타깃(슬루 전). 실제 vx/vyCmd/wCmd는 저역통과된 값
+  std::string cmdGait, cmdMode;                          // ★GUI gait/mode 필드(라이브 게이트/모드 전환)
+  std::string activeSeq = gait;                          // 현재 스케줄에 들어간 시퀀스(런치 게이트로 시작)
+  const std::string gaitInfoPath = std::string(argv[3]).substr(0, refFile.find_last_of('/') + 1) + "gait.info";
+  auto mapGait = [](const std::string& g) -> std::string { if (g == "walk") return "static_walk"; if (g == "run") return "trot"; return g; };  // GUI→D1 게이트명
   const char* cmdfile = getenv("CMDFILE");   // teleop_gui_17dof가 발행하는 /tmp/quad_cmd.json
+  const double cmdTau = getenv("CMD_TAU") ? std::atof(getenv("CMD_TAU")) : 0.30;  // ★GUI 명령 슬루 시정수[s](0=즉시). 실기 가속제한 동형
+  const double cmdJitter = getenv("CMD_JITTER") ? std::atof(getenv("CMD_JITTER")) : 0.0;  // ★검증용 결정론적 명령지터 주기[s](sim-time 구형파, 파일무관)
+  const bool liveCmd = cmdfile || cmdJitter > 0.0;
   auto readCmd = [&]() {                      // JSON 최소파싱(v/vy/w). 없거나 실패=값 유지
     if (!cmdfile) return;
     std::ifstream cf(cmdfile); if (!cf.good()) return;
@@ -329,8 +337,16 @@ int main(int argc, char** argv) {
       auto p = s.find(key); if (p == std::string::npos) return;
       p = s.find(':', p + key.size()); if (p == std::string::npos) return;
       o = std::atof(s.c_str() + p + 1); };
-    num("v", vx); num("vy", vyCmd); num("w", wCmd);
-    num("reset_seq", resetSeq); num("home_seq", homeSeq); };   // ★Reset/Ready 버튼(카운터)
+    auto str = [&](const char* k, std::string& o) {          // ★문자열 값 파싱(gait/mode)
+      std::string key = std::string("\"") + k + "\"";
+      auto p = s.find(key); if (p == std::string::npos) return;
+      p = s.find(':', p + key.size()); if (p == std::string::npos) return;
+      p = s.find('"', p); if (p == std::string::npos) return;
+      auto q = s.find('"', p + 1); if (q == std::string::npos) return;
+      o = s.substr(p + 1, q - p - 1); };
+    num("v", vxTgt); num("vy", vyTgt); num("w", wTgt);   // ★슬루 타깃에만 반영(급변 완화는 아래 저역통과)
+    num("reset_seq", resetSeq); num("home_seq", homeSeq);
+    str("gait", cmdGait); str("mode", cmdMode); };   // ★Reset/Ready 버튼 + GUI gait/mode(라이브 전환)
   readCmd();
   vector_t xGoal = x0;
   centroidal_model::getBasePose(xGoal, info)(0) += vx * simTime;
@@ -421,7 +437,36 @@ int main(int argc, char** argv) {
         mj_forward(m, d);
         std::cerr << "  [RESET] 로봇 초기자세 복원(t=" << t << ")\n";
       }
+      // ★GUI 라이브 게이트/모드 전환(Walk/Ready/Ground + 게이트 버튼): OCS2 런타임 mode-seq 삽입.
+      //   mode=move→보행게이트(gait필드) · stand_up/stand_down→제자리 stance · mode없고 gait만→보행게이트.
+      {
+        std::string want = activeSeq;
+        if (cmdMode == "move" || cmdMode == "tamols") { if (!cmdGait.empty()) want = mapGait(cmdGait); }
+        else if (!cmdMode.empty())                    want = "stance";
+        else if (!cmdGait.empty())                    want = mapGait(cmdGait);
+        if (want != activeSeq) {
+          try {
+            auto tmpl = loadModeSequenceTemplate(gaitInfoPath, want, false);
+            refMgr->getGaitSchedule()->insertModeSequenceTemplate(tmpl, t + 0.1, t + 20.0);
+            if (!getenv("W_BASE")) wbcL.wBase_ = (want == "trot") ? 150.0 : 50.0;
+            activeSeq = want;
+            std::cerr << "  [GAIT] \xe2\x86\x92 " << want << " (mode=" << cmdMode << ", t=" << t << ")\n";
+          } catch (const std::exception& e) { std::cerr << "  [GAIT] '" << want << "' \xeb\xa1\x9c\xeb\x93\x9c \xec\x8b\xa4\xed\x8c\xa8, \xec\x9c\xa0\xec\xa7\x80\n"; }
+        }
+      }
     }
+    // ★검증용 결정론적 명령 지터(CMD_JITTER=주기[s]): sim-time 구형파로 vxTgt/wTgt 급변 생성(파일 무관, SYNC 결정론 A/B용).
+    if (cmdJitter > 0.0) { bool hi = std::fmod(t, 2 * cmdJitter) < cmdJitter;
+      vxTgt = hi ? 0.7 : 0.0; vyTgt = hi ? 0.0 : 0.15; wTgt = hi ? 0.6 : -0.6; }
+    // ★GUI 명령 슬루(1차 저역통과, τ=cmdTau): 조이스틱 급변/떨림을 부드럽게 → NMPC 속도참조 불연속 완화(보행붕괴 방지).
+    //   명령 없으면(헤드리스) 미적용=env VX 그대로(기존 결과 불변). 상태클램프 아님=명령 필터라 물리적(실기 teleop 가속제한과 동형).
+    if (liveCmd && cmdTau > 1e-6) {
+      const double aCmd = dt / (cmdTau + dt);
+      vx    += aCmd * (vxTgt - vx);
+      vyCmd += aCmd * (vyTgt - vyCmd);
+      wCmd  += aCmd * (wTgt  - wCmd);
+    } else if (liveCmd) { vx = vxTgt; vyCmd = vyTgt; wCmd = wTgt; }
+
     // --- MuJoCo → rbdState(36) ---
     // rbdState = [eulerZYX(3), position(3), jointPos(nJ), angVel_world(3), linVel_world(3), jointVel(nJ)]
     vector_t rbd_s(6 + nJ + 6 + nJ);

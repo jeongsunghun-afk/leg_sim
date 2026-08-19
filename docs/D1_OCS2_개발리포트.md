@@ -223,6 +223,17 @@ D1(OCS2 NMPC+WBC) 실시간 폐루프에서 **walk·trot·bound** 게이트별 �
 - 재현: `PUSH`/`PUSH_AX`(1=측방)/`PUSH_T`/`PUSH_REP`/`PUSH_EVERY`/`PUSH_DUR` env + `VIDEO=<raw> VIDEO_N=<frames>` → ffmpeg `-vf vflip` 인코딩. push 시각화=`test02legMujoco.cpp` 렌더 블록(c43d60f).
 - 강도 차이=게이트 특성: walk(정적 크롤=베이스 안정)·trot(가장 강건, 200N)·bound(고유 pitch 진동 tilt~6°이라 push 효과 일부 묻힘, 화살표로 시점 명확).
 
+### 5-1. 경사 등반 영상 (perceptive)
+
+D1의 모델기반 강점=**연속 경사 지형적응**(§Phase 3). perceptive 모드(`PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1`)로 8° 램프 등반 캡처.
+
+| 지형 | 파일 | 속도 VX | 결과 |
+|---|---|---|---|
+| 8° 램프(연속) | `docs/videos/d1_slope8_climb.mp4` | 0.25 | 등반 falls=0, base_z 0.53→0.80m, tilt 경사추종 |
+
+- 영상=발밑 **walkable 영역(녹색)+발판 seed(노랑)** 시각화로 perceptive 발배치 표현. 몸통이 경사에 맞춰 pitch(지형적응 base).
+- ★**캡처 필수조건(OMP_NUM_THREADS=1 in env)**: 8°는 강건 경계(~8°)라, ①`main`의 setenv는 OMP 런타임 초기화보다 늦어 무효→멀티스레드 QP 리덕션 비결정성, ②VIEW 모드는 `simTime` 무시하고 창닫힘까지 무한실행(line 428)→이전 캡처 프로세스가 백그라운드 잔존해 CPU 경쟁. 두 요인이 겹치면 marginal 8°서 조기낙상. **env에 `OMP_NUM_THREADS=1` 명시 + 캡처 후 프로세스 종료**로 해결(단일스레드 결정론=경쟁 무관 동일 궤적). 완만경사(≤5°)·평지 영상은 마진이 커서 무영향.
+
 ## 참조
 - Grandia 2023 "Perceptive Locomotion through NMPC"(OCS2).
 - legged_control(qiayuanl)·legged_perceptive — OCS2 quadruped WBC/perceptive 구현 참조(로컬 클론).

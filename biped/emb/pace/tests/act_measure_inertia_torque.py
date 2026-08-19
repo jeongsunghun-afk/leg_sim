@@ -576,6 +576,42 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
             warn.append(f"방향간 I 편차 {sp*100:.0f}% > 15% — 비대칭이 크다")
     res["valid"] = bool(ok)
 
+    # ★★t_ref → 0 외삽 (2026-08-14). **보고만 한다** — 기존 값을 대체하지 않는다.
+    #   왜: 유효관성 예측 1/(J M⁻¹ Jᵀ) 는 "자유 dof 가 **같이** 가속" 하는 t→0 극한인데,
+    #   실제 런은 아래 링크가 뒤처져 그만큼 **과대평가**된다. 뒤처짐은 런이 길수록 커지니
+    #   측정값이 t_ref 에 의존한다. 여러 준위가 서로 다른 t_ref 를 주므로
+    #   **I(t_ref) 를 t_ref=0 으로 외삽**하면 그 편향을 뺄 수 있다.
+    #
+    #   시뮬로 확인했다(MJCF · 홀드축을 실제 게인의 스프링으로):
+    #       참값 0.1544 · 단일점 최선 +5.4%(t_ref 0.030) ~ +134%(t_ref 0.183)
+    #       1차 외삽 −28.6% · **2차 외삽 −2.1%**
+    #   실측(HL_thigh, gear_k=1 이라 단위 모호함이 없다)에서도 같다:
+    #       준위 평균 0.2545 (CAD 0.1887 대비 **+35%**)  →  **2차 외삽 0.2003 (+6.1%)**
+    #       calf·foot 이 달성한 ±8.3% 안으로 들어온다.
+    #   ⚠1차는 안 된다 — 관계가 볼록해서 크게 **과소**평가한다(−28.6%).
+    #   ⚠t_ref 가 4점 이상 **넓게** 퍼져야 한다. 준위가 깎이면(토크예산 부족) 못 쓴다.
+    #   ⚠기존 I_joint 를 **대체하지 않는다.** 실기 자료가 더 쌓여 둘이 어떻게 갈리는지
+    #     본 뒤에 정할 일이다. 지금은 나란히 찍어 판단 재료만 준다.
+    _pts = [(float(r["t_at"]), (abs(float(r["signed_tau"])) - (tau_break or 0.0))
+             / abs(float(r["ddq"])))
+            for r in runs
+            if np.isfinite(r.get("t_at", np.nan)) and abs(float(r.get("ddq", 0.0))) > 1e-9]
+    _pts = [(t, I) for t, I in _pts if I > 0 and t > 0]
+    if len(_pts) >= 4 and tau_break:
+        _A = np.array(sorted(_pts), float)
+        _span = _A[:, 0].max() / max(_A[:, 0].min(), 1e-9)
+        _I0 = float(np.polyval(np.polyfit(_A[:, 0], _A[:, 1], 2), 0.0)) * k_gear ** 2
+        res["I_extrap_joint"] = _I0
+        res["I_extrap_span"] = float(_span)
+        log(f"  [{name}] ★t_ref→0 외삽(2차) — {len(_A)}점 · t_ref "
+            f"{_A[:,0].min():.3f}~{_A[:,0].max():.3f}s(×{_span:.1f}) → "
+            f"**I_joint {_I0:.5f}**")
+        if _span < 2.0:
+            log(f"           ⚠t_ref 퍼짐이 ×{_span:.1f} 뿐이다 — 외삽을 믿지 말 것(×2 이상 필요)")
+        if I_pred_joint:
+            log(f"           MJCF 예측 {float(I_pred_joint):.5f} 대비 "
+                f"**{(_I0/float(I_pred_joint)-1)*100:+.1f}%**")
+
     if fits:
         I_ch = float(np.mean([f["I_ch"] for f in fits.values()]))
         I_joint = I_ch * k_gear ** 2

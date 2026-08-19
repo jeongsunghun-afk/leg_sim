@@ -978,11 +978,19 @@ def main() -> int:
             raise SystemExit("✗ 검증셋의 축 순서가 다르다")
         vi = joint_index(m, V["names"])
         vw = max(1, int(round(a.window / V["dt"])))
-        print(f"\n■ unseen PD gains 검증 — {os.path.basename(a.validate)}")
+        # ★검증의 **종류**를 먼저 판정한다 (2026-08-14). 종전엔 제목이 늘
+        #   "unseen PD gains" 였고, 게인이 같으면 경고를 띄우면서도 마지막엔
+        #   "✅게인을 바꿔도 개선이 유지된다" 를 찍었다 — **서로 모순된 두 줄**이다.
+        #   궤적을 바꾼 검증도 똑같이 valid 한 시험이니 이름을 제대로 붙인다.
+        _same_kp = bool(np.allclose(D["kp"], V["kp"]))
+        _kind = "다른 궤적" if _same_kp else "unseen PD gains"
+        print(f"\n■ {_kind} 검증 — {os.path.basename(a.validate)}")
         print(f"  적합셋 kp {np.round(D['kp'], 1)}")
-        print(f"  검증셋 kp {np.round(V['kp'], 1)}   ← 다른 게인이어야 의미가 있다")
-        if np.allclose(D["kp"], V["kp"]):
-            print("  ⚠게인이 같다 — 이건 unseen gains 검증이 아니다(궤적 따로 뺀 구간 일 뿐)")
+        print(f"  검증셋 kp {np.round(V['kp'], 1)}")
+        if _same_kp:
+            print("  ℹ게인이 같다 ⇒ **궤적**을 바꾼 검증이다(게인 검증이 아니다).")
+            print("    ⚠개선율보다 **절대 잔차**를 볼 것 — 느린 궤적은 틀린 θ 로도 오차가"
+                  " 작아 개선 여지가 애초에 적다.")
         rows = []
         for lab, px in (("초기값", x0), ("적합 θ", best)):
             dyn, bias, dly, cf = split_params(px, len(V["names"]), a.per_axis)
@@ -1004,6 +1012,16 @@ def main() -> int:
                   " θ 가 게인에 얹혀 있다는 뜻이라 그대로 배포하면 안 된다")
         elif imp < 0:
             print("  ★적합 θ 가 초기값보다 **나쁘다** — 과적합이다")
+        elif _same_kp:
+            # ★궤적 검증은 **절대 잔차**로 본다. 개선율은 초기 RMS 에 좌우돼 오해를 부른다
+            #   (2026-08-14: f0.6 판이 개선 +11.7% 로 낮게 보였는데 절대 잔차는 0.4106 으로
+            #    적합셋 0.4173 보다 **오히려 낮았다** — 초기값이 이미 좋았을 뿐이다).
+            _r = rows[1][1] / max(bestc, 1e-12)
+            print(f"  잔차 비 검증/적합 = {rows[1][1]:.4f}/{bestc:.4f} = **{_r:.2f}**")
+            if _r <= 1.2:
+                print("  ✅**다른 궤적에서도 적합셋만큼 맞는다** — 궤적에 안 얹혀 있다")
+            else:
+                print(f"  ⚠검증 잔차가 적합의 {_r:.1f}배다 — 이 궤적에서는 덜 맞는다")
         else:
             print("  ✅게인을 바꿔도 개선이 유지된다")
 

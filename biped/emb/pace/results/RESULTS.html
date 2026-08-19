@@ -486,9 +486,12 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <h3>적합 성적</h3>
 <table>
 <tr><th></th><th>값</th><th>뜻</th></tr>
-<tr><td>적합 RMS</td><td class="n">0.410°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
-<tr><td>따로 뺀 구간 RMS</td><td class="n">0.444°</td><td class="wa">안 쓴 12창 — 적합보다 <b>높다</b>(아래 ⚠)</td></tr>
-<tr><td><b>검증 RMS</b></td><td><b>0.250°</b></td><td><b>게인 2배로 따로 수집한 데이터</b> — 가장 강한 시험</td></tr></table>
+<tr><td>적합 RMS</td><td class="n">0.417°</td><td>파라미터를 찾는 데 쓴 48창</td></tr>
+<tr><td>따로 뺀 구간 RMS</td><td class="n">0.448°</td><td class="wa">안 쓴 12창 — 적합보다 <b>높다</b>(아래 ⚠)</td></tr>
+<tr><td><b>검증 ① 게인 2배</b></td><td><b>0.250°</b></td><td>같은 궤적 · <code>kp</code> ×2 로 따로 수집</td></tr>
+<tr><td><b>검증 ② 다른 궤적</b></td><td><b>0.411°</b></td><td><code>--f-scale 0.6</code>(최고속 148→89 dps) · 같은 게인</td></tr></table>
+<p class="warn">★<b>검증 ②가 이 표에서 가장 중요하다.</b> 진폭이 같아 RMS 가 직접 비교되는데, <b>본 적 없는 궤적에서 0.411 로 적합셋(0.417)보다 오히려 낮다.</b> 모델이 궤적에 얹혀 있지 않다는 뜻이다.</p>
+<p class="warn">⚠<b>개선율로 보면 오해한다.</b> 검증 ②의 개선은 +11.7%(초기 0.465 → 0.411)로 검증 ①의 +30.2% 보다 낮은데, 그건 모델이 나빠서가 아니라 <b>느린 궤적이라 틀린 θ 로도 초기 오차가 이미 작았기</b> 때문이다. 절대 잔차를 볼 것. ⚠검증 ①의 0.250 이 낮은 것도 게인이 2배라 추종이 조여진 탓이 크다 — ①과 ②의   절대값을 서로 비교하면 안 된다. ⚠<code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <b><code>f_start</code> 는 그대로</b>다(0.17 Hz). 저속 성분을 더한 게   아니라 고속 성분을 뺀 것이라, <b>Stribeck 구간은 이 시험으로 안 건드려졌다.</b></p>
 <p class="warn">⚠따로 뺀 구간이 적합보다 나쁜 건 <b>빠른 자료에서 처음</b> 나타났다(옛 자료는 늘 반대였다). 속도가 2.6배 올라 고주파 끝에서 모델오차가 커진 탓으로 보인다. 다만 <b>검증 RMS 는 그대로 0.25</b> 라 예측력 자체는 안 나빠졌다.</p>
 <p class="warn">★<code>JDAMP.thigh</code> 를 0 으로 못박아도 잃는 게 없다는 증거 — 세 판의 검증 RMS:</p>
 <table>

@@ -15,7 +15,8 @@ case "${1:-course}" in
   slope)  MJCF=$HERE/mjcf/quad_terrain_slope.mjcf; PERC=1 ;;
   *)      MJCF="$1"; PERC=1 ;;
 esac
-# ★지형만 perceptive(발판배치+지형적응 base높이). 평지는 끔(지형인지 불필요). CMD_TAU=명령 슬루 시정수(급변 완화).
+# ★지형만 perceptive(발판배치+지형적응 base높이). 평지는 끔(지형인지 불필요). CMD_TAU=명령 슬루 시정수.
+# ★KP_F/KD_F=swing 발끝 추종게인 상향(기본350→700, ~10-15% 조임·falls0). 잔여오차=전방swing 지연(속도의존, 게인한계).
 PERCENV=""; [ "$PERC" = 1 ] && PERCENV="PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1 SMOOTH_W=0.25"
 GAIT="${2:-trot}"
 pkill -TERM -f teleop_gui_17dof.py 2>/dev/null || true
@@ -31,5 +32,5 @@ source "$HERE/ocs2_ws/install/setup.bash" 2>/dev/null || true
 EXE="$HERE/ocs2_ws/install/ocs2_legged_robot/lib/ocs2_legged_robot/test02legMujoco"
 CFG="$HERE/ocs2_02leg/config/task.info $HERE/ocs2_02leg/urdf/02leg_ocs2.urdf $HERE/ocs2_02leg/config/reference.info"
 echo "▶ D1 GUI 구동 | $(basename "$MJCF") gait=$GAIT | perceptive=$PERC(0=평지 순수속도추종) | 명령슬루 τ=0.30 | 좌스틱=전진·우스틱=선회 (GUI에서 Walk 먼저 누르기)"
-env OMP_NUM_THREADS=1 WBC=1 VIEW=1 WBC_LEGGED=1 $PERCENV MPC_HZ=100 CMD_TAU=0.30 CMDFILE="$CMD" \
+env OMP_NUM_THREADS=1 WBC=1 VIEW=1 WBC_LEGGED=1 $PERCENV MPC_HZ=100 CMD_TAU=0.30 KP_F=700 KD_F=50 CMDFILE="$CMD" \
     "$EXE" $CFG "$MJCF" "$GAIT" 100000

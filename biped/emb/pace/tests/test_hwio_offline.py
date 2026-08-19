@@ -751,12 +751,18 @@ def t_couple_magnitude_e2e():
         #   ⚠k=1 이면 발목 명령이 0.8배로 따라간다 — 상자를 넘지 않을 만큼만 민다
         return real_step(self, ch, q_cmd_deg, kp, kd, tau_ff)
 
+    import tempfile
+    _tmp = tempfile.TemporaryDirectory()
+    _td = _tmp.name
     ok, why = True, ""
     for _k in (0.0, 1.0):                        # 영점시험 · 눈금 둘 다
         calls[0] = 0
         C.CDLL = lambda path: fake
         hwio.Hardware.step = counting_step
-        sys.argv = ["couple_magnitude.py", "--leg", "HL", "--k", str(_k)]
+        # ★임시 경로에 쓴다 — 기본값(emb/pace/results)에 쓰면 **실기 측정을 덮어쓴다.**
+        #   2026-08-14 실제로 그렇게 잃었다. 시험이 자료를 지우면 안 된다.
+        sys.argv = ["couple_magnitude.py", "--leg", "HL", "--k", str(_k),
+                    "--out-dir", _td]
         builtins.input = lambda *_a, **_kw: ""    # 경사계 입력은 건너뛴다
         _out = io.StringIO()
         try:
@@ -779,6 +785,7 @@ def t_couple_magnitude_e2e():
         if not ok:
             break
 
+    _tmp.cleanup()
     check("couple_magnitude main() 왕복(k=0·1)", ok, why or "두 판 다 끝까지 돈다")
 
 

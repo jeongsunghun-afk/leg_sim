@@ -142,6 +142,9 @@ def main() -> int:
     ap.add_argument("--kd", type=float, default=None)
     ap.add_argument("--min-span", type=float, default=40.0,
                     help="이보다 작은 무릎 스윙은 감도가 안 나온다 [관절°]")
+    ap.add_argument("--out-dir", default=None,
+                    help="추적 저장 위치 (기본 emb/pace/results). **시험은 임시 경로를 줄 것** — "
+                         "기본값에 쓰면 실기 측정 결과를 덮어쓴다")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -284,7 +287,10 @@ def main() -> int:
     span_ch = float(qc[i_hi] - qc[i_lo])
     span_j = span_ch / s_calf                       # 관절각 스윙(부호 포함)
 
-    out = os.path.join(EMB, "pace", "results",
+    # ★저장 위치를 인자로 뺀다 (2026-08-14). 오프라인 시험이 같은 경로에 쓰는 바람에
+    #   **실기 측정 추적을 덮어썼다.** 파일명이 (다리, k) 로만 정해져 충돌한다.
+    #   시험은 --out-dir 로 임시 경로를 준다.
+    out = os.path.join(a.out_dir or os.path.join(EMB, "pace", "results"),
                        f"couple_mag_{a.leg}_k{a.k:g}.npz")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     np.savez(out, t=T[:, 0], q_ch_calf=qc, q_ch_foot=T[:, 2], q_cmd_foot=T[:, 3],

@@ -512,8 +512,16 @@ def main() -> int:
             print(f"    dt 는 실측값 {_dt_real*1e3:.3f}ms 로 저장한다(식별이 틀어지지 않게).")
         os.makedirs(a.out, exist_ok=True)
         _sfx = "" if a.f_scale == 1.0 else f"_f{a.f_scale:g}"
-        path = os.path.join(a.out, (f"pace_multichirp{_sfx}.npz" if a.gains == "id"
-                                    else f"pace_multichirp_val{_sfx}.npz"))
+        # ★★트립한 판은 **다른 이름**으로 쓴다 (2026-08-14).
+        #   "트립해도 저장한다" 를 넣으면서 파일명이 같다는 걸 안 봤다. 그 결과
+        #   1초 만에 죽은 판이 **완주한 12000표본 자료를 덮어썼다.**
+        #   저장을 안 하던 시절엔 없던 사고다 — 자료를 지키려는 수정이 자료를 지웠다.
+        #   (couple_magnitude 가 시험 자료로 실기 자료를 덮어쓴 것과 같은 부류다.)
+        #   ⇒ 완주본만 표준 이름을 갖는다. 트립본은 _abort 로 따로 남긴다 —
+        #     원인 규명에는 필요하지만 완주본을 밀어낼 자격은 없다.
+        _base = (f"pace_multichirp{_sfx}" if a.gains == "id"
+                 else f"pace_multichirp_val{_sfx}")
+        path = os.path.join(a.out, _base + ("_abort.npz" if _abort else ".npz"))
         # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
         #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
         kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])

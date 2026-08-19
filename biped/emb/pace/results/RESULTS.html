@@ -50,7 +50,7 @@ pre code{border:0;background:none;padding:0}
 <tr><th></th><th>항</th><th>무엇으로 채웠나</th><th>상태</th></tr>
 <tr><td>①</td><td><code>I_link</code> 링크 관성</td><td><b>CAD</b> — 실측으로 검증</td><td class="ok">✅ calf·foot ±8.3% · thigh·hip 미검증</td></tr>
 <tr><td>②</td><td><code>I_rot·N²</code> 로터 반사관성</td><td><b>각축 토크시험</b> ROTOR_I 7.327e-4</td><td class="ok">✅ 4곳 ±10%</td></tr>
-<tr><td>③</td><td><code>b</code> 점성</td><td>foot 은 <b>각축</b>, 나머지는 PACE</td><td class="ok">⚠ foot ✅ · thigh 보통 · calf·hip ❌</td></tr>
+<tr><td>③</td><td><code>b</code> 점성</td><td><b>일정속도 스윕이 기울기를 직접 준다</b>(아래 ★)</td><td class="ok">✅ calf·foot <b>0</b> · ❌ thigh·hip</td></tr>
 <tr><td>④</td><td><code>τ_c</code> 쿨롱마찰</td><td><b>PACE</b> (각축과 25% 차)</td><td class="wa">⚠ ③과 맞바꿔져 나눔이 안 됨</td></tr>
 <tr><td>⑤</td><td><code>g(q)</code> 중력</td><td><b>중력표 + 자세별 실측보정</b></td><td class="ok">✅ 시험 내부용 (MJCF 는 CAD 가 계산)</td></tr>
 <tr><td>⑥</td><td><code>T_d</code> 지연</td><td><b>직접 실측</b> 8.39±0.79 ms</td><td class="ok">✅ 좋다</td></tr>
@@ -58,6 +58,24 @@ pre code{border:0;background:none;padding:0}
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
 <p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(<b>§4-1</b> 재수집 또는 <b>§4-1-b</b> 일정속도 시험).</p>
 <p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
+<h3>★<code>b</code> 는 왜 안 잡히나 — <b>찾으려는 값이 없다</b> (2026-08-14)</h3>
+<p>일정속도 스윕은 <code>q̈ = 0</code> 이라 관성이 사라진다. 그러면 <code>f(q̇) = τ_c + b·q̇</code> 이고 <b>기울기가 곧 <code>b</code></b> 다. 저장된 스윕 자료(<code>results/sweep_ch*.npz</code>)를 전 축에 대해 풀었다:</p>
+<table>
+<tr><th>축</th><th>속도별 마찰 [Nm]</th><th>기울기 <code>b</code></th><th></th></tr>
+<tr><td><b>HR_thigh</b></td><td class="n">2:0.691 → 60:<b>0.505</b></td><td><b>−0.160</b></td><td>✗ 음수</td></tr>
+<tr><td>HL_calf</td><td class="n">2:0.651 → 120:0.597</td><td class="n">−0.028</td><td>✗ 음수</td></tr>
+<tr><td><b>HR_calf</b></td><td class="n">2:0.701 → 120:0.681</td><td><b>−0.0001</b></td><td>≈ 0</td></tr>
+<tr><td><b>HL_foot</b></td><td class="n">5:0.650 → 20:0.650</td><td><b>−0.001</b></td><td>≈ 0</td></tr>
+<tr><td>HR_foot</td><td class="n">2:0.653 → 40:0.597</td><td class="n">−0.084</td><td>✗ 음수</td></tr>
+<tr><td>hip</td><td class="n">2:0.88 → 5:0.83</td><td>(−1.01)</td><td class="wa">⚠ 점 2개뿐 — 의미 없음</td></tr></table>
+<p><b>마찰이 속도에 따라 늘지 않고 줄어든다.</b> Stribeck 이다. 그런데 <code>dof_damping</code> 은 정의상 <b>양수</b>다. ⇒ <b>맞는 <code>b</code> 가 존재하지 않는다.</b> 최적화기는 없는 항을 맞추려 하니 어떤 값이든 비슷하게 나쁘고, 다른 자유변수(<code>delay</code>·<code>τ_c</code>)가 미는 대로 떠다닌다.</p>
+<p class="warn">★<b>독립적인 두 방법이 같은 말을 한다</b> — 이게 이 표를 믿는 근거다:</p>
+<table>
+<tr><th></th><th>스윕 기울기</th><th>PACE 적합</th><th></th></tr>
+<tr><td>HR_calf</td><td><b>−0.0001</b> (≈0)</td><td><code>JDAMP.calf</code> → <b>0</b>, 5판 산포 <b>2%</b></td><td>✓ 일치</td></tr>
+<tr><td>HR_thigh</td><td><b>−0.160</b></td><td><code>JDAMP.thigh</code> 0.011~0.180, <b>8.1배</b></td><td>✓ 일치</td></tr></table>
+<p><code>calf</code> 가 잘 정해진 건 운이 아니라 기울기가 실제로 0 이기 때문이고, <code>thigh</code> 가 안 정해진 건 기울기가 음수라 넣을 값이 없기 때문이다.</p>
+<p>⇒ <b>기울기가 0 이하인 축은 <code>dof_damping = 0</code> 이 정답이다</b> (음이 아닌 값 중 최선).   남는 Stribeck 성분은 MuJoCo 로 표현할 수 없으니 도메인 랜덤화로 덮는다. ⚠hip 만 예외로 남는다 — 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻었다.</p>
 <h2>0-b. 왜 각축이 필요했나 — 다축 PACE 의 세 한계</h2>
 <p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다 (<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고, 실제로 대부분을 이걸로 정했다. 그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
 <div class="quote"><b>먼저 말 두 개.</b> 다축 최적화(CMA-ES)는 무에서 값을 찾지 않는다.</div>
@@ -117,11 +135,11 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
 <tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
-<tr><td>thigh</td><td class="n">0.0359</td><td class="no">0.022 ❌</td><td class="n">0.592</td></tr>
+<tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b> ★</td><td class="n">0.592</td></tr>
 <tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td class="n">0.572</td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.241</td></tr></table>
 <p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.13 ms</b></p>
-<p class="warn">⚠<b>thigh 의 두 값은 짝으로만 의미가 있다</b> — 아래 참조. 따로 떼어 쓰지 말 것.</p>
+<p class="warn">★<code>damping.thigh</code> = <b>0</b> — 스윕 기울기가 음수(−0.160)라 양수 <code>b</code> 가 존재하지 않는다(§0 ★). <code>calf</code> 와 같은 논리다. ⚠<code>frictionloss.thigh</code> 는 <code>fit_v8</code>(thigh 도 0 고정)로 다시 정해야 한다 — 지금 0.592 는 <code>b</code> 가 자유였던 판의 값이다.</p>
 <h3>네 번의 적합에서 얼마나 흔들렸나</h3>
 <table>
 <tr><th>값</th><th>v2</th><th>v3</th><th>v4</th><th>v5</th><th>v6</th><th>산포</th><th>읽는 법</th></tr>
@@ -172,7 +190,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b><code>damping.calf</code> 0</b></td><td>전부 바닥, 짝은 불변. v6 에서 0 고정해도 성적 유지</td><td>상한 0.002</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
 <tr><td><code>frictionloss.thigh</code> 0.592</td><td>PACE 5판 — <code>damping</code> 과 <b>짝으로만</b></td><td class="n">±16%</td><td class="wa">⚠ 짝으로</td></tr>
 <tr><td><code>frictionloss.foot</code> 0.241</td><td>PACE v5·v6 (자유인 두 판)</td><td><b>±0.4%</b></td><td class="ok">✅ 좋다</td></tr>
-<tr><td><code>damping.thigh</code> 0.022</td><td>PACE 5판 <b>0.022~0.180</b></td><td><b>8.1배</b></td><td class="no">❌ 짝으로만</td></tr>
+<tr><td><b><code>damping.thigh</code> 0</b></td><td>스윕 기울기 <b>−0.160</b> — 양수 <code>b</code> 가 없다</td><td class="n">—</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ 못 믿는다</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
 <p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
@@ -206,11 +224,13 @@ pre code{border:0;background:none;padding:0}
 <h2>4. 더 해야 할 시험</h2>
 <table>
 <tr><th>순위</th><th>무엇</th><th>어디서</th><th>비용</th><th>얻는 것</th></tr>
-<tr><td><b>1</b></td><td>재수집 — <b>진폭</b> 확대</td><td>실기</td><td class="n">30분 + 안전확인</td><td><code>JDAMP.thigh</code>(±61%) 분해</td></tr>
+<tr><td><b>1</b></td><td><code>JDAMP.thigh = 0</code> 으로 재적합</td><td>노트북</td><td><b>공짜</b></td><td class="n">8.1배 산포 항목 제거</td></tr>
 <tr><td><b>2</b></td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> · <code>thigh 관성</code></td></tr>
 <tr><td class="n">3</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
-<p>⇒ <b>넷 다 실기다.</b> 오프라인 적합으로 뽑을 건 다 뽑았다 — 남은 건 데이터 문제다. 끝난 시험은 <b>§5</b> 에 결론만 남긴다.</p>
-<h3>1. 재수집 — <b>원래 설계 주파수를 쓰는 것</b>이 먼저다</h3>
+<pre>--pin hip,rotor,JDAMP.foot,coef,JDAMP.calf=0,JDAMP.thigh=0   --out fit_v8</pre>
+<p>검증 RMS 가 <b>0.249 근처를 유지하면 확정</b>이다 — 자유차원이 하나 줄고, 산포 8.1배짜리 값이 표에서 사라진다. 근거는 §0 ★(스윕 기울기 −0.160).</p>
+<p>⇒ 끝난 시험은 <b>§5</b> 에 결론만 남긴다. ⚠<b>hip 만 방법이 없다.</b> 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻어 기울기를   못 낸다. §4-2(중력 최소자세)가 그 축의 유일한 길이다.</p>
+<h3>1. ~~재수집(진폭·주파수)~~ — <b>수집 성공. 그러나 <code>b</code> 는 여전히 안 잡힌다</b></h3>
 <p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
 <p><b>① 지금 자료는 <code>--f-scale 0.4</code> 예비주행이다.</b> 파일명 <code>pace_multichirp_f0.4_dqfix</code> 의</p>
 <p><code>f0.4</code> 가 그것이다(도움말: *"첫 주행은 0.4~0.6 으로 예비주행할 것"*).</p>
@@ -232,9 +252,15 @@ pre code{border:0;background:none;padding:0}
 <tr><td>calf</td><td class="n">16 → <b>9</b></td><td class="n">1.40 → <b>0.90</b></td><td class="n">197 → <b>72</b></td><td>확정됨 — 예산 양보</td></tr>
 <tr><td>foot</td><td class="n">13 → <b>7</b></td><td class="n">1.50 → <b>0.95</b></td><td class="n">277 ★ → <b>70</b></td><td>확정됨 — 상한 초과 해소</td></tr></table>
 <p><code>--dry</code> 검증: 최대 <b>148 dps · 여유 26%</b> · 축간 상관 0.264 → <b>0.177</b>(개선).</p>
-<p>얻는 것 — thigh 피크속도 <b>55 → 148 dps (2.7배)</b>:</p>
-<pre>max(b·q̇) / τ_c  :   15%  →  41%</pre>
-<p><code>b</code> 가 <code>τ_c</code> 대비 이만큼 커져야 §1 의 8.1배 산포가 갈린다.</p>
+<p class="warn">⚠<b>2026-08-14 결과 — 수집은 성공했지만 목적은 달성 못 했다.</b> thigh 피크속도가 55 → 148 dps (실측 95% 기준 44.9 → 114.8, <b>2.6배</b>)로 올랐고 30초 두 셋(식별·검증)을 다 받았다. 그런데 같은 자료로 두 번 적합하니:</p>
+<table>
+<tr><th></th><th><code>fit_v7</code></th><th><code>fit_v7b</code></th><th></th></tr>
+<tr><td>적합 RMS</td><td class="n">0.4178</td><td class="n">0.4106</td><td class="n">1.7% 차</td></tr>
+<tr><td>검증(게인 2배)</td><td class="n">0.2494</td><td class="n">0.2490</td><td><b>0.2% 차</b></td></tr>
+<tr><td><code>JDAMP.thigh</code></td><td class="n">0.0701</td><td class="n">0.0110</td><td><b>6.4배 차</b></td></tr>
+<tr><td><code>delay</code></td><td class="n">7.83</td><td class="n">9.64</td><td class="n">3자 맞바꿈</td></tr></table>
+<p>씨앗만 다른데 파라미터가 6.4배 갈리고 RMS 는 1.7% 밖에 안 갈린다. ⇒ <b>속도로는 안 된다.</b> 이유는 §0 ★ — 애초에 맞는 <code>b</code> 가 없다. ⇒ 처프는 속도를 올리면 가속도가 <b>제곱으로</b> 따라와, 점성/관성 비가 5% → <b>3.6%</b> 로   오히려 나빠졌다. 이 방향으로는 더 갈 데가 없다.</p>
+<p class="warn">★그래도 자료는 값을 했다 — 검증 RMS 0.249 는 종전과 같고, <code>q̇</code> 범위가 2.6배 넓어져 <b>시험 속도범위가 실제 보행에 가까워졌다.</b> 외삽 폭이 준 것 자체가 이득이다.</p>
 <p class="warn">⚠<b>thigh 20° 는 근거 있는 상한이다</b> — <code>±20° = 40° pp</code> 로 각축 스윕에서 이미 검증된</p>
 <p><code>sweep.stroke_deg: 40.0</code> 과 같다. 44° 는 *"늘어진 다리가 아래쪽에서 간섭"* 전례가 있어 넘지 않는다.</p>
 <p class="warn">⚠<b>착수 전 확인</b> — <code>thigh ±20°</code> 와 <code>calf ±9°</code> 동시 스윙이 지그·바닥에 닿지 않는지 <b>눈으로</b> 볼 것. MuJoCo 는 발 구 4개만 모델링하므로 "접촉 0" 은 증거가 아니다.</p>
@@ -244,10 +270,10 @@ python3 collect_multichirp.py --dry
 python3 collect_multichirp.py --rate 400
 python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p class="warn">⚠<code>--rate 400</code> — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다. ⚠진폭이 커지면 RMS(°) 자체가 커진다. <b>데이터셋 간 RMS 비교는 정규화할 것.</b></p>
-<h3>1-b. 대안 — 속도를 독립 제어하는 시험</h3>
-<p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
-<div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>
-<div class="quote">τ(q̇) 곡선이 직접 나오고, <b>절편이 <code>frictionloss</code> · 기울기가 <code>damping</code></b> 이다.</div>
+<h3>1-b. ~~일정속도 시험~~ — <b>이미 돼 있었다. 답은 "b 가 없다"</b> (2026-08-14)</h3>
+<p>*"일정 속도로 유지하며 토크를 재면 절편이 <code>frictionloss</code> · 기울기가 <code>damping</code> 이다"* — 맞는 처방이고, 그 시험이 <b>이미 <code>--solo</code> 스윕으로 돌아 있었다.</b> 자료도 남아 있다 (<code>results/sweep_ch*.npz</code>). 나는 그걸 새로 하자고 제안할 뻔했다.</p>
+<p>결과는 §0 ★ 의 표다 — <b>기울기가 전 축에서 0 이거나 음수</b>이고 thigh 는 −0.160 이다. ⇒ 양수 <code>b</code> 가 존재하지 않는다. 다시 재도 음수가 나온다. <b>실기를 헛돌릴 뻔했다.</b></p>
+<p class="warn">★교훈: 새 시험을 설계하기 전에 <b>이미 있는 자료로 그 질문에 답할 수 있는지</b> 먼저 볼 것. 이 저장소는 각축 시험을 다 돌려 놓았고 원시 궤적까지 저장한다.</p>
 <h3>2. ~~<code>coef</code> 크기~~ — <b>측정 완료. c = 1</b> (2026-08-14)</h3>
 <div class="quote"><b><code>c</code> 가 무엇인가</b> (2026-08-14 실제로 헷갈린 지점이라 여기 못박는다)</div>
 <div class="quote">```</div>

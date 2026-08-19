@@ -56,8 +56,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>따로 뺀 구간</td><td><b>0.304°</b></td><td>안 쓴 12창</td></tr>
 <tr><td><b>게인 2배</b></td><td><b>0.187°</b></td><td><code>kp</code> ×2 로 따로 수집 — 가장 강한 시험</td></tr></table>
 <p class="warn">★<b>2026-08-14 마지막 발견 — 손실을 모터축으로 옮기자 전부 −33% 개선됐다.</b> §1-b 참조.</p>
-<p class="warn">⚠<b>남은 셋</b> — <code>damping.hip</code>(측정 방법 없음 확정) · <code>frictionloss.hip</code>(미검증) ·</p>
-<p><code>JFRIC.calf</code> 가 각축 스윕 대비 −46%. hip 둘은 <b>§1-c</b> 참조 — 실제로는 걱정할 값이 아니다.</p>
+<p class="warn">⚠<b>남은 TODO 는 §4</b> — 노트북 둘(공짜) · 실기 둘. hip 두 값과 <code>JFRIC.calf</code> 는 종결됐다.</p>
 <p class="warn">⚠<b>여기 숫자를 다른 문서로 복사하지 말 것.</b> 액추에이터 파라미터의 단일 출처는 이 문서이고, 실측 원본의 단일 출처는 <code>spec.yaml</code> 의 <code>friction.measured_*</code> 다. 복사하면 반드시 갈라진다 — 2026-08-14 에 실제로 그렇게 hip 값이 세 군데에서 달라졌다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
@@ -345,17 +344,43 @@ pre code{border:0;background:none;padding:0}
 <tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.5 Hz</td><td class="n">0.94</td><td class="ok">✅ 약간 과감쇠</td></tr></table>
 <p>foot 만 ζ 0.94 로 조금 높다. 굳이 맞추려면 <b>kd 2.0 → 1.5</b>. 급하지 않다.</p>
 <p>시험용 게인은 별도다 — 식별 처프는 kp 를 낮추고(궤적이 명령에 붙으면 파라미터 정보가 사라진다), 홈복귀는 배포 게인을 쓴다.</p>
-<h2>4. 남은 것 — <b>셋뿐이다</b></h2>
-<p>식별은 닫혔다. 세 조건(따로 뺀 구간 0.448 · 게인 2배 0.250 · 다른 궤적 0.411)에서 전부 일반화된다. 아래는 <b>값이 비어 있거나 설명이 안 되는 것</b>이지 정확도를 막는 것이 아니다.</p>
+<h2>4. TODO</h2>
+<p>식별은 닫혔다 — 적합 0.280 · 따로 뺀 구간 0.304 · <b>게인 2배 검증 0.187</b>. 아래는 <b>값이 비거나 확인이 덜 된 것</b>이지 정확도를 막는 것이 아니다.</p>
 <table>
-<tr><th></th><th>무엇</th><th>왜 막혔나</th><th>할 수 있나</th></tr>
-<tr><td>①</td><td>~~<code>damping.hip</code>·<code>frictionloss.hip</code>~~</td><td>더 못 재는 건 맞지만 <b>결론에 영향이 없다</b> — §1-c 에서 정량화했다</td><td class="ok">✅ <b>종결</b></td></tr>
-<tr><td>③</td><td><b>HR_thigh 관성 미측정</b></td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙었으니 다음 실기에서 같이 하면 된다</td><td>실기 30분</td></tr>
-<tr><td>④</td><td><b>궤적 검증을 <code>--loss-space tendon</code> 으로 재실행</b></td><td>지금 표의 0.411 은 손실공간 수정 <b>전</b> 값이다</td><td>노트북 · <b>공짜</b></td></tr></table>
-<p>✅<b>②(<code>JFRIC.calf</code> −46%)는 풀렸다</b> — 원인은 calf 가 아니라 foot 의 손실이 잘못된 좌표(관절각)에 있던 것이었다. §1-b 참조. 지금은 −13% 이고 세 축이 다 −10~−14% 다.</p>
-<p class="warn">⚠<b>Stribeck 크기는 아직 안 쟀다.</b> <code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <code>f_start</code>(0.17 Hz)는 그대로라 저속 성분이 안 늘었다. 재려면 <code>f_start</code> 를 낮춘 수집이 따로 필요하다. 다만 지금 세 검증이 다 통과했으므로 <b>급하지 않다.</b></p>
-<h3>③ HR_thigh 관성 (미측정)</h3>
-<p>좌우 대조용. ①이 되면 같이 하면 된다.</p>
+<tr><th>#</th><th>무엇</th><th>어디서</th><th>비용</th><th>왜</th></tr>
+<tr><td><b>1</b></td><td>궤적 검증을 <code>--loss-space tendon</code> 으로 재실행</td><td>노트북</td><td><b>공짜</b></td><td>§6 의 0.411 은 손실공간 수정 <b>전</b> 값이다</td></tr>
+<tr><td><b>2</b></td><td><code>JFRIC.hip</code> 계통 보정 확인 (<code>0.827 → 0.724</code>)</td><td>노트북</td><td><b>공짜</b></td><td>세 축이 보인 PACE/스윕 비 0.876 을 hip 에도 적용 (§1-c)</td></tr>
+<tr><td class="n">3</td><td>HR_thigh 관성 측정</td><td>실기</td><td class="n">30분</td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙어 있다</td></tr>
+<tr><td class="n">4</td><td>Stribeck 크기 측정</td><td>실기</td><td class="n">30분</td><td><code>f_start</code> 를 낮춘 수집이 따로 필요. <b>급하지 않다</b></td></tr>
+<tr><td class="n">—</td><td>컨트롤러에 <code>fit_A</code> 반영</td><td class="n">—</td><td class="n">—</td><td><b>다른 세션 몫</b> (<code>biped_control.hpp</code>·MJCF tendon 주입)</td></tr></table>
+<h3>1 · 2 — 노트북에서 지금 할 수 있다</h3>
+<pre>PIN="hip,rotor,JDAMP.foot,coef,JDAMP.calf=0,JDAMP.thigh=0,delay=0.00839"
+BASE="biped/emb/pace/results"
+
+# 1 — 궤적 검증 (손실공간 수정 후 기준으로)
+.venv/bin/python biped/emb/pace/pace_cmaes.py $BASE/pace_multichirp.npz \
+    --holdout 0.2 --holdout-mode interleave --pin "$PIN" --loss-space tendon \
+    --validate $BASE/pace_multichirp_f0.6.npz --out fit_A_traj
+
+# 2 — hip 마찰 계통 보정
+.venv/bin/python biped/emb/pace/pace_cmaes.py $BASE/pace_multichirp.npz \
+    --holdout 0.2 --holdout-mode interleave --loss-space tendon \
+    --pin "$PIN,JFRIC.hip=0.724" \
+    --validate $BASE/pace_multichirp_val.npz --out fit_A_hipcorr</pre>
+<p><b>판정 — 둘 다 검증 RMS 하나로 본다:</b></p>
+<table>
+<tr><th></th><th>기준</th><th>뜻</th></tr>
+<tr><td class="n">1</td><td class="n">0.28 근처면 통과</td><td>수정 전 판정("궤적에 안 얹혀 있다")이 지금도 성립</td></tr>
+<tr><td class="n">2</td><td class="n">0.187 근처 유지면 채택</td><td>나빠지면 외삽이 틀린 것 — 0.827 로 되돌린다</td></tr></table>
+<h3>3 — HR_thigh 관성 (실기)</h3>
+<p><code>t_ref→0</code> 외삽이 코드에 붙어 있으므로(§5 '관성 외삽') 돌리면 자동으로 같이 찍힌다. HL 은 그 방법으로 CAD 대비 +6.1% 였다. 좌우가 그만큼 맞으면 CAD 검증이 네 축으로 는다.</p>
+<h3>4 — Stribeck 크기 (실기, 급하지 않음)</h3>
+<p><code>--f-scale</code> 은 <code>f_end</code> 만 낮추고 <code>f_start</code>(0.17 Hz)는 그대로라 저속 성분이 안 늘었다. 재려면 <code>f_start</code> 를 낮춘 수집이 따로 필요하다. 지금 <code>JFRIC</code> 세 축이 실측 대비 일관되게 −10~−14% 인데, <b>그게 Stribeck 인지 다른 계통 원인(스윕의 중력보정 잔차 등)인지 아직 못 가린다.</b> 세 검증이 다 통과했으므로 당장 문제는 아니다.</p>
+<h3>✅ 종결된 것</h3>
+<table>
+<tr><th></th><th>왜</th></tr>
+<tr><td><code>damping.hip</code> · <code>frictionloss.hip</code></td><td>측정 실패가 아니라 <b>측정할 필요가 없음</b> — 감쇠는 hip 총토크의 1%, 마찰은 두 방법이 5% 안에서 일치 (§1-c)</td></tr>
+<tr><td><code>JFRIC.calf</code> 가 스윕 대비 −46%</td><td>원인은 calf 가 아니라 <b>foot 의 손실이 잘못된 좌표</b>에 있던 것 (§1-b). 지금 −13%</td></tr></table>
 <h2>5. 끝난 시험 — 결론만</h2>
 <p>여기 것들은 <b>다시 할 필요 없다.</b> 왜 그렇게 결론 났는지만 남긴다 — 이 기록이 오늘만 네 번 헛된 실기를 막았다.</p>
 <h3>✓ <code>coef</code> 크기 — <b>경사계로 c = 1 확정</b></h3>

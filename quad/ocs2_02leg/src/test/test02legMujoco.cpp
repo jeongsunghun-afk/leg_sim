@@ -753,9 +753,24 @@ int main(int argc, char** argv) {
           mjv_initGeom(&scn.geoms[scn.ngeom++], mjGEOM_SPHERE, szs, poss, nullptr, yel);
         }
       }
+      // ★push 외란 시각화: 활성 push(xfrc≠0) 시 base에 힘 방향 빨간 화살표(민다는 걸 명확히)
+      double fx = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 0] : 0, fy = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 1] : 0,
+             fz = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 2] : 0;
+      double fmag = std::sqrt(fx * fx + fy * fy + fz * fz);
+      if (fmag > 1.0 && scn.ngeom < scn.maxgeom) {
+        double L = 0.4 + fmag / 1000.0 * 0.5;
+        mjtNum from[3] = {d->qpos[0] - fx / fmag * L, d->qpos[1] - fy / fmag * L, d->qpos[2] + 0.15};
+        mjtNum to[3] = {d->qpos[0] - fx / fmag * 0.12, d->qpos[1] - fy / fmag * 0.12, d->qpos[2] + 0.15};
+        float red[4] = {1.0f, 0.15f, 0.1f, 1.0f};
+        mjv_initGeom(&scn.geoms[scn.ngeom], mjGEOM_ARROW, nullptr, nullptr, nullptr, red);
+        mjv_connector(&scn.geoms[scn.ngeom], mjGEOM_ARROW, 0.025, from, to);
+        scn.ngeom++;
+      }
       mjr_render(vp, &scn, &con);
-      char hud[128]; snprintf(hud, sizeof(hud), "t=%.1fs  base_z=%.3f  gait=%s  %s", t, d->qpos[2], gait.c_str(),
-                              useWbc ? "WBC" : "ff+PD");
+      char pmsg[48] = "";
+      if (fmag > 1.0) snprintf(pmsg, sizeof(pmsg), "   <<<< PUSH %.0fN", fmag);
+      char hud[160]; snprintf(hud, sizeof(hud), "t=%.1fs  base_z=%.3f  gait=%s  %s%s", t, d->qpos[2], gait.c_str(),
+                              useWbc ? "WBC" : "ff+PD", pmsg);
       mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, vp, "02_Leg OCS2 NMPC+WBC", hud, &con);
       // ★VIDEO 캡처: 렌더 프레임을 GL framebuffer서 직접 readPixels → raw RGB 파일(가림 무관). ffmpeg로 인코딩.
       if (getenv("VIDEO") && step % 32 == 0) {  // 32ms sim = ~31fps

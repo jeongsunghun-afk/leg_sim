@@ -306,6 +306,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                 t0 = time.monotonic()
                 T, Q, V, TAU = [], [], [], []
                 hit = None
+                QALL = []
                 while True:
                     t = time.monotonic() - t0
                     if t > 4.0:
@@ -314,6 +315,15 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                     # ★중력상쇄 + 가진. tau_max 는 상쇄분만큼 여유가 있어야 한다.
                     s = hw.step_torque(ch, grav_at(hw._q[ch]) + direction * tau, tau_max)
                     T.append(t); Q.append(s.q_deg); V.append(s.dq_dps); TAU.append(s.tau)
+                    # ★★런 **도중** 전 채널 각도를 남긴다 (2026-08-14 사용자 요청).
+                    #   왜: 유효관성은 아래 자유축이 얼마나 따라오느냐로 정해지는데,
+                    #   종전엔 저장 시점의 자세 한 점(q_pose_ch)만 있어서 **런 중에
+                    #   진자가 얼마나 뒤처졌는지 사후 확인이 불가능**했다.
+                    #   thigh 가 자유(0.182)와 고정(0.221) 사이 어디도 아닌 값을 낸 게
+                    #   정확히 이 문제인데, 그걸 자료로 못 봤다.
+                    #   ⚠공짜다 — step_torque 안의 read() 가 이미 전 채널을 채운다.
+                    #     여기서는 복사만 한다(hw._q 는 매 틱 덮어써지므로 복사가 필수다).
+                    QALL.append(np.array(hw._q[:hw.n], float))
                     if abs(s.q_deg - q0) >= travel_d:
                         hit = "이동상한"
                         break
@@ -361,7 +371,8 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                              "ddq": f1["ddq"], "v_at": f1["v_at"], "t_at": f1["t_at"],
                              "n_win": f1["n_win"], "v_max": f1["v_max"],
                              "travel": float(q[-1]), "stop": hit, "dur": float(t[-1]),
-                             "t": t, "q": q, "dq": v, "tau": np.array(TAU)})
+                             "t": t, "q": q, "dq": v, "tau": np.array(TAU),
+                             "q_all": np.array(QALL, float)})
                 log(f"    {sgn} τ={tau:.2f}Nm → q̈|q̇={f1['v_at']:5.1f}dps = "
                     f"{f1['ddq']:+7.2f} rad/s²  (t={f1['t_at']:.3f}s · 창표본 {f1['n_win']} · "
                     f"런 {t[-1]:.3f}s · {hit})")
@@ -384,6 +395,7 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
         _d = raw_trace_dir(plotdir); os.makedirs(_d, exist_ok=True)
         outp = os.path.join(_d, f"inertia_ch{ch:02d}.npz")
         np.savez(outp, cols=np.array(["t", "q", "dq", "tau"]),
+                 qall_cols=np.array(["채널각[deg]"]),   # qall{i} 는 [표본 × 채널]
                  gear_k=k_gear, vref=vref, levels=np.array(levels, float),
                  tau_break=float(joint.get("_tau_break") or np.nan),
                  hold=np.array(sorted(getattr(hw, "hold_ch", []) or []), int),
@@ -400,6 +412,9 @@ def measure_inertia_torque(hw, spec, joint, plotdir, log=print) -> tuple[str, di
                  q_pose_ch=np.asarray(hw._q[:hw.n], float),
                  **{f"r{i}": np.column_stack([r["t"], r["q"], r["dq"], r["tau"]])
                     for i, r in enumerate(runs)},
+                 # ★런별 **전 채널 각도** [표본 × 채널]. 위 r{i} 는 시험축만이라
+                 #   자유축이 런 도중 얼마나 움직였는지를 못 본다.
+                 **{f"qall{i}": r["q_all"] for i, r in enumerate(runs)},
                  meta=np.array([[r["rep"], r["dir"], r["tau_cmd"]] for r in runs], float))
         log(f"  [{name}] 원시 궤적 저장: {os.path.relpath(outp)} ({len(runs)} 런)")
     except Exception as e:                       # 저장 실패가 시험을 죽이면 안 된다

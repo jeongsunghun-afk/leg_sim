@@ -124,8 +124,24 @@ struct BipedControl {
   //   도메인 랜덤화도 이 직선을 따라 해야 한다. 시험속도(q̇≈0.77) 밖에선 갈린다.
   double GEAR[4]={7,7,10.5,8.4}, ROTOR_I=7.327e-4;
   //                 hip     thigh    calf     foot
-  double JDAMP[4]={0.0900, 0.0220, 0.0000, 0.1100};   // [Nm·s/rad] 관절축
-  double JFRIC[4]={0.8270, 0.5920, 0.5720, 0.2410};   // [Nm] 관절축 쿨롱마찰
+  // ★2026-08-14(2차) **최종 문서 반영** — fit_v6 → 새 수집 판(RESULTS.md §1).
+  //     JDAMP.thigh 0.022 → **0** ★   JFRIC.thigh 0.592 → 0.603
+  //     JDAMP.calf     0  →   0  ✓    JFRIC.calf  0.572 → **0.537**(−6%)
+  //   ⚠`JFRIC.foot` 만 **옛 자료(fit_v6)의 0.241** 을 그대로 쓴다 — 새 수집은 foot 진폭을
+  //     13°→7° 로 일부러 줄여(속도예산을 thigh 로 넘김) 그 축 정보가 적다. 문서 §1 ◆ 참조.
+  //   ⚠**thigh·calf 의 마찰은 damping=0 과 짝이다.** 같은 판에서 와야 하므로 섞지 말 것.
+  //
+  // ★★`JDAMP` 가 0 으로 내려간 이유 — **지연과 같은 것을 본다**(RESULTS.md §1).
+  //   `τ = kp(q_cmd(t−T_d) − q) − kd·q̇` 를 1차로 펴면 `−kp·T_d·q̇_cmd` 라는 감쇠항이 나온다.
+  //   적합이 보는 건 `b + kp·T_d` 의 **합**뿐이라 b 단독은 식별 불가다.
+  //     hip   kp·T_d 0.975 vs JDAMP 0.090 → **10.8배**
+  //     thigh 0.488 / calf 0.548 → JDAMP 0 (∞)
+  //   즉 진짜 감쇠는 지연이 만드는 감쇠의 10~30% 짜리 보정항이다. 지연 실측오차
+  //   ±0.79ms 만으로 hip 은 ±0.079(그 축 감쇠의 ±88%)를 덮는다.
+  //   ⇒ **지연을 실측 8.39ms 에 못박았기에** 이 b 값들이 의미를 갖는다. 지연을 자유로
+  //     두면 b 는 아무 값이나 된다. LAT_COMP_MS 기본 8.4 가 그 실측값이다.
+  double JDAMP[4]={0.0900, 0.0000, 0.0000, 0.1100};   // [Nm·s/rad] 관절축
+  double JFRIC[4]={0.8270, 0.6030, 0.5370, 0.2410};   // [Nm] 관절축 쿨롱마찰
   // ── 상태 ──
   double vx_cmd=0, vy_cmd=0, wz_cmd=0, yaw_des=0, yaw_hold=0; bool yaw_hold_set=false;   // ★heading-hold latch
   Vector2d com0; Vector2d nominal_off[2]; double com_ref_z; Vector2d com_ref_xy;   // ★2점 정적 CoM xy 목표

@@ -176,14 +176,17 @@ def apply_params(m, idx, gear_n, p, per_axis: bool, names):
         m.dof_armature[dof] = max(rot[i], 1e-9) * gear_n[i] ** 2
         m.dof_damping[dof] = max(dmp[i], 0.0)
         m.dof_frictionloss[dof] = max(frc[i], 0.0)
-    foot_rotor_to_tendon(m, idx, gear_n, rot, names)
+    foot_rotor_to_tendon(m, idx, gear_n, rot, names, dmp, frc,
+                         move_loss=(_LOSS_SPACE[0] == 'tendon'))
 
 
 _TENDON_WARNED = []
+_LOSS_SPACE = ['tendon']   # 'tendon' | 'joint' — --loss-space 가 설정한다
 
 
-def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
-    """★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 커플링).
+def foot_rotor_to_tendon(m, idx, gear_n, rot, names, dmp=None, frc=None,
+                          move_loss=True):
+    """★foot 로터의 **반사관성·마찰·감쇠**를 dof 에서 **tendon 으로 옮긴다**.
 
     foot 로터는 관절각이 아니라 raw 각으로 돈다(실기 coef=+1, biped_emb.yaml):
         raw_foot = q_foot + coef·q_calf
@@ -209,8 +212,27 @@ def foot_rotor_to_tendon(m, idx, gear_n, rot, names):
     for i, (_, _, dof, _) in enumerate(idx):
         if kind_of(names[i]) != 'foot':
             continue
-        m.tendon_armature[tid[names[i][:2]]] = max(rot[i], 1e-9) * gear_n[i] ** 2
+        _t = tid[names[i][:2]]
+        m.tendon_armature[_t] = max(rot[i], 1e-9) * gear_n[i] ** 2
         m.dof_armature[dof] = 0.0                    # ★대각에서 뺀다(tendon 으로 이전)
+        # ★★마찰·감쇠도 **같이** 옮긴다 (2026-08-14). 관성만 옮겨 놓고 이 둘을 관절에
+        #   남겨 둔 것이 오래 안 보였다. 물리 논거는 **완전히 같다** — 모터의 마찰과
+        #   점성은 모터축(raw각)에서 작용하지 관절각에서 작용하지 않는다.
+        #   ⇒ 관절에 두면, calf 가 돌고 foot 관절이 반대로 돌아 raw 가 그대로일 때
+        #     (모터는 안 도는데) 모델이 마찰을 문다. **없는 소산을 넣는 것**이다.
+        #   ⇒ 그 대가로 CMA-ES 는 JFRIC 을 **낮춰** 보상한다. 관측과 맞는다:
+        #       thigh(커플 없음)  적합 0.603 vs 스윕 0.670   **−10%**
+        #       calf (커플)       적합 0.537 vs 스윕 1.001   **−46%**
+        #       foot (커플)       적합 0.241 vs 스윕 0.745   **−68%**
+        #     커플된 두 축만 크게 낮다. thigh 는 두 실측 사이에 얌전히 앉는다.
+        #   ⚠축별(--solo) 측정에서는 **차이가 없다** — 타축 고정이라 q̇_calf=0 이고
+        #     raw 각 = 관절각이다. 그래서 여태 안 드러났다(armature 와 같은 사연).
+        if move_loss and dmp is not None:
+            m.tendon_damping[_t] = max(float(dmp[i]), 0.0)
+            m.dof_damping[dof] = 0.0
+        if move_loss and frc is not None:
+            m.tendon_frictionloss[_t] = max(float(frc[i]), 0.0)
+            m.dof_frictionloss[dof] = 0.0
     return True
 
 
@@ -808,6 +830,10 @@ def main() -> int:
                     help="그 kind 의 JDAMP·JFRIC 을 **탐색에서 뺀다**(x0 에 고정). "
                          "예: --pin hip — 데이터가 hip 을 4%%밖에 안 보므로 탐색범위 모서리로 간다. "
                          "`rotor` 는 ROTOR_I 를 실측(7.33e-4)에 못박는다")
+    ap.add_argument("--loss-space", choices=["tendon", "joint"], default="tendon",
+                    help="foot 의 **마찰·감쇠**를 어디에 둘 것인가. tendon=모터축(raw각) "
+                         "· joint=관절각(종전). armature 는 항상 tendon 이다. "
+                         "★구조 선택이므로 **미지 게인·다른 궤적 검증**으로 가릴 것")
     ap.add_argument("--ctrl-space", default="tendon", choices=("tendon", "joint"),
                     help="foot PD 가 재는 오차. tendon=raw각(q_foot+q_calf, **실기**) · "
                          "joint=관절각(2026-08-14 이전 동작). actuator_wrap 독스트링 참조")
@@ -856,6 +882,9 @@ def main() -> int:
               f"따로 뺀 구간 {len(hold_segs)}창({_nh}표본, {_nh/N:.0%})")
         print(f"  ⇒ 양쪽이 같은 주파수 범위를 본다(처프의 tail 편향 제거)")
 
+    _LOSS_SPACE[0] = a.loss_space
+    print(f"■ 손실공간 — foot 마찰·감쇠를 **{'모터축(raw각) tendon' if a.loss_space=='tendon' else '관절각 dof(종전)'}** 에 둔다"
+          + ("" if a.loss_space == "tendon" else "   ← 통제군"))
     pin = tuple(k.strip() for k in a.pin.split(",") if k.strip())
     _lab_all = param_labels(D["names"], a.per_axis)
     for k in pin:
@@ -1029,7 +1058,19 @@ def main() -> int:
     #   `--ctrl-space joint` 통제군을 돌리면 앞 결과를 **말없이 덮어썼다**.
     #   비교하려고 돌린 두 실행이 한 파일을 쓰면 비교 자체가 불가능하다.
     out = a.out or (os.path.splitext(a.npz)[0] + "_cmaes.npz")
+    # ★통제군은 이름을 **자동으로** 가른다 (2026-08-14). 위 주석의 사고가 --loss-space
+    #   에서 그대로 반복될 수 있다 — 사용자가 --out 을 안 바꾸면 두 구조가 한 파일을 쓴다.
+    #   손에 맡기지 말고 코드가 갈라 놓는다.
+    for _k, _v, _tag in (("ctrl_space", a.ctrl_space, "joint"),
+                         ("loss_space", a.loss_space, "joint")):
+        if _v == _tag:
+            _b, _e = os.path.splitext(out)
+            if f"_{_k[:4]}{_tag}" not in _b:
+                out = f"{_b}_{_k[:4]}{_tag}{_e or '.npz'}"
+    if not out.endswith(".npz"):
+        out += ".npz"
     np.savez(out, x=best, x0=x0, rms_fit=bestc, rms_holdout=hb,
+             loss_space=a.loss_space,
              per_axis=a.per_axis, names=np.array(D["names"]),
              # ★탐색범위를 같이 남긴다 (2026-08-14). 안 남겨서 "탐색범위 끝에 붙었는지" 를
              #   나중에 init_bounds 를 다시 불러 손으로 계산해야 했다.

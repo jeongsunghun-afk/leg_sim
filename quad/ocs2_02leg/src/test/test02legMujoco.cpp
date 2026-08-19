@@ -202,6 +202,7 @@ int main(int argc, char** argv) {
   if (getenv("NWSR")) wbcL.nWsr_ = atoi(getenv("NWSR"));
   if (getenv("SWING_FF")) wbcL.swingFF_ = atoi(getenv("SWING_FF"));
   if (getenv("POST")) wbcL.wPosture_ = atof(getenv("POST"));      // ★널스페이스 posture 가중
+  if (getenv("STANCE_KD")) wbcL.stanceKd_ = atof(getenv("STANCE_KD"));  // ★stance 접촉 속도댐핑(착지 슬립 저감)
   if (getenv("KP_POST")) wbcL.kpPost_ = atof(getenv("KP_POST"));
   if (getenv("KD_POST")) wbcL.kdPost_ = atof(getenv("KD_POST"));
   if (getenv("ANKLE_HARD")) wbcL.ankleHard_ = true;              // ★발목 hard-constraint(poor-man's HQP): weighted posture 대신 발목 strict eq
@@ -305,6 +306,7 @@ int main(int argc, char** argv) {
   std::vector<double> qpos0(d->qpos, d->qpos + m->nq);
   double resetSeq = 0, homeSeq = 0; int lastResetSeq = 0, lastHomeSeq = 0;
   double vizSeed[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  double footSeed[4][2] = {{0,0},{0,0},{0,0},{0,0}}; bool footLocked[4] = {false,false,false,false};  // ★발판 liftoff 고정용
 
   // ★Phase 3b: nominal 발-base xy 오프셋(yaw프레임). 초기 nominal stance(yaw=0)서 발 sphere − base.
   //   매틱 발판영역 씨앗 = base_xy + vel·Δt + Rz(yaw)·offset (≈ getNominalFoothold FK, 평지 pitch≈0).
@@ -312,6 +314,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 4; ++i) {
     footOff[i][0] = d->geom_xpos[3 * footGeom[i] + 0] - d->qpos[0];
     footOff[i][1] = d->geom_xpos[3 * footGeom[i] + 1] - d->qpos[1];
+    footSeed[i][0] = d->geom_xpos[3 * footGeom[i] + 0]; footSeed[i][1] = d->geom_xpos[3 * footGeom[i] + 1];  // ★발판 초기=현재 발 위치
   }
   const double comHeight = 0.50;                                  // reference.info comHeight(지형적응 base높이 기준)
   const double mpcHorizon = interface.mpcSettings().timeHorizon_; // 발판 stanceEnd 탐색·참조 재구성 창
@@ -507,9 +510,16 @@ int main(int argc, char** argv) {
             int f = nP - 2; for (int ip = p + 1; ip < nP; ++ip) if (!modeNumber2StanceLeg(seq[ip])[i]) { f = ip - 1; break; }
             if (s < (int)ev.size() && f >= 0 && f < (int)ev.size() && ev[s] < t && t < ev[f]) stanceEnd_i = ev[f];
           }
-          double dtm = ((stanceEnd_i > t) ? 0.5 * (t + stanceEnd_i) : t + 0.5 * H) - t;  // stance 중간≈착지 부근
-          double rx = cy * footOff[i][0] - sy * footOff[i][1], ry = sy * footOff[i][0] + cy * footOff[i][1];
-          double seedX = d->qpos[0] + baseVx * dtm + rx, seedY = d->qpos[1] + baseVy * dtm + ry;
+          // ★발판=계획된 착지점을 liftoff에 1회 커밋 후 다음 liftoff까지 고정(swing+stance 내내 불변).
+          //   발이 그 발판으로 가서 머무름 — 발판을 발끝에 맞춰 재생성하지 않음(계획이 실제를 끌어야지 반대 아님).
+          const bool planted = (stanceEnd_i > t);
+          if (!planted && !footLocked[i]) {                          // liftoff: 착지목표 1회 계산·커밋
+            const double dtm = 0.5 * H;                              // liftoff 시점 base+속도 리드타임(Raibert 예측)
+            double rx = cy * footOff[i][0] - sy * footOff[i][1], ry = sy * footOff[i][0] + cy * footOff[i][1];
+            footSeed[i][0] = d->qpos[0] + baseVx * dtm + rx; footSeed[i][1] = d->qpos[1] + baseVy * dtm + ry;
+            footLocked[i] = true;
+          } else if (planted) footLocked[i] = false;                 // 착지 → 다음 liftoff 재커밋 준비(footSeed는 유지)
+          const double seedX = footSeed[i][0], seedY = footSeed[i][1];  // 커밋된 발판(고정)
           region->updateFoot(i, seedX, seedY, stanceEnd_i);
           vizSeed[i][0] = seedX; vizSeed[i][1] = seedY;                    // ★발배치 시각화(seed=발판 목표)
           vizSeed[i][2] = terrainSdf ? terrainSdf->height(seedX, seedY) : 0.0;

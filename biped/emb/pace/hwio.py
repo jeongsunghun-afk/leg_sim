@@ -24,6 +24,7 @@ import contextlib
 import ctypes as C
 import math
 import signal
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -58,6 +59,43 @@ def raw_trace_dir(plotdir: str) -> str:
     import os
     d = os.path.abspath(plotdir)
     return os.path.dirname(d) if os.path.basename(d) == "plots" else d
+
+def save_npz(path: str, is_abort: bool = False, log=None, **arrays) -> str:
+    """실기 자료를 **덮어쓰지 않게** 저장한다. 실제 경로를 반환한다.
+
+    ★왜 (2026-08-14) — 같은 사고를 하루에 세 번 냈다.
+      ① 오프라인 시험이 couple_magnitude 의 실기 추적을 덮었다
+      ② 1초 만에 트립한 수집이 **완주한 12000표본 식별셋**을 덮었다
+      ③ (①의 원인) 출력 이름이 (다리, k) 로만 정해져 시험과 실기가 충돌했다
+      전부 **출력 이름이 내용과 무관하게 고정**이라 생긴다. 한 군데씩 고치면 또 놓친다.
+
+    두 규칙이다:
+      · is_abort 면 `_abort` 를 붙인다 — 실패한 판이 완주본을 밀어낼 자격은 없다.
+        원인 규명에는 필요하니 버리지는 않는다.
+      · 덮어쓸 상황이면 기존 파일을 `.prev` 로 **밀어둔다**. 실기 자료는 다시 받는 데
+        30초 + 래치오프 위험이 든다. 디스크 한 벌이 훨씬 싸다.
+
+    ⚠`.prev` 는 **한 벌만** 남는다. 나쁜 판을 두 번 연달아 돌리면 좋은 판이 사라진다.
+      그래서 aborted 분리가 1차 방어이고 `.prev` 는 2차다.
+    """
+    _log = log or (lambda m: None)
+    base, ext = os.path.splitext(path)
+    # ⚠제어인자를 `aborted` 로 두면 **저장 키와 충돌한다** — 호출측이 aborted 배열을
+    #   넣고 싶어도 못 넣는다. 실제로 그렇게 만들었다가 키 이름이 바뀌어
+    #   기존 자료를 읽던 코드가 깨질 뻔했다. 제어인자는 눈에 띄게 다른 이름으로.
+    if is_abort:
+        path = base + "_abort" + ext
+        base, ext = os.path.splitext(path)
+    if os.path.exists(path):
+        prev = base + ".prev" + ext
+        try:
+            os.replace(path, prev)
+            _log(f"    기존 파일을 밀어 둔다 → {os.path.basename(prev)}")
+        except OSError as e:
+            _log(f"    ⚠기존 파일을 못 옮겼다({e}) — 덮어쓴다")
+    np.savez(path, **arrays)
+    return path
+
 
 class SafetyAbort(RuntimeError):
     """안전조건 위반 — 호출측은 잡지 말고 종료시킬 것(limp 는 이미 수행됨)."""

@@ -717,6 +717,36 @@ def t_coef_plumbing():
           f"최대차 {np.max(np.abs(np.asarray(mj.wrap_prm) - w0)):.3e}")
 
 
+def t_save_npz_no_clobber():
+    """★실기 자료를 **덮어쓰지 않는가** (2026-08-14 신설).
+
+    같은 사고를 하루에 세 번 냈다 — 전부 출력 이름이 내용과 무관하게 고정이라 생겼다:
+      ① 오프라인 시험이 couple_magnitude 의 실기 추적을 덮었다
+      ② 1초 만에 트립한 수집이 **완주한 12000표본 식별셋**을 덮었다
+    한 군데씩 고치면 또 놓치므로 공용 함수로 만들고, 여기서 규칙을 못박는다.
+    """
+    import hwio
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p0 = os.path.join(d, "x.npz")
+        hwio.save_npz(p0, v=np.arange(5))
+        p1 = hwio.save_npz(p0, v=np.arange(9))          # 정상 재저장
+        ok_prev = os.path.exists(os.path.join(d, "x.prev.npz"))
+        check("재저장하면 기존 파일이 .prev 로 남는다", ok_prev, sorted(os.listdir(d)))
+        check("이전 내용이 .prev 에 온전하다",
+              len(np.load(os.path.join(d, "x.prev.npz"))["v"]) == 5, "")
+
+        p2 = hwio.save_npz(p0, is_abort=True, v=np.arange(2))   # 트립본
+        check("트립본은 _abort 로 간다", p2.endswith("x_abort.npz"), os.path.basename(p2))
+        # ★핵심 — 트립본이 **완주본을 건드리지 않았는가**
+        check("트립본이 완주본을 덮지 않는다",
+              len(np.load(p0)["v"]) == 9, f"완주본 길이 {len(np.load(p0)['v'])}")
+        # 제어인자가 저장 키와 충돌하지 않는가 (aborted 라는 배열도 넣을 수 있어야 한다)
+        p3 = hwio.save_npz(os.path.join(d, "y.npz"), is_abort=False, aborted=True)
+        check("`aborted` 를 배열 이름으로 쓸 수 있다",
+              bool(np.load(p3)["aborted"]), "제어인자는 is_abort 라 충돌 없음")
+
+
 def t_dead_axis_debounce():
     """★파워단 사망 검사의 **디바운스** (2026-08-14 신설).
 
@@ -896,7 +926,7 @@ if __name__ == "__main__":
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
                t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing,
-               t_except_names_resolve, t_dead_axis_debounce,
+               t_except_names_resolve, t_save_npz_no_clobber, t_dead_axis_debounce,
                t_couple_magnitude_e2e):
         try:
             fn()

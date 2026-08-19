@@ -293,7 +293,8 @@ def main() -> int:
     out = os.path.join(a.out_dir or os.path.join(EMB, "pace", "results"),
                        f"couple_mag_{a.leg}_k{a.k:g}.npz")
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    np.savez(out, t=T[:, 0], q_ch_calf=qc, q_ch_foot=T[:, 2], q_cmd_foot=T[:, 3],
+    out = hwio.save_npz(out, is_abort=bool(aborted[0] or clipped[0]), log=print,
+             t=T[:, 0], q_ch_calf=qc, q_ch_foot=T[:, 2], q_cmd_foot=T[:, 3],
              tau_foot=T[:, 4], k=a.k, ratio=ratio, s_calf=s_calf, s_foot=s_foot,
              leg=a.leg, span_ch=span_ch, span_joint=span_j, clipped=clipped[0])
 

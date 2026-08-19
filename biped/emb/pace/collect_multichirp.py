@@ -47,7 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 EMB = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(HERE, "tests"), os.path.join(EMB, "interface")]
 
-from hwio import DEG, Hardware, Limits, SafetyAbort   # noqa: E402
+from hwio import DEG, Hardware, Limits, SafetyAbort, save_npz   # noqa: E402
 from homing import goto_home, make_homer             # noqa: E402
 from joint_map import JointMap                       # noqa: E402
 from state_pub import publish_state, leg_extra                  # noqa: E402
@@ -521,13 +521,14 @@ def main() -> int:
         #     원인 규명에는 필요하지만 완주본을 밀어낼 자격은 없다.
         _base = (f"pace_multichirp{_sfx}" if a.gains == "id"
                  else f"pace_multichirp_val{_sfx}")
-        path = os.path.join(a.out, _base + ("_abort.npz" if _abort else ".npz"))
+        path = os.path.join(a.out, _base + ".npz")   # save_npz 가 _abort/.prev 를 붙인다
         # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
         #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
         kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
-        np.savez(path, aborted=bool(_abort), abort_msg=str(_abort or ""),
+        path = save_npz(path, is_abort=bool(_abort), log=print,
+                 aborted=bool(_abort), abort_msg=str(_abort or ""),
                  lag_ticks=_over, lag_max_ms=_lagmax,
                  t=T_, q=Qm, q_cmd=QC,
                  dq=DQ, tau_ch=TAU, cur_ch=CUR,

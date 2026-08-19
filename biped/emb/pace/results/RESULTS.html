@@ -68,14 +68,24 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b>HL_foot</b></td><td class="n">5:0.650 → 20:0.650</td><td><b>−0.001</b></td><td>≈ 0</td></tr>
 <tr><td>HR_foot</td><td class="n">2:0.653 → 40:0.597</td><td class="n">−0.084</td><td>✗ 음수</td></tr>
 <tr><td>hip</td><td class="n">2:0.88 → 5:0.83</td><td>(−1.01)</td><td class="wa">⚠ 점 2개뿐 — 의미 없음</td></tr></table>
-<p><b>마찰이 속도에 따라 늘지 않고 줄어든다.</b> Stribeck 이다. 그런데 <code>dof_damping</code> 은 정의상 <b>양수</b>다. ⇒ <b>맞는 <code>b</code> 가 존재하지 않는다.</b> 최적화기는 없는 항을 맞추려 하니 어떤 값이든 비슷하게 나쁘고, 다른 자유변수(<code>delay</code>·<code>τ_c</code>)가 미는 대로 떠다닌다.</p>
+<p><b>마찰이 속도에 따라 늘지 않고 줄어든다.</b> Stribeck 이다.</p>
+<p class="warn">⚠<b>"그러니 <code>b</code> 가 존재하지 않는다" 로 읽으면 안 된다</b> (2026-08-14 내가 한 번 그렇게 단정했다가 정정한다). Stribeck 곡선은 <b>내려갔다가 올라간다</b> — 최저점 아래에서는 마찰이 줄고, 그 <b>위에서 비로소 점성으로 늘어난다.</b> 우리가 본 음수 기울기는 "최저점 아래에서 쟀다" 는 뜻이지 "<code>b</code> 가 없다" 는 뜻이 아니다.</p>
+<table>
+<tr><th>축</th><th>스윕이 닿은 속도</th><th>거기서 본 것</th></tr>
+<tr><td><b>calf</b> (stroke 56°)</td><td><b>120 dps</b></td><td class="n">80·120 에서 <b>평탄</b>(0.693/0.681) → 최저점 <b>위</b>. <code>b ≈ 0</code> 확정</td></tr>
+<tr><td><b>thigh</b> (stroke 40°)</td><td class="n">40 dps (60 은 표본 155개로 불량)</td><td>아직 <b>내리막</b> → 최저점 <b>아래</b></td></tr></table>
+<p>⇒ thigh 는 *"찾을 값이 없다"* 가 아니라 <b>"찾을 수 있는 구간에 못 갔다"</b> 다.</p>
+<p class="warn">★그리고 처프는 <b>반대쪽 반쪽</b>이다. 새 자료가 thigh 를 114.8 dps 까지 올려 최저점 위로 갔는데, 거기선 관성이 점성의 <b>28배</b>라 못 본다.</p>
+<pre>스윕:  관성 없음   · 속도 ≤40 dps  (내리막)   ← 둘 다 반쪽이다
+처프:  속도 115 dps · 관성 28배</pre>
+<p><b>"고속 + 무관성" 을 thigh 에서 못 만든 것</b>이 진짜 문제다. calf 은 스트로크가 56° 라 그 조합을 만들 수 있었고, 그래서 답이 나왔다. ⇒ 필요한 것은 <b>thigh 스윕을 80~120 dps 로</b> 올리는 것이고, 그러려면 스트로크가   40° → 56° 쯤 돼야 한다(등속 구간이 남으려면 <code>stroke/v</code> 가 정착시간을 넘어야 한다).   ⚠44° 에서 *"늘어진 다리가 아래쪽에서 간섭"* 전례가 있다 — <b>육안 확인이 먼저</b>다.</p>
 <p class="warn">★<b>독립적인 두 방법이 같은 말을 한다</b> — 이게 이 표를 믿는 근거다:</p>
 <table>
 <tr><th></th><th>스윕 기울기</th><th>PACE 적합</th><th></th></tr>
 <tr><td>HR_calf</td><td><b>−0.0001</b> (≈0)</td><td><code>JDAMP.calf</code> → <b>0</b>, 5판 산포 <b>2%</b></td><td>✓ 일치</td></tr>
 <tr><td>HR_thigh</td><td><b>−0.160</b></td><td><code>JDAMP.thigh</code> 0.011~0.180, <b>8.1배</b></td><td>✓ 일치</td></tr></table>
 <p><code>calf</code> 가 잘 정해진 건 운이 아니라 기울기가 실제로 0 이기 때문이고, <code>thigh</code> 가 안 정해진 건 기울기가 음수라 넣을 값이 없기 때문이다.</p>
-<p>⇒ <b>기울기가 0 이하인 축은 <code>dof_damping = 0</code> 이 정답이다</b> (음이 아닌 값 중 최선).   남는 Stribeck 성분은 MuJoCo 로 표현할 수 없으니 도메인 랜덤화로 덮는다. ⚠hip 만 예외로 남는다 — 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻었다.</p>
+<p>⇒ <b>최저점 위에서 평탄한 게 확인된 축</b>(calf)은 <code>dof_damping = 0</code> 이 정답이다.   thigh 는 그 확인이 없으니 <b>0 은 잠정값</b>이다 — 음이 아닌 값 중 최선이긴 하나,   80~120 dps 에서 올라갈 가능성이 남아 있다. 그 속도로 걸을 계획이면 확인해야 한다.   남는 Stribeck 성분은 MuJoCo 로 표현할 수 없으니 도메인 랜덤화로 덮는다. ⚠hip 은 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻었다 — 기울기 자체를 못 낸다.</p>
 <h2>0-b. 왜 각축이 필요했나 — 다축 PACE 의 세 한계</h2>
 <p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다 (<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고, 실제로 대부분을 이걸로 정했다. 그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
 <div class="quote"><b>먼저 말 두 개.</b> 다축 최적화(CMA-ES)는 무에서 값을 찾지 않는다.</div>
@@ -139,7 +149,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td class="n">0.572</td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td class="n">0.110</td><td class="n">0.241</td></tr></table>
 <p><code>tendon_armature</code>(foot) = <b>0.0517</b> · <code>delay</code> = <b>8.13 ms</b></p>
-<p class="warn">★<code>damping.thigh</code> = <b>0</b> — 스윕 기울기가 음수(−0.160)라 양수 <code>b</code> 가 존재하지 않는다(§0 ★). <code>calf</code> 와 같은 논리다. ⚠<code>frictionloss.thigh</code> 는 <code>fit_v8</code>(thigh 도 0 고정)로 다시 정해야 한다 — 지금 0.592 는 <code>b</code> 가 자유였던 판의 값이다.</p>
+<p class="warn">★<code>damping.thigh</code> = <b>0 (잠정)</b> — 스윕이 Stribeck 최저점 <b>아래</b>(≤40dps)까지만 갔다(§0 ★). 음이 아닌 값 중 최선이지만 80~120dps 에서 올라갈 수 있다. ⚠<code>frictionloss.thigh</code> 는 <code>fit_v8</code>(thigh 도 0 고정)로 다시 정해야 한다 — 지금 0.592 는 <code>b</code> 가 자유였던 판의 값이다.</p>
 <h3>네 번의 적합에서 얼마나 흔들렸나</h3>
 <table>
 <tr><th>값</th><th>v2</th><th>v3</th><th>v4</th><th>v5</th><th>v6</th><th>산포</th><th>읽는 법</th></tr>
@@ -190,7 +200,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b><code>damping.calf</code> 0</b></td><td>전부 바닥, 짝은 불변. v6 에서 0 고정해도 성적 유지</td><td>상한 0.002</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
 <tr><td><code>frictionloss.thigh</code> 0.592</td><td>PACE 5판 — <code>damping</code> 과 <b>짝으로만</b></td><td class="n">±16%</td><td class="wa">⚠ 짝으로</td></tr>
 <tr><td><code>frictionloss.foot</code> 0.241</td><td>PACE v5·v6 (자유인 두 판)</td><td><b>±0.4%</b></td><td class="ok">✅ 좋다</td></tr>
-<tr><td><b><code>damping.thigh</code> 0</b></td><td>스윕 기울기 <b>−0.160</b> — 양수 <code>b</code> 가 없다</td><td class="n">—</td><td class="ok">✅ <b>0 으로 확정</b></td></tr>
+<tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ 못 믿는다</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
 <p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
@@ -230,6 +240,7 @@ pre code{border:0;background:none;padding:0}
 <pre>--pin hip,rotor,JDAMP.foot,coef,JDAMP.calf=0,JDAMP.thigh=0   --out fit_v8</pre>
 <p>검증 RMS 가 <b>0.249 근처를 유지하면 확정</b>이다 — 자유차원이 하나 줄고, 산포 8.1배짜리 값이 표에서 사라진다. 근거는 §0 ★(스윕 기울기 −0.160).</p>
 <p>⇒ 끝난 시험은 <b>§5</b> 에 결론만 남긴다. ⚠<b>hip 만 방법이 없다.</b> 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻어 기울기를   못 낸다. §4-2(중력 최소자세)가 그 축의 유일한 길이다.</p>
+<p class="warn">⚠<b>thigh 의 0 은 잠정이다.</b> 확정하려면 스윕을 <b>80~120 dps</b> 로 올려야 하고   (calf 가 그 속도에서 평탄함을 보여 답이 나왔다), 그러려면 스트로크가 40°→56° 쯤   필요하다. 44° 에서 간섭 전례가 있으니 <b>육안 확인이 먼저</b>다. 우선순위는 낮다 —   지금 게인·속도에서는 어느 값이든 검증 RMS 가 같다(0.249).</p>
 <h3>1. ~~재수집(진폭·주파수)~~ — <b>수집 성공. 그러나 <code>b</code> 는 여전히 안 잡힌다</b></h3>
 <p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
 <p><b>① 지금 자료는 <code>--f-scale 0.4</code> 예비주행이다.</b> 파일명 <code>pace_multichirp_f0.4_dqfix</code> 의</p>

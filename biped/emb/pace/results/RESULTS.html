@@ -42,10 +42,11 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
 <tr><td>kind</td><td><code>dof_armature</code></td><td><code>dof_damping</code></td><td><code>dof_frictionloss</code></td></tr>
-<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
+<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td><b>0.724</b> ◇</td></tr>
 <tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b></td><td class="n">0.604</td></tr>
 <tr><td>calf</td><td class="n">0.0808</td><td><b>0</b></td><td><b>0.871</b></td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td><b>0</b> → tendon</td><td><b>0</b> → tendon</td></tr></table>
+<p>◇<code>frictionloss.hip</code> = 스윕 실측 0.827 에 <b>계통 보정 0.876</b> 을 적용한 값이다(§1-c). 세 축이 보인 PACE/스윕 비를 hip 에 외삽한 것이고, <code>--pin JFRIC.hip=0.724</code> 로 검증했다 (검증 RMS 0.1874 → <b>0.1864</b>, 세 지표 전부 미세 개선). <b>외삽이지만 검증을 통과했다.</b></p>
 <p><b>foot 의 세 손실항은 전부 tendon(모터축)에 있다:</b></p>
 <p><code>tendon_armature</code> <b>0.0517</b> · <code>tendon_damping</code> <b>0.110</b> · <code>tendon_frictionloss</code> <b>0.639</b></p>
 <p><code>delay</code> <b>8.39 ms</b> · <code>coef</code> <b>1.0</b> · <code>ROTOR_I</code> <b>7.327e-4</b></p>
@@ -164,7 +165,7 @@ pre code{border:0;background:none;padding:0}
 <h2>1. MJCF 에 넣을 값</h2>
 <table>
 <tr><th>kind</th><th><code>dof_armature</code></th><th><code>dof_damping</code></th><th><code>dof_frictionloss</code></th></tr>
-<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td class="wa">0.827 ⚠</td></tr>
+<tr><td>hip</td><td class="n">0.0359</td><td class="wa">0.090 ⚠</td><td><b>0.724</b> ◇</td></tr>
 <tr><td>thigh</td><td class="n">0.0359</td><td><b>0</b> ★</td><td class="n">0.604</td></tr>
 <tr><td>calf</td><td class="n">0.0808</td><td><b>0</b> ✓</td><td><b>0.871</b></td></tr>
 <tr><td>foot</td><td><b>0</b> → tendon</td><td><b>0</b> → tendon</td><td><b>0</b> → tendon</td></tr></table>
@@ -258,7 +259,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><code>frictionloss.foot</code> <b>0.639</b></td><td>PACE(<code>fit_A</code>) — 스윕 0.745 대비 <b>−14.3%</b> · <b>tendon</b></td><td class="n">±3%</td><td class="ok">✅ 좋다</td></tr>
 <tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§5)</td></tr>
-<tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
+<tr><td><code>frictionloss.hip</code> <b>0.724</b></td><td>스윕 0.827 × 계통보정 0.876 (§1-c) — <b>검증 통과</b></td><td class="n">±5%</td><td class="ok">✅ 좋다</td></tr></table>
 <p class="warn">⚠<b>❌ 표시를 "쓰면 안 되는 값" 으로 읽지 말 것.</b> 이 프로젝트는 <b>MPC 기반</b>이라 MuJoCo 가 플랜트다 — 필요한 건 "시뮬이 실기를 예측하는가" 이고, 그 판정은 <b>민감도</b>(그 값을 극단으로 바꿔도 결론이 뒤집히는가)로 한다. §1-c 참조.</p>
 <h2>1-c. ❌ 표시를 어떻게 읽나 — <b>MPC 기반에서는 민감도로 판정한다</b></h2>
 <p class="warn">⚠<b>"도메인 랜덤화" 는 RL 용어다.</b> 이 문서가 한때 그렇게 적었는데 이 프로젝트에는 안 맞는다(2026-08-14 사용자 지적, 정정). 여기는 <b>MPC+WBIC 모델기반</b>이고 MuJoCo 는 <b>플랜트</b>다. 필요한 것은 *"시뮬 결과가 실기를 예측하는가"* 이고, 불확실한 값의 처방은 분포로 학습시키는 게 아니라 <b>극단값으로 돌려 결론이 뒤집히는지 보는 것</b>이다.</p>
@@ -334,22 +335,37 @@ pre code{border:0;background:none;padding:0}
 <div class="quote">가속" 하는 <b>t→0 극한</b>인데, 그만큼 긴 런에서는 calf 가 뒤처지고 thigh 가 그</div>
 <div class="quote">관성을 끌고 간다. 자유(0.189)와 고정(0.221) 사이 어디도 아닌 값이 나온다.</div>
 <p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>물리적으로 고정</b>해야 한다 (홀드는 유한 강성이라 안 된다).</p>
-<h2>3. 모터 게인 — <b>바꿀 필요 없다</b></h2>
-<p>배포 게인을 식별된 관성으로 평가하니 전부 정상 범위다.</p>
+<h2>3. 모터 게인 — <b>바꿀 필요 없다</b> (2026-08-14 <code>fit_A_hipcorr</code> 로 재계산)</h2>
+<p>배포 게인을 식별값으로 다시 평가했다. <code>JFRIC</code> 이 크게 바뀌었고(foot 0.241→0.639)</p>
+<p><code>JDAMP</code> 가 0 이 됐지만 <b>결론은 그대로</b>다.</p>
 <table>
-<tr><th>kind</th><th>kp [채널]</th><th>kd [채널]</th><th>f_n</th><th>ζ</th><th>판정</th></tr>
-<tr><td>hip</td><td class="n">100</td><td class="n">6.0</td><td class="n">3.5 Hz</td><td class="n">0.66</td><td class="ok">✅</td></tr>
-<tr><td>thigh</td><td class="n">50</td><td class="n">4.0</td><td class="n">2.7 Hz</td><td class="n">0.69</td><td class="ok">✅</td></tr>
-<tr><td>calf</td><td class="n">80</td><td class="n">3.5</td><td class="n">5.3 Hz</td><td class="n">0.73</td><td class="ok">✅</td></tr>
-<tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.5 Hz</td><td class="n">0.94</td><td class="ok">✅ 약간 과감쇠</td></tr></table>
-<p>foot 만 ζ 0.94 로 조금 높다. 굳이 맞추려면 <b>kd 2.0 → 1.5</b>. 급하지 않다.</p>
+<tr><th>kind</th><th>kp[채널]</th><th>kd[채널]</th><th><code>f_n</code></th><th><b>ζ (stand)</b></th><th>ζ (추종)</th><th>데드밴드</th><th>판정</th></tr>
+<tr><td>hip</td><td class="n">100</td><td class="n">6.0</td><td class="n">3.49 Hz</td><td><b>0.66</b></td><td class="n">0.76</td><td class="n">0.41°</td><td class="ok">✅</td></tr>
+<tr><td>thigh</td><td class="n">50</td><td class="n">4.0</td><td class="n">2.74 Hz</td><td><b>0.69</b></td><td class="n">0.76</td><td class="n">0.69°</td><td class="ok">✅</td></tr>
+<tr><td>calf</td><td class="n">80</td><td class="n">3.5</td><td class="n">6.39 Hz</td><td><b>0.88</b></td><td class="n">1.05</td><td class="n">0.28°</td><td class="ok">✅</td></tr>
+<tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.51 Hz</td><td><b>0.94</b></td><td class="n">1.10</td><td><b>0.85°</b></td><td class="ok">✅</td></tr></table>
+<h3>★ζ 를 <b>상황별로 나눠 읽어야</b> 한다 (이번에 정정)</h3>
+<p>지연이 만드는 감쇠 <code>kp·T_d</code> 는 <b>명령이 움직일 때만</b> 생긴다. 항이 <code>−kp·T_d·q̇_cmd</code> 이기 때문이다(§1-b):</p>
+<table>
+<tr><th>상황</th><th><code>q̇_cmd</code></th><th>유효 감쇠</th><th>ζ</th></tr>
+<tr><td><b>stand · 외란 억제</b></td><td><b>0</b></td><td><code>kd</code> 만</td><td><b>0.66~0.94</b></td></tr>
+<tr><td>walk · 궤적 추종</td><td>≠0</td><td><code>kd + kp·T_d</code></td><td class="n">0.76~1.10</td></tr></table>
+<p><b>넘어지느냐를 정하는 것은 외란 억제</b>이고 거기서는 전부 정상이다. 추종 쪽이 과감쇠(1.05~1.10)인 것은 <b>느려질 뿐 위험하지 않다.</b> ⚠종전 표의 ζ 는 이 구분 없이 한 값만 적었다. calf 도 0.73 → 0.88(stand) 로 올라간다 (<code>JDAMP.calf</code> 가 0 이 되면서 유효관성·감쇠 계산이 바뀌었다).</p>
+<h3>★실제로 바뀐 것은 <b>데드밴드</b>다</h3>
+<p><code>데드밴드 = τ_c / kp_joint</code> — 마찰이 커진 축에서 늘어난다.</p>
+<table>
+<tr><th>foot</th><th>옛(<code>τ_c</code> 0.241)</th><th><b>새(0.639)</b></th></tr>
+<tr><td>데드밴드</td><td class="n">0.32°</td><td><b>0.85°</b></td></tr></table>
+<p class="warn">⚠문서가 적어 둔 하한 기준은 1.4° 다(§0-b: *"foot 을 15 로 잡았는데 하한 21 밑이라 데드밴드가 1.4° 였다"*). 0.85° 는 아직 그 아래라 <b>배포 게인 그대로 괜찮다.</b> ⚠다만 <b>point foot 보행에서는 발목이 유일한 피치 권한</b>이다. 0.85° 는 지켜볼 값이고, 줄이려면 <code>kp</code> 를 올려야 한다(30 → 45 면 0.57°). 지금 근거로는 급하지 않다.</p>
 <p>시험용 게인은 별도다 — 식별 처프는 kp 를 낮추고(궤적이 명령에 붙으면 파라미터 정보가 사라진다), 홈복귀는 배포 게인을 쓴다.</p>
 <h2>4. TODO</h2>
 <p>식별은 닫혔다 — 적합 0.280 · 따로 뺀 구간 0.304 · <b>게인 2배 검증 0.187</b>. 아래는 <b>값이 비거나 확인이 덜 된 것</b>이지 정확도를 막는 것이 아니다.</p>
 <table>
 <tr><th>#</th><th>무엇</th><th>어디서</th><th>비용</th><th>왜</th></tr>
-<tr><td><b>1</b></td><td><code>JFRIC.hip</code> 계통 보정 확인 (<code>0.827 → 0.724</code>)</td><td>노트북</td><td><b>공짜</b></td><td>세 축이 보인 PACE/스윕 비 0.876 을 hip 에도 적용 (§1-c)</td></tr>
-<tr><td>~~—~~</td><td>~~궤적 검증 재실행~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>끝났다</b> — 0.3064, 잔차 비 1.09 (§6)</td></tr>
+<tr><td><b>1</b></td><td>HR_thigh 관성 측정</td><td>실기</td><td class="n">30분</td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙어 있다</td></tr>
+<tr><td class="n">2</td><td>Stribeck 크기 측정</td><td>실기</td><td class="n">30분</td><td><b>급하지 않다</b></td></tr>
+<tr><td>~~—~~</td><td>~~궤적 검증 재실행~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ 0.3064 · 잔차 비 1.09 (§6)</td></tr>
+<tr><td>~~—~~</td><td>~~<code>JFRIC.hip</code> 계통 보정~~</td><td class="n">—</td><td class="n">—</td><td class="ok">✅ <b>채택</b> — 0.827→<b>0.724</b>, 검증 0.1874→<b>0.1864</b></td></tr>
 <tr><td class="n">3</td><td>HR_thigh 관성 측정</td><td>실기</td><td class="n">30분</td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙어 있다</td></tr>
 <tr><td class="n">4</td><td>Stribeck 크기 측정</td><td>실기</td><td class="n">30분</td><td><code>f_start</code> 를 낮춘 수집이 따로 필요. <b>급하지 않다</b></td></tr>
 <tr><td class="n">—</td><td>컨트롤러에 <code>fit_A</code> 반영</td><td class="n">—</td><td class="n">—</td><td><b>다른 세션 몫</b> (<code>biped_control.hpp</code>·MJCF tendon 주입)</td></tr></table>

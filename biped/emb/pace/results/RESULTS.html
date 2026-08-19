@@ -57,7 +57,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b>게인 2배</b></td><td><b>0.187°</b></td><td><code>kp</code> ×2 로 따로 수집 — 가장 강한 시험</td></tr></table>
 <p class="warn">★<b>2026-08-14 마지막 발견 — 손실을 모터축으로 옮기자 전부 −33% 개선됐다.</b> §1-b 참조.</p>
 <p class="warn">⚠<b>남은 셋</b> — <code>damping.hip</code>(측정 방법 없음 확정) · <code>frictionloss.hip</code>(미검증) ·</p>
-<p><code>JFRIC.calf</code> 가 각축 스윕 대비 −46%. 앞의 둘은 <b>도메인 랜덤화 대상</b>이다.</p>
+<p><code>JFRIC.calf</code> 가 각축 스윕 대비 −46%. hip 둘은 <b>§1-c</b> 참조 — 실제로는 걱정할 값이 아니다.</p>
 <p class="warn">⚠<b>여기 숫자를 다른 문서로 복사하지 말 것.</b> 액추에이터 파라미터의 단일 출처는 이 문서이고, 실측 원본의 단일 출처는 <code>spec.yaml</code> 의 <code>friction.measured_*</code> 다. 복사하면 반드시 갈라진다 — 2026-08-14 에 실제로 그렇게 hip 값이 세 군데에서 달라졌다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
@@ -78,7 +78,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>⑦</td><td><code>coef</code> 커플링</td><td><b>경사계 실측</b> — 무릎 80.5° 훑어 발바닥 절대각 불변</td><td class="ok">✅ <b>c = 1 확정</b> (오차 ≲ 4%)</td></tr>
 <tr><td>⑧</td><td><code>q̃_b</code> 엔코더 영점</td><td><b>PACE</b> 축별 8개</td><td class="ok">✅ 최대 0.52°</td></tr></table>
 <p><b>⇒ ①②⑥⑦⑧ 은 닫혔다. ③④ 는 총량만 맞고 나눔이 안 됐다.</b> ③④ 가 갈리려면 <b>속도를 독립 제어하는 시험</b>이 필요하다(§5 '재수집' · '일정속도 시험').</p>
-<p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 도메인 랜덤화로 덮는 게 현실적이다.</p>
+<p class="warn">⚠MuJoCo 는 이 식 그대로가 아니다. <code>τ_c·sgn(q̇)</code> 만 있고 <b>정지마찰(Stribeck) 항이 없다</b> — 실측에서 운동마찰이 정지마찰의 72~98% 였는데 그 차이를 표현할 수 없다. 이 차이는 모델에 없는 채로 남는다 — <b>민감도로 크기를 재 두는 것</b>이 현실적이다(§1-c).</p>
 <h3>★<code>b</code> 는 왜 안 잡히나 — <b>찾으려는 값이 없다</b> (2026-08-14)</h3>
 <p>일정속도 스윕은 <code>q̈ = 0</code> 이라 관성이 사라진다. 그러면 <code>f(q̇) = τ_c + b·q̇</code> 이고 <b>기울기가 곧 <code>b</code></b> 다. 저장된 스윕 자료(<code>results/sweep_ch*.npz</code>)를 전 축에 대해 풀었다:</p>
 <table>
@@ -106,7 +106,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>HR_calf</td><td><b>−0.0001</b> (≈0)</td><td><code>JDAMP.calf</code> → <b>0</b>, 5판 산포 <b>2%</b></td><td>✓ 일치</td></tr>
 <tr><td>HR_thigh</td><td><b>−0.160</b></td><td><code>JDAMP.thigh</code> 0.011~0.180, <b>8.1배</b></td><td>✓ 일치</td></tr></table>
 <p><code>calf</code> 가 잘 정해진 건 운이 아니라 기울기가 실제로 0 이기 때문이고, <code>thigh</code> 가 안 정해진 건 기울기가 음수라 넣을 값이 없기 때문이다.</p>
-<p>⇒ <b>최저점 위에서 평탄한 게 확인된 축</b>(calf)은 <code>dof_damping = 0</code> 이 정답이다.   thigh 는 그 확인이 없으니 <b>0 은 잠정값</b>이다 — 음이 아닌 값 중 최선이긴 하나,   80~120 dps 에서 올라갈 가능성이 남아 있다. 그 속도로 걸을 계획이면 확인해야 한다.   남는 Stribeck 성분은 MuJoCo 로 표현할 수 없으니 도메인 랜덤화로 덮는다. ⚠hip 은 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻었다 — 기울기 자체를 못 낸다.</p>
+<p>⇒ <b>최저점 위에서 평탄한 게 확인된 축</b>(calf)은 <code>dof_damping = 0</code> 이 정답이다.   thigh 는 그 확인이 없으니 <b>0 은 잠정값</b>이다 — 음이 아닌 값 중 최선이긴 하나,   80~120 dps 에서 올라갈 가능성이 남아 있다. 그 속도로 걸을 계획이면 확인해야 한다.   남는 Stribeck 성분은 MuJoCo 로 표현할 수 없다 — 모델오차로 남겨 두고 크기를 안다(§1-c). ⚠hip 은 상자가 ±6° 라 속도점을 2개(2·5dps)밖에 못 얻었다 — 기울기 자체를 못 낸다.</p>
 <h2>0-b. 왜 각축이 필요했나 — 다축 PACE 의 세 한계</h2>
 <p><b>출발점은 다축이다.</b> 8축을 동시에 처프로 흔들어 궤적을 재현하도록 파라미터를 맞춘다 (<code>collect_multichirp</code> → <code>pace_cmaes</code>). 자연스러운 방법이고, 실제로 대부분을 이걸로 정했다. 그런데 <b>다축만으로는 원리적으로 못 가르는 것이 셋</b> 있었고, 각축은 그걸 메우려고 붙였다.</p>
 <div class="quote"><b>먼저 말 두 개.</b> 다축 최적화(CMA-ES)는 무에서 값을 찾지 않는다.</div>
@@ -227,7 +227,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>v4</td><td class="n">0.180</td><td class="n">0.533</td><td class="n">0.139</td><td class="n">0.672</td></tr>
 <tr><td>v5</td><td class="n">0.091</td><td class="n">0.567</td><td class="n">0.070</td><td class="n">0.637</td></tr>
 <tr><td>v6</td><td class="n">0.022</td><td class="n">0.592</td><td class="n">0.017</td><td class="n">0.609</td></tr></table>
-<p>⇒ 적합은 <b>직선 <code>b·q̇ + τ_c = 0.64</code></b> 위를 미끄러질 뿐이다. 한계 ①(r=+0.93)의 정체가 이것이다. ⇒ MJCF 에는 한 쌍을 적어야 하니 v6 값을 적었다. <b>도메인 랜덤화는 이 직선을 따라</b> 할 것 (<code>b</code> 를 0.02~0.18 로 흔들면서 <code>τ_c</code> 를 0.64 − <code>b</code>·0.773 으로 맞춘다).</p>
+<p>⇒ 적합은 <b>직선 <code>b·q̇ + τ_c = 0.64</code></b> 위를 미끄러질 뿐이다. 한계 ①(r=+0.93)의 정체가 이것이다. ⇒ MJCF 에는 한 쌍을 적어야 하니 v6 값을 적었다. <b>민감도를 볼 때도 이 직선을 따라</b> 흔들 것 (<code>b</code> 를 0.02~0.18 로 흔들면서 <code>τ_c</code> 를 0.64 − <code>b</code>·0.773 으로 맞춘다).</p>
 <p class="warn">⚠<b>시험속도를 벗어나면 갈린다.</b> 두 극단(<code>b</code> 0.022 vs 0.180)의 토크 차이:</p>
 <table>
 <tr><th><code>q̇</code></th><th>토크 차</th><th>총량 대비</th></tr>
@@ -260,7 +260,37 @@ pre code{border:0;background:none;padding:0}
 <tr><td><code>damping.thigh</code> 0</td><td>스윕이 최저점 <b>아래</b>(≤40dps)까지만 갔다</td><td>고속 미확인</td><td class="wa">⚠ <b>잠정 0</b></td></tr>
 <tr><td><code>damping.hip</code> 0.090</td><td>없음 — 옛 외삽값</td><td>미측정</td><td class="no">❌ <b>측정 방법 없음 확정</b>(§5)</td></tr>
 <tr><td><code>frictionloss.hip</code> 0.827</td><td>위치스윕(고정)</td><td>미검증</td><td class="no">❌ 못 믿는다</td></tr></table>
-<p><b>❌ 넷은 도메인 랜덤화 대상으로 둘 것.</b></p>
+<p class="warn">⚠<b>❌ 표시를 "쓰면 안 되는 값" 으로 읽지 말 것.</b> 이 프로젝트는 <b>MPC 기반</b>이라 MuJoCo 가 플랜트다 — 필요한 건 "시뮬이 실기를 예측하는가" 이고, 그 판정은 <b>민감도</b>(그 값을 극단으로 바꿔도 결론이 뒤집히는가)로 한다. §1-c 참조.</p>
+<h2>1-c. ❌ 표시를 어떻게 읽나 — <b>MPC 기반에서는 민감도로 판정한다</b></h2>
+<p class="warn">⚠<b>"도메인 랜덤화" 는 RL 용어다.</b> 이 문서가 한때 그렇게 적었는데 이 프로젝트에는 안 맞는다(2026-08-14 사용자 지적, 정정). 여기는 <b>MPC+WBIC 모델기반</b>이고 MuJoCo 는 <b>플랜트</b>다. 필요한 것은 *"시뮬 결과가 실기를 예측하는가"* 이고, 불확실한 값의 처방은 분포로 학습시키는 게 아니라 <b>극단값으로 돌려 결론이 뒤집히는지 보는 것</b>이다.</p>
+<p>#### hip 두 값을 그 기준으로 재보면 — <b>걱정할 값이 아니다</b></p>
+<p><code>damping.hip</code> 이 hip 총토크에서 차지하는 몫:</p>
+<table>
+<tr><th><code>q̇</code></th><th>중력</th><th>마찰</th><th>감쇠 <code>b·q̇</code></th><th><b>감쇠 몫</b></th></tr>
+<tr><td class="n">20 dps</td><td class="n">5.25</td><td class="n">0.827</td><td class="n">0.031</td><td><b>0.5%</b></td></tr>
+<tr><td class="n">60 dps</td><td class="n">5.25</td><td class="n">0.827</td><td class="n">0.094</td><td><b>1.5%</b></td></tr></table>
+<p>극단으로 흔들어도(60 dps 기준):</p>
+<table>
+<tr><th></th><th>hip 총토크</th><th>현재 대비</th></tr>
+<tr><td>감쇠 <b>0</b></td><td class="n">6.077</td><td><b>−1.5%</b></td></tr>
+<tr><td>감쇠 <b>×3</b></td><td class="n">6.360</td><td><b>+3.1%</b></td></tr></table>
+<p>⇒ <b>결론이 뒤집힐 크기가 아니다.</b> hip 은 중력(5.25)이 지배한다.</p>
+<p><code>frictionloss.hip</code> 은 <b>미측정이 아니다</b> — 두 독립 방법이 5% 안에서 맞는다:</p>
+<table>
+<tr><th></th><th>값</th></tr>
+<tr><td>위치스윕 <code>measured_coulomb_ch</code></td><td class="n">0.827</td></tr>
+<tr><td>토크모드 파단 <code>measured_tau_break_ch</code></td><td class="n">0.870</td></tr>
+<tr><td>차</td><td><b>5.2%</b></td></tr></table>
+<p>*"미검증"* 이라 적힌 것은 <b>PACE 가 못 움직였다</b>는 뜻이다(hip 이 비용의 4%).</p>
+<p>#### ★다만 여기서 하나 얻을 수 있다 — 계통 보정</p>
+<p>나머지 세 축은 PACE 값이 스윕 대비 일정 비율로 낮다(§1-b):</p>
+<table>
+<tr><th></th><th>PACE / 스윕</th></tr>
+<tr><td>thigh</td><td class="n">0.901</td></tr>
+<tr><td>calf</td><td class="n">0.870</td></tr>
+<tr><td>foot</td><td class="n">0.857</td></tr>
+<tr><td><b>평균</b></td><td><b>0.876</b></td></tr></table>
+<p>hip 은 PACE 가 못 움직여 스윕값 <b>0.827 그대로</b> 쓴다. 같은 계통 보정을 적용하면 <b>0.827 × 0.876 = 0.724</b> 가 더 나은 추정이다. ⚠이건 <b>외삽</b>이지 측정이 아니다. 다만 "보정 안 한 스윕값" 보다는 낫다. ⚠적용하려면 <code>--pin JFRIC.hip=0.724</code> 로 한 판 돌려 검증 RMS 가 안 나빠지는지 볼 것.</p>
 <h2>1-b. ★손실을 <b>모터축(tendon)</b> 으로 — 전 항목 −33% (2026-08-14)</h2>
 <p><code>foot_rotor_to_tendon</code> 이 <b>반사관성만</b> tendon 으로 옮기고 <code>dof_frictionloss</code>·</p>
 <p><code>dof_damping</code> 은 관절에 남겨 뒀다. <b>물리 논거는 완전히 같은데</b> 오래 안 보였다 — 모터의 마찰과 점성도 관절각이 아니라 <b>모터축(raw각)</b> 에서 작용한다.</p>
@@ -319,7 +349,7 @@ pre code{border:0;background:none;padding:0}
 <p>식별은 닫혔다. 세 조건(따로 뺀 구간 0.448 · 게인 2배 0.250 · 다른 궤적 0.411)에서 전부 일반화된다. 아래는 <b>값이 비어 있거나 설명이 안 되는 것</b>이지 정확도를 막는 것이 아니다.</p>
 <table>
 <tr><th></th><th>무엇</th><th>왜 막혔나</th><th>할 수 있나</th></tr>
-<tr><td>①</td><td><b><code>damping.hip</code></b> · <code>frictionloss.hip</code></td><td>상자 ±6°(자기충돌)라 스윕 속도점이 2개뿐 — 기울기를 못 낸다</td><td class="no">❌ <b>방법 없음</b> → 도메인 랜덤화</td></tr>
+<tr><td>①</td><td>~~<code>damping.hip</code>·<code>frictionloss.hip</code>~~</td><td>더 못 재는 건 맞지만 <b>결론에 영향이 없다</b> — §1-c 에서 정량화했다</td><td class="ok">✅ <b>종결</b></td></tr>
 <tr><td>③</td><td><b>HR_thigh 관성 미측정</b></td><td>좌우 대조용. <code>t_ref→0</code> 외삽이 붙었으니 다음 실기에서 같이 하면 된다</td><td>실기 30분</td></tr>
 <tr><td>④</td><td><b>궤적 검증을 <code>--loss-space tendon</code> 으로 재실행</b></td><td>지금 표의 0.411 은 손실공간 수정 <b>전</b> 값이다</td><td>노트북 · <b>공짜</b></td></tr></table>
 <p>✅<b>②(<code>JFRIC.calf</code> −46%)는 풀렸다</b> — 원인은 calf 가 아니라 foot 의 손실이 잘못된 좌표(관절각)에 있던 것이었다. §1-b 참조. 지금은 −13% 이고 세 축이 다 −10~−14% 다.</p>
@@ -450,7 +480,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>#### 그래서 진짜 레버는 축마다 다르다</p>
 <p><b><code>thigh</code> 관성 — 런을 짧게.</b> 진자 주기 0.90 s 대비 런이 0.21~0.48 s(39%)라 <code>M⁻¹</code> 예측이 전제하는 <code>t→0</code> 극한이 깨진다. 중력최소 자세(thigh +20°·calf +20°)에서 τ_g 가 0.023 Nm 이고 <code>τ_trip</code> 12 Nm 이라 <b>예산이 11.7 Nm</b> 남는다. 유효관성 0.139 이므로</p>
 <p><code>q̈</code> 를 <b>84 rad/s²</b> 까지 쓸 수 있고, 그러면 <code>vref</code> 100 dps 도달 + 창(±50 ms)까지 <b>~70 ms</b> 로 끝난다 — 주기의 <b>8%</b>. 지금은 그 예산을 다 안 쓴다. ⇒ 고칠 것은 <b>자세가 아니라 토크준위</b>다(<code>auto_levels</code>).</p>
-<p><b><code>hip</code> 감쇠 — 방법이 없다.</b> 상자 ±6° 는 <b>자기충돌</b>이 정한 것이다(지그 접촉 11.5°, 처짐 2~3.5° 를 빼면 6° 가 상한). 등속 스윕은 <code>stroke/v &gt; 정착시간</code> 이라 <b>47 dps</b> 가 한계이고 거기서 점성 몫이 11% 다. 속도점도 2개(2·5dps)뿐이라 기울기를 못 낸다. ⇒ <b>도메인 랜덤화 대상으로 확정한다.</b> 더 팔 데가 없다.</p>
+<p><b><code>hip</code> 감쇠 — 방법이 없다.</b> 상자 ±6° 는 <b>자기충돌</b>이 정한 것이다(지그 접촉 11.5°, 처짐 2~3.5° 를 빼면 6° 가 상한). 등속 스윕은 <code>stroke/v &gt; 정착시간</code> 이라 <b>47 dps</b> 가 한계이고 거기서 점성 몫이 11% 다. 속도점도 2개(2·5dps)뿐이라 기울기를 못 낸다. ⇒ 더 팔 데가 없다. 다만 <b>결론에 영향이 없다는 것</b>을 §1-c 에서 정량화했으므로   이 항목은 종결한다(측정 실패가 아니라 <b>측정할 필요가 없음</b>이다).</p>
 <p class="warn">★교훈 — §5 '일정속도 시험' 과 <b>같은 실수</b>를 반복할 뻔했다. "중력이 원인" 이라는 진단이 문서에 적혀 있었고 나는 그걸 그대로 받아 실기 절차를 설계하려 했다. 그런데 같은 문서 §2 가 이미 반증을 적고 있었다. <b>실기를 설계하기 전에 그 진단이 자료로 뒷받침되는지부터 볼 것.</b></p>
 <h3>✓ 다른 궤적 검증 — <b>끝났다</b> (<code>fit_v10</code>)</h3>
 <p>지금 검증은 <b>게인</b>만 바꿨다. 궤적(진폭·주파수)도 바꾼 데이터가 있으면 더 강하다.</p>

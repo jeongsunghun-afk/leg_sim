@@ -27,11 +27,21 @@
 #        bash run_leg_R.sh 3 1             # 마찰, 특정 축만
 #        bash run_leg_R.sh --torque        # **토크(무여자 램프)**, 4축 전부
 #        bash run_leg_R.sh --torque 3 1    # 토크, 특정 축만
+#        bash run_leg_R.sh --inertia 5     # **관성**(+기동토크), HR_thigh
 set -u
 cd "$(dirname "$0")"
 
 TESTS=friction
-if [ "${1:-}" = "--torque" ]; then TESTS=torque; shift; fi
+if [ "${1:-}" = "--torque" ];  then TESTS=torque;         shift; fi
+# ★--inertia 는 **torque 를 같이 돈다** (2026-08-14 추가).
+#   inertia 의 준위 자동설계(design_levels)가 **기동토크**를 입력으로 받는다.
+#   따로 안 돌리면 spec 의 실측값으로 폴백하는데, 그건 다른 날 다른 자세의 값이다.
+#   같은 세션에서 잰 값을 쓰는 편이 낫다.
+#   ⚠이 시험은 --solo 로 돈다. 헤더가 "inertia 에 쓰지 말 것" 이라 적어 둔 그 방식인데,
+#     HL_thigh 도 그렇게 쟀고(results/inertia_ch01.npz 의 hold=[]) **좌우 대조가 목적이면
+#     조건을 맞추는 것이 맞다.** 아래 링크가 자유라 생기는 관성 과대평가는
+#     `t_ref→0` 외삽이 뺀다(RESULTS.md §5 '관성 외삽', HL 기준 +35% → +6.1%).
+if [ "${1:-}" = "--inertia" ]; then TESTS=torque,inertia; shift; fi
 
 # ★`$1` 이 아니라 `$*` 다 (2026-08-12). `bash run_leg_L.sh 3 1 2` 를 실행했더니
 #   **ch3 만 돌고 "왼다리 완료" 로 끝났다** — $1 은 "3" 하나뿐이다.
@@ -40,7 +50,11 @@ CHS=${*:-"7 5 6 4"}          # HR_foot · HR_thigh · HR_calf · HR_hip
 NAME=(HL_hip HL_thigh HL_calf HL_foot HR_hip HR_thigh HR_calf HR_foot)
 
 echo "════════════════════════════════════════════════════════════════"
-_TN=$([ "$TESTS" = torque ] && echo "토크(무여자 램프)" || echo "마찰")
+case "$TESTS" in
+  torque)         _TN="토크(무여자 램프)" ;;
+  torque,inertia) _TN="**관성**(+기동토크)" ;;
+  *)              _TN="마찰" ;;
+esac
 echo " 오른다리(HR) $_TN 측정 — **왼다리를 손으로 잡아 주세요**"
 echo "════════════════════════════════════════════════════════════════"
 echo " ⚠ 제어기(biped_emb.py)를 먼저 끕니다 — writer 는 하나여야 합니다."

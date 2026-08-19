@@ -683,7 +683,24 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p class="warn">★<b>남은 개선 여지는 사실상 foot 하나다.</b> hip 은 가장 작다(0.07~0.12) — §1-c 의 *"hip 은 걱정할 값이 아니다"* 와 독립적으로 일치한다.</p>
 <p class="warn">⚠<b>게인을 2배로 하면 foot 잔차가 절반으로 준다</b>(0.48/0.51 → 0.27/0.29). 추종이 조여지면 사라지는 성분이라는 뜻이다 — 모델의 <b>정적</b> 오차라기보다 <b>동적 추종</b> 쪽에 남은 것이 있다는 신호다.</p>
 <p class="warn">⚠2026-08-14 손실공간 수정 <b>전에는</b> foot 지분이 63~72% 였다. 수정으로 전체가 −33% 줄었지만 foot 비중은 오히려 늘었다 — <b>다른 축이 더 많이 좋아졌다</b>는 뜻이다.</p>
-<p class="warn">★<b>foot 잔차의 원인은 아직 모른다.</b> 배제된 것: 백래시(1/12 크기) · 감속기 유연성 (공진 19.8 Hz, 대역 밖) · <code>coef</code>(경사계로 1.0 확정) · 손실 좌표(§1-b 에서 고침).</p>
+<p>#### ★foot 잔차의 정체 — <b>마찰 모델링 오차다</b> (2026-08-14 확인)</p>
+<p>게인을 2배로 하면 마찰 데드밴드(<code>τ_c/kp</code>)가 절반이 된다. 그때 잔차가 어떻게 변하나:</p>
+<table>
+<tr><th>축</th><th>RMS/데드밴드 (식별)</th><th>(게인 2배)</th><th></th></tr>
+<tr><td>thigh</td><td class="n">0.30</td><td><b>0.53</b></td><td>비가 2배 — 데드밴드와 <b>무관</b></td></tr>
+<tr><td>calf</td><td class="n">0.14</td><td><b>0.27</b></td><td>비가 2배 — 무관</td></tr>
+<tr><td><b>foot</b></td><td><b>0.43</b></td><td><b>0.48</b></td><td><b>거의 같음</b> ← <b>비례한다</b></td></tr></table>
+<p><code>foot</code> 만 RMS 가 데드밴드를 따라 반으로 줄었다(0.495 → 0.280). 다른 축은 게인을 올려도 RMS 가 거의 안 준다. ⇒ <b>foot 잔차는 마찰/제어권한 비에 비례한다</b> = 마찰 모델링 오차의 서명이다.   MuJoCo 의 <code>frictionloss</code> 는 구속 기반이라 실제 stick-slip 을 그대로 재현하지 못하고,   그 오차가 데드밴드 크기에 비례해 나타난다. foot 이 그 비가 가장 큰 축이다   (데드밴드 1.15° vs 나머지 0.41~0.89°).</p>
+<p>⇒ <b>미측정 Stribeck 을 정확히 가리킨다</b>(§4-2). 그것이 모델에 없는 유일한 큰 마찰 항이다.</p>
+<p class="warn">⚠<b>좌표 탓이 아니다</b> — 잔차를 <code>raw</code>각(<code>q_foot+q_calf</code>)에서 재도 안 줄어든다:</p>
+<table>
+<tr><th></th><th>HL</th><th>HR</th></tr>
+<tr><td>foot 잔차(모델각)</td><td class="n">0.4764</td><td class="n">0.5132</td></tr>
+<tr><td>raw각 잔차</td><td class="n">0.4847</td><td class="n">0.5465</td></tr>
+<tr><td>foot↔calf 잔차 상관</td><td class="n">−0.03</td><td class="n">+0.08</td></tr></table>
+<p>calf 에서 넘어온 것도 아니다(상관 ≈ 0). <b>foot 자신의 오차</b>다.</p>
+<p class="warn">★배제된 것: 백래시(1/12 크기) · 감속기 유연성(공진 19.8 Hz, 대역 밖) ·</p>
+<p><code>coef</code>(경사계로 1.0 확정) · 손실 좌표(§1-b 에서 고침) · <b>좌표 변환</b>(위).</p>
 <p class="warn">★<b>본 적 없는 두 조건이 똑같이 −25.5% 좋아졌다</b> — 손실공간 수정의 효과가 적합셋에만 나온 게 아니라는 뜻이다:</p>
 <table>
 <tr><th>검증</th><th><code>joint</code></th><th><b><code>tendon</code></b></th><th></th></tr>

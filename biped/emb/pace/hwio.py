@@ -218,6 +218,19 @@ class Hardware:
         # 파워단 사망 판별 — 이만큼 명령했는데 보고 토크가 이 비율 미만이면 죽은 것이다.
         self.dead_cmd_nm = 3.0
         self.dead_ratio = 0.15
+        # ★★지속시간 요구 (2026-08-14). 종전엔 **한 틱**만 조건을 만족해도 트립했다.
+        #   tau_trip_ms · stall_ms 는 지속시간을 요구하는데 이 검사만 없었다.
+        #   2026-08-14 실기 — 깨끗한 조건(밀림 2.9%)에서 30초 수집이 24.8s 에 죽었다.
+        #   저장된 추적으로 확인하니 조건 성립이 **1~4틱(2.5~10ms)** 짜리 순간 결측이었다:
+        #       ch5 HR_thigh  8900표본 중 9표본(0.10%) · 최장 연속 4틱
+        #       ch1 HL_thigh  9179표본 중 2표본(0.02%) · 최장 연속 2틱
+        #   파워단이 죽은 축은 **계속** 죽어 있다(2026-08-12 사례는 비 0.008 지속).
+        #   ⇒ dead_ms 동안 이어질 때만 트립한다. 실제 사망은 그 뒤로도 계속이므로
+        #     민감도는 그대로이고, 순간 결측만 걸러진다.
+        #   ⚠늦어지는 대가: 100dps 로 떨어지는 축이 30ms 면 3° 다. err_max(12~35°)와
+        #     vel_trip 이 여전히 뒤를 받치므로 안전여유가 남는다.
+        self.dead_ms = 30.0
+        self._dead_since: dict = {}
         self._q_cmd = np.zeros(self.n, np.float32)
         # ★마지막으로 써 보낸 **토크 피드포워드** (2026-08-14). 종전엔 어디에도 안 남아서
         #   값 모니터의 "명령" 이 위치뿐이었다 — PACE 는 τ_ff 가진이 본체인데도.
@@ -325,6 +338,61 @@ class Hardware:
             print("\n!! safe_hold 실패 — limp 로 전환한다", file=sys.stderr, flush=True)
             return self.limp()
         return ok
+
+    def relax(self, ramp_s: float = 2.0, settle_s: float = 3.0,
+              v_settle_dps: float = 8.0, log=None) -> None:
+        """**힘을 서서히 빼서 축이 처지게** 한 뒤 놓는다. limp 앞에 부른다.
+
+        ★왜 (2026-08-14, 사용자 요청)
+          시험이 끝나면 홈자세에서 곧바로 limp 한다. 홈은 다리가 **모아진** 자세라
+          거기서 여자를 끊으면 두 다리가 중력으로 **쾅 부딪힌다.** 위험하고 기구에도 나쁘다.
+
+        ★어떻게 — kp 만 0 으로 빼고 **kd 는 남긴다.**
+          정지 평형은 kp·err = τ_g 이므로 kp 를 낮추면 처짐이 커진다. kp→0 이면
+          평형이 없어져 축이 내려가는데, 그때 **kd 가 종단속도를 정한다**:
+              q̇_종단 = τ_g / kd
+          hip 은 τ_g 5.25Nm · kd 6 → 약 50dps 로 **점성 하강**한다. 자유낙하가 아니다.
+          ⇒ 명령각은 **마지막 측정각에 고정**한다. 명령이 측정을 따라가면 오차가 0 이
+            되어 kd 도 일을 안 하고 그냥 떨어진다.
+
+        ⚠kd 도 같이 빼면 안 된다 — 그러면 자유낙하다. kd 는 끝까지 유지하고,
+          속도가 v_settle 아래로 내려가 **멈춘 뒤에** limp 한다.
+        ⚠limp 를 대체하지 않는다. 이 함수 끝에서 limp 를 부르고, __exit__·atexit 의
+          limp 도 그대로 남는다 — 처짐이 실패해도 무여자는 보장돼야 한다.
+        """
+        _log = log or (lambda m: None)
+        if not self._armed:
+            return
+        kp0 = np.array(self._wr_kp[:self.n], np.float32)
+        kd0 = np.array(self._wr_kd[:self.n], np.float32)
+        try:
+            self.read(0)
+            self._q_cmd[:self.n] = self._q[:self.n]      # 지금 자리에 고정
+            n_ramp = max(int(ramp_s / max(self.dt, 1e-4)), 1)
+            for i in range(n_ramp + 1):
+                f = 1.0 - i / n_ramp                      # kp 배율 1 → 0
+                self.lib.bridge_enable(1)
+                self.lib.bridge_write_pos(_p(self._q_cmd), _p(kp0 * f), _p(kd0), self.n)
+                time.sleep(self.dt)
+            _log(f"    힘 빼기 — kp 0 · kd 유지({ramp_s:.1f}s). 이제 점성 하강한다")
+
+            t0 = time.monotonic()
+            zeros = np.zeros(self.n, np.float32)
+            vmax = 0.0
+            while time.monotonic() - t0 < settle_s:
+                self.lib.bridge_enable(1)
+                self.lib.bridge_write_pos(_p(self._q_cmd), _p(zeros), _p(kd0), self.n)
+                self.read(0)
+                vmax = float(np.max(np.abs(self._dq[:self.n])))
+                if vmax < v_settle_dps and time.monotonic() - t0 > 0.5:
+                    break
+                time.sleep(self.dt)
+            _log(f"    정착 — 최대 |q̇| {vmax:.1f}dps ({time.monotonic()-t0:.1f}s)"
+                 + ("" if vmax < v_settle_dps else "  ⚠아직 움직인다 — 손으로 받칠 것"))
+        except Exception as e:                      # noqa: BLE001
+            _log(f"    ⚠힘 빼기 중 오류({type(e).__name__}: {e}) — 곧바로 limp 한다")
+        finally:
+            self.limp()
 
     def limp(self, n_write: int = 25) -> int:
         """Kp=Kd=0 을 반복 기록해 확실히 무여자로 만든다. 어떤 경로로든 마지막에 호출.
@@ -674,6 +742,7 @@ class Hardware:
             # **옛 t0** 로 즉시 stall_ms 를 초과해 오탐한다.
             self._stall_since.clear()
             self._stall_test.clear()
+            self._dead_since.clear()
 
     def check_hold(self) -> None:
         """홀드축이 실제로 잡혀 있는지 확인. 밀려나면 측정이 무효이므로 중단.
@@ -713,10 +782,19 @@ class Hardware:
             kp_h0, kd_h0 = self._written_gain_of(hc)
             _e = float(self._q_cmd[hc]) - float(self._q[hc])
             cmd_t = abs(kp_h0 * _e - kd_h0 * float(self._dq[hc])) * math.pi / 180.0
-            if cmd_t > self.dead_cmd_nm and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio:
+            _dead_now = (cmd_t > self.dead_cmd_nm
+                         and abs(float(self._tau[hc])) < cmd_t * self.dead_ratio)
+            if not _dead_now:
+                self._dead_since.pop(hc, None)          # 한 틱이라도 정상이면 초기화
+            else:
+                _t0 = self._dead_since.setdefault(hc, time.monotonic())
+                if (time.monotonic() - _t0) * 1e3 <= self.dead_ms:
+                    continue                            # 아직 지속시간 미달 — 지켜본다
+            if _dead_now:
                 self.limp()      # 죽은 축은 잡을 수 없다 — 나머지도 놓는 게 안전하다
                 raise SafetyAbort(
                     f"홀드축 ch{hc} **드라이버가 명령을 안 받는다** — "
+                    f"**{self.dead_ms:.0f}ms 이상 지속** — "
                     f"kp·err = {cmd_t:.2f}Nm 을 명령했는데 "
                     f"보고 토크가 {self._tau[hc]:+.3f}Nm 뿐이다(비 "
                     f"{abs(float(self._tau[hc]))/cmd_t:.3f} < {self.dead_ratio}).\n"

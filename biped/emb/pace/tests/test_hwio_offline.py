@@ -24,6 +24,7 @@ import ctypes as C
 import os
 import io
 import contextlib
+import time
 import builtins as builtins_mod
 import sys
 
@@ -716,6 +717,53 @@ def t_coef_plumbing():
           f"최대차 {np.max(np.abs(np.asarray(mj.wrap_prm) - w0)):.3e}")
 
 
+def t_dead_axis_debounce():
+    """★파워단 사망 검사의 **디바운스** (2026-08-14 신설).
+
+    종전엔 한 틱만 조건을 만족해도 트립했다. tau_trip_ms · stall_ms 는 지속시간을
+    요구하는데 이 검사만 없었다. 2026-08-14 실기에서 깨끗한 조건(밀림 2.9%)의
+    30초 수집이 24.8s 에 죽었고, 저장된 추적을 보니 조건 성립이 **1~4틱** 짜리
+    순간 결측이었다(ch5 8900표본 중 9표본, 최장 연속 4틱=10ms).
+
+    두 가지를 같이 본다 — 완화가 **진짜 사망을 놓치면** 안 되기 때문이다:
+      ① 순간(<dead_ms) 결측은 트립하지 않는다
+      ② 지속(>dead_ms) 사망은 **여전히** 트립한다
+    """
+    import hwio                                   # 이 파일은 모듈 수준 import 를 안 한다
+    spec = yaml.safe_load(open(os.path.join(PACE, "spec.yaml"), encoding="utf-8"))
+    n = int(spec["shm"]["n_channel"])
+    home, _jm = _home_targets()
+    fake = FakeLib(n, q_init=list(home) + [0.0] * (n - len(home)), dt=1 / 400.)
+    hw = _make_hw(fake, spec, hold=(1,), rate_hz=400.0, align=False)
+    hw.dead_ms = 30.0
+    hw._q_cmd[1] = float(hw._q[1]) + 8.0          # 큰 오차 → cmd_t 가 문턱을 넘는다
+    hw._wr_kp = np.zeros(n, np.float32); hw._wr_kp[1] = 50.0
+    hw._wr_kd = np.zeros(n, np.float32); hw._wr_kd[1] = 4.06
+    hw._dq[1] = 0.0
+
+    # ① 순간 결측 — 토크를 한 틱만 0 으로 떨어뜨린다
+    hw._tau[1] = 0.0
+    hw.check_hold()                                # 여기서 터지면 실패다
+    hw._tau[1] = 5.0                               # 정상 복귀
+    hw.check_hold()
+    ok1 = 1 not in hw._dead_since                  # 정상 한 틱에 초기화돼야 한다
+    check("순간 결측은 트립하지 않는다", ok1, f"_dead_since={dict(hw._dead_since)}")
+
+    # ② 지속 사망 — 후보 시각을 dead_ms 보다 **과거로** 두어 '충분히 지속' 을 만든다
+    #   ⚠dead_ms=0 으로 낮추는 방식은 안 된다 — setdefault 직후의 미소 경과가 이미
+    #     0 을 넘어 **첫 호출에서** 터진다(2026-08-14 이 시험을 쓰며 실제로 그랬다).
+    hw.dead_ms = 30.0
+    hw._tau[1] = 0.0
+    hw._dead_since[1] = time.monotonic() - 0.100    # 100ms 전부터 죽어 있었다
+    raised = ""
+    try:
+        hw.check_hold()
+    except hwio.SafetyAbort as e:      # ★이 파일은 `import hwio` 다
+        raised = str(e)
+    check("지속 사망은 여전히 트립한다", "명령을 안 받는다" in raised,
+          raised[:70] or "안 터졌다 — **완화가 과했다**")
+
+
 def t_except_names_resolve():
     """★except 절이 잡는 이름이 그 파일에서 **해석 가능한가** (2026-08-14 신설).
 
@@ -725,13 +773,22 @@ def t_except_names_resolve():
     NameError 로 덮여 20초치 수집을 잃었다 — 자료를 지키려고 넣은 코드가 자료를 지웠다.
 
     ⚠오류 처리 경로는 **성공 경로보다 덜 실행되는데 더 중요하다.** 정적으로 본다.
+    ⚠⚠**한계 — 스코프를 안 본다.** ast.walk 가 함수 안 import 까지 세므로,
+      "어딘가에서 import 되지만 이 함수에서는 안 보이는" 경우는 못 잡는다.
+      실제로 이 시험을 넣은 직후 그 구멍으로 t_dead_axis_debounce 가 터졌다.
+      잡는 것은 "**아무 데서도 import 안 된 이름**" 이다 — 그것만으로도 값을 했다.
     """
     import ast as _ast
     bad = []
-    for _f in sorted(os.listdir(PACE)):
-        if not _f.endswith(".py"):
-            continue
-        _src = open(os.path.join(PACE, _f), encoding="utf-8").read()
+    _files = [os.path.join(PACE, f) for f in sorted(os.listdir(PACE)) if f.endswith(".py")]
+    _td = os.path.join(PACE, "tests")
+    # ★tests/ 도 훑는다 (2026-08-14). 이 검사를 넣은 직후 **이 파일에서** 같은 실수를
+    #   했다 — emb/pace/*.py 만 보고 tests/ 를 뺐기 때문이다. 검사에 사각이 있으면
+    #   그 사각에서 난다.
+    _files += [os.path.join(_td, f) for f in sorted(os.listdir(_td)) if f.endswith(".py")]
+    for _fp in _files:
+        _f = os.path.relpath(_fp, PACE)
+        _src = open(_fp, encoding="utf-8").read()
         try:
             _tree = _ast.parse(_src)
         except SyntaxError:
@@ -754,7 +811,8 @@ def t_except_names_resolve():
                     _r = _r.value
                 if isinstance(_r, _ast.Name) and _r.id not in _top:
                     bad.append(f"{_f}:{_n.lineno} except {_ast.unparse(_t)}")
-    check("except 이름이 전부 해석된다", not bad, "; ".join(bad) or "emb/pace/*.py 전부")
+    check("except 이름이 전부 해석된다", not bad,
+          "; ".join(bad) or f"emb/pace/*.py + tests/ ({len(_files)}개)")
 
 
 def t_couple_magnitude_e2e():
@@ -838,7 +896,8 @@ if __name__ == "__main__":
     for fn in (t_goto_all_home, t_scalar_gain, t_torque_loop, t_measure_gravity,
                t_friction_full, t_limp_and_signal, t_hold_no_ratchet,
                t_vref_sweep_synth, t_inertia_full, t_spec_schema, t_coef_plumbing,
-               t_except_names_resolve, t_couple_magnitude_e2e):
+               t_except_names_resolve, t_dead_axis_debounce,
+               t_couple_magnitude_e2e):
         try:
             fn()
         except Exception as e:

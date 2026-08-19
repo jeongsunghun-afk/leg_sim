@@ -528,6 +528,15 @@ def main() -> int:
                       log=lambda m: print(f"  [multichirp]{m}"))
         except Exception as e:
             print(f"\n  ⚠수집 후 홈복귀 실패({type(e).__name__}: {e})")
+
+        # ★★홈에서 곧바로 끊으면 **두 다리가 쾅 부딪힌다** (2026-08-14 사용자 지적).
+        #   홈은 다리가 모아진 자세다. 거기서 무여자로 가면 중력으로 서로 친다.
+        #   ⇒ kp 만 빼고 kd 를 남겨 점성 하강시킨 뒤, 멈추면 놓는다.
+        #   ⚠트립으로 왔다면 check_hold 가 이미 limp 했으므로 relax 는 바로 반환한다
+        #     (_armed=False). 안전 정지가 우선이고, 그건 바꾸지 않는다.
+        print("\n  ── 안전 종료 — 힘을 빼서 처지게 한다 ──")
+        hw.relax(log=lambda m: print(m))
+
         if _abort is not None:
             # ★저장·홈복귀를 **마친 뒤에** 실패로 끝낸다. 순서가 중요하다 — 여기서
             #   먼저 던지면 위의 저장이 또 날아간다(그게 오늘 25초를 잃은 방식이다).

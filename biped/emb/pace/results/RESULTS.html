@@ -57,7 +57,7 @@ pre code{border:0;background:none;padding:0}
 <tr><td>따로 뺀 구간</td><td><b>0.304°</b></td><td>안 쓴 12창</td></tr>
 <tr><td><b>게인 2배</b></td><td><b>0.187°</b></td><td><code>kp</code> ×2 로 따로 수집 — 가장 강한 시험</td></tr></table>
 <p class="warn">★<b>2026-08-14 마지막 발견 — 손실을 모터축으로 옮기자 전부 −33% 개선됐다.</b> §1-b 참조.</p>
-<p class="warn">⚠<b>남은 TODO 는 §4</b> — 노트북 둘(공짜) · 실기 둘. hip 두 값과 <code>JFRIC.calf</code> 는 종결됐다.</p>
+<p class="warn">⚠<b>남은 TODO 는 §4</b> — 실기 둘뿐이다. 노트북 작업은 끝났다. ★<b>축별로 보면 <code>foot</code> 이 제곱오차의 78%</b> 를 진다(§6). 남은 개선 여지는 사실상 거기다.</p>
 <p class="warn">⚠<b>여기 숫자를 다른 문서로 복사하지 말 것.</b> 액추에이터 파라미터의 단일 출처는 이 문서이고, 실측 원본의 단일 출처는 <code>spec.yaml</code> 의 <code>friction.measured_*</code> 다. 복사하면 반드시 갈라진다 — 2026-08-14 에 실제로 그렇게 hip 값이 세 군데에서 달라졌다.</p>
 <h2>0. 무엇을 채웠나 — 수식으로</h2>
 <p>한 축이 따르는 식은 이것이다. <b>각 항이 어느 파라미터고, 무엇으로 채웠는지</b> 표시했다.</p>
@@ -627,6 +627,30 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <tr><td>따로 뺀 구간 RMS</td><td><b>0.304°</b></td><td>안 쓴 12창</td></tr>
 <tr><td><b>검증 ① 게인 2배</b></td><td><b>0.187°</b></td><td>같은 궤적 · <code>kp</code> ×2 로 따로 수집</td></tr>
 <tr><td><b>검증 ② 다른 궤적</b></td><td><b>0.306°</b></td><td><code>--f-scale 0.6</code>(148→89 dps) · 같은 게인</td></tr></table>
+<h3>축별 RMS — <b>foot 이 오차의 78% 를 진다</b></h3>
+<p>전체 RMS 는 어느 축이 남았는지를 숨긴다. 최종값(<code>fit_A_hipcorr</code>)으로 갈라 보면:</p>
+<table>
+<tr><th>축</th><th>적합</th><th>따로 뺀 구간</th><th>게인 2배</th><th>다른 궤적</th></tr>
+<tr><td>HL_hip</td><td class="n">0.0860</td><td class="n">0.0883</td><td class="n">0.0924</td><td class="n">0.1186</td></tr>
+<tr><td>HR_hip</td><td class="n">0.0937</td><td class="n">0.0696</td><td class="n">0.0968</td><td class="n">0.0895</td></tr>
+<tr><td>HL_thigh</td><td class="n">0.2341</td><td class="n">0.1885</td><td class="n">0.2428</td><td class="n">0.1911</td></tr>
+<tr><td>HR_thigh</td><td class="n">0.1773</td><td class="n">0.1078</td><td class="n">0.1248</td><td class="n">0.1798</td></tr>
+<tr><td>HL_calf</td><td class="n">0.1030</td><td class="n">0.1167</td><td class="n">0.0971</td><td class="n">0.1667</td></tr>
+<tr><td>HR_calf</td><td class="n">0.1511</td><td class="n">0.1570</td><td class="n">0.1401</td><td class="n">0.1834</td></tr>
+<tr><td><b>HL_foot</b></td><td><b>0.4764</b></td><td><b>0.5040</b></td><td class="n">0.2725</td><td><b>0.5295</b></td></tr>
+<tr><td><b>HR_foot</b></td><td><b>0.5132</b></td><td><b>0.6196</b></td><td class="n">0.2867</td><td><b>0.5616</b></td></tr>
+<tr><td><b>전체</b></td><td><b>0.2798</b></td><td><b>0.3033</b></td><td><b>0.1864</b></td><td><b>0.3058</b></td></tr></table>
+<p><b>제곱오차 지분:</b></p>
+<table>
+<tr><th>조건</th><th>foot</th><th>thigh</th></tr>
+<tr><td>적합</td><td><b>78%</b></td><td class="n">9%</td></tr>
+<tr><td>따로 뺀 구간</td><td><b>87%</b></td><td class="n">—</td></tr>
+<tr><td>게인 2배</td><td class="n">57%</td><td class="n">21%</td></tr>
+<tr><td>다른 궤적</td><td><b>79%</b></td><td class="n">—</td></tr></table>
+<p class="warn">★<b>남은 개선 여지는 사실상 foot 하나다.</b> hip 은 가장 작다(0.07~0.12) — §1-c 의 *"hip 은 걱정할 값이 아니다"* 와 독립적으로 일치한다.</p>
+<p class="warn">⚠<b>게인을 2배로 하면 foot 잔차가 절반으로 준다</b>(0.48/0.51 → 0.27/0.29). 추종이 조여지면 사라지는 성분이라는 뜻이다 — 모델의 <b>정적</b> 오차라기보다 <b>동적 추종</b> 쪽에 남은 것이 있다는 신호다.</p>
+<p class="warn">⚠2026-08-14 손실공간 수정 <b>전에는</b> foot 지분이 63~72% 였다. 수정으로 전체가 −33% 줄었지만 foot 비중은 오히려 늘었다 — <b>다른 축이 더 많이 좋아졌다</b>는 뜻이다.</p>
+<p class="warn">★<b>foot 잔차의 원인은 아직 모른다.</b> 배제된 것: 백래시(1/12 크기) · 감속기 유연성 (공진 19.8 Hz, 대역 밖) · <code>coef</code>(경사계로 1.0 확정) · 손실 좌표(§1-b 에서 고침).</p>
 <p class="warn">★<b>본 적 없는 두 조건이 똑같이 −25.5% 좋아졌다</b> — 손실공간 수정의 효과가 적합셋에만 나온 게 아니라는 뜻이다:</p>
 <table>
 <tr><th>검증</th><th><code>joint</code></th><th><b><code>tendon</code></b></th><th></th></tr>

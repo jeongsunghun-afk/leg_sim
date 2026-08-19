@@ -308,7 +308,7 @@ def main() -> int:
     # ★탐색벡터는 (동역학 | bias | delay) 다. apply_params 는 **동역학 부분만** 읽는다.
     #   통째로 넘기면 bias·delay 를 섭동해도 모델이 안 바뀌어 그 열이 0 이 되고,
     #   SᵀS 가 특이해져 **전 파라미터가 '식별 불가'** 로 보고된다(원인은 그게 아닌데).
-    _dyn0, _bias0, _dly0 = P.split_params(x0, len(names), False)
+    _dyn0, _bias0, _dly0, _cf0 = P.split_params(x0, len(names), False)
     P.apply_params(m, idx, gear_n, _dyn0, False, names)
     Fw, Mw, mtot = base_wrench(m, d, idx, q_cmd, kp, kd, dt, home)
     fr = np.sqrt(np.mean(Fw[:, :2] ** 2, axis=0)); fz = np.sqrt(np.mean((Fw[:, 2] - mtot*9.81) ** 2))
@@ -333,7 +333,7 @@ def main() -> int:
             #   (0×1.1 = 0). 그런 축은 경계폭 기준 절대섭동으로 흔든다.
             xp[p] = (x0[p] * (1.0 + sgn * a.pert) if abs(x0[p]) > 1e-12
                      else sgn * a.pert * (hi[p] - lo[p]))
-            _dyn, _bias, _dly = P.split_params(xp, len(names), False)
+            _dyn, _bias, _dly, _cf = P.split_params(xp, len(names), False)
             P.apply_params(m, idx, gear_n, _dyn, False, names)
             col.append(P.rollout(m, d, idx, q_nom, dq_nom, q_cmd, kp, kd, dt, win,
                                  bias=_bias, delay_s=_dly))

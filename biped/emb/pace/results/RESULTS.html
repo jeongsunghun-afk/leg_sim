@@ -211,28 +211,40 @@ pre code{border:0;background:none;padding:0}
 <tr><td class="n">3</td><td>중력 최소자세에서 관성</td><td>실기</td><td class="n">1시간</td><td><code>damping.hip</code> · <code>thigh 관성</code></td></tr>
 <tr><td class="n">4</td><td>검증 강화 (궤적 · hip 좌우)</td><td>실기</td><td class="n">—</td><td>신뢰도</td></tr></table>
 <p>⇒ <b>넷 다 실기다.</b> 오프라인 적합으로 뽑을 건 다 뽑았다 — 남은 건 데이터 문제다. 끝난 시험은 <b>§5</b> 에 결론만 남긴다.</p>
-<h3>1. 재수집 — 주파수보다 <b>진폭</b>이다</h3>
-<p>지금 데이터의 calf 항별 크기:</p>
+<h3>1. 재수집 — <b>원래 설계 주파수를 쓰는 것</b>이 먼저다</h3>
+<p class="warn">⚠<b>이 절을 2026-08-14 에 전면 수정했다.</b> 종전엔 "진폭 ×2(thigh 18→32°)" 라고 적었는데 두 군데가 틀렸다.</p>
+<p><b>① 지금 자료는 <code>--f-scale 0.4</code> 예비주행이다.</b> 파일명 <code>pace_multichirp_f0.4_dqfix</code> 의</p>
+<p><code>f0.4</code> 가 그것이다(도움말: *"첫 주행은 0.4~0.6 으로 예비주행할 것"*).</p>
+<p><code>f_end</code> 가 설계값 1.30 Hz 가 아니라 <b>0.52 Hz</b> 이고, thigh 피크속도가 <b>55 dps</b> 로 속도상한 200 의 <b>27%</b> 뿐이다. 진폭을 늘리기 전에 <b>설계 주파수를 쓰는 것</b>이 먼저다.</p>
 <table>
-<tr><th>항</th><th>크기</th><th>비중</th></tr>
-<tr><td>관성 <code>I·q̈</code> (0.112 × 18.7 rad/s²)</td><td class="n">2.09 Nm</td><td class="n">82%</td></tr>
-<tr><td>쿨롱 <code>τ_c</code> (실측)</td><td class="n">0.39~0.58 Nm</td><td class="n">15%</td></tr>
-<tr><td><b>감쇠 <code>b·q̇</code></b> (0.09 × 0.80 rad/s)</td><td><b>0.072 Nm</b></td><td><b>3%</b></td></tr></table>
-<p>감쇠가 마찰의 1/8 이다. <code>JDAMP</code>↔<code>JFRIC</code> 맞바꿈(r=+0.93)도, <code>JDAMP.calf</code> 가 벽에 박히는 것도 전부 여기서 온다. 무엇을 키우느냐로 비용이 갈린다:</p>
+<tr><th>구간</th><th>f [Hz]</th><th>명령 A</th><th>실측 A</th><th>추종</th><th>실측 q̇ 95%</th></tr>
+<tr><td class="n">0~5s</td><td class="n">0.20</td><td class="n">14.9°</td><td class="n">12.3°</td><td class="n">0.83</td><td class="n">23 dps</td></tr>
+<tr><td class="n">12~17s</td><td class="n">0.34</td><td class="n">18.0°</td><td class="n">15.4°</td><td class="n">0.86</td><td class="n">36 dps</td></tr>
+<tr><td class="n">25~30s</td><td class="n">0.49</td><td class="n">18.0°</td><td class="n">15.9°</td><td class="n">0.88</td><td class="n">51 dps</td></tr></table>
+<p><b>② 막고 있는 건 thigh 가 아니라 foot 채널이다.</b> <code>--f-scale 1.0</code> 에서 <b>foot 채널 277 dps</b> 로 상한 200 을 넘는다 — calf 커플링 때문에 모델각(115)의 <b>2.4배</b>다 (<code>q_ch_foot = (q_foot + q_calf)·s·k</code>). thigh 는 138 dps 로 여유가 있다.</p>
+<p>⇒ <b><code>calf</code>·<code>foot</code> 은 이미 ✅ 확정이니 그쪽 속도예산을 <code>thigh</code> 로 넘긴다.</b></p>
+<p>#### 바꿀 두 줄 (<code>spec.yaml</code> 의 <code>pace_multi</code>)</p>
+<pre>  amp_deg: [5, 20, 9, 7, 5, 20, 9, 7]
+  f_end_hz:   [1.80, 1.25, 0.90, 0.95, 1.85, 1.30, 0.95, 1.00]</pre>
 <table>
-<tr><th></th><th><code>q̇</code></th><th><code>q̈</code></th><th>감쇠/마찰</th><th><code>coef</code> 관측성</th><th><b>최대토크</b></th></tr>
-<tr><td>진폭 ×2</td><td>×2</td><td>×2</td><td>×2</td><td>×2</td><td><b>×2</b></td></tr>
-<tr><td>주파수 ×2</td><td>×2</td><td>×4</td><td>×2</td><td>×4</td><td><b>×4</b></td></tr></table>
-<p>1순위가 감쇠이므로 <b>진폭이 토크당 2배 효율적</b>이다. 여유도 그쪽에 있다:</p>
-<table>
-<tr><th>축</th><th>현 진폭</th><th>단측여유</th><th>배율</th></tr>
-<tr><td>hip</td><td class="n">5°</td><td class="n">6.0°</td><td><b>1.2×</b> ← 없음</td></tr>
-<tr><td>thigh</td><td class="n">18°</td><td class="n">40.0°</td><td class="n">2.2×</td></tr>
-<tr><td>calf</td><td class="n">16°</td><td class="n">40.0°</td><td class="n">2.5×</td></tr>
-<tr><td>foot</td><td class="n">13°</td><td class="n">23.2°</td><td class="n">1.8×</td></tr></table>
-<p>제안: thigh 18→32° · calf 16→32° · foot 13→20°, **hip 만 진폭 여유가 없으니</p>
-<p><code>f_end</code> 1.8→2.6 Hz**. calf 최대토크 2.1→4.2 Nm (<code>tau_trip</code> 16 · 유연성 공진 19.8 Hz).</p>
-<p class="warn">⚠먼저 확인할 것: <b>thigh 32° + calf 32° 동시 스윙이 지그·바닥과 안 부딪히는지</b>. 그리고 래치오프는 원위축에서 나던 미해결 문제인데 토크 2배는 그 위험을 키운다. 검증셋(<code>kp_validate</code>)도 같이 다시 받아야 비교가 성립하고, 진폭이 커지면 RMS(°) 자체가 커지므로 <b>데이터셋 간 비교는 정규화해야 한다.</b></p>
+<tr><th>축</th><th><code>amp</code></th><th><code>f_end</code></th><th>채널속도</th><th>근거</th></tr>
+<tr><td>hip</td><td class="n">5 (그대로)</td><td class="n">1.80 (그대로)</td><td class="n">53</td><td>자기충돌 상한 — 손대지 않는다</td></tr>
+<tr><td><b>thigh</b></td><td class="n">18 → <b>20</b></td><td class="n">1.30 → <b>1.25</b></td><td class="n">138 → <b>148</b></td><td>목표 축</td></tr>
+<tr><td>calf</td><td class="n">16 → <b>9</b></td><td class="n">1.40 → <b>0.90</b></td><td class="n">197 → <b>72</b></td><td>확정됨 — 예산 양보</td></tr>
+<tr><td>foot</td><td class="n">13 → <b>7</b></td><td class="n">1.50 → <b>0.95</b></td><td class="n">277 ★ → <b>70</b></td><td>확정됨 — 상한 초과 해소</td></tr></table>
+<p><code>--dry</code> 검증: 최대 <b>148 dps · 여유 26%</b> · 축간 상관 0.264 → <b>0.177</b>(개선).</p>
+<p>얻는 것 — thigh 피크속도 <b>55 → 148 dps (2.7배)</b>:</p>
+<pre>max(b·q̇) / τ_c  :   15%  →  41%</pre>
+<p><code>b</code> 가 <code>τ_c</code> 대비 이만큼 커져야 §1 의 8.1배 산포가 갈린다.</p>
+<p class="warn">⚠<b>thigh 20° 는 근거 있는 상한이다</b> — <code>±20° = 40° pp</code> 로 각축 스윕에서 이미 검증된</p>
+<p><code>sweep.stroke_deg: 40.0</code> 과 같다. 44° 는 *"늘어진 다리가 아래쪽에서 간섭"* 전례가 있어 넘지 않는다.</p>
+<p class="warn">⚠<b>착수 전 확인</b> — <code>thigh ±20°</code> 와 <code>calf ±9°</code> 동시 스윙이 지그·바닥에 닿지 않는지 <b>눈으로</b> 볼 것. MuJoCo 는 발 구 4개만 모델링하므로 "접촉 0" 은 증거가 아니다.</p>
+<pre># ① 설계 재검사 (하드웨어 미접촉)
+python3 collect_multichirp.py --dry
+# ② 수집 — 식별셋과 검증셋 둘 다 받아야 비교가 성립한다
+python3 collect_multichirp.py --rate 400
+python3 collect_multichirp.py --rate 400 --gains validate</pre>
+<p class="warn">⚠<code>--rate 400</code> — 500 Hz 에서 루프 밀림이 6.8%(최대 44 ms)까지 갔다. ⚠진폭이 커지면 RMS(°) 자체가 커진다. <b>데이터셋 간 RMS 비교는 정규화할 것.</b></p>
 <h3>1-b. 대안 — 속도를 독립 제어하는 시험</h3>
 <p><code>damping</code>↔<code>frictionloss</code> 가 서로 맞바꿔져(r=+0.93) <b>총량은 맞는데 나눔이 안 된다</b>. 지금 데이터는 τ 범위가 1.75배뿐이라 못 가린다.</p>
 <div class="quote"><b>일정 속도로 유지하며</b> 토크를 재는 시험이 필요하다. 속도를 몇 단계로 바꾸면</div>

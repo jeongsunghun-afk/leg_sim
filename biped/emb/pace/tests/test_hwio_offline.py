@@ -653,6 +653,30 @@ def t_coef_plumbing():
               len(dyn) == nd and len(bias) == len(nm) and np.isscalar(dly + 0)
               and cf == 1.0, f"dyn={len(dyn)} bias={len(bias)} cf={cf}")
 
+    # ★split_params 반환 길이가 **저장소 전체에서** 맞나 (2026-08-14 회귀시험).
+    #   coef 를 넣으며 3→4 튜플로 바꿀 때 design_excitation.py 를 놓쳤다.
+    #   pace_cmaes 안만 고치고 "끝났다" 고 본 것이다 — 그 파일은 별도로 실행되므로
+    #   pace_cmaes 의 테스트로는 안 걸린다. 정적으로 전 호출처를 센다.
+    import re as _re
+    _root = os.path.dirname(PACE)
+    _bad = []
+    for _dp, _, _fs in os.walk(os.path.dirname(_root)):
+        if any(x in _dp for x in (".git", "__pycache__", "node_modules")):
+            continue
+        for _f in _fs:
+            if not _f.endswith(".py"):
+                continue
+            _fp = os.path.join(_dp, _f)
+            try:
+                _src = open(_fp, encoding="utf-8").read()
+            except OSError:
+                continue
+            for _ln in _src.split("\n"):
+                _m = _re.search(r"^\s*([\w, _]+?)\s*=\s*(?:P\.)?split_params\(", _ln)
+                if _m and len(_m.group(1).split(",")) != 4:
+                    _bad.append(f"{os.path.relpath(_fp, _root)}: {_ln.strip()[:60]}")
+    check("split_params 호출처가 전부 4-튜플", not _bad, "; ".join(_bad) or "전 호출처 일치")
+
     # ★--pin 라벨=값 이 **왕복해도 그 값인가** (2026-08-14 회귀시험).
     #   expand() 는 고정축도 to_z→from_z 로 왕복시키고 from_z 는 [lo,hi] 로 자른다.
     #   못박은 값이 탐색범위 밖이면 **조용히 경계값으로 바뀐다** — 실제로 그랬다

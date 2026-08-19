@@ -187,8 +187,18 @@ def main() -> int:
                       vel_trip=float(sf["vel_trip_dps"]), err_max=float(sf["err_max_deg"]),
                       stale_ms=float(sf["stale_ms"]),
                       kp_max=float(g["kp_max"]), kd_max=float(g["kd_max"]))
-    kp = a.kp if a.kp is not None else float(sf.get("hold_kp", 40.0))
-    kd = a.kd if a.kd is not None else float(sf.get("hold_kd", 2.0))
+    # ★spec 의 hold_kp/kd 는 **축별 dict** 다(스칼라도 허용). 시험축(발목) 것을 꺼낸다.
+    #   종전엔 float() 로 통째로 감싸 TypeError 였다 — 축마다 I·gear_k 가 달라
+    #   스칼라 하나로는 못 맞춘다는 게 spec 주석의 결론인데 그걸 못 읽은 것이다.
+    def _gain(key, dflt):
+        v = sf.get(key, dflt)
+        if isinstance(v, dict):
+            return float(v.get(fi, v.get(str(fi), dflt)))
+        return float(v)
+
+    kp = a.kp if a.kp is not None else _gain("hold_kp", 40.0)
+    kd = a.kd if a.kd is not None else _gain("hold_kd", 2.0)
+    print(f"  발목 홀드게인 kp {kp:g} · kd {kd:g}")
 
     trace = []
     clipped = [False]
@@ -275,6 +285,17 @@ def main() -> int:
     if abs(span_j) < a.min_span:
         print(f"  ⚠스윙이 {abs(span_j):.1f}° 로 작다(권장 ≥{a.min_span:.0f}°). "
               f"경사계 0.5° 오차가 Δc {0.5/abs(span_j):.3f} 로 번진다")
+    ferr = np.abs(T[:, 2] - T[:, 3])          # |실측 발목채널 − 명령|
+    print(f"\n■ 발목 추종오차 — 평균 {ferr.mean():.3f}° · 95% "
+          f"{np.percentile(ferr,95):.3f}° · 최대 {ferr.max():.3f}°")
+    # ★이게 크면 발목이 안 잡힌 것이고, 그만큼 Δtilt 가 줄어 c 가 1 쪽으로 편향된다.
+    #   경사계 분해능(0.5°)과 같은 자릿수면 측정의 의미가 없다. 관절각으로 환산해 본다.
+    ferr_j = ferr.max() / abs(s_foot)
+    if ferr_j > 0.5:
+        print(f"  ⚠최대오차가 관절각 {ferr_j:.2f}° 다 — 경사계 분해능(0.5°)보다 크다.")
+        print(f"     발목이 밀렸다는 뜻이고 Δtilt 가 그만큼 **줄어든다**(c 가 1 쪽으로 편향).")
+        print(f"     --kp 를 올려 다시 잴 것(지금 {kp:g}).")
+        bad = True
     for c, d in thigh_drift.items():
         if abs(d) > 1.0:
             print(f"  ⚠⚠{jm.names[c]} 가 {d:+.2f}° 밀렸다 — **절대각 관계의 전제가 깨졌다**")

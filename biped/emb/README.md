@@ -86,6 +86,45 @@ biped **모델기반 제어기(MPC+WBIC)** 를 RGA `RobotSharedMem`(Gait) 실모
 
 상세는 `emb/RL_INTERFACE.md`(각도규약 전문) · `emb/pace/RESULTS.md` §1-b(커플링과 손실 좌표).
 
+### 계층별 주기
+
+| 계층 | 주기 | 무엇을 하나 | 어디 코드 |
+|---|---|---|---|
+| **md80 드라이버 (MCU)** | 미확인 | MIT 임피던스 `τ = kp·err + kd·derr + τ_ff` (`ucMode=1`) | 벤더 펌웨어 |
+| **RobotEmbedded** | **1 kHz** | EtherCAT 사이클 + gait HAL(기동 램프·SHM 통과) | 벤더 (`~/ZSource/RobotEmbedded`) |
+| 우리 제어기 (Python) | **500 Hz** | jog 램프·안전·좌표변환 | `emb/app/biped_emb.py` |
+| 우리 제어기 (C++) | **500 Hz** | 같은 역할, 실기 writer | `cpp/src/biped_deploy.cpp` |
+| WBIC | **500 Hz** | 전신 QP → 관절토크 | `biped_mpc_wbic.py` |
+| MPC | **50 Hz** | 보행 계획 (호라이즌 `N=14 × DT=0.02` = **0.28 s**) | 같은 파일 (`MPC_DECIM=10`) |
+| 시뮬 적분 | 500 Hz | MuJoCo `timestep=0.002` | MJCF |
+| 식별 수집 | **400 Hz** | 다축 처프 로깅 | `emb/pace/collect_multichirp.py --rate` |
+
+`ctrl_hz` 는 `emb/config/biped_emb.yaml` 한 곳에서 온다 — Python·C++ 이 같은 값을 읽는다.
+
+⚠**어느 것도 실시간이 아니다** (2026-08-14 실측):
+
+| | |
+|---|---|
+| `RobotEmbedded` 스케줄링 | `SCHED_OTHER` · 우선순위 0 · affinity 0-3 |
+| 사용자 RT 한도 (`ulimit -r`) | **0** — `chrt` 를 쓸 권한이 없다 |
+
+1 kHz EtherCAT 루프조차 일반 우선순위다. 커널이 아무 때나 **20~45 ms 선점**할 수 있고,
+그게 실제로 관측된다:
+
+| 조건 | 20 ms 넘는 멈춤 | 누적 지연 |
+|---|---|---|
+| 400 Hz · 경합 있음(`biped_sim` 100%) | 10회 / 12000틱 | 0 |
+| 400 Hz · `biped_monitor`(13.8%) 정리 후 | **2회** | +0.01 s |
+
+★**주기 예산은 남는다** — 주기 중앙값이 공칭 그대로(2.50 ms)이고 누적 지연이 0 이다.
+문제는 드문 **큰 멈춤**이지 rate 가 아니다. `rate` 를 낮춰도 같은 선점이 같은 크기로 난다.
+⇒ 개선하려면 **경합 정리**(무료)가 먼저고, 근본은 RT 권한이다.
+  ⚠순서가 중요하다 — 우리 스크립트만 RT 로 올리면 EtherCAT 루프를 선점해 **더 나빠진다.**
+    `RobotEmbedded` 를 먼저 높게, 그 아래에 우리를 둔다.
+
+왕복지연 **8.39 ± 0.79 ms** — 이 값은 `pace_cmaes` 가 모델의 `T_d` 로 쓰고,
+C++ 배포는 `LAT_COMP_MS` 로 지연보상에 쓴다.
+
 ---
 
 ## 데이터 흐름

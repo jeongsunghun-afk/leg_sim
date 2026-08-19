@@ -278,7 +278,7 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <tr><th></th><th>값</th></tr>
 <tr><td>무릎 스윙</td><td>채널 <b>120.8°</b> = 관절 <b>80.5°</b></td></tr>
 <tr><td>발목 채널</td><td>래치 <code>+2.48°</code> → 종료 <code>+2.48°</code> (<b>추종오차 ≈ 0</b>, τ −0.03)</td></tr>
-<tr><td>발바닥 절대각 변화</td><td><b>없음</b></td></tr>
+<tr><td><b>발 링크</b> 절대각 변화</td><td><b>없음</b></td></tr>
 <tr><td>⇒</td><td><b>c = 1</b></td></tr></table>
 <p><code>Δ발_절대각 = Δq_calf·(1−c)</code> 이므로 이 스윙에서 <code>c</code> 가 1 이 아니었다면:</p>
 <table>
@@ -290,6 +290,21 @@ python3 collect_multichirp.py --rate 400 --gains validate</pre>
 <p>⇒ 육안으로 3° 를 가른다고 보면 <b>|1−c| ≲ 0.04</b>. 경사계 수치를 읽었다면 ±1°/80.5° 로 <b>≲ 0.012</b> 까지 좁혀진다.</p>
 <p class="warn">★<b>가장 위험한 실패 방식이 배제됐다.</b> 발목이 밀리면 <code>Δtilt</code> 가 줄어 <code>c</code> 가 1 쪽으로 <b>가짜로</b> 수렴한다 — "c=1 확인" 이 측정 실패에서 나오는 것이다. 그런데 발목 채널이 래치값에 그대로 있었고 토크도 −0.03 이었다. 안 밀렸다.</p>
 <p class="warn">⚠<b>2026-08-10 의 "육안 일치" 와는 근거의 무게가 다르다.</b> 그때는 무릎을 30° 정도만 돌렸을 것으로 보이는데, 그러면 <code>c=0.9</code> 여도 3° 라 놓칠 수 있다. 이번은 80.5° 다.</p>
+<div class="quote"><b>접촉 구성 — 용도별로 둘이다</b> (2026-08-14 사용자 확인)</div>
+<p>&gt;</p>
+<div class="quote">| 용도 | 접촉 | 비고 |</div>
+<div class="quote">|---|---|---|</div>
+<div class="quote">| <b>stand</b> | <b>2점</b> (heel + toe) | MJCF <code>*_sphere</code> + <code>*_sphere2</code> |</div>
+<div class="quote">| <b>walk</b> | <b>1점</b> (point foot) | 피치 모멘트를 못 내므로 발목 토크로만 자세를 잡는다 |</div>
+<p>&gt;</p>
+<div class="quote">⚠어긋난 게 아니라 <b>의도된 두 구성</b>이다. MJCF 머리말의 "평발" 은 stand 구성을 말한다.</div>
+<p>&gt;</p>
+<div class="quote">★<b>식별에는 무관하다.</b> <code>pace_cmaes</code> 롤아웃은 <b>base 고정 · 바닥 제거</b>라 접촉이</div>
+<div class="quote">0 개다(<code>d.ncon == 0</code>). 접촉구는 질량도 없다(URDF inertial 이 질량을 정한다).</div>
+<div class="quote">질량·관성은 두 구성이 같으므로 <code>armature</code>·<code>frictionloss</code>·CAD 검증(발 −8.3%)이</div>
+<div class="quote">그대로 유효하다.</div>
+<div class="quote">⚠단 <b>경사계를 댈 평면은 stand/walk 와 무관하게 발 링크의 가공면</b>이다 —</div>
+<div class="quote">발바닥 평면이 있다고 가정하면 안 된다.</div>
 <p>⇒ <b>저장소의 마지막 미측정 구조 파라미터가 닫혔다.</b> <code>couple_coef: 1.0</code> (config) 과 MJCF tendon <code>coef="1"</code> 을 그대로 둔다. PACE 도 <code>--pin coef</code> 로 계속 고정한다.</p>
 <p>&lt;details&gt;&lt;summary&gt;남은 것 — <code>--k 1.0</code> 눈금 판 (선택)&lt;/summary&gt;</p>
 <p><code>k=0</code> 과 <code>k=1</code> 의 <code>Δtilt</code> 차이는 <code>c</code> 와 무관하게 정확히 <code>Δq_calf</code> 여야 한다. 그게 맞으면 경사계·스윙각·미끄러짐까지 <b>계측계 전체</b>가 검증된다.</p>

@@ -35,6 +35,11 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${1:-/tmp/sweep_paired.tsv}"
 MJ="${MUJOCO_DIR:-$HOME/mujoco}"
+# ★MuJoCo 공유라이브러리 디렉터리. **`$MJ/lib` 이 아닐 수 있다** —
+#   pip 휠로 깔면 `site-packages/mujoco/libmujoco.so.3.9.0` 처럼 패키지 바로 밑에 있다.
+#   ⚠종전엔 LD_LIBRARY_PATH 를 `$MJ/lib` 로 **덮어써서** 그 경우 실행이 안 됐다
+#     (밖에서 export 해도 소용없다 — env 로 치환하기 때문). 그래서 분리·append 한다.
+MJLIB="${MUJOCO_LIB_DIR:-$MJ/lib}"
 MODEL="${MODEL:-$HERE/../biped_from_quad.mjcf}"
 
 TSTEPS="${TSTEPS:-0.26 0.30 0.34}"
@@ -53,7 +58,7 @@ NOISE_ENV="ENCQ_N=7.64e-5 ENCDQ_N=0.0368"
 
 run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
   local out falls gx tilt
-  out=$(cd "$HERE" && env LD_LIBRARY_PATH="$MJ/lib" $DEPLOY $NOISE_ENV \
+  out=$(cd "$HERE" && env LD_LIBRARY_PATH="$MJLIB:${LD_LIBRARY_PATH:-}" $DEPLOY $NOISE_ENV \
         T_STEP="$1" K_RETURN="$2" EST_DWELL="$3" SEED="$4" \
         timeout 600 ./build/biped_sim "$MODEL" "$VX" "$DUR" 2>/dev/null | tail -n 1)
   falls=$(sed -n 's/.*falls=\([0-9]*\).*/\1/p' <<<"$out")
@@ -61,7 +66,7 @@ run_one() {   # $1=T_STEP $2=K_RETURN $3=EST_DWELL $4=seed
   tilt=$(sed -n 's/.*tilt=\([0-9.]*\).*/\1/p' <<<"$out")
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$1" "$2" "$3" "$4" "${falls:-99}" "${gx:-9.99}" "${tilt:-999}"
 }
-export -f run_one; export HERE MJ MODEL VX DUR DEPLOY NOISE_ENV
+export -f run_one; export HERE MJ MJLIB MODEL VX DUR DEPLOY NOISE_ENV
 
 { printf "T_STEP\tK_RETURN\tDWELL\tseed\tfalls\tgt_x\ttilt\n"
   for t in $TSTEPS; do for k in $KRETS; do for w in $DWELLS; do

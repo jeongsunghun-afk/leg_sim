@@ -5,7 +5,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-# 의존성: proxddp conda env (eigen · eiquadprog)
+# 의존성: eigen · eiquadprog · mujoco. **conda 전용이 아니다** (2026-08-19 정정).
+#   실제 확인된 조합:
+#     Pi     eigen=/usr/include/eigen3 · eiquadprog=/opt/ros/jazzy · mujoco=~/mujoco
+#     노트북 eigen=/usr/include/eigen3 · eiquadprog=/opt/ros/humble(apt ros-humble-eiquadprog)
+#            mujoco=pip 휠(site-packages/mujoco) — **lib 이 include 옆에 있고 `lib/` 하위가 아니다**
+#   ⇒ 못 찾으면 -D 로 직접 준다:
+#     cmake -S . -B build -DEIQP_INCLUDE=... -DEIQP_LIB=... -DMUJOCO_INCLUDE=... -DMUJOCO_LIB=...
+#   ⚠MuJoCo 는 **3.9.0** 이어야 한다(헤더 mjVERSION_HEADER=3009000).
+#     3.11 은 d.qM→d.M · mj_fullM 시그니처가 바뀌어 이 코드가 안 빌드된다.
 set(ENV_PREFIX "$ENV{CONDA_PREFIX}")
 if(NOT ENV_PREFIX)
   set(ENV_PREFIX "/home/jsh/miniforge3/envs/proxddp")

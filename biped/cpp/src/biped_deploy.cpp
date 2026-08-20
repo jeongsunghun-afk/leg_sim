@@ -82,7 +82,7 @@ int main(int argc, char** argv){
   std::string cfg_p  = "../emb/config/biped_emb.yaml";
   std::string cmd_p  = "/tmp/biped_cmd.json";
   std::string stt_p  = "/tmp/biped_state.json";
-  bool mock = false; double T = 1e12;
+  bool mock = false; double T = 1e12; std::string start_mode = "off";
   for(int i=1;i<argc;i++){
     std::string a = argv[i];
     if(a=="--mock") mock = true;
@@ -91,8 +91,15 @@ int main(int argc, char** argv){
     else if(a=="--cmd" && i+1<argc) cmd_p = argv[++i];
     else if(a=="--state" && i+1<argc) stt_p = argv[++i];
     else if(a=="--T" && i+1<argc) T = atof(argv[++i]);
-    else { std::printf("사용법: %s [--mock] [--mjcf X] [--config X] [--cmd X] [--state X] [--T s]\n", argv[0]); return 2; }
+    // ★biped_emb.py 와 **같은 이름의 옵션**을 둔다 — 두 제어기의 기동 규약을 맞춘다.
+    //   off  = 무여자로 시작(기본·권장). 명령파일에 뭐가 남아 있든 무시한다.
+    //   hold = 생존확인 통과 후 **현재 자세를 그대로** 잡는다(로봇이 정지해 있어야 한다).
+    else if(a=="--start-mode" && i+1<argc) start_mode = argv[++i];
+    else { std::printf("사용법: %s [--mock] [--mjcf X] [--config X] [--cmd X] [--state X] [--T s]\n"
+                       "        [--start-mode off|hold]   기본 off (기동 즉시 무장 방지)\n", argv[0]); return 2; }
   }
+  if(start_mode!="off" && start_mode!="hold"){   // start_mode 검증
+    std::printf("✗ --start-mode 는 off 또는 hold 다 (받은 값: %s)\n", start_mode.c_str()); return 2; }
   if(const char* e=getenv("QUAD_CMD"))   cmd_p = e;
   if(const char* e=getenv("QUAD_STATE")) stt_p = e;
 
@@ -290,6 +297,18 @@ int main(int argc, char** argv){
               cfg.home_speed_dps, cfg.home_min_time_s);
   std::printf("[deploy] ⚠ jog 는 Python 앱 담당. writer 는 한 번에 하나만.\n");
 
+  // ★★기동 시 명령파일에 남아 있는 모드를 **그대로 실행하지 않는다** (2026-08-20).
+  //   GUI 는 마지막 상태를 파일에 남긴다. 실제로 seq 14871 짜리 `"mode":"stand"` 가
+  //   남아 있었고, biped_deploy 는 기동 즉시 그걸 받아 무장했다 —
+  //   매달린 채 stand → 접지가드가 hold 로 되돌림 → 흔들리는 로봇에 hold → 속도트립.
+  //   기동할 때마다 이 고리를 돌았다.
+  //   ⇒ 시작 시점의 내용을 **이미 본 것**으로 기록해 두고, 운전자가 버튼을 눌러
+  //     내용이 **바뀌어야** 받는다. biped_emb.py 의 --start-mode off 와 같은 의도다.
+  { Cmd c0; if(read_cmd(cmd_p, c0)){ last_raw = c0.raw;
+      if(c0.mode != "off")
+        std::printf("[deploy] ⚠명령파일에 **%s** 가 남아 있다 — 무시하고 off 로 시작한다.\n"
+                    "         GUI 에서 버튼을 다시 눌러야 반영된다(기동 즉시 무장 방지).\n",
+                    c0.mode.c_str()); } }
   double t0 = now_s(), prev_loop = t0; long long k = 0; bool overrun_warned=false;
   int rc = 0;
   while(!g_stop && (now_s()-t0) < T){
@@ -377,6 +396,9 @@ int main(int argc, char** argv){
           }
         }
         have_state = true;
+        if(start_mode=="hold"){ mode="hold"; hold_ch=hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+          hw->enable(1);
+          std::printf("[deploy] --start-mode hold — 현재 자세를 잡는다(무장).\n"); }
         std::printf("[deploy] 센서 준비됨 — 명령 수신 시작 (q_ch: %.1f %.1f %.1f %.1f ...)\n",
                     hs.q_deg[0], hs.q_deg[1], hs.q_deg[2], hs.q_deg[3]); }
     }

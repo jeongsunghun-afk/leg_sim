@@ -125,37 +125,49 @@ for r in rows:
     if len(r) < 7: continue
     cell[(r[0], r[1], r[2])].append((int(float(r[4])), abs(float(r[5])), float(r[6])))
 
-nerr = sum(1 for v in cell.values() for f, _, _ in v if f == ERR)
+# ═══ ★실행 실패(ERR)를 낙상으로 세지 말 것 ═══
+#   run_one 은 sim 출력이 비면 falls=99 를 넣는다. 이건 **런이 죽은 것**이지 낙상이 아니다.
+#   종전엔 `f > 0` 으로 걸러 둘을 같이 셌다 — 2026-08-19 마찰 실험에서 12런 중 8런이
+#   죽었는데 표에는 "8/12 낙상" 으로 찍혀 **잘못된 결론을 냈다**(같은 조건 재실행은 2/12,
+#   결정성은 12/12 시드 일치로 확인됨). 실패가 낙상으로 둔갑하면 그 셀은 "위험" 으로
+#   기각되고, 진짜 후보가 표에서 조용히 사라진다.
+#   ⇒ 낙상률의 분모는 **판정 가능한 런(n_ok)** 이고, 실패는 err 열로 따로 드러낸다.
 print("  ⚠드리프트·tilt 는 **낙상 안 한 시드만** 집계한다 — 낙상하면 reset() 이 원점으로")
 print("    되돌려 |x| 가 인위적으로 작게 찍힌다. 낙상 셀의 드리프트는 읽으면 안 된다.")
 print()
-print(f"  {'T_STEP':<8}{'K_RET':<8}{KNOB:<7}{'falls':<8}{'상한95%':<10}"
-      f"{'|x|surv':<10}{'tilt_surv':<11}{'n_surv'}".replace("DWELL  ", f"{KNOB:<7}"))
+print(f"  {'T_STEP':<8}{'K_RET':<8}{KNOB:<7}{'falls':<9}{'상한95%':<10}"
+      f"{'|x|surv':<10}{'tilt_surv':<11}{'n_surv':<8}{'err'}")
 
 out = []
 for k, v in cell.items():
-    n = len(v)
-    nf = sum(1 for f, _, _ in v if f > 0)
+    ne  = sum(1 for f, _, _ in v if f == ERR)        # 실행 실패 — 낙상이 아니다
+    nok = len(v) - ne                                 # 판정 가능한 런
+    nf  = sum(1 for f, _, _ in v if 0 < f < ERR)      # 진짜 낙상
     surv = [(x, t) for f, x, t in v if f == 0]
     dx = sum(x for x, _ in surv) / len(surv) if surv else None
     mt = max(t for _, t in surv) if surv else None
-    out.append((nf / n, dx if dx is not None else float("inf"), nf, n, dx, mt, len(surv), k))
+    rate = nf / nok if nok else 1.0
+    out.append((rate, dx if dx is not None else float("inf"), nf, nok, ne, dx, mt, len(surv), k))
 
-for rate, _sort, nf, n, dx, mt, ns, k in sorted(out):
-    up = cp_upper(nf, n)
+nerr = sum(o[4] for o in out)
+for rate, _sort, nf, nok, ne, dx, mt, ns, k in sorted(out):
+    up = cp_upper(nf, nok) if nok else 1.0
     # ★ = 낙상 0 + 드리프트 10cm 미만 + 상한이 10% 아래(= 시드가 충분히 많다). 이게 채택 후보다.
-    mark = "  ★" if nf == 0 and dx is not None and dx < 0.10 and up < 0.10 else ""
+    mark = "  ★" if nf == 0 and nok and dx is not None and dx < 0.10 and up < 0.10 else ""
     sdx = f"{dx:.3f}" if dx is not None else "—전멸"
     smt = f"{mt:.1f}" if mt is not None else "—"
-    print(f"  {k[0]:<8}{k[1]:<8}{k[2]:<7}{f'{nf}/{n}':<8}{f'≤{up*100:.0f}%':<10}"
-          f"{sdx:<10}{smt:<11}{ns}{mark}")
+    sup = f"≤{up*100:.0f}%" if nok else "—"
+    serr = f"✗{ne}" if ne else ""
+    print(f"  {k[0]:<8}{k[1]:<8}{k[2]:<7}{f'{nf}/{nok}':<9}{sup:<10}"
+          f"{sdx:<10}{smt:<11}{ns:<8}{serr}{mark}")
 
 print()
 print("  ★ = 낙상 0 · 생존드리프트 <10cm · 낙상률 95%상한 <10%. 셋 다여야 채택 후보다.")
 print("  ⚠'상한95%' 는 Clopper-Pearson. 0/7 은 상한 41% 라 0/7 끼리는 **구분이 안 된다** —")
 print("    후보를 가르려면 SEEDS 를 늘려야 한다(0/30 이면 상한 12%, 0/60 이면 6%).")
 if nerr:
-    print(f"  ✗ 파싱실패(falls={ERR}) {nerr}건 — 해당 런의 출력이 비었다. 원본 확인 필요.")
+    print(f"  ✗ **실행 실패 {nerr}건**(err 열) — 낙상이 아니라 sim 출력이 빈 런이다.")
+    print("    분모에서 뺐지만 많으면 그 셀 자체를 믿지 말 것. 원인부터 볼 것.")
 PY
 echo
 echo "원본: $OUT"

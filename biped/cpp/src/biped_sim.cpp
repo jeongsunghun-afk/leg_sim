@@ -46,8 +46,16 @@ int main(int argc,char**argv){
   //   (deploy 는 ch_to_tau_joint 로 관절토크를 발행한다) ⇒ 변환 없이 그대로 대조된다.
   //   ★`qfrc_actuator` 를 쓰는 이유: 발목이 tendon 에 물려 있어 `ctrl[foot]` 은 모터축
   //     지령이고 calf·foot **두 DOF 에 같이** 걸린다. 축별 실제 관절토크는 일반화력이다.
+  //   ★★표준편차는 **발행창(0.05s)** 기준으로도 낸다. 실기는 20Hz 로 발행하면서 각 창의
+  //     std 를 500Hz 로 계산해 실어 보낸다(`tau_std_nm`) — 창 길이가 다르면 비교가
+  //     성립하지 않는다. 전체창 std 는 자세 변화까지 섞여 훨씬 커진다.
   const double tau_win = getenv("TAU_DBG") ? atof(getenv("TAU_DBG")) : 0.0;
+  const double PUB_DT = 0.05;                 // biped_deploy 의 상태 발행 주기와 같게
   std::vector<double> tsum(m->nu,0.0), tsq(m->nu,0.0);
+  std::vector<double> wsum(m->nu,0.0), wsq(m->nu,0.0);      // 발행창 누적
+  std::vector<double> sdsum(m->nu,0.0), sdmax(m->nu,0.0);   // 창 std 의 평균·최대
+  std::vector<double> tmin(m->nu, 1e300), tmax(m->nu,-1e300);
+  long wn=0, nwin=0; double wt0=-1;
   double grf[2]={0,0}; long nacc=0;
   if(getenv("CONTACT")) c.set_contact_mode(atoi(getenv("CONTACT")));   // ★0=1점 점발보행·1=2점 평발정적
   if(getenv("STAND_CZ")) c.com_ref_z=atof(getenv("STAND_CZ"));         // 정적 높이 테스트
@@ -75,7 +83,23 @@ int main(int argc,char**argv){
         i*dt,d->subtree_com[0],d->subtree_com[1],d->subtree_com[2],d->qvel[0],d->qvel[1],pitch*57.3,roll*57.3,c.swing); }
     mj_step(m,d);
     if(tau_win>0 && (T - i*dt) <= tau_win){                  // 정상상태 창만 집계
-      for(int j=0;j<m->nu;j++){ double t=d->qfrc_actuator[6+j]; tsum[j]+=t; tsq[j]+=t*t; }
+      const double tn = i*dt;
+      if(wt0<0) wt0=tn;
+      if(tn-wt0 >= PUB_DT && wn>0){                          // 발행창 마감 → 창 std 누적
+        for(int j=0;j<m->nu;j++){
+          double mu=wsum[j]/wn, sd=std::sqrt(std::max(0.0, wsq[j]/wn - mu*mu));
+          sdsum[j]+=sd; if(sd>sdmax[j]) sdmax[j]=sd;
+          wsum[j]=0; wsq[j]=0;
+        }
+        nwin++; wn=0; wt0=tn;
+      }
+      for(int j=0;j<m->nu;j++){
+        double t=d->qfrc_actuator[6+j];
+        tsum[j]+=t; tsq[j]+=t*t; wsum[j]+=t; wsq[j]+=t*t;
+        if(t<tmin[j]) tmin[j]=t;
+        if(t>tmax[j]) tmax[j]=t;
+      }
+      wn++;
       for(int ci=0;ci<d->ncon;ci++){
         mjtNum f[6]; mj_contactForce(m,d,ci,f);              // f[0]=접촉 법선력
         int g1=d->contact[ci].geom1, g2=d->contact[ci].geom2;
@@ -112,14 +136,19 @@ int main(int argc,char**argv){
     std::printf("   실기 상태 JSON 의 tau_leg_nm(측정)·tau_cmd_nm(명령)과 **같은 좌표**다.\n");
     // ★좌우차는 **크기**로 뺀다. hip 은 좌우 부호가 거울이라(−2.59 vs +2.60) 그대로
     //   빼면 5.2 라는 유령이 찍힌다 — 실제 비대칭은 0.013 이다.
-    std::printf("  %-10s %12s %10s   %10s\n", "축", "관절토크[Nm]", "표준편차", "|HR|−|HL|");
+    std::printf("   실기 `tau_std_nm` 은 **발행창(0.05s)** std 다 — 그 열과 대조할 것.\n");
+    std::printf("  %-9s %11s %9s %9s %9s %9s %9s\n",
+                "축","관절토크","σ창평균","σ창최대","min","max","|HR|−|HL|");
     for(int j=0;j<m->nu && j<8;j++){
-      double mu=tsum[j]/nacc, sd=std::sqrt(std::max(0.0, tsq[j]/nacc-mu*mu));
+      double mu=tsum[j]/nacc;
+      double sdw = nwin? sdsum[j]/nwin : 0.0;
       char dif[24]="";
       if(j>=4){ double ml=tsum[j-4]/nacc;
         std::snprintf(dif,sizeof dif,"%+.3f", std::fabs(mu)-std::fabs(ml)); }
-      std::printf("  %-10s %+12.3f %10.3f   %10s\n", JN[j], mu, sd, dif);
+      std::printf("  %-9s %+11.3f %9.3f %9.3f %+9.3f %+9.3f %9s\n",
+                  JN[j], mu, sdw, sdmax[j], tmin[j], tmax[j], dif);
     }
+    std::printf("  (발행창 %ld 개 · 창당 %ld 샘플)\n", nwin, nwin? nacc/nwin : 0L);
     double gl=grf[0]/nacc, gr=grf[1]/nacc, gt=gl+gr;
     double W=0; for(int i=0;i<m->nbody;i++) W+=m->body_mass[i]; W*=9.81;
     if(gt>1e-6)

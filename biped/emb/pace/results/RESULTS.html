@@ -154,9 +154,10 @@ pre code{border:0;background:none;padding:0}
 <table>
 <tr><th>각축이 준 값</th><th>어떻게</th><th>다축의 어느 한계를 메웠나</th></tr>
 <tr><td><b><code>ROTOR_I</code> 7.327e-4</b></td><td>τ_ff 경로(순환 없음). foot 7.327e-4 · calf 공통속도법 7.340e-4 → <b>0.17% 일치</b></td><td>③ 초기값을 참값에 놓음</td></tr>
-<tr><td><b>foot <code>damping</code> 0.110</b></td><td>토크시험 q̈ 대 q̇ 크기 직접회귀(HL 0.12 · HR 0.10)</td><td><b>① 맞바꿈을 밖에서 끊음</b></td></tr>
+<tr><td>foot <code>damping</code> 0.110</td><td>토크시험 q̈ 대 q̇ 크기 직접회귀(HL 0.12 · HR 0.10) · t=18.5 R² 0.967</td><td>① 한쪽을 <b>초기값으로 눌러 둠</b> (확정은 아니다 — 아래)</td></tr>
 <tr><td>쿨롱마찰(스윕·토크절편)</td><td>저속 평탄부 / 절편 q̇→0 외삽</td><td>① 탐색범위·초기값</td></tr>
 <tr><td><b><code>T_d</code> 8.39±0.79 ms</b></td><td>왕복지연 직접 실측</td><td><b>③ 경계를 좁힘</b></td></tr></table>
+<p class="warn">⚠<b><code>damping.foot</code> 은 "끊었다" 가 아니라 "눌러 뒀다" 이다.</b> 회귀 자체는 좋지만 (t=18.5 · R² 0.967 · 좌우 16%) <b>derating 인지 점성인지 이 데이터로는 못 가린다</b> (τ 범위 1.75배뿐 → 공선성, <code>spec.yaml</code>). 게다가 <code>pace_cmaes.py</code> 는 이 값을 <b><code>x0</code> (초기값)로만</b> 넣는다 — 실제로 붙잡는 건 명령줄의 <code>--pin JDAMP.foot</code> 이고 그건 <b>사람이 믿기로 한 결정</b>이다. ⇒ foot 의 맞바꿈은 <b>아직 안 끊겼다.</b></p>
 <p><b>⚠각축도 만능이 아니다:</b></p>
 <p>- <b><code>thigh</code> 관성은 원리적으로 못 잰다.</b> <code>--solo</code> 는 아래 calf+foot 이 매달린 <b>진자</b>다   (주기 0.90 s). 런이 0.21~0.48 s 로 <b>주기의 39%</b> 라, <code>M⁻¹</code> 예측이 전제하는 t→0 극한이   깨진다. 자유(0.189)와 고정(0.221) <b>사이 어디도 아닌 값</b>이 나온다 → CAD 를 쓴다.</p>
 <p>- <b>중력이 큰 축이 오염된다.</b> hip \|τ_g\| 5.5 · thigh 6.35 Nm. 보정은 한 점에서 하는데   시험은 ±53° 를 훑어 잔차가 방향 비대칭으로 남는다. hip 은 τ_trip 에도 걸려 <b>미측정</b>이다.   ⇒ 남은 미해결이 전부 여기로 모인다(§5).</p>
@@ -204,13 +205,13 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b>동상 비율 <code>cos 40°</code></b></td><td><b>0.77</b></td></tr></table>
 <p>즉 <code>kp·T_d</code> 의 <b>약 77% 만</b> 감쇠로 작동한다. 저주파에서는 1.0 에 가깝고 대역에 가까울수록 줄어든다.</p>
 <p class="warn">★<b>이것이 수치 확인이 딱 안 맞은 이유다</b> — 예측 <code>Δb = −kp·ΔT_d = −0.0905</code> 인데 실제는 <code>−0.0591</code>(<b>65%</b>)이었다. <code>cos 40° = 0.77</code> 에 <code>JFRIC</code> 이 같이 움직인 몫을 더하면 그 정도다. <b>동등성을 정확한 등식으로 쓰면 안 된다.</b></p>
-<p><code>T_d = 9.75 ms</code> 기준으로 축별 크기를 보면 왜 <code>JDAMP</code> 가 안 잡히는지 분명하다:</p>
+<p><b>채택값 <code>T_d = 8.39 ms</code></b> 기준으로 축별 크기를 보면 왜 <code>JDAMP</code> 가 안 잡히는지 분명하다 (⚠종전에 이 표가 <code>9.75 ms</code> 기준이었다 — 채택 전 값이다. 2026-08-20 정정. <code>kp</code> 는 <b>식별 자료의 <code>kp_joint</code></b> 다):</p>
 <table>
-<tr><th>축</th><th><code>kp</code>[Nm/rad]</th><th><b><code>kp·T_d</code></b>(지연이 만드는 감쇠)</th><th><code>JDAMP</code>(진짜)</th><th>비</th></tr>
-<tr><td>hip</td><td class="n">100</td><td><b>0.975</b></td><td class="n">0.090</td><td><b>10.8배</b></td></tr>
-<tr><td>thigh</td><td class="n">50</td><td><b>0.488</b></td><td class="n">0</td><td>∞</td></tr>
-<tr><td>calf</td><td class="n">56.2</td><td><b>0.548</b></td><td class="n">0</td><td>∞</td></tr>
-<tr><td>foot</td><td class="n">31.7</td><td><b>0.309</b></td><td class="n">0.110</td><td class="n">2.8배</td></tr></table>
+<tr><th>축</th><th><code>kp_joint</code>[Nm/rad]</th><th><b><code>kp·T_d</code></b>(지연이 만드는 감쇠)</th><th><code>JDAMP</code>(진짜)</th><th>비</th></tr>
+<tr><td>hip</td><td class="n">100</td><td><b>0.839</b></td><td class="n">0.090</td><td><b>9.3배</b></td></tr>
+<tr><td>thigh</td><td class="n">50</td><td><b>0.420</b></td><td class="n">0</td><td>∞</td></tr>
+<tr><td>calf</td><td class="n">56.2</td><td><b>0.472</b></td><td class="n">0</td><td>∞</td></tr>
+<tr><td>foot</td><td class="n">31.7</td><td><b>0.266</b></td><td class="n">0.110</td><td class="n">2.4배</td></tr></table>
 <p><b>진짜 감쇠는 지연이 만드는 감쇠의 10~30% 짜리 보정항</b>이다. (동상 비율 0.77 을 곱해도 hip 은 <code>0.975×0.77 = 0.75</code> 로 여전히 <code>JDAMP</code> 0.090 의 <b>8배</b>다 — 근사의 부정확성이 결론을 안 바꾼다.) 그리고 지연 실측오차 ±0.79 ms 만으로도 <code>JDAMP</code> 범위를 덮는다 — hip 은 <code>100×0.79ms = ±0.079</code> 로 그 축 감쇠(0.090)의 <b>±88%</b> 다. §0-b 의 *"hip 은 자유변수였는데도 초기값에서 안 움직였다"* 가 이걸로 설명된다.</p>
 <p>적합이 실제로 보는 건 <b>합</b>이다. 세 판에서 <code>b</code> 는 0~0.070(무한대 비), <code>T_d</code> 는 25% 갈리는데 <code>b + kp·T_d</code> 는 <b>6.5%</b> 안이다:</p>
 <table>
@@ -368,6 +369,23 @@ pre code{border:0;background:none;padding:0}
 <tr><td><b>방향간 편차</b></td><td><b>58%</b></td><td><b>446%</b></td></tr>
 <tr><td>게이트(15%)</td><td>✗</td><td>✗</td></tr></table>
 <p><b>둘 다 게이트를 못 넘는다.</b> <code>run_leg_*.sh</code> 헤더가 *"하위 관절이 무여자라 I_link 강체가정이 깨진다 — inertia 에 쓰지 말 것"* 이라 적어 둔 그대로였다.</p>
+<p>#### ★원인이 잡혔다 — <b>무릎이 접힌다</b> (2026-08-20, 사용자 관찰 + MuJoCo 확인)</p>
+<div class="quote">현장 관찰: *"<code>--solo</code> 로 thigh 를 들면 calf 축이 접혔다."*</div>
+<p>자료가 뒷받침한다. 저장된 측정 자세가 이미 <b><code>calf −61°</code></b> 인데 MJCF 한계가 <b><code>−62°</code></b> 다 — <b>1° 밖에 안 남았다.</b> 한쪽 방향으로는 곧바로 <b>스토퍼</b>에 닿고 반대쪽으로는 62° 가 비어 있다. (<code>q_pose_ch</code>: calf 채널 91.6° ÷ gear_k 1.5 = 관절 61°)</p>
+<p>MuJoCo 로 그 자세에서 직접 풀었다 — <code>act_measure_inertia_torque.py:419</code> 의 기준값(자유 0.185 / 고정 0.221)이 <b>재현된다</b>: 고정 <b>0.2203</b> · 자유 <b>0.1816</b> (calf+foot 만 자유; 반대쪽 다리는 base 고정에서 완전히 분리된다).</p>
+<table>
+<tr><th>calf 각도</th><th>자유(아래 놓음)</th><th>고정(아래 잠금)</th></tr>
+<tr><td class="n">0° 중립</td><td class="n">0.1484</td><td class="n">0.1653</td></tr>
+<tr><td class="n">−31°</td><td class="n">0.1671</td><td class="n">0.1988</td></tr>
+<tr><td><b>−61° (측정 자세)</b></td><td><b>0.1761</b></td><td><b>0.2203</b></td></tr>
+<tr><td class="n">−62° (스토퍼)</td><td class="n">0.1764</td><td class="n">0.2255</td></tr></table>
+<p><b>접힘이 thigh 유효관성을 +19% 올린다.</b> 그리고 아래를 어떻게 놓든 유효관성은 <b><code>[0.176, 0.226]</code> 안</b>이다(무릎 전 가동범위에서 자유값은 0.124~0.182).</p>
+<p>⇒ <b>두 방향의 지위가 다르다:</b></p>
+<p>- <b>+방향 0.1858 은 띠 안이다</b> — 틀린 값이 아니라 *접힌 채 아래가 반쯤 딸려온 다리*의   실제 유효관성이다. 종전에 이걸 "우연" 으로 적었는데 <b>철회한다.</b></p>
+<p>- <b>−방향 0.3370 은 띠 밖이다</b> — 완전 고정 극한의 <b>1.50배</b>로, 어떤 자세·어떤   구속으로도 도달할 수 없다. ⇒ <b>관성이 아니다.</b> <code>I = u/q̈</code> 의 <code>q̈</code> 가 다른 이유로   깎인 것이다(스토퍼 충돌로 운동량 손실, 또는 중력보상 잔차).</p>
+<p>- ⇒ <b>둘을 평균한 0.2479 에는 물리적 의미가 없다.</b></p>
+<p class="warn">★<b>좌우가 서로를 확인해 주지 않는다 — 그래서 더 확실히 무효다.</b> 두 다리 thigh 관절은 MJCF 에서 <b>둘 다 <code>axis="0 1 0"</code></b>(<code>biped_from_quad.mjcf:50</code>·<code>:75</code>) 이라 <code>+방향</code> 이 좌우 <b>같은 물리 방향</b>이다. 그런데 <b>무거운 쪽이 반대로 나온다</b>(HL 은 −, HR 은 +). 거울상이었다면 구조에서 오는 재현되는 편향으로 보정할 수 있었겠지만, 축이 같은데도 반대라는 건 <b>그때그때의 매달림 상태</b>에서 온다는 뜻이다 — 걷어낼 수 있는 종류가 아니다.</p>
+<p class="warn">⚠<b>§2 표의 기준값 <code>0.1887</code> 은 출처가 불명하다.</b> 위 계산의 자유(0.176)도 고정(0.220)도 아니다. <b>어느 자세·어느 구속의 값인지 문서에 근거가 없다</b> — <code>+31%</code>·<code>−1.5%</code> 는 전부 이 값 대비이므로 재확인이 필요하다.</p>
 <p class="warn">⚠<code>t_ref→0</code> 외삽도 이걸 못 고친다 — 합쳐서 +6% 로 보이지만 <b>+방향만 −16% · −방향만 +11%</b> 로 28% 갈린다. 두 방향의 평균이 우연히 CAD 근처에 온 것이다(§4-3).</p>
 <p>⇒ <b>thigh·hip 관성은 CAD 를 쓴다.</b> calf·foot 넷이 ±8.3% 로 CAD 를 검증했고, thigh 의 CAD 도 같은 URDF 에서 왔다. 굳이 재려면 아래 링크를 <b>기구적으로 고정</b>해야 한다 (모터 홀드는 유한 강성이고, 2026-08-12 에 드라이버 파워단을 5회 죽였다).</p>
 <p class="warn">★<b>CAD 는 간접적으로도 검증된다</b> — PACE 가 실기 자료로 모델을 맞추는데 <b>thigh 잔차가 제곱오차의 9% 뿐</b>이다(§6 축별 RMS). CAD 가 크게 틀렸다면 그 축 잔차가 컸을 것이다. ⇒ 직접 측정은 확인일 뿐 새 정보가 아닐 가능성이 크다.</p>
@@ -380,6 +398,30 @@ pre code{border:0;background:none;padding:0}
 <tr><td>thigh</td><td class="n">50</td><td class="n">4.0</td><td class="n">2.74 Hz</td><td><b>0.69</b></td><td class="n">0.76</td><td class="n">0.69°</td><td class="ok">✅</td></tr>
 <tr><td>calf</td><td class="n">80</td><td class="n">3.5</td><td class="n">6.39 Hz</td><td><b>0.88</b></td><td class="n">1.05</td><td class="n">0.28°</td><td class="ok">✅</td></tr>
 <tr><td>foot</td><td class="n">30</td><td class="n">2.0</td><td class="n">4.51 Hz</td><td><b>0.94</b></td><td class="n">1.10</td><td><b>0.85°</b></td><td class="ok">✅</td></tr></table>
+<p class="warn">⚠<b>위 <code>kp</code> 는 배포 게인이고, 식별은 그보다 낮은 게인에서 했다</b> (2026-08-20 확인).</p>
+<p><code>kp_joint[calf]</code> 가 <b>식별 56.25 · 검증(게인 2배) 112.5 · 배포 180</b> 이다 (<code>kp_joint = kp_ch·gear_k²</code>, calf <code>gear_k=1.5</code>). ⇒ <b>"게인 2배에서도 검증 통과" 가 배포 조건을 덮지 못한다</b> — 배포는 검증한 것보다 <b>1.6배 더 세다.</b> ⚠그리고 <code>biped_emb.yaml:84</code> 의 *"calf 설정 50 → 실효 112.5"* 는 <b>낡은 주석</b>이다. 저장된 실제값은 <code>:206</code> 의 <b><code>kp: 80</code> → 실효 180</b> 이다.</p>
+<h3>★얼마나 빨라야 하나 — <b>전진속도가 아니라 스텝 주기가 정한다</b> (2026-08-20)</h3>
+<p>MuJoCo 20 s × vx 6점(0 ~ 0.25)에서 관절속도를 직접 떴다(<code>biped_sim</code> 사본에 덤프만 추가). 필요속도가 <b>두 성분의 제곱합</b>으로 깔끔하게 갈라진다 — <b>적합오차 1~3%</b>:</p>
+<pre>ω(vx) = √( a² + (b·vx)² )      a = 주기 성분(발을 들었다 놓는 왕복 · T_STEP 이 정함)
+                               b = 전진 성분(스윙발이 앞으로 나가는 거리 · vx 비례)</pre>
+<table>
+<tr><th>축</th><th><code>a</code> [dps]</th><th><code>b</code> [dps/(m/s)]</th><th>교차 <code>vx = a/b</code></th><th>필요 p95 @0.25</th><th>무부하 <code>207/N</code></th></tr>
+<tr><td>hip</td><td class="n">110</td><td class="n">91</td><td class="n">1.22 m/s</td><td class="n">113</td><td class="n">1694 (<b>12%</b>)</td></tr>
+<tr><td>thigh</td><td class="n">141</td><td><b>321</b></td><td><b>0.44 m/s</b></td><td class="n">163</td><td class="n">1694 (17%)</td></tr>
+<tr><td>calf</td><td class="n">271</td><td class="n">426</td><td class="n">0.64 m/s</td><td class="n">291</td><td class="n">1130 (40%)</td></tr>
+<tr><td><b>foot</b></td><td><b>579</b></td><td>≈ 0</td><td class="n">—</td><td><b>591</b></td><td class="n">1412 (<b>70%</b>)</td></tr></table>
+<p><code>b_thigh = 321</code> 이 기구학 예측 <code>(π/2)·(T_STEP/T_sw)/r = 286</code>(<code>r = 0.35 m</code>)과 <b>12% 안</b>에서 맞는다 — 곡선맞춤이 아니라 물리가 맞는 모델이다.</p>
+<p>⇒ <b>vx 를 0 → 0.25 로 올려도 관절속도는 −3 ~ +7% 밖에 안 변한다.</b> 제자리에서도 발은 들었다 놓아야 하고 그 왕복이 <code>T_STEP</code> 안에 끝나야 하기 때문이다. thigh 의 교차점이 <b>0.44 m/s</b> 인데 이 이족은 <b>0.25 m/s 까지밖에 못 걷는다</b>(0.30 부터 낙상, 생존 2.9 s) ⇒ <b>쓸 수 있는 전 구간이 "주기 지배" 영역</b>이다. <b>더 빨리 걷는다고 더 빠른 모터가 필요한 게 아니다 — 필요해지는 건 <code>T_STEP</code> 을 줄일 때다.</b></p>
+<p>#### ⚠⚠ <b>지금 보행이 <code>vel_trip_dps 200</code> 을 넘는다</b></p>
+<p>채널 좌표(트립과 같은 좌표)로 환산한 p95:</p>
+<table>
+<tr><th>채널</th><th>p95 [dps]</th><th>트립 200 대비</th></tr>
+<tr><td>hip</td><td class="n">112</td><td class="ok">56% ✅</td></tr>
+<tr><td>thigh</td><td class="n">156</td><td class="ok">78% ✅</td></tr>
+<tr><td><b>calf</b> (<code>dq_calf·1.5</code>)</td><td><b>436</b></td><td class="no"><b>218%</b> ❌</td></tr>
+<tr><td><b>foot</b> (tendon <code>(dq_calf+dq_foot)·1.2</code>)</td><td><b>371</b></td><td class="no"><b>185%</b> ❌</td></tr></table>
+<p>⇒ <b>이 보행을 지금 실기에 올리면 즉시 limp 로 떨어진다.</b> 트립을 올리든 <code>T_STEP</code> 을 늘리든 <b>결정이 필요하다.</b> ★첨두는 <b>착지 충격이 지배</b>한다 — foot 중앙값은 153 dps 로 p95(590)의 26% 이고 각도 진폭은 26.8° 뿐이다. <b>지속 속도가 아니라 순간 첨두</b>가 건드리는 것이므로,</p>
+<p><code>tau_trip_ms</code> 처럼 <b>지속시간 조건</b>을 두는 쪽이 맞을 수 있다(지금 <code>vel_trip</code> 은 즉시).</p>
 <h3>★ζ 를 <b>상황별로 나눠 읽어야</b> 한다 (이번에 정정)</h3>
 <p>지연이 만드는 감쇠 <code>kp·T_d</code> 는 <b>명령이 움직일 때만</b> 생긴다. 항이 <code>−kp·T_d·q̇_cmd</code> 이기 때문이다(§1-b):</p>
 <table>

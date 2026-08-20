@@ -193,7 +193,10 @@ def foot_rotor_to_tendon(m, idx, gear_n, rot, names, dmp=None, frc=None,
     ⇒ 로터 KE = ½·I_rot·N²·(q̇_foot + coef·q̇_calf)² 라 반사관성이 (calf,foot) **비대각**이다.
       `dof_armature` 는 M 의 대각뿐이라 표현할 수 없다 → fixed tendon 의 armature.
 
-    ★**PACE 에서 특히 중요하다.** 축별 측정에서는 이 항이 죽어 있었다(타축 고정 ⇒ q̇_calf=0).
+    ★**PACE 에서 특히 중요하다.** 축별 측정에는 이 항이 **아예 없다** — 회귀식이
+      `τ = I_ii·q̈ + b·q̇ + τ_c·sgn + g` 로 **대각뿐**이라 비대각 항이 들어갈 자리가 없다.
+      ⚠종전 주석의 "타축 고정 ⇒ q̇_calf=0" 은 틀렸다(2026-08-14 정정) — `--solo` 의
+        타축은 고정이 아니라 **무여자**라서 실제로는 딸려 움직인다(actuator_test.py:511).
       전축 동시 처프는 calf·foot 이 같이 움직이므로 살아난다. 이게 없으면 CMA-ES 가
       실기에 있고 시뮬에 없는 관성(calf 대각 기준 +46%)을 armature/damping 으로 흡수하려
       들고, 구조가 다르니 깨끗하게 흡수되지 않는다.

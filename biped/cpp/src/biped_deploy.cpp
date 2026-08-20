@@ -111,7 +111,8 @@ int main(int argc, char** argv){
   //   실측: 28~51ms 스톨(20~25틱 유실). 이 Pi 는 RobotEmbedded 가 1kHz 로 CPU 90% 를
   //   쓰고 데스크톱(gnome-shell·Xwayland·모니터)까지 얹혀 있어 경합이 실재한다.
   //   ⚠기본 사용자는 rtprio 한도가 0 이라 실패한다 — 그때는 경고만 하고 계속 돈다.
-  //     한 번만: sudo setcap cap_sys_nice+ep <바이너리>
+  //     sudo setcap cap_sys_nice+ep <바이너리>
+  //     ⚠**재빌드하면 사라진다**(재링크가 파일을 새로 만든다). 실측 확인했다.
   //   ⚠SCHED_FIFO 는 이 스레드가 CPU 를 독점할 수 있다는 뜻이다. 500Hz 루프는
   //     대부분 sleep 이라 안전하지만, 무한루프 버그가 나면 기기가 멎는다.
   { const int rp = getenv("RT_PRIO") ? atoi(getenv("RT_PRIO")) : 80;
@@ -122,8 +123,9 @@ int main(int argc, char** argv){
         if(mlockall(MCL_CURRENT|MCL_FUTURE) != 0)
           std::printf("[deploy] ⚠mlockall 실패 — 페이지폴트로 지터가 남을 수 있다\n");
       } else {
-        std::printf("[deploy] ⚠실시간 우선순위 실패(%s) — **루프가 밀릴 수 있다**.\n"
-                    "         한 번만 실행: sudo setcap cap_sys_nice+ep %s\n"
+        std::printf("[deploy] ⚠실시간 우선순위 실패(%s) — **루프가 밀릴 수 있다**(실측 28~51ms 스톨).\n"
+                    "         sudo setcap cap_sys_nice+ep %s\n"
+                    "         ⚠**재빌드(재링크)하면 사라진다** — 소스를 고칠 때마다 다시 걸 것.\n"
                     "         끄려면 RT_PRIO=0\n", std::strerror(errno), argv[0]);
       } } }
 

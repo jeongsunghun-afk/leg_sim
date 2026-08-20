@@ -204,6 +204,18 @@ def main():
                     continue
                 if "pgrep" in cl or "grep" in cl:
                     continue
+                # ★★**빌드 프로세스를 writer 로 세지 않는다** (2026-08-14).
+                #   pgrep -f 는 명령줄 문자열로 찾으므로 `cmake --build --target biped_deploy`,
+                #   `gmake … biped_deploy.dir`, `cc1plus … biped_deploy.cpp` 가 전부 걸린다.
+                #   실기에서 실제로 그랬다 — biped_emb.py 를 못 띄우게 막았는데
+                #   정작 writer 는 하나도 안 돌고 있었고, 사용자는 "pkill 이 안 먹었나" 로 읽었다.
+                #   **가짜 경보는 진짜 경보를 무디게 한다.** 이 가드는 실기 사고
+                #   (2026-08-10, 관절 +18°↔−20° 진동)를 막으려고 있는 것이라 정확해야 한다.
+                _tool = ("cmake", "gmake", "make", "cc1plus", "c++", "g++", "ld", "ninja",
+                         "sh", "bash", "/bin/sh")
+                _exe0 = (cl.strip().split(" ", 1)[0] or "").split("/")[-1]
+                if _exe0 in _tool:
+                    continue
                 if pat.split("/")[-1] in cl:
                     others.append((pid, cl.strip()[:90]))
         if others:

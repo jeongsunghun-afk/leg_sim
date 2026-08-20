@@ -261,6 +261,7 @@ int main(int argc, char** argv){
   //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
   //   무장 순간부터 0.5초를 **매 틱** CSV 로 남긴다. 트립이 나도 파일은 남는다.
   FILE* trc=nullptr; double trc_t0=0;
+  bool have_state=false; int ok_reads=0;   // ★센서 준비 확인(위 ② 주석)
   // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
   //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
   //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
@@ -300,8 +301,22 @@ int main(int argc, char** argv){
     double quat[4]; rpy_to_quat(rpy[0],rpy[1],rpy[2],quat);
     double tilt = std::hypot(rpy[0],rpy[1]) * JointMap::R2D;
 
+    // ★★**센서가 채워지기 전에는 명령을 받지 않는다** (2026-08-20, 트립 5회의 진짜 원인).
+    //   기동 직후 첫 틱에 SHM 읽기가 아직 0 이었는데, 명령파일에 이전 hold/home 이
+    //   남아 있어 **그 0 을 측정각으로 믿고** 래치했다. 그러면 명령이 0° 가 되어
+    //   실제 ±25~85° 에서 0 으로 내리꽂는다 — 트레이스 실측:
+    //       ch2 q 25.88 · 명령 0.00 · τ −18.2 Nm · dq −340dps
+    //       ch6 q −85.12 · 명령 0.00 · τ +18.5 Nm · dq +460dps
+    //   "최대이동 100.4°"(=0°에서 Qflat8 까지) 가 같은 사실을 가리키고 있었다.
+    //   ⇒ 유효한 읽기가 몇 틱 쌓이기 전에는 off 를 유지한다.
+    if(!have_state){
+      if(hs.mask != 0) ok_reads++; else ok_reads = 0;
+      if(ok_reads >= 5){ have_state = true;
+        std::printf("[deploy] 센서 준비됨 — 명령 수신 시작 (q_ch: %.1f %.1f %.1f %.1f ...)\n",
+                    hs.q_deg[0], hs.q_deg[1], hs.q_deg[2], hs.q_deg[3]); }
+    }
     // ② 명령 폴링(~50Hz)
-    if(k % (long long)std::max(1.0, 0.02/dt) == 0){
+    if(have_state && k % (long long)std::max(1.0, 0.02/dt) == 0){
       Cmd nc;
       if(read_cmd(cmd_p, nc)){
         bool fresh = (nc.raw != last_raw);          // ★"파일이 읽히는가"가 아니라 "내용이 바뀌는가"

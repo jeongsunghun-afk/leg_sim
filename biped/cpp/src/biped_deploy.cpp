@@ -327,12 +327,22 @@ int main(int argc, char** argv){
       for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && frz_t[i]>0.5){
         char b[16]; std::snprintf(b,sizeof b," ch%d",i); fz+=b; nfz++; }
       if(nfz && !frz_warned){ frz_warned=true;
+        // ★몇 축이 얼었는지로 **어느 구간이 끊겼는지** 가른다 (2026-08-20).
+        //   EtherCAT 슬레이브는 8축 **하나**(LAN9252)다. 그게 끊기면 8축이 **전부** 언다.
+        //   4축만 얼면 MCU 는 살아 있고 그 아래 **FDCAN(해당 다리)** 이 끊긴 것이다 —
+        //   MCU 가 마지막 값을 EtherCAT 으로 계속 올리므로 갱신 플래그·health 는 정상으로 보인다.
+        const bool all_ch = (nfz >= (int)cfg.joints.size());
         std::fprintf(stderr,
-          "\n%s\n!! ⛔⛔ **EtherCAT 동결** — 다음 채널이 0.5초 넘게 값이 하나도 안 바뀐다:%s\n"
-          "!!   Emb 는 OP 를 잃어도 계속 돌며 마지막 버퍼를 재발행하고 갱신 플래그를 1 로 세운다.\n"
-          "!!   그래서 health=ok · n_fault=0 으로 보인다 — **믿으면 안 된다.**\n"
-          "!!   복구: **모터 전원 OFF/ON → Emb 재기동**(Emb 재기동만으로는 부족할 수 있다)\n%s\n\n",
-          std::string(72,'!').c_str(), fz.c_str(), std::string(72,'!').c_str());
+          "\n%s\n!! ⛔⛔ **통신 동결** — 다음 채널이 0.5초 넘게 값이 하나도 안 바뀐다:%s\n"
+          "!!   %s\n"
+          "!!   ⚠health=ok · n_fault=0 으로 보인다 — **믿으면 안 된다.**\n"
+          "!!   복구: 모터 전원 OFF/ON → Emb 재기동. %s\n%s\n\n",
+          std::string(72,'!').c_str(), fz.c_str(),
+          all_ch ? "8축 **전부** → EtherCAT(EMB↔MCU) 구간이 끊겼다."
+                 : "일부만 얼었다 ⇒ **EtherCAT 이 아니다**(슬레이브는 8축 하나뿐이다).\n"
+                   "!!   MCU 는 살아 있고 그 아래 **FDCAN(그 다리)** 이 끊긴 것이다.",
+          all_ch ? "" : "\n!!   ⚠전원 재투입으로 잠깐 풀려도 재발한다 — 배선·커넥터·종단저항을 볼 것.",
+          std::string(72,'!').c_str());
       } else if(!nfz) frz_warned=false;
       if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
       frozen_now = nfz; }

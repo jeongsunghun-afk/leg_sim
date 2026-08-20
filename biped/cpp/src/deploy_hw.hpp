@@ -56,6 +56,9 @@ struct EmbCfg {
   // safety
   double tilt_estop_deg = 40, watchdog_ms = 500, tau_max_frac = 0.6;
   double tau_trip_nm = 8.0, tau_trip_ms = 50, vel_trip_dps = 200.0;
+  // home 램프 — biped_emb.py 의 HomeTrajectory 와 **같은 설정 키**를 읽는다.
+  //   두 제어기가 같은 자세로 같은 속도로 가야 운전자가 헷갈리지 않는다.
+  double home_speed_dps = 15.0, home_acc_dps2 = 30.0, home_min_time_s = 0.6;
 
   bool installed_has(int ch) const {
     return installed.empty() || std::find(installed.begin(), installed.end(), ch) != installed.end();
@@ -169,6 +172,11 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       else if(key=="tau_trip_nm") c.tau_trip_nm = num(8.0);
       else if(key=="tau_trip_ms") c.tau_trip_ms = num(50);
       else if(key=="vel_trip_dps") c.vel_trip_dps = num(200.0);
+      // ⚠home: 아래 키는 `home:` 블록에도 `jog:` 블록에도 있을 수 있다. 이 파서는
+      //   블록 구분 없이 키 이름으로만 읽으므로 이름이 겹치지 않는 것만 쓴다.
+      else if(key=="max_speed_dps") c.home_speed_dps = num(15.0);
+      else if(key=="max_acc_dps2")  c.home_acc_dps2  = num(30.0);
+      else if(key=="min_time_s")    c.home_min_time_s= num(0.6);
     }
   }
   if(c.joints.empty()){ err = "joints 를 하나도 못 읽었다 — 설정 형식 확인: " + path; return false; }

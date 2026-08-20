@@ -455,7 +455,7 @@ with dpg.window(tag='main'):
     dpg.add_text('⚠매달린 채로 stand/보행을 켜지 말 것 — GRF 를 전제한 QP 라 해가 안 나오고 '
                  '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home/hold 뿐.',
                  color=(210, 150, 90))
-    dpg.add_text('Home=정해진 홈 자세(emb/config/biped_emb.yaml: home.q_deg)로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기',
+    dpg.add_text('Home=제어기가 정한 자세로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기\n  ⚠목표자세는 **제어기마다 다르다**: biped_emb.py=config home.q_deg(전축 0) · biped_deploy=**2점 평발 stand 자세**(Qflat8, 발목 채널 100.4°)',
                  color=(150, 155, 175))
     dpg.add_separator()
     # ── ★각축(JOG) 패널: 8관절 슬라이더(모터 1:1) + 실측 + 통신 상태 LED ──

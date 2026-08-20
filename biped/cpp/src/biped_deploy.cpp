@@ -245,6 +245,13 @@ int main(int argc, char** argv){
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
   std::vector<float> hold_ch(NCH, 0.f);
   HwState hs;
+  // ★home 램프 상태 (2026-08-20 신설). stand 자세로 **속도제한을 걸어** 이동한다.
+  //   왜 필요한가: `stand` 는 WBIC posture task 라 램프가 없다. 0° 자세에서 바로 누르면
+  //   발목이 채널각 **100.4°** 를 한꺼번에 요구한다(커플링·gear_k 1.2 때문에 모델 −59.8°
+  //   가 채널 100.4° 가 된다). 속도트립 200dps 에 그냥 걸린다.
+  //   ⇒ home 으로 먼저 그 자세까지 S-curve 로 간 뒤 hold→접지→stand 순서로 간다.
+  std::vector<float> home_from(NCH,0.f), home_to(NCH,0.f);
+  double home_t0=0, home_T=0; bool home_done=false;
   std::string mode = "off", prev_mode = "off", last_raw;
   bool estop = false, wd_tripped = false;
   double tau_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
@@ -252,8 +259,11 @@ int main(int argc, char** argv){
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
   hw->enable(0);
-  std::printf("[deploy] 모드: off/hold/stand/walk. GUI 로 조종(%s).\n", cmd_p.c_str());
-  std::printf("[deploy] ⚠ jog·home 은 Python 앱 담당. writer 는 한 번에 하나만.\n");
+  std::printf("[deploy] 모드: off/hold/**home**/stand/walk. GUI 로 조종(%s).\n"
+              "[deploy] home = %s 자세로 %.0fdps S-curve 이동(램프 %.1fs 설정).\n",
+              cmd_p.c_str(), c.cmode==1?"2점 평발 stand":"1점 점발",
+              cfg.home_speed_dps, cfg.home_min_time_s);
+  std::printf("[deploy] ⚠ jog 는 Python 앱 담당. writer 는 한 번에 하나만.\n");
 
   double t0 = now_s(), prev_loop = t0; long long k = 0; bool overrun_warned=false;
   int rc = 0;
@@ -284,7 +294,7 @@ int main(int argc, char** argv){
         cmd = nc; body_h = nc.body_h;
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
-        if(nm!="off" && nm!="hold" && nm!="stand" && nm!="walk") nm = "off";   // jog/home 등 → off
+        if(nm!="off" && nm!="hold" && nm!="home" && nm!="stand" && nm!="walk") nm = "off";   // jog 등 → off
         // ★E-stop 래치는 명시적 off 로만 해제. 그 전까지 모드변경 무시.
         if(estop){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
@@ -294,6 +304,26 @@ int main(int argc, char** argv){
           prev_mode = mode; mode = nm;
           hw->enable(mode=="off" ? 0 : 1);
           if(mode=="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
+          if(mode=="home"){
+            home_from = hs.q_deg;
+            std::vector<double> qt(NJ);
+            for(int j=0;j<NJ;j++) qt[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
+            jm.q_ctrl_to_ch(qt.data(), home_to.data());
+            jm.clamp_ch_via_joint(home_to.data());
+            double mx=0;
+            for(int i=0;i<NCH;i++) if(cfg.installed_has(i))
+              mx = std::max(mx, (double)std::fabs(home_to[i]-home_from[i]));
+            // smoothstep s=3u²−2u³ : 최대속도 1.5·Δ/T · 최대가속 6·Δ/T²
+            //   ⇒ T 를 둘 다 만족하게 잡으면 트립 임계 안에서 끝난다.
+            double T1 = 1.5*mx/std::max(1e-6, cfg.home_speed_dps);
+            double T2 = std::sqrt(6.0*mx/std::max(1e-6, cfg.home_acc_dps2));
+            home_T = std::max(std::max(T1,T2), cfg.home_min_time_s);
+            home_t0 = lt; home_done = false;
+            std::printf("[deploy] home → **%s** 자세 · 최대이동 %.1f° · %.1fs 램프"
+                        "(S-curve · 최대 %.0fdps ≪ 트립 %.0f)\n",
+                        c.cmode==1?"2점 평발 stand":"1점 점발 home",
+                        mx, home_T, 1.5*mx/home_T, cfg.vel_trip_dps);
+          }
           if(mode=="stand" || mode=="walk"){
             c.reset(); c.com_ref_z = body_h;
             est.reset(Eigen::Vector3d(0,0,d->qpos[2]));
@@ -357,6 +387,20 @@ int main(int argc, char** argv){
     } else if(mode=="hold"){
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+    } else if(mode=="home"){
+      // ★S-curve — 가감속이 0 에서 시작·끝나므로 속도트립을 만들지 않는다.
+      double u = (home_T>0) ? (lt-home_t0)/home_T : 1.0;
+      u = std::max(0.0, std::min(1.0, u));
+      const double sf = u*u*(3.0-2.0*u);
+      for(int i=0;i<NCH;i++)
+        q_ch[i] = home_from[i] + (float)(sf*(double)(home_to[i]-home_from[i]));
+      jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+      if(u>=1.0 && !home_done){
+        home_done = true;
+        std::printf("[deploy] home 도달 — 그 자세로 유지 중.\n"
+                    "         다음: 크레인을 내려 접지 → **hold** 로 하중 이양 → stand\n");
+      }
     } else {  // stand / walk — 모델기반
       // 접촉: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
       //   ⚠추정에 쓰는 접촉이 제어기 자신의 계획이라 순환처럼 보이지만, 힘센서 없는
@@ -511,7 +555,9 @@ int main(int argc, char** argv){
         //   `lc_skip_pct`>0 은 예측이 가드에 걸려 실측으로 폴백 중이라는 뜻 —
         //   켜 놓고도 실제로는 안 걸린 상태라 반드시 보인다.
         "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f],"
-        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f}",
+        // ★home 진행률(0~1) — GUI 가 이미 표시할 준비가 돼 있다(teleop_gui_biped:526).
+        //   10초짜리 램프라 운전자가 "지금 얼마나 갔나" 를 볼 수 있어야 한다.
+        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
         rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
@@ -520,7 +566,8 @@ int main(int argc, char** argv){
         (int)(jm.n_leg-n_absent), est.p[0], est.p[2], estop?"true":"false",
         imu_dead?"false":"true",
         c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
-        LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0);
+        LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
+        (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0);
       write_state(stt_p, buf);
     }
 

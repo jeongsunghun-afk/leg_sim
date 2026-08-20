@@ -385,12 +385,12 @@ int main(int argc, char** argv){
         }
         if(nm != mode){
           prev_mode = mode; mode = nm;
-          if(mode!="off" && prev_mode=="off" && !trc){
+          if(((mode!="off" && prev_mode=="off") || mode=="stand" || mode=="walk") && !trc){
             trc = fopen("/tmp/arm_trace.csv","w"); trc_t0 = lt;
             if(trc){ fprintf(trc,"t");
               for(int i=0;i<NCH;i++) fprintf(trc,",q%d,dq%d,tau%d,cmd%d",i,i,i,i);
               fprintf(trc,"\n");
-              std::printf("[deploy] 무장 트레이스 → /tmp/arm_trace.csv (0.5초)\n"); } }
+              std::printf("[deploy] 트레이스 → /tmp/arm_trace.csv (3초 — 블렌드 전체)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
           if(mode=="hold"){
             std::vector<float> raw = hs.q_deg;             // 클램프 전
@@ -482,7 +482,11 @@ int main(int argc, char** argv){
           }
           if(mode=="stand" || mode=="walk"){
             stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
-            stand_T = getenv("STAND_BLEND_S") ? atof(getenv("STAND_BLEND_S")) : 1.0;
+            // ★2.5초 (2026-08-20). 1.0초로는 ch7 이 202dps 로 임계를 1% 넘겼다.
+            //   ⚠발목 채널은 구조상 제일 잘 걸린다 — raw각이 (foot+calf) 라
+            //     채널속도 = (q̇_foot + q̇_calf)×1.2 로 **두 관절의 합**이 잡힌다.
+            //     관절로는 작은 움직임도 채널로는 2배 넘게 보인다.
+            stand_T = getenv("STAND_BLEND_S") ? atof(getenv("STAND_BLEND_S")) : 2.5;
             stand_t0 = lt;
             std::printf("[deploy] stand 진입 — 위치제어→토크 **%.1fs 블렌드**"
                         "(계단 전환은 주저앉는다)\n", stand_T);
@@ -569,7 +573,7 @@ int main(int argc, char** argv){
 
     // ★트레이스 기록 — 무장 후 0.5초. 명령각은 hold/home 이 쓴 q_ch/hold_ch 다.
     if(trc){
-      if(lt-trc_t0 <= 0.5){
+      if(lt-trc_t0 <= 3.0){
         fprintf(trc,"%.4f", lt-trc_t0);
         for(int i=0;i<NCH;i++)
           fprintf(trc,",%.3f,%.1f,%.3f,%.3f", hs.q_deg[i], hs.dq_dps[i], hs.tau_nm[i],

@@ -262,6 +262,14 @@ int main(int argc, char** argv){
   //   무장 순간부터 0.5초를 **매 틱** CSV 로 남긴다. 트립이 나도 파일은 남는다.
   FILE* trc=nullptr; double trc_t0=0;
   bool have_state=false; int ok_reads=0;   // ★센서 준비 확인(위 ② 주석)
+  // ★★EtherCAT 동결 감지 (2026-08-20 실기). Emb 는 OP 를 잃어도 프로세스가 계속 돌고
+  //   **마지막 버퍼를 재발행하며 갱신 플래그까지 1 로 세운다**(memory: emb-ethercat-freeze).
+  //   그래서 health=ok · n_ok=8 · n_fault=0 인데 값만 얼어붙는다 — 침묵 실패다.
+  //   실측(2026-08-20): **왼다리 4축만** 동결. dq 가 227dps 로 굳어 있는데 각도는 불변이라
+  //   정지가드가 "움직이는 중" 으로 오판했다. 원인을 엉뚱하게 짚게 만든다.
+  //   ⇒ 채널별로 (q,dq,tau) 가 **한 번도 안 바뀐 시간**을 세어 직접 이름 붙인다.
+  std::vector<float> prv_q(NCH,1e9f), prv_dq(NCH,0.f), prv_t(NCH,0.f);
+  std::vector<double> frz_t(NCH,0.0);  bool frz_warned=false; int frozen_now=0;
   // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
   //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
   //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
@@ -309,6 +317,26 @@ int main(int argc, char** argv){
     //       ch6 q −85.12 · 명령 0.00 · τ +18.5 Nm · dq +460dps
     //   "최대이동 100.4°"(=0°에서 Qflat8 까지) 가 같은 사실을 가리키고 있었다.
     //   ⇒ 유효한 읽기가 몇 틱 쌓이기 전에는 off 를 유지한다.
+    // ★동결 판정 — 값이 하나도 안 바뀌면 그 채널의 정지시간을 누적한다.
+    for(int i=0;i<NCH;i++){
+      if(hs.q_deg[i]==prv_q[i] && hs.dq_dps[i]==prv_dq[i] && hs.tau_nm[i]==prv_t[i]) frz_t[i]+=dt;
+      else frz_t[i]=0.0;
+      prv_q[i]=hs.q_deg[i]; prv_dq[i]=hs.dq_dps[i]; prv_t[i]=hs.tau_nm[i];
+    }
+    { std::string fz; int nfz=0;
+      for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && frz_t[i]>0.5){
+        char b[16]; std::snprintf(b,sizeof b," ch%d",i); fz+=b; nfz++; }
+      if(nfz && !frz_warned){ frz_warned=true;
+        std::fprintf(stderr,
+          "\n%s\n!! ⛔⛔ **EtherCAT 동결** — 다음 채널이 0.5초 넘게 값이 하나도 안 바뀐다:%s\n"
+          "!!   Emb 는 OP 를 잃어도 계속 돌며 마지막 버퍼를 재발행하고 갱신 플래그를 1 로 세운다.\n"
+          "!!   그래서 health=ok · n_fault=0 으로 보인다 — **믿으면 안 된다.**\n"
+          "!!   복구: **모터 전원 OFF/ON → Emb 재기동**(Emb 재기동만으로는 부족할 수 있다)\n%s\n\n",
+          std::string(72,'!').c_str(), fz.c_str(), std::string(72,'!').c_str());
+      } else if(!nfz) frz_warned=false;
+      if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
+      frozen_now = nfz; }
+
     if(!have_state){
       if(hs.mask != 0) ok_reads++; else ok_reads = 0;
       if(ok_reads >= 5){ have_state = true;
@@ -338,7 +366,10 @@ int main(int argc, char** argv){
         //   실제 경위: 접지 상태에서 Ctrl+C → safe_shutdown 이 kp=kd=τ=0 을 써서
         //   **로봇이 주저앉았고**, 그 낙하 도중에 hold 를 눌렀다.
         //   ⇒ 트립의 원인은 명령이 아니라 "움직이는 걸 잡으려 한 것" 이다. 미리 막는다.
-        if(mode=="off" && nm!="off"){
+        if(mode=="off" && nm!="off" && frozen_now>0){
+          std::printf("[deploy] ⛔ **EtherCAT 동결 %d채널** — 무장 거부. 전원 OFF/ON 후 Emb 재기동.\n", frozen_now);
+          nm = "off";
+        } else if(mode=="off" && nm!="off"){
           double vmx=0; int vch=-1;
           for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && std::fabs(hs.dq_dps[i])>vmx){
             vmx=std::fabs(hs.dq_dps[i]); vch=i; }

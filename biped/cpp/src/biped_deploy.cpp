@@ -69,6 +69,8 @@ static void safe_shutdown(HwIface& hw, int n){
   } else {
     // ⚠"무여자" 라 쓰지 않는다 — SHM 에 드라이브 disable 경로가 **없다**(벤더 확인 2026-08-14).
     //   보장되는 건 명령토크 0 까지고, 드라이브는 여전히 여자 상태다.
+    std::printf("[deploy] ⚠**체중을 받고 있었다면 지금 주저앉는다** — 무여자는 낙하다.\n"
+                "         다시 세우려면: 크레인으로 들어올림 → home → 접지 → hold → stand\n");
     std::printf("[deploy] 종료 — 명령토크 0(Kp=Kd=τ=0) %d/25 회 기록 완료.\n"
                 "         ⚠드라이브는 여전히 여자 상태다 — 축이 안 풀리면 물리 리셋/전원 차단.\n", ok);
   }
@@ -253,6 +255,7 @@ int main(int argc, char** argv){
   std::vector<float> home_from(NCH,0.f), home_to(NCH,0.f);
   double home_t0=0, home_T=0; bool home_done=false;
   bool ground_refused=false;      // ★접지 가드 거부 래치(로그 폭주 방지)
+  bool still_warned=false;        // ★정지 확인 거부 래치
   // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
   //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
   //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
@@ -309,6 +312,26 @@ int main(int argc, char** argv){
           else nm = "off";
         }
         if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
+        // ★★**움직이는 중에는 무장하지 않는다** (2026-08-20 실기).
+        //   속도트립은 *측정* 속도로 걸린다 — 우리가 명령을 안 줘도, 로봇이 이미
+        //   무너지는 중이면 무장하는 순간 그대로 트립한다(ch6 201dps · ch2 204 · ch3 224).
+        //   실제 경위: 접지 상태에서 Ctrl+C → safe_shutdown 이 kp=kd=τ=0 을 써서
+        //   **로봇이 주저앉았고**, 그 낙하 도중에 hold 를 눌렀다.
+        //   ⇒ 트립의 원인은 명령이 아니라 "움직이는 걸 잡으려 한 것" 이다. 미리 막는다.
+        if(mode=="off" && nm!="off"){
+          double vmx=0; int vch=-1;
+          for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && std::fabs(hs.dq_dps[i])>vmx){
+            vmx=std::fabs(hs.dq_dps[i]); vch=i; }
+          const double vlim = cfg.vel_trip_dps * 0.25;      // 트립의 1/4 — 잔진동은 허용
+          if(vmx > vlim){
+            if(!still_warned){ still_warned = true;
+              std::printf("[deploy] ⛔ **아직 움직이고 있다** — ch%d %.0fdps > %.0f. 무장 거부.\n"
+                          "         로봇이 정지한 뒤에 누를 것(주저앉는 중이면 크레인으로 받칠 것).\n"
+                          "         지금 무장하면 속도트립(%.0fdps)에 즉시 걸린다.\n",
+                          vch, vmx, vlim, cfg.vel_trip_dps); }
+            nm = "off";
+          } else still_warned = false;
+        }
         if(nm != mode){
           prev_mode = mode; mode = nm;
           hw->enable(mode=="off" ? 0 : 1);

@@ -58,6 +58,12 @@ class MjTerrainSdf : public ocs2::DistanceTransformInterface {
     return {p.z() - height(p.x(), p.y()), vector3_t(-dhdx, -dhdy, 1.0)};
   }
 
+  int nx() const { return nx_; }
+  int ny() const { return ny_; }
+  scalar_t x0() const { return x0_; }
+  scalar_t y0() const { return y0_; }
+  scalar_t cell() const { return cell_; }
+
  private:
   int nx_, ny_;
   scalar_t cell_, x0_ = 0, y0_ = 0;

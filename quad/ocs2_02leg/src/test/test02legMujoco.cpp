@@ -844,6 +844,19 @@ int main(int argc, char** argv) {
           mjv_initGeom(&scn.geoms[scn.ngeom++], mjGEOM_SPHERE, szs, poss, nullptr, yel);
         }
       }
+      // ★heightmap 시각화(HMAP=1): 컨트롤러가 mj_ray로 인지하는 지형격자. 높이→색(파랑낮음·초록중간·빨강높음).
+      if (getenv("HMAP") && terrainSdf) {
+        const int hnx = terrainSdf->nx(), hny = terrainSdf->ny(); const double hx0 = terrainSdf->x0(), hy0 = terrainSdf->y0(), hcl = terrainSdf->cell();
+        const int hstep = 3;
+        for (int iy = 0; iy < hny && scn.ngeom < scn.maxgeom; iy += hstep)
+          for (int ix = 0; ix < hnx && scn.ngeom < scn.maxgeom; ix += hstep) {
+            double hx = hx0 + ix * hcl, hy = hy0 + iy * hcl, hh = terrainSdf->height(hx, hy);
+            double tt = std::max(0.0, std::min(1.0, hh / 0.3));
+            float hcol[4] = {(float)tt, (float)(1.0 - std::fabs(tt - 0.5) * 2.0), (float)(1.0 - tt), 0.5f};
+            mjtNum szc[3] = {hcl * hstep * 0.45, hcl * hstep * 0.45, 0.003}, posc[3] = {hx, hy, hh + 0.003};
+            mjv_initGeom(&scn.geoms[scn.ngeom++], mjGEOM_BOX, szc, posc, nullptr, hcol);
+          }
+      }
       // ★push 외란 시각화: 활성 push(xfrc≠0) 시 base에 힘 방향 빨간 화살표(민다는 걸 명확히)
       double fx = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 0] : 0, fy = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 1] : 0,
              fz = baseBody >= 0 ? d->xfrc_applied[6 * baseBody + 2] : 0;

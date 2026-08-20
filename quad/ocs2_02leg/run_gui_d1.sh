@@ -19,13 +19,13 @@ esac
 # ★KP_F/KD_F=swing 발끝 추종게인 상향(기본350→700, ~10-15% 조임·falls0). 잔여오차=전방swing 지연(속도의존, 게인한계).
 PERCENV=""; [ "$PERC" = 1 ] && PERCENV="PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1 SMOOTH_W=0.25"
 GAIT="${2:-trot}"
-pkill -TERM -f teleop_gui_17dof.py 2>/dev/null || true
+pkill -TERM -f teleop_gui_d1.py 2>/dev/null || true
 pkill -TERM -f test02legMujoco   2>/dev/null || true
 sleep 0.5
 # GUI 백그라운드(proxddp python=dearpygui). QUAD_CMD=D1이 읽는 채널과 동일.
-setsid bash -c "cd '$HERE'; DISPLAY='${DISPLAY:-:0}' QUAD_CMD='$CMD' '$PXI' teleop_gui_17dof.py > /tmp/teleop_gui_d1.log 2>&1" </dev/null &
+setsid bash -c "cd '$HERE'; DISPLAY='${DISPLAY:-:0}' QUAD_CMD='$CMD' '$PXI' teleop_gui_d1.py > /tmp/teleop_gui_d1.log 2>&1" </dev/null &
 sleep 1.2
-pgrep -f teleop_gui_17dof.py >/dev/null && echo "GUI RUNNING" || { echo "GUI DEAD — 로그:"; tail -6 /tmp/teleop_gui_d1.log; }
+pgrep -f teleop_gui_d1.py >/dev/null && echo "GUI RUNNING" || { echo "GUI DEAD — 로그:"; tail -6 /tmp/teleop_gui_d1.log; }
 # D1 뷰어 포그라운드
 source /opt/ros/humble/setup.bash 2>/dev/null || true
 source "$HERE/ocs2_ws/install/setup.bash" 2>/dev/null || true

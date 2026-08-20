@@ -252,6 +252,14 @@ int main(int argc, char** argv){
   //   ⇒ home 으로 먼저 그 자세까지 S-curve 로 간 뒤 hold→접지→stand 순서로 간다.
   std::vector<float> home_from(NCH,0.f), home_to(NCH,0.f);
   double home_t0=0, home_T=0; bool home_done=false;
+  bool ground_refused=false;      // ★접지 가드 거부 래치(로그 폭주 방지)
+  // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
+  //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
+  //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
+  //   ±10% 미검증이고 마찰도 있다.
+  //   ⇒ 위치게인을 내리면서 WBIC 토크를 올린다. MIT 모드는 둘을 동시에 받으므로
+  //     블렌드 중에는 위치제어가 받쳐 주고, 끝나면 순수토크가 된다.
+  double stand_t0=0, stand_T=0; std::vector<float> stand_hold(NCH,0.f);
   std::string mode = "off", prev_mode = "off", last_raw;
   bool estop = false, wd_tripped = false;
   double tau_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
@@ -300,10 +308,35 @@ int main(int argc, char** argv){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
           else nm = "off";
         }
+        if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
         if(nm != mode){
           prev_mode = mode; mode = nm;
           hw->enable(mode=="off" ? 0 : 1);
-          if(mode=="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
+          if(mode=="hold"){
+            std::vector<float> raw = hs.q_deg;             // 클램프 전
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            // ★hold 진입은 "측정각을 그대로 목표로" 라 **오차 0 이어야** 한다.
+            //   그런데 실기에서 진입 즉시 ch2(204dps)·ch3(224dps) 속도트립이 났다.
+            //   원인 후보가 둘이라 찍어서 가른다:
+            //     (a) clamp_ch_via_joint 의 ch→관절→ch 왕복이 값을 바꾼다(발목은 커플링이라
+            //         calf 에 의존한다 — 왕복이 항등이 아닐 수 있다)
+            //     (b) 왕복은 항등인데 **게인 인계 점프**다(Emb kd 5.0 → 우리 3.5/2.0).
+            //   Δ 가 0 이면 (b), 0 이 아니면 (a) 다. 한 번만 찍는다.
+            std::string dmsg; double dmx=0; int dch=-1;
+            for(int i=0;i<NCH;i++){
+              double dd = (double)hold_ch[i]-(double)raw[i];
+              if(std::fabs(dd)>std::fabs(dmx)){ dmx=dd; dch=i; }
+              char b[48]; std::snprintf(b,sizeof b," ch%d %+.3f", i, dd); dmsg += b;
+            }
+            std::printf("[deploy] hold 래치 — 클램프 Δ(목표−측정):%s\n", dmsg.c_str());
+            if(std::fabs(dmx)>0.05)
+              std::printf("[deploy] ⚠클램프가 ch%d 를 %+.3f° 옮겼다 — 그만큼 **계단 명령**이 된다.\n", dch, dmx);
+            else
+              std::printf("[deploy] ✓클램프 영향 없음(최대 %+.3f°) — 움직이면 **게인 인계 점프**다.\n", dmx);
+            std::printf("[deploy]   인계 게인 kp/kd = hip %.0f/%.1f · thigh %.0f/%.1f · calf %.0f/%.1f · foot %.0f/%.1f\n",
+                        cfg.joints[0].kp,cfg.joints[0].kd, cfg.joints[1].kp,cfg.joints[1].kd,
+                        cfg.joints[2].kp,cfg.joints[2].kd, cfg.joints[3].kp,cfg.joints[3].kd);
+          }
           if(mode=="home"){
             home_from = hs.q_deg;
             std::vector<double> qt(NJ);
@@ -324,7 +357,55 @@ int main(int argc, char** argv){
                         c.cmode==1?"2점 평발 stand":"1점 점발 home",
                         mx, home_T, 1.5*mx/home_T, cfg.vel_trip_dps);
           }
+          // ★★접지 확인 없이 stand 를 못 켜게 막는다 (2026-08-20 실기).
+          //   매달린 채 stand 를 누르면 WBIC 가 요구하는 지면반력을 지면이 못 내줘
+          //   QP 가 매 틱 실패하고(시뮬 실측 95%) 중력보상 폴백으로 떨어진다.
+          //   실기에선 그 직전에 다리가 흔들려 속도트립이 난다(ch7 207dps).
+          //   ⚠겉보기엔 "그냥 안 되는" 것처럼 보여 원인을 찾기 어렵다 — 그래서 막는다.
+          //
+          //   판별: **모델이 예측한 '매달림' 중력토크와 실측 토크를 비교**한다.
+          //     매달림이면 다리 자중만 걸리므로 둘이 비슷하다.
+          //     접지면 몸무게가 다리를 통해 내려와 실측이 훨씬 커진다.
+          //   힘센서가 없어도 되고, 임계를 사람이 정하지 않아도 된다.
+          // ★거부는 **래치**한다. 명령파일이 계속 stand 면 50Hz 로 재시도하며 로그가
+          //   폭주한다(같은 함정이 hold↔stand 재전이에도 있었다 — 그때 남긴 주석 참조).
+          //   래치는 운전자가 stand/walk 가 아닌 모드를 한 번 보내면 풀린다.
+          if((mode=="stand" || mode=="walk") && prev_mode!="stand" && prev_mode!="walk"
+             && !ground_refused){
+            for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+            d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+            d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+            for(int i=0;i<6;i++) d->qvel[i]=0.0;
+            mj_forward(m,d);
+            std::vector<double> tau_meas(NJ,0.0);
+            jm.ch_to_tau_joint(hs.tau_nm.data(), tau_meas.data());
+            double hang=0, meas=0;
+            for(int j=0;j<NJ;j++){
+              hang += std::fabs(d->qfrc_bias[6+j]);
+              meas += std::fabs(tau_meas[j]);
+            }
+            const double ratio = (hang>1e-6) ? meas/hang : 0.0;
+            // ★기준 1.25 — 1.5 는 **너무 높았다**(2026-08-20 정정). 모델로 재보니
+            //   매달림 16.21 Nm · 체중전부 25.72 Nm 라 비가 **1.00~1.59** 밖에 안 움직인다.
+            //   1.5 를 요구하면 체중의 **95%** 를 넘겨야 통과 = 크레인을 거의 다 내린 상태인데,
+            //   hold 는 그 하중을 못 버티고 주저앉는다(kp 100/50/80/30 은 체중용이 아니다).
+            //   ⇒ 1.25 ≈ 체중의 **42%**. "확실히 닿았다" 는 알 수 있고 hold 도 버틴다.
+            const double need = getenv("GROUND_RATIO") ? atof(getenv("GROUND_RATIO")) : 1.25;
+            std::printf("[deploy] 접지 확인 — 실측 |τ|합 %.2f Nm vs 매달림 예측 %.2f Nm · 비 %.2f (기준 %.2f)\n",
+                        meas, hang, ratio, need);
+            if(ratio < need){
+              std::printf("[deploy] ⛔ **접지가 안 됐다** — stand 거부, hold 유지.\n"
+                          "         크레인을 내려 발바닥을 붙이고 하중을 로봇에 넘긴 뒤 다시 누를 것.\n"
+                          "         (강제로 진행하려면 GROUND_RATIO=0 — 매달림 stand 는 위험하다)\n");
+              nm = "hold"; mode = "hold"; ground_refused = true;
+            }
+          }
           if(mode=="stand" || mode=="walk"){
+            stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
+            stand_T = getenv("STAND_BLEND_S") ? atof(getenv("STAND_BLEND_S")) : 1.0;
+            stand_t0 = lt;
+            std::printf("[deploy] stand 진입 — 위치제어→토크 **%.1fs 블렌드**"
+                        "(계단 전환은 주저앉는다)\n", stand_T);
             c.reset(); c.com_ref_z = body_h;
             est.reset(Eigen::Vector3d(0,0,d->qpos[2]));
             // ★in-flight 토크도 같이 지운다. 안 지우면 직전 세션의 마지막 토크로
@@ -490,7 +571,18 @@ int main(int argc, char** argv){
       jm.dq_ctrl_to_ch(dq_ctrl.data(), dq_ch.data());
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
       // ★순수 토크: kp=kd=0. 드라이버가 tau_ff 만 실행한다.
-      hw->write_mit(q_ch.data(), dq_ch.data(), tau_ch.data(), zero.data(), zero.data(), NCH);
+      // ★블렌드: s=0 → 위치제어(hold 자세) · s=1 → 순수토크(WBIC)
+      double sb = (stand_T>0) ? (lt-stand_t0)/stand_T : 1.0;
+      sb = std::max(0.0, std::min(1.0, sb));
+      const double bs = sb*sb*(3.0-2.0*sb);            // smoothstep
+      if(bs < 1.0){
+        jm.kp_ch(kp_ch.data(), 1.0-bs); jm.kd_ch(kd_ch.data(), 1.0-bs);
+        for(int i=0;i<NCH;i++) tau_ch[i] = (float)(bs*(double)tau_ch[i]);
+        hw->write_mit(stand_hold.data(), zero.data(), tau_ch.data(),
+                      kp_ch.data(), kd_ch.data(), NCH);
+      } else {
+        hw->write_mit(q_ch.data(), dq_ch.data(), tau_ch.data(), zero.data(), zero.data(), NCH);
+      }
     }
 
     // ⑥ 상태 발행(~20Hz)

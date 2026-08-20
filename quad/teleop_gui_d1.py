@@ -120,6 +120,12 @@ def _key(sender, app_data):              # 키보드 백업: 화살표=이동, ,
 
 
 dpg.create_context()
+# 한글 폰트(없으면 ??로 표기) — A GUI와 동일
+_FONT = os.environ.get('GUI_FONT', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc')
+_kf = None
+if os.path.exists(_FONT):
+    with dpg.font_registry():
+        _kf = dpg.add_font(_FONT, 18)
 with dpg.theme() as _dark:
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (24, 26, 34))
@@ -180,6 +186,8 @@ with dpg.handler_registry():
 _status()
 dpg.create_viewport(title='D1 Teleop (OCS2 NMPC+WBC)', width=480, height=560)
 dpg.setup_dearpygui()
+if _kf is not None:
+    dpg.bind_font(_kf)
 dpg.bind_theme(_dark)
 dpg.show_viewport()
 dpg.set_primary_window('main', True)

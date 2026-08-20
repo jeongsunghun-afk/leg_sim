@@ -429,7 +429,33 @@ int main(int argc, char** argv){
             stand_t0 = lt;
             std::printf("[deploy] stand 진입 — 위치제어→토크 **%.1fs 블렌드**"
                         "(계단 전환은 주저앉는다)\n", stand_T);
-            c.reset(); c.com_ref_z = body_h;
+            // ★★c.reset() 전에 **측정 자세를 모델에 주입**한다 (2026-08-20 실기).
+            //   reset() 은 d->qpos 를 읽어 com_ref_xy · nominal_off · com_ref_z 를 잡는다.
+            //   그런데 hold/home 분기는 d 에 아무것도 주입하지 않는다 — 그래서 그때까지
+            //   d->qpos 는 **모델 기본자세**다. 그 상태로 reset 하면 WBIC 의 CoM 목표가
+            //   실제 로봇과 몇 cm 어긋나고, 무장 순간 그 오차를 지우려 다리가 튄다
+            //   (실기: 블렌드 중 ch2 204dps 트립. 실측 자세는 목표와 hip 7° · foot 12° 달랐다).
+            for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+            d->qpos[0]=d->qpos[1]=0.0; d->qpos[2]=0.5;
+            for(int a=0;a<4;a++) d->qpos[3+a]=quat[a];
+            for(int i=0;i<6;i++) d->qvel[i]=0.0;
+            mj_forward(m,d);
+            c.reset();
+            // ★2점 stand 는 **지금 높이를 유지**한다 — body_h(GUI 슬라이더)로 덮지 않는다.
+            //   reset() 이 현재 CoM 높이를 잡아주는데 그걸 0.38/0.5 로 덮으면 무장 즉시
+            //   수 cm 를 올리거나 내리려 든다(kp_z=200). 서 있는 걸 유지하는 게 목적이지
+            //   높이를 바꾸는 게 아니다. 높이를 바꾸려면 STAND_H 로 명시할 것.
+            if(c.cmode!=1) c.com_ref_z = body_h;
+            else if(getenv("STAND_H")) c.com_ref_z = atof(getenv("STAND_H"));
+            // ★밑창중심과 얼마나 어긋나 있는지 같이 찍는다. reset() 은 **지금 CoM 을 목표로**
+            //   잡으므로(=움직이지 않음) 안전하지만, 그 지점이 지지면 밖이면 stand 해도 넘어진다.
+            //   여유는 밑창 반길이 7.3cm 다 — 이 숫자가 그보다 크면 stand 를 걸면 안 된다.
+            { Eigen::Vector3d fc = 0.5*(c.foot_center(0)+c.foot_center(1));
+              const double ex = c.com_ref_xy[0]-fc[0], ey = c.com_ref_xy[1]-fc[1];
+              std::printf("[deploy] stand 기준 — CoM 목표 xy(%.3f, %.3f) z %.3f (측정자세 = 지금 자세 유지)\n"
+                          "[deploy]   밑창중심 대비 전후 %+.1f cm · 좌우 %+.1f cm  %s\n",
+                          c.com_ref_xy[0], c.com_ref_xy[1], c.com_ref_z, ex*100, ey*100,
+                          std::fabs(ex)<0.05 ? "✓지지면 안" : "⚠지지면 여유가 적다(반길이 7.3cm)"); }
             est.reset(Eigen::Vector3d(0,0,d->qpos[2]));
             // ★in-flight 토크도 같이 지운다. 안 지우면 직전 세션의 마지막 토크로
             //   첫 틱을 예측한다 — 무장 순간이 가장 위험한 자리다.

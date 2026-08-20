@@ -792,14 +792,22 @@ int main(int argc, char** argv){
       double sb = (stand_T>0) ? (lt-stand_t0)/stand_T : 1.0;
       sb = std::max(0.0, std::min(1.0, sb));
       const double bs = sb*sb*(3.0-2.0*sb);            // smoothstep
-      if(bs < 1.0){
-        jm.kp_ch(kp_ch.data(), 1.0-bs); jm.kd_ch(kd_ch.data(), 1.0-bs);
-        for(int i=0;i<NCH;i++) tau_ch[i] = (float)(bs*(double)tau_ch[i]);
-        hw->write_mit(stand_hold.data(), zero.data(), tau_ch.data(),
-                      kp_ch.data(), kd_ch.data(), NCH);
-      } else {
-        hw->write_mit(q_ch.data(), dq_ch.data(), tau_ch.data(), zero.data(), zero.data(), NCH);
-      }
+      // ★★**감쇠는 남긴다** (2026-08-20 실기). kp 는 0 으로 보내되 kd 는 유지한다.
+      //   블렌드 끝(순수 kp=kd=0 토크)이 이 로봇에선 **불안정**했다 — 세 설정 모두에서
+      //   위치게인이 빠지는 후반에 발산했다:
+      //       지연ON·마찰ON  30.5Hz τmax 7.43 · 지연OFF 48.8Hz 16.12 · 마찰OFF 31.3Hz 13.21
+      //       |dq| 6→12→19→44→196→322 dps (게인이 35% 아래로 내려간 뒤 폭발)
+      //   8.4ms 지연은 30~65Hz 에서 위상지연 90~150° 라 순수 토크 피드백으로는 못 잡는다.
+      //   ⚠kp 를 남기면 WBIC 와 싸운다(정지한 hold 자세로 되당긴다). kd 는 **속도만**
+      //     억제하므로 목표와 싸우지 않고 그 대역만 먹는다. 그래서 kd 만 남긴다.
+      //   calf 기준 kd_ch 3.5 = 관절 7.9 Nm·s/rad — 물리 감쇠(0)보다 압도적이다.
+      //   STAND_KD_FLOOR 로 조절(0=종전 순수토크 · 1=설정 kd 전량).
+      const double kdf = getenv("STAND_KD_FLOOR") ? atof(getenv("STAND_KD_FLOOR")) : 1.0;
+      const double kd_scale = (1.0-bs) + bs*kdf;      // 블렌드 끝에서 kdf 로 수렴
+      jm.kp_ch(kp_ch.data(), 1.0-bs); jm.kd_ch(kd_ch.data(), kd_scale);
+      for(int i=0;i<NCH;i++) tau_ch[i] = (float)(bs*(double)tau_ch[i]);
+      hw->write_mit((bs<1.0? stand_hold.data() : q_ch.data()), zero.data(), tau_ch.data(),
+                    kp_ch.data(), kd_ch.data(), NCH);
     }
 
     // ⑥ 상태 발행(~20Hz)

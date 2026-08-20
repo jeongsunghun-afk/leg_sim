@@ -430,6 +430,7 @@ int main(int argc, char** argv) {
   const auto tWall0 = std::chrono::steady_clock::now();
   int falls = 0; double t = 0;
   double swingErrPk = 0;   // ★스윙 추종오차 피크(SWING_DBG)
+  double tdErrMax = 0, tdErrSum = 0; int tdErrN = 0;   // ★착지오차(TD_DBG): 실제 발 vs 커밋 발판
   double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     if (cmdfile && step % 20 == 0) {            // ★GUI: 50Hz로 명령 갱신(v/vy/w)
@@ -518,11 +519,20 @@ int main(int argc, char** argv) {
           //   발이 그 발판으로 가서 머무름 — 발판을 발끝에 맞춰 재생성하지 않음(계획이 실제를 끌어야지 반대 아님).
           const bool planted = (stanceEnd_i > t);
           if (!planted && !footLocked[i]) {                          // liftoff: 착지목표 1회 계산·커밋
-            const double dtm = 0.5 * H;                              // liftoff 시점 base+속도 리드타임(Raibert 예측)
+            // ★리드=실제 착지시각(스케줄의 다음 swing→stance 전환)까지. 0.5·H 고정은 과예측(마커 70mm 앞섬)→착지점 정합.
+            double dtm = 0.5 * H;                                     // fallback(전환 못 찾으면)
+            for (int ip = 1; ip < nP; ++ip)
+              if (ip - 1 < (int)ev.size() && ev[ip - 1] > t && modeNumber2StanceLeg(seq[ip])[i] && !modeNumber2StanceLeg(seq[ip - 1])[i]) { dtm = ev[ip - 1] - t; break; }
+            dtm = std::max(0.02, dtm);
             double rx = cy * footOff[i][0] - sy * footOff[i][1], ry = sy * footOff[i][0] + cy * footOff[i][1];
             footSeed[i][0] = d->qpos[0] + baseVx * dtm + rx; footSeed[i][1] = d->qpos[1] + baseVy * dtm + ry;
             footLocked[i] = true;
-          } else if (planted) footLocked[i] = false;                 // 착지 → 다음 liftoff 재커밋 준비(footSeed는 유지)
+          } else if (planted) {                                   // 착지 → 다음 liftoff 재커밋 준비(footSeed는 유지)
+            if (footLocked[i] && getenv("TD_DBG")) {                    // ★방금 착지: 실제 발 vs 커밋 발판 gap
+              double dx = d->geom_xpos[3 * footGeom[i] + 0] - footSeed[i][0], dy = d->geom_xpos[3 * footGeom[i] + 1] - footSeed[i][1];
+              double e = std::hypot(dx, dy); tdErrSum += e; ++tdErrN; if (e > tdErrMax) tdErrMax = e; }
+            footLocked[i] = false;
+          }
           const double seedX = footSeed[i][0], seedY = footSeed[i][1];  // 커밋된 발판(고정)
           region->updateFoot(i, seedX, seedY, stanceEnd_i);
           vizSeed[i][0] = seedX; vizSeed[i][1] = seedY;                    // ★발배치 시각화(seed=발판 목표)
@@ -874,6 +884,7 @@ int main(int argc, char** argv) {
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
   if (getenv("SWING_DBG")) std::cerr << "  스윙 추종오차 피크 : " << swingErrPk * 1000 << " mm\n";
   if (getenv("SNAP_DBG") && region) std::cerr << "  SDF 발판스냅 : " << region->snapCount_ << "회, 최대이동 " << region->snapDistMax_ * 1000 << " mm\n";
+  if (getenv("TD_DBG")) std::cerr << "  착지오차(실제발-발판) : 평균 " << (tdErrN ? tdErrSum / tdErrN * 1000 : 0) << " mm · 최대 " << tdErrMax * 1000 << " mm (" << tdErrN << "착지)\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
   if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";
   if (view) { mjv_freeScene(&scn); mjr_freeContext(&con); glfwTerminate(); }

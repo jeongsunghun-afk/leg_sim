@@ -128,6 +128,19 @@ int main(int argc, char** argv){
               mjcf.c_str(), (int)m->nq, (int)m->nv, (int)m->nu, c.cmode,   // ★mjtSize=long → %d 경고
               c.cmode==1 ? "2점 평발(정적 자세유지)" : "1점 점발(stepping 보행)");
 
+  // ★마찰 전방보상 상태를 **반드시 찍는다**. 켜져 있어도 꺼져 있어도 겉보기 동작이
+  //   같아서, 지연보상 때 "설정하면 켜진다" 고 9일간 오해했던 것과 같은 함정이다.
+  //   2점 평발에서만 켜진다 — 이 값이 20.73s 낙상을 60s 무낙상(tilt 0.1°)으로 바꿨다.
+  { const double fc = getenv("FRIC_COMP") ? atof(getenv("FRIC_COMP")) : 1.0;
+    const double fv = getenv("FRIC_V0")   ? atof(getenv("FRIC_V0"))   : 0.20;
+    const bool all  = getenv("FRIC_ALL_MODES") && atoi(getenv("FRIC_ALL_MODES"));
+    if(fc>0 && (c.cmode==1 || all))
+      std::printf("[deploy] 마찰보상 **ON** — ×%.2f · v0=%.2f rad/s (JFRIC 0.827/0.604/0.871/0.639)\n", fc, fv);
+    else if(fc>0)
+      std::printf("[deploy] 마찰보상 OFF — 1점 보행 모드다(2점 평발에서만 켠다)\n");
+    else
+      std::printf("[deploy] ⚠마찰보상 **OFF**(FRIC_COMP=0) — 2점 stand 는 ~20s 에 넘어진다\n"); }
+
   BipedEstimator est;
   { std::vector<int> fg={c.sph[0],c.sph[1]};
     std::vector<double> fr={m->geom_size[c.sph[0]*3], m->geom_size[c.sph[1]*3]};

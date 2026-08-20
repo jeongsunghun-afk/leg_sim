@@ -222,6 +222,17 @@ struct BipedControl {
     if(getenv("FLAT_CONTACT_ALL")) flat_contact_all=atoi(getenv("FLAT_CONTACT_ALL"));
     if(getenv("FRIC_ALL_MODES"))   FRIC_ALL_MODES  =atoi(getenv("FRIC_ALL_MODES"));
     if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
+    // ★★2026-08-20 **좌우 발목 비대칭 주입**(진단 전용, 단위 = 도).
+    //   실기 2점 stand 에서 두 밑창이 **반대로** 기울었다: HL −63.25 · HR −55.42
+    //   (목표 −59.81). `Qflat8` 은 좌우 **완전 대칭**이라 시뮬에는 이 비대칭이 아예 없다
+    //   — 그래서 sim 이 계속 green 인데 실기만 기운다. 실측값을 그대로 넣어
+    //   **그 비대칭 하나만으로 기우는지**를 가른다. 기울면 원인이 기하로 좁혀지고,
+    //   안 기울면 HR 구동 쪽(샤프트 컴플라이언스)이 남는다.
+    //   ⚠운전자 관찰("HR 이 더 굽었다")이 위 기록과 **부호가 반대**다. 어느 쪽이
+    //     맞는지 아직 미확정이므로 두 경우를 다 돌려볼 수 있게 좌우를 따로 받는다.
+    //   ⚠진단용이다 — 지정하지 않으면 종전(대칭) 그대로다.
+    if(const char* e=getenv("QFLAT_FOOT_L")) Qflat8[3]=atof(e)*M_PI/180.0;
+    if(const char* e=getenv("QFLAT_FOOT_R")) Qflat8[7]=atof(e)*M_PI/180.0;
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
     lam.setZero(); setup_gearbox();
   }

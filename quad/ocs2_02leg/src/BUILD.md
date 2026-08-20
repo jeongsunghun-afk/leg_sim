@@ -9,6 +9,12 @@ OCS2 워크스페이스(`quad/ocs2_ws/`)는 크기 때문에 **gitignore**됨. �
 
 배치: 위 3개를 `ocs2_ws/src/ocs2/ocs2_robotic_examples/ocs2_legged_robot/test/`에 복사.
 
+## D1 배포 골격 (`../deploy/`)
+- `d1_controller.hpp`(제어 코어=test02legMujoco 추출·MuJoCo 비의존)·`terrain_provider.hpp`·`mujoco_backend.hpp`(MuJoCo-as-model HAL)·`d1_deploy.cpp`(메인)·`run_deploy.sh`.
+- 배치: `deploy/*`를 `ocs2_ws/.../ocs2_legged_robot/deploy/`에 복사. CMakeLists(patch)에 `d1_deploy` 타겟 포함.
+  include: `test`(wbc_legged 등)·`deploy`·`quad_ctrl`(qc::State). 링크=test02legMujoco와 동일(GLFW 제외).
+- 실행: `bash deploy/run_deploy.sh slope` → HAL 경계 뒤 OCS2로 경사 등반(검증: falls=0).
+
 ## OCS2 소스 수정 (2곳)
 
 ### 1) `ocs2_legged_robot/src/common/ModelSettings.cpp` — jointNames/contactNames를 task.info서 로드

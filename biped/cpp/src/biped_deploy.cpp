@@ -23,6 +23,10 @@
 #include <ctime>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <cerrno>
+#include <sched.h>
+#include <sys/mman.h>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -102,6 +106,26 @@ int main(int argc, char** argv){
     std::printf("✗ --start-mode 는 off 또는 hold 다 (받은 값: %s)\n", start_mode.c_str()); return 2; }
   if(const char* e=getenv("QUAD_CMD"))   cmd_p = e;
   if(const char* e=getenv("QUAD_STATE")) stt_p = e;
+
+  // ★★실시간 우선순위 (2026-08-20). 500Hz 루프가 일반 우선순위로 돌면 밀린다 —
+  //   실측: 28~51ms 스톨(20~25틱 유실). 이 Pi 는 RobotEmbedded 가 1kHz 로 CPU 90% 를
+  //   쓰고 데스크톱(gnome-shell·Xwayland·모니터)까지 얹혀 있어 경합이 실재한다.
+  //   ⚠기본 사용자는 rtprio 한도가 0 이라 실패한다 — 그때는 경고만 하고 계속 돈다.
+  //     한 번만: sudo setcap cap_sys_nice+ep <바이너리>
+  //   ⚠SCHED_FIFO 는 이 스레드가 CPU 를 독점할 수 있다는 뜻이다. 500Hz 루프는
+  //     대부분 sleep 이라 안전하지만, 무한루프 버그가 나면 기기가 멎는다.
+  { const int rp = getenv("RT_PRIO") ? atoi(getenv("RT_PRIO")) : 80;
+    if(rp > 0){
+      struct sched_param sp; sp.sched_priority = rp;
+      if(sched_setscheduler(0, SCHED_FIFO, &sp) == 0){
+        std::printf("[deploy] 실시간 우선순위 **SCHED_FIFO %d** 적용\n", rp);
+        if(mlockall(MCL_CURRENT|MCL_FUTURE) != 0)
+          std::printf("[deploy] ⚠mlockall 실패 — 페이지폴트로 지터가 남을 수 있다\n");
+      } else {
+        std::printf("[deploy] ⚠실시간 우선순위 실패(%s) — **루프가 밀릴 수 있다**.\n"
+                    "         한 번만 실행: sudo setcap cap_sys_nice+ep %s\n"
+                    "         끄려면 RT_PRIO=0\n", std::strerror(errno), argv[0]);
+      } } }
 
   // ── 설정 ──
   EmbCfg cfg; std::string err;
@@ -268,7 +292,8 @@ int main(int argc, char** argv){
   //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
   //   무장 순간부터 0.5초를 **매 틱** CSV 로 남긴다. 트립이 나도 파일은 남는다.
   FILE* trc=nullptr; double trc_t0=0;
-  bool have_state=false; int ok_reads=0; double live_t0=0;   // ★센서 준비·생존 확인
+  bool have_state=false; int ok_reads=0; double live_t0=0;
+  std::string boot_mode="off"; bool mode_locked=false;   // ★기동 시 잔여명령 잠금   // ★센서 준비·생존 확인
   // ★★EtherCAT 동결 감지 (2026-08-20 실기). Emb 는 OP 를 잃어도 프로세스가 계속 돌고
   //   **마지막 버퍼를 재발행하며 갱신 플래그까지 1 로 세운다**(memory: emb-ethercat-freeze).
   //   그래서 health=ok · n_ok=8 · n_fault=0 인데 값만 얼어붙는다 — 침묵 실패다.
@@ -305,6 +330,10 @@ int main(int argc, char** argv){
   //   ⇒ 시작 시점의 내용을 **이미 본 것**으로 기록해 두고, 운전자가 버튼을 눌러
   //     내용이 **바뀌어야** 받는다. biped_emb.py 의 --start-mode off 와 같은 의도다.
   { Cmd c0; if(read_cmd(cmd_p, c0)){ last_raw = c0.raw;
+      // ⚠내용 비교만으로는 못 막는다 — GUI 가 seq 를 올리며 **주기적으로 재발행**하므로
+      //   같은 stand 도 매번 "새 명령" 이 된다(실측: 그대로 무장했다).
+      //   ⇒ **모드**를 잠근다. 운전자가 다른 모드를 한 번 고르기 전까지 무시한다.
+      boot_mode = c0.mode; mode_locked = (c0.mode != "off");
       if(c0.mode != "off")
         std::printf("[deploy] ⚠명령파일에 **%s** 가 남아 있다 — 무시하고 off 로 시작한다.\n"
                     "         GUI 에서 버튼을 다시 눌러야 반영된다(기동 즉시 무장 방지).\n",
@@ -417,6 +446,12 @@ int main(int argc, char** argv){
         if(estop){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
           else nm = "off";
+        }
+        // ★기동 시 남아 있던 모드는 **다른 모드를 한 번 고를 때까지** 무시한다.
+        if(mode_locked){
+          if(nm == boot_mode) nm = "off";
+          else { mode_locked = false;
+                 std::printf("[deploy] 명령 잠금 해제 — %s 수신\n", nm.c_str()); }
         }
         if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
         // ★★**움직이는 중에는 무장하지 않는다** (2026-08-20 실기).

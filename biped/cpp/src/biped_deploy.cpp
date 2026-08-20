@@ -808,6 +808,10 @@ int main(int argc, char** argv){
     if(lt - last_pub > 0.05){
       last_pub = lt;
       int n_ok=0, n_fault=0, n_dead=0, n_absent=0;
+      // ★ucStatus(=ERROR VECTOR 하위 8비트)를 **원값 그대로** 낸다 (2026-08-20).
+      //   종전엔 "fault" 라는 라벨만 나가서, 무엇 때문에 걸렸는지 알 수 없었다.
+      //   과전류·과온·엔코더·통신 중 뭔지 알아야 조치가 갈린다.
+      std::string errs="[";
       std::string health="[", inst="[", qs="[", qchs="[";
       // ★2026-08-13 `q_leg_deg` 에 **채널각**을 넣고 있었다(모델각 계약 위반).
       //   emb/interface/state_pub.py 규약: q_leg_deg = **모델각**(MJCF qpos 와 같은 좌표계).
@@ -825,6 +829,8 @@ int main(int argc, char** argv){
                       : (ch<(int)hs.status.size() && hs.status[ch]!=0) ? "fault" : "ok";
         if(!ins) n_absent++; else if(!std::strcmp(h,"ok")) n_ok++;
         else if(!std::strcmp(h,"fault")) n_fault++; else n_dead++;
+        { char b[16]; std::snprintf(b,sizeof b,"%s%d", i?",":"",
+            ch<(int)hs.status.size()? hs.status[ch] : -1); errs += b; }
         char b[64];
         std::snprintf(b,sizeof b,"%s\"%s\"", i?",":"", h); health += b;
         std::snprintf(b,sizeof b,"%s%s", i?",":"", ins?"true":"false"); inst += b;
@@ -866,7 +872,7 @@ int main(int argc, char** argv){
         "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f],"
         // ★home 진행률(0~1) — GUI 가 이미 표시할 준비가 돼 있다(teleop_gui_biped:526).
         //   10초짜리 램프라 운전자가 "지금 얼마나 갔나" 를 볼 수 있어야 한다.
-        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f}",
+        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
         rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
@@ -876,7 +882,8 @@ int main(int argc, char** argv){
         imu_dead?"false":"true",
         c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
-        (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0);
+        (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
+        (errs+"]").c_str());
       write_state(stt_p, buf);
     }
 

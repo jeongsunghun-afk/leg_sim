@@ -279,6 +279,16 @@ int main(int argc, char** argv){
   // ── 상태 ──
   std::vector<float> q_ch(NCH), dq_ch(NCH), tau_ch(NCH), kp_ch(NCH), kd_ch(NCH), zero(NCH,0.f);
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
+  // ★토크 통계 누적기 — 루프율로 쌓고 발행마다 비운다(위 ① 주석 참조).
+  std::vector<double> ts_sum(jm.n_leg,0.0), ts_sq(jm.n_leg,0.0),
+                      ts_min(jm.n_leg, 1e300), ts_max(jm.n_leg,-1e300);
+  long ts_n = 0;
+  auto ts_reset = [&]{
+    std::fill(ts_sum.begin(),ts_sum.end(),0.0); std::fill(ts_sq.begin(),ts_sq.end(),0.0);
+    std::fill(ts_min.begin(),ts_min.end(), 1e300);
+    std::fill(ts_max.begin(),ts_max.end(),-1e300);
+    ts_n=0;
+  };
   std::vector<float> hold_ch(NCH, 0.f);
   HwState hs;
   // ★home 램프 상태 (2026-08-20 신설). stand 자세로 **속도제한을 걸어** 이동한다.
@@ -349,6 +359,25 @@ int main(int argc, char** argv){
     hw->read(hs);
     jm.ch_to_q_ctrl(hs.q_deg.data(),  q_ctrl.data());
     jm.ch_to_dq_ctrl(hs.dq_dps.data(), dq_ctrl.data());
+    // ★★2026-08-20 **토크 통계는 루프율(500Hz)에서 낸다** — 발행(20Hz)에서 내면 안 된다.
+    //   상태는 20Hz 로 나가므로 나이퀴스트가 10Hz 다. 그런데 이 로봇이 발산한 대역은
+    //   **30~65Hz** 였다(a117c44: |dq| 196→322 dps). 모니터가 받은 표본으로 표준편차를
+    //   계산하면 그 대역이 통째로 접혀 **리플을 과소평가**한다 — 정작 봐야 할 것을 못 본다.
+    //   ⇒ 여기서 창(발행주기)마다 누적하고 std·min·max 를 실어 보낸다. 러닝 합이라
+    //     비용은 무시할 수준이고, 모니터는 그리기만 하면 된다.
+    //   ★min/max 를 같이 내는 이유: 이번 발산은 **첨두** 현상이라 평균·표준편차로는
+    //     안 잡힌다. 창 안의 극값이 남아야 한다.
+    {
+      std::vector<double> tnow(jm.n_leg);
+      jm.ch_to_tau_joint(hs.tau_nm.data(), tnow.data());
+      for(int i=0;i<jm.n_leg;i++){
+        const double v = tnow[i];
+        ts_sum[i]+=v; ts_sq[i]+=v*v;
+        if(v<ts_min[i]) ts_min[i]=v;
+        if(v>ts_max[i]) ts_max[i]=v;
+      }
+      ts_n++;
+    }
     const double D2R = JointMap::D2R;
     double rpy[3] = { hs.rpy[0]*(cfg.imu_deg?D2R:1.0),
                       hs.rpy[1]*(cfg.imu_deg?D2R:1.0),
@@ -863,10 +892,26 @@ int main(int argc, char** argv){
         std::snprintf(b,sizeof b,"%s0.0",  sep);                          kds   += b;
       }
       dqs+="]"; taus+="]"; taucs+="]"; kps+="]"; kds+="]";
-      char buf[3072];   // ★1600 → 3072 (2026-08-13): 모니터링 배열 6개(q_ch·dq·tau·tau_cmd·kp·kd) 추가로 넘칠 수 있었다
+      // ★창 통계(500Hz 누적) → 발행. 창이 비면(첫 틱) 빈 배열 대신 0 을 낸다.
+      std::string tsd="[", tmn="[", tmx="[";
+      for(int i=0;i<jm.n_leg;i++){
+        char b[64]; const char* sep = i?",":"";
+        double mu = ts_n? ts_sum[i]/ts_n : 0.0;
+        double sd = ts_n? std::sqrt(std::max(0.0, ts_sq[i]/ts_n - mu*mu)) : 0.0;
+        std::snprintf(b,sizeof b,"%s%.3f", sep, sd); tsd += b;
+        std::snprintf(b,sizeof b,"%s%.3f", sep, ts_n? ts_min[i]:0.0); tmn += b;
+        std::snprintf(b,sizeof b,"%s%.3f", sep, ts_n? ts_max[i]:0.0); tmx += b;
+      }
+      tsd+="]"; tmn+="]"; tmx+="]";
+      const long ts_n_pub = ts_n;
+      ts_reset();                       // 창을 비운다 — 다음 발행까지 다시 쌓는다
+      char buf[4096];   // ★3072 → 4096 (2026-08-20): 토크 창통계 3배열(std·min·max) 추가
       std::snprintf(buf,sizeof buf,
         "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
         "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_leg\":%s,\"kd_leg\":%s,"
+        // ★창 통계 — **500Hz 로 계산**한 값이다(발행 20Hz 표본이 아니라). tau_win_n 은
+        //   그 창에 들어간 표본 수 = 통계의 신뢰도. 0 이면 통계를 읽지 말 것.
+        "\"tau_std_nm\":%s,\"tau_min_nm\":%s,\"tau_max_nm\":%s,\"tau_win_n\":%ld,"
         "\"rpy_deg\":[%.2f,%.2f,%.2f],\"tilt_deg\":%.2f,\"loop_hz\":%.1f,"
         "\"motors_on\":%s,\"health\":%s,\"installed\":%s,"
         "\"n_ok\":%d,\"n_fault\":%d,\"n_dead\":%d,\"n_absent\":%d,\"n_installed\":%d,"
@@ -882,7 +927,9 @@ int main(int argc, char** argv){
         //   10초짜리 램프라 운전자가 "지금 얼마나 갔나" 를 볼 수 있어야 한다.
         "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
+        /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
+        tsd.c_str(), tmn.c_str(), tmx.c_str(), ts_n_pub,
         rpy[0]*JointMap::R2D, rpy[1]*JointMap::R2D,
         rpy[2]*JointMap::R2D, tilt, hz_ema, (mode!="off"&&!wd)?"true":"false",
         health.c_str(), inst.c_str(), n_ok, n_fault, n_dead, n_absent,

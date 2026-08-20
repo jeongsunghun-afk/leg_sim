@@ -56,11 +56,22 @@ SIG = [("q",   "q_leg_deg",   "q_cmd_deg",   "deg",   "위치 [deg]",    4.0),
 #   ⚠빈 칸은 "그 시점에 그 값이 발행되지 않았다" 는 뜻이다(예: 순수 토크모드의 위치명령).
 #     0 으로 채우면 "명령이 0 이었다" 와 구분이 안 된다.
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+#   ★tau_std/min/max 는 제어기가 **루프율(500Hz)로** 계산해 실어 보내는 창 통계다
+#     (biped_deploy.cpp ①). 여기서 20Hz 표본으로 계산하면 나이퀴스트가 10Hz 라
+#     발산 대역(30~65Hz)이 통째로 접힌다 — 리플을 과소평가한다. 받아서 그리기만 한다.
 LOG_KEYS = ("q_leg_deg", "q_cmd_deg", "dq_leg_dps", "dq_cmd_dps",
-            "tau_leg_nm", "tau_cmd_nm", "kp_leg", "kd_leg", "stt_raw")
+            "tau_leg_nm", "tau_cmd_nm", "tau_std_nm", "tau_min_nm", "tau_max_nm",
+            "kp_leg", "kd_leg", "stt_raw")
 # ★stt = ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit. 래치오프 원인의 유일한 단서라
 #   그래프엔 안 그려도 **로그에는 반드시** 남긴다.
-LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c", "kp", "kd", "stt")
+LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c",
+              "tau_sd", "tau_lo", "tau_hi", "kp", "kd", "stt")
+
+# ★토크 밴드 — 측정선 둘레에 창 통계를 겹쳐 그린다.
+#   `tau_std_nm` 은 ±1σ 밴드, `tau_min_nm`/`tau_max_nm` 은 창 안의 **극값**이다.
+#   ⚠극값을 따로 그리는 이유: 2026-08-20 발산은 **첨두** 현상이었다(|dq| 196→322 dps).
+#     평균·표준편차만 보면 안 잡힌다 — 창 안에서 한 번 튄 것이 남아야 한다.
+BAND_KEYS = ("tau_std_nm", "tau_min_nm", "tau_max_nm")
 
 
 def log_header(names):
@@ -136,6 +147,8 @@ def main() -> int:
     ts: deque = deque(maxlen=maxlen)
     hist = {k: ([[deque(maxlen=maxlen) for _ in range(nj)],
                  [deque(maxlen=maxlen) for _ in range(nj)]]) for k, *_ in SIG}
+    # 토크 밴드 이력 — [키][축] (std·min·max). 이력도 전 축을 유지한다(hist 와 같은 이유).
+    band = {k: [deque(maxlen=maxlen) for _ in range(nj)] for k in BAND_KEYS}
     sel = [0]                      # 선택된 축 (리스트 = 콜백에서 쓰기 위함)
     t0 = [None]                    # 첫 표본 시각(파일 mtime 기준)
     last_mtime = [0.0]
@@ -214,6 +227,13 @@ def main() -> int:
                 dpg.add_plot_legend()
                 dpg.add_plot_axis(dpg.mvXAxis, label="t [s]", tag=f"x_{key}")
                 dpg.add_plot_axis(dpg.mvYAxis, label=unit, tag=f"y_{key}")
+                # ★밴드를 **먼저** 넣는다 — 나중에 넣으면 측정·명령선을 덮는다.
+                if key == "tau":
+                    dpg.add_shade_series([], [], y2=[], label="±1σ(500Hz)",
+                                         parent=f"y_{key}", tag="s_tau_band")
+                    dpg.add_line_series([], [], label="창 min/max",
+                                        parent=f"y_{key}", tag="s_tau_lo")
+                    dpg.add_line_series([], [], label="", parent=f"y_{key}", tag="s_tau_hi")
                 dpg.add_line_series([], [], label="측정", parent=f"y_{key}", tag=f"s_{key}_m")
                 dpg.add_line_series([], [], label="명령", parent=f"y_{key}", tag=f"s_{key}_c")
     if kf:
@@ -261,6 +281,10 @@ def main() -> int:
                             for k2 in range(nj):
                                 hist[key][0][k2].append(mv[k2])
                                 hist[key][1][k2].append(cv[k2])
+                        for bk in BAND_KEYS:            # 없으면 None → 렌더에서 건너뛴다
+                            bv = col(st, bk, nj)
+                            for k2 in range(nj):
+                                band[bk][k2].append(bv[k2])
                         # ★기록도 신선한 표본에서만 — 그리고 표본당 **한 행**이다.
                         if rec["w"] is not None:
                             if rec["t0"] is None:
@@ -291,6 +315,7 @@ def main() -> int:
             st = dict(st_cache)
             tl = list(ts)
             snap = {k: (list(hist[k][0][sel[0]]), list(hist[k][1][sel[0]])) for k, *_ in SIG}
+            bsnap = {k: list(band[k][sel[0]]) for k in BAND_KEYS}
             rec_n, rec_t0, rec_path, rec_on = rec["n"], rec["t0"], rec["path"], rec["f"] is not None
         age_ms = age_s[0]
         mt = last_mtime[0]
@@ -335,8 +360,24 @@ def main() -> int:
             # ★y축은 **0 을 항상 포함**하고 **최소폭**을 지킨다(SIG 의 마지막 값).
             #   fit_axis_data 만 쓰면 값이 0 근처일 때 축이 붕괴해 잡음이 산맥이 되고
             #   0 이 화면 밖으로 나가 음/양 감각이 사라진다.
+            # ★토크 밴드 — 제어기가 500Hz 로 낸 창 통계. 측정선 둘레의 ±1σ 와 창 극값.
+            #   제어기가 옛 판이라 필드가 없으면 전부 None 이므로 빈 곡선이 된다(무해).
+            if key == "tau":
+                sd, lo_b, hi_b = (bsnap["tau_std_nm"], bsnap["tau_min_nm"], bsnap["tau_max_nm"])
+                bx, b1, b2 = [], [], []
+                for x, m, s in zip(tl, snap["tau"][0], sd):
+                    if m is not None and s is not None:
+                        bx.append(x); b1.append(m - s); b2.append(m + s)
+                dpg.configure_item("s_tau_band", x=bx, y1=b1, y2=b2)
+                for tag, ys in (("s_tau_lo", lo_b), ("s_tau_hi", hi_b)):
+                    xy = [(x, y) for x, y in zip(tl, ys) if y is not None]
+                    dpg.set_value(tag, [[p[0] for p in xy], [p[1] for p in xy]])
+
             vs = [v for v in snap[key][0] if v is not None]
             vs += [v for v in snap[key][1] if v is not None]
+            if key == "tau":     # 밴드가 축 밖으로 잘리면 첨두를 못 본다 — 한계에 포함한다
+                vs += [v for v in bsnap["tau_min_nm"] if v is not None]
+                vs += [v for v in bsnap["tau_max_nm"] if v is not None]
             lo, hi = (min(vs), max(vs)) if vs else (0.0, 0.0)
             lo, hi = min(lo, 0.0), max(hi, 0.0)
             if hi - lo < floor:

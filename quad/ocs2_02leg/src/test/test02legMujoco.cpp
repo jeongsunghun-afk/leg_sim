@@ -36,6 +36,7 @@
 // ★D1 Phase 3a: perceptive(발-지형 클리어런스 SDF 제약)
 #include <ocs2_pinocchio_interface/PinocchioEndEffectorKinematicsCppAd.h>
 #include <ocs2_centroidal_model/CentroidalModelPinocchioMapping.h>
+#include <ocs2_core/misc/LinearInterpolation.h>
 #include <ocs2_core/soft_constraint/StateSoftConstraint.h>
 #include <ocs2_core/penalties/penalties/RelaxedBarrierPenalty.h>
 #include "mj_terrain_sdf.hpp"
@@ -190,6 +191,9 @@ int main(int argc, char** argv) {
   // ★legged_control 충실 이식 WBC (WBC_LEGGED=1). [q̈,f,τ]·full EOM·torque limit·FF base.
   const bool wbcLegged = getenv("WBC_LEGGED");
   WbcLegged wbcL(interface.getPinocchioInterface(), info, footId);
+  // ★발판 마커=MPC 실제 계획 발 착지점 시각화용(제어 pinocchio 비오염 복사 + 매핑)
+  PinocchioInterface vizPin = interface.getPinocchioInterface();
+  CentroidalModelPinocchioMapping vizMap(info); vizMap.setPinocchioInterface(vizPin);
   // ★게이트별 base task 가중 기본값(2026-08-10): trot=150(base 회복 authority↑). ⚠trot 전용 — bound/static_walk는
   //   150에서 붕괴(falls>2000)하므로 50 유지. env W_BASE로 override. (엔벨로프 절대치=반사관성 정합 후 실측물리 기준: trot/bound≤0.8.)
   if (gait == "trot") wbcL.wBase_ = 150; else if (gait != "stance") wbcL.wBase_ = 50;
@@ -306,6 +310,7 @@ int main(int argc, char** argv) {
   std::vector<double> qpos0(d->qpos, d->qpos + m->nq);
   double resetSeq = 0, homeSeq = 0; int lastResetSeq = 0, lastHomeSeq = 0;
   double vizSeed[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  double vizFoot[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};  // ★MPC 계획 발 착지점(마커, liftoff에 1회 계산·고정)
   double footSeed[4][2] = {{0,0},{0,0},{0,0},{0,0}}; bool footLocked[4] = {false,false,false,false};  // ★발판 liftoff 고정용
 
   // ★Phase 3b: nominal 발-base xy 오프셋(yaw프레임). 초기 nominal stance(yaw=0)서 발 sphere − base.
@@ -529,14 +534,28 @@ int main(int argc, char** argv) {
             footLocked[i] = true;
           } else if (planted) {                                   // 착지 → 다음 liftoff 재커밋 준비(footSeed는 유지)
             if (footLocked[i] && getenv("TD_DBG")) {                    // ★방금 착지: 실제 발 vs 커밋 발판 gap
-              double dx = d->geom_xpos[3 * footGeom[i] + 0] - footSeed[i][0], dy = d->geom_xpos[3 * footGeom[i] + 1] - footSeed[i][1];
+              double dx = d->geom_xpos[3 * footGeom[i] + 0] - vizFoot[i][0], dy = d->geom_xpos[3 * footGeom[i] + 1] - vizFoot[i][1];
               double e = std::hypot(dx, dy); tdErrSum += e; ++tdErrN; if (e > tdErrMax) tdErrMax = e; }
             footLocked[i] = false;
           }
           const double seedX = footSeed[i][0], seedY = footSeed[i][1];  // 커밋된 발판(고정)
           region->updateFoot(i, seedX, seedY, stanceEnd_i);
-          vizSeed[i][0] = seedX; vizSeed[i][1] = seedY;                    // ★발배치 시각화(seed=발판 목표)
-          vizSeed[i][2] = terrainSdf ? terrainSdf->height(seedX, seedY) : 0.0;
+          // ★마커=MPC 정책 발 위치: stance=현재시각·swing=다음 착지시각. 매 사이클 갱신→발과 정합(드리프트 추종).
+          { double evalT = t;
+            if (!planted) { for (int ip = 1; ip < nP; ++ip)
+              if (ip - 1 < (int)ev.size() && ev[ip - 1] > t && modeNumber2StanceLeg(seq[ip])[i] && !modeNumber2StanceLeg(seq[ip - 1])[i]) { evalT = ev[ip - 1]; break; } }
+            const auto& sol = mrt.getPolicy();
+            if (!sol.timeTrajectory_.empty()) {
+              scalar_t eT = std::max(sol.timeTrajectory_.front(), std::min((scalar_t)evalT, sol.timeTrajectory_.back()));
+              vector_t xE = ocs2::LinearInterpolation::interpolate(eT, sol.timeTrajectory_, sol.stateTrajectory_);
+              vector_t qPin = vizMap.getPinocchioJointPosition(xE);
+              pinocchio::forwardKinematics(vizPin.getModel(), vizPin.getData(), qPin);
+              pinocchio::updateFramePlacements(vizPin.getModel(), vizPin.getData());
+              auto fp = vizPin.getData().oMf[footId[i]].translation();
+              vizFoot[i][0] = fp(0); vizFoot[i][1] = fp(1); vizFoot[i][2] = fp(2);
+            } }
+          vizSeed[i][0] = vizFoot[i][0]; vizSeed[i][1] = vizFoot[i][1];   // ★마커=MPC 계획 발 착지점(Raibert seed 아님)
+          vizSeed[i][2] = terrainSdf ? terrainSdf->height(vizFoot[i][0], vizFoot[i][1]) : vizFoot[i][2];
         }
       }
       // (B) 지형적응 base높이: [t,t+H] 11노드 참조(base z=h+comH/cos pitch·pitch=지형법선). modifyReferences 포팅.

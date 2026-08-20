@@ -261,7 +261,7 @@ int main(int argc, char** argv){
   //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
   //   무장 순간부터 0.5초를 **매 틱** CSV 로 남긴다. 트립이 나도 파일은 남는다.
   FILE* trc=nullptr; double trc_t0=0;
-  bool have_state=false; int ok_reads=0;   // ★센서 준비 확인(위 ② 주석)
+  bool have_state=false; int ok_reads=0; double live_t0=0;   // ★센서 준비·생존 확인
   // ★★EtherCAT 동결 감지 (2026-08-20 실기). Emb 는 OP 를 잃어도 프로세스가 계속 돌고
   //   **마지막 버퍼를 재발행하며 갱신 플래그까지 1 로 세운다**(memory: emb-ethercat-freeze).
   //   그래서 health=ok · n_ok=8 · n_fault=0 인데 값만 얼어붙는다 — 침묵 실패다.
@@ -347,9 +347,34 @@ int main(int argc, char** argv){
       if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
       frozen_now = nfz; }
 
+    // ★★기동 시 **생존 확인**: 명령을 받기 전에 전 축이 실제로 갱신되는지 본다.
+    //   동결은 세 번 다 같은 4채널이었고, 매번 **무장을 시도한 뒤에야** 드러났다.
+    //   그때는 이미 E-stop 이 걸리고 로봇이 흔들린 뒤다. 먼저 확인하는 게 맞다.
+    //   1초 동안 각 채널이 한 번이라도 바뀌는지 세고, 안 바뀐 채널이 있으면 무장을 막는다.
     if(!have_state){
       if(hs.mask != 0) ok_reads++; else ok_reads = 0;
-      if(ok_reads >= 5){ have_state = true;
+      if(ok_reads == 1) live_t0 = lt;
+      if(ok_reads >= 5 && lt-live_t0 < 1.0){ /* 아직 관찰 중 */ }
+      else if(ok_reads >= 5){
+        std::string dead; int nd=0;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && frz_t[i] > 0.9){
+          char b[16]; std::snprintf(b,sizeof b," ch%d",i); dead+=b; nd++; }
+        if(nd){
+          std::fprintf(stderr,
+            "\n%s\n!! ⛔⛔ **기동 생존확인 실패** — 1초 동안 값이 한 번도 안 바뀐 채널:%s\n"
+            "!!   %s\n"
+            "!!   **명령을 받지 않는다.** 배선을 고치고 전원 OFF/ON 후 다시 띄울 것.\n"
+            "!!   (강제로 진행: LIVE_CHECK=0 — 죽은 축은 제어가 안 된다)\n%s\n\n",
+            std::string(72,'!').c_str(), dead.c_str(),
+            nd >= (int)cfg.joints.size() ? "8축 전부 → EtherCAT(EMB↔MCU)"
+                                         : "일부만 → **FDCAN(그 다리)**. MCU 는 살아 있다.",
+            std::string(72,'!').c_str());
+          if(!(getenv("LIVE_CHECK") && atoi(getenv("LIVE_CHECK"))==0)){
+            safe_shutdown(*hw, NCH); delete hw;
+            mj_deleteData(d); mj_deleteModel(m); return 3;
+          }
+        }
+        have_state = true;
         std::printf("[deploy] 센서 준비됨 — 명령 수신 시작 (q_ch: %.1f %.1f %.1f %.1f ...)\n",
                     hs.q_deg[0], hs.q_deg[1], hs.q_deg[2], hs.q_deg[3]); }
     }

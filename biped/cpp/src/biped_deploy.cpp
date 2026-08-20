@@ -22,6 +22,7 @@
 #include <csignal>
 #include <ctime>
 #include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -256,6 +257,10 @@ int main(int argc, char** argv){
   double home_t0=0, home_T=0; bool home_done=false;
   bool ground_refused=false;      // ★접지 가드 거부 래치(로그 폭주 방지)
   bool still_warned=false;        // ★정지 확인 거부 래치
+  // ★★무장 직후 트레이스 (2026-08-20). hold 진입 즉시 속도트립이 반복되는데
+  //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
+  //   무장 순간부터 0.5초를 **매 틱** CSV 로 남긴다. 트립이 나도 파일은 남는다.
+  FILE* trc=nullptr; double trc_t0=0;
   // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
   //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
   //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
@@ -334,6 +339,12 @@ int main(int argc, char** argv){
         }
         if(nm != mode){
           prev_mode = mode; mode = nm;
+          if(mode!="off" && prev_mode=="off" && !trc){
+            trc = fopen("/tmp/arm_trace.csv","w"); trc_t0 = lt;
+            if(trc){ fprintf(trc,"t");
+              for(int i=0;i<NCH;i++) fprintf(trc,",q%d,dq%d,tau%d,cmd%d",i,i,i,i);
+              fprintf(trc,"\n");
+              std::printf("[deploy] 무장 트레이스 → /tmp/arm_trace.csv (0.5초)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
           if(mode=="hold"){
             std::vector<float> raw = hs.q_deg;             // 클램프 전
@@ -509,6 +520,17 @@ int main(int argc, char** argv){
       }
     } else tau_over_t0 = -1;
     if(estop) hw->enable(0);
+
+    // ★트레이스 기록 — 무장 후 0.5초. 명령각은 hold/home 이 쓴 q_ch/hold_ch 다.
+    if(trc){
+      if(lt-trc_t0 <= 0.5){
+        fprintf(trc,"%.4f", lt-trc_t0);
+        for(int i=0;i<NCH;i++)
+          fprintf(trc,",%.3f,%.1f,%.3f,%.3f", hs.q_deg[i], hs.dq_dps[i], hs.tau_nm[i],
+                  (mode=="hold")? (double)hold_ch[i] : (double)q_ch[i]);
+        fprintf(trc,"\n");
+      } else { fclose(trc); trc=nullptr; std::printf("[deploy] 트레이스 저장 완료\n"); }
+    }
 
     // ⑤ 모드 디스패치
     if(mode=="off"){

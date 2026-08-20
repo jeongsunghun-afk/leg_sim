@@ -219,6 +219,7 @@ struct BipedControl {
     if(getenv("FRIC_COMP")) FRIC_COMP=atof(getenv("FRIC_COMP"));   // ★마찰 전방보상 배율(0=끔)
     if(getenv("FRIC_V0"))   FRIC_V0  =atof(getenv("FRIC_V0"));
     if(getenv("FRIC_STANCE_ONLY")) FRIC_STANCE_ONLY=atoi(getenv("FRIC_STANCE_ONLY"));
+    if(getenv("FLAT_CONTACT_ALL")) flat_contact_all=atoi(getenv("FLAT_CONTACT_ALL"));
     if(getenv("FRIC_ALL_MODES"))   FRIC_ALL_MODES  =atoi(getenv("FRIC_ALL_MODES"));
     if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
     pv.init(PREV_DECIM*0.002, 0.362);          // ★ZMP 프리뷰 게인(dt=preview간격, zc=평발 CoM높이)
@@ -298,10 +299,27 @@ struct BipedControl {
     mj_jac(m,d,nullptr,jr.data(),&d->xpos[fbody[leg]*3],fbody[leg]);
     MatrixXd J(3,nv); for(int r=0;r<3;r++)for(int c=0;c<nv;c++) J(r,c)=jr[r*nv+c]; return J; }
   // 접촉점(적응): 지면 근처 구만. (geom,body) 리스트.
+  //
+  // ★★2026-08-20 **2점 평발(cmode=1)에서는 높이로 고르지 않고 4점을 다 쓴다.**
+  //   왜: 이 판정은 **모델 기하**로 하는데, 실기는 IMU 가 죽어 몸통 자세를 모른다.
+  //   그러면 발 구의 높이가 통째로 틀린다. 실측(2026-08-20 stand):
+  //       HL_sphere 18.0mm 뜸 · HL_sphere2 54.4mm 뜸 · HR_sphere 접촉 · HR_sphere2 35.0mm 뜸
+  //       → 모델이 세는 K = **1** (평발 정상은 4). 모니터에도 K=2·com_err 85mm 로 찍혔다.
+  //   지지면이 사각형이 아니라 점 하나가 되니 **균형을 잡을 수가 없다**(QP 는 0% 실패인데도).
+  //   ⇒ 틀린 모델로 접촉을 세는 것보다 **아는 사실**을 쓴다 — 2점 평발 stand 는 운전자가
+  //     양발을 바닥에 놓고 시작한다. 보행에서 게이트 위상을 접촉으로 쓰는 것과 같은 논리다
+  //     ("실기엔 발 힘센서가 없다" — biped_deploy.cpp).
+  //   ⚠발이 실제로 안 닿았는데 닿았다고 하면 QP 가 없는 지면반력을 요구한다. 그래서
+  //     biped_deploy 의 **접지 가드**(실측 |τ| vs 매달림 예측 비 1.25)가 먼저 막는다.
+  //   ⚠1점 점발 보행에는 적용하지 않는다 — 거기선 스윙발이 진짜로 떠 있다.
+  //   FLAT_CONTACT_ALL=0 으로 종전(높이 판정) 동작.
+  int flat_contact_all = 1;
   std::vector<std::pair<int,int>> contact_pts(std::vector<int> stance){
     std::vector<std::pair<int,int>> pts;
+    const bool all = (cmode==1 && has_heel && flat_contact_all);
     for(int f:stance){ std::vector<int> in; int cand[2]={sph[f], has_heel?sph2[f]:-1};
-      for(int g:cand){ if(g<0) continue; if(d->geom_xpos[g*3+2] < m->geom_size[g*3]+0.012) in.push_back(g); }
+      for(int g:cand){ if(g<0) continue;
+        if(all || d->geom_xpos[g*3+2] < m->geom_size[g*3]+0.012) in.push_back(g); }
       if(in.empty()) in.push_back(sph[f]);
       for(int g:in) pts.push_back({g, m->geom_bodyid[g]}); }
     return pts; }

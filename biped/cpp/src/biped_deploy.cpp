@@ -357,7 +357,9 @@ int main(int argc, char** argv){
       if(ok_reads >= 5 && lt-live_t0 < 1.0){ /* 아직 관찰 중 */ }
       else if(ok_reads >= 5){
         std::string dead; int nd=0;
-        for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && frz_t[i] > 0.9){
+        // ⚠mock 은 값이 정지해 있는 게 정상이라 이 검사를 건너뛴다(오탐).
+        //   실기 엔코더는 정지 중에도 항상 미세하게 떨린다 — 그게 이 검사의 근거다.
+        for(int i=0;i<NCH;i++) if(!mock && cfg.installed_has(i) && frz_t[i] > 0.9){
           char b[16]; std::snprintf(b,sizeof b," ch%d",i); dead+=b; nd++; }
         if(nd){
           std::fprintf(stderr,

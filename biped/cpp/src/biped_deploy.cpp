@@ -927,8 +927,20 @@ int main(int argc, char** argv){
       //   calf 기준 kd_ch 3.5 = 관절 7.9 Nm·s/rad — 물리 감쇠(0)보다 압도적이다.
       //   STAND_KD_FLOOR 로 조절(0=종전 순수토크 · 1=설정 kd 전량).
       const double kdf = getenv("STAND_KD_FLOOR") ? atof(getenv("STAND_KD_FLOOR")) : 1.0;
+      // ★★**kp 도 남긴다** (2026-08-20 실기: home 은 버티는데 stand 에서 처졌다).
+      //   kd 는 **속도만** 잡으므로 처짐(정적 오차)에는 아무 도움이 안 된다.
+      //   stand 는 kp=0 이라 관절 복원력이 **하나도 없고**, 자세를 잡는 건 모델 토크뿐이다:
+      //       τ = h − Jᵀλ     h = **모델의** 중력항
+      //   실제가 모델(13.9kg)보다 무겁거나 α(토크 스케일, ±10% 미검증)가 낮으면
+      //   **토크가 모자라 처지는데 그걸 되돌릴 게 없다.**
+      //   ⇒ feedforward 토크 + 관절 PD. 표준 구성이고, 2점 stand 는 PD 목표(stand_ref)와
+      //     WBIC 목표가 **같은 자세**라 서로 싸우지 않는다.
+      //   ⚠1점 보행(cmode=0)은 기본 0 이다 — 거기선 목표가 매 스텝 바뀌어 PD 가 방해한다.
+      const double kpf = getenv("STAND_KP_FLOOR") ? atof(getenv("STAND_KP_FLOOR"))
+                                                  : (c.cmode==1 ? 0.30 : 0.0);
       const double kd_scale = (1.0-bs) + bs*kdf;      // 블렌드 끝에서 kdf 로 수렴
-      jm.kp_ch(kp_ch.data(), 1.0-bs); jm.kd_ch(kd_ch.data(), kd_scale);
+      const double kp_scale = (1.0-bs) + bs*kpf;      // 블렌드 끝에서 kpf 로 수렴
+      jm.kp_ch(kp_ch.data(), kp_scale); jm.kd_ch(kd_ch.data(), kd_scale);
       for(int i=0;i<NCH;i++) tau_ch[i] = (float)(bs*(double)tau_ch[i]);
       // 목표: 측정각 → 기하 자세로 블렌드와 **같은 계수**로 이동. bs=1 이면 순수 Qflat8.
       //   ⚠지금은 bs=1 에서 kp=0 이라 이 목표가 무영향이다. 그래도 측정각을 흘려보내지

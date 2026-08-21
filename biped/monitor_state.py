@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import sys
+import shutil
 import time
 
 STATE = os.environ.get("QUAD_STATE", "/tmp/biped_state.json")
@@ -53,6 +54,18 @@ KP_TO_NM_PER_DEG = 0.0175                                  # [실측 2026-08-05]
 
 C = {"r": "\033[31m", "y": "\033[33m", "g": "\033[32m", "d": "\033[2m",
      "b": "\033[1m", "c": "\033[36m", "x": "\033[0m", "R": "\033[41m\033[97m"}
+
+
+def dw(s: str) -> int:
+    """터미널 **표시폭**. 한글·기호는 2칸을 먹는다 — len() 으로 맞추면 열이 어긋난다."""
+    import unicodedata
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def pad(s: str, w: int, right: bool = True) -> str:
+    """표시폭 기준 정렬. f-string 의 :>w 는 len() 기준이라 한글에서 깨진다."""
+    g = max(0, w - dw(s))
+    return (" " * g + s) if right else (s + " " * g)
 
 
 def paint(s, col, on=True):
@@ -173,12 +186,44 @@ def main() -> int:
                     flags.append(paint(f"지연보상 {_lc:.1f}ms", "g", col))
             out.append(("  " + "   ".join(flags) if flags else "  " + paint("이상 없음", "g", col)) + "\n")
 
-            chh = "   q_ch" if a.ch else ""
+            # ★★터미널 폭에 맞춰 열을 고른다 (2026-08-20).
+            #   종전은 14열 고정 90+자라 좁은 창에서 줄이 접히며 **숫자와 이름이 어긋났다**
+            #   — 무슨 값인지 못 읽는다. 폭이 모자라면 파생값(Δ·환산)부터 버린다.
+            #   버리는 순서에 이유가 있다: Δ 와 ≈Nm 은 **원값에서 다시 계산할 수 있다**.
+            #   원값(측정·명령)과 판단에 직접 쓰는 것(kp·kd·상태)은 끝까지 남긴다.
+            term_w = shutil.get_terminal_size((100, 40)).columns
+            COLS = [                       # (키, 머리말, 폭, 소수, 필수)
+                ("name", "축",      10, None, True),
+                ("qm",   "q측정",    8, 2, True),
+                ("qc",   "q명령",    8, 2, True),
+                ("eq",   "Δq",       7, 2, False),
+                ("enm",  "≈Nm",      6, 1, False),
+                ("dm",   "dq측정",   8, 1, True),
+                ("ed",   "Δdq",      7, 1, False),
+                ("tm",   "τ측정",    8, 2, True),
+                ("tc",   "τ명령",    8, 2, True),
+                ("et",   "Δτ",       7, 2, False),
+                ("kp",   "kp",       6, 1, True),
+                ("kd",   "kd",       5, 1, True),
+                ("qch",  "q_ch",     8, 1, False),
+                ("st",   "상태",     7, None, True),
+            ]
+            if not a.ch:
+                COLS = [c2 for c2 in COLS if c2[0] != "qch"]
+            def _fits(cs): return 2 + sum(c2[2] for c2 in cs)
+            use = list(COLS)
+            for key in ("Δτ", "Δdq", "≈Nm", "q_ch", "Δq"):     # 버리는 순서
+                if _fits(use) <= term_w: break
+                use = [c2 for c2 in use if c2[1] != key]
+            UNITS = {"name": "", "qm": "deg", "qc": "deg", "eq": "deg", "enm": "Nm",
+                     "dm": "dps", "ed": "dps", "tm": "Nm", "tc": "Nm", "et": "Nm",
+                     "kp": "Nm/r", "kd": "-", "qch": "deg", "st": "health"}
+            out.append("\n" + paint(
+                "  " + "".join(pad(c2[1], c2[2], c2[0] != "name") for c2 in use) + "\n", "c", col))
             out.append(paint(
-                f"\n  {'축':<9}{'q측정':>8}{'q명령':>8}{'Δq':>7}{'≈Nm':>6} │"
-                f"{'dq측정':>8}{'dq명령':>8}{'Δdq':>7} │{'τ측정':>8}{'τ명령':>8}{'Δτ':>7} │"
-                f"{'kp':>5}{'kd':>5}{chh:>8}  st  err\n", "c", col))
-            out.append("  " + "─" * (90 + (8 if a.ch else 0)) + "\n")
+                "  " + "".join(pad(UNITS[c2[0]], c2[2], c2[0] != "name") for c2 in use) + "\n",
+                "d", col))
+            out.append("  " + "─" * min(term_w - 2, _fits(use)) + "\n")
 
             for i in range(nj):
                 eq = None if (qm[i] is None or qc[i] is None) else qm[i] - qc[i]
@@ -198,16 +243,25 @@ def main() -> int:
                 h = str(health[i]) if i < len(health) else "?"
                 c_h = {"ok": "g", "fault": "r", "dead": "r", "absent": "d"}.get(h, "y")
                 nm = names[i] if (i >= len(inst) or inst[i]) else paint(names[i], "d", col)
-                row = (f"  {nm:<9}{fmt(qm[i])}{fmt(qc[i])}"
-                       f"{paint(fmt(eq), c_eq, col)}{paint(fmt(enm, 6, 1), c_eq, col)} │"
-                       f"{paint(fmt(dm[i], 8, 1), c_dm, col)}{fmt(dc[i], 8, 1)}{fmt(ed, 7, 1)} │"
-                       f"{paint(fmt(tm[i], 8, 2), c_tm, col)}{fmt(tc[i], 8, 2)}{fmt(et, 7, 2)} │"
-                       f"{fmt(kp[i], 5, 0)}{fmt(kd[i], 5, 1)}")
-                if a.ch:
-                    row += fmt(qch[i], 8, 1)
-                ev = "" if stt[i] is None else f" 0x{int(stt[i]):02X}"
+                ev = "" if stt[i] is None else f"0x{int(stt[i]):02X}"
                 c_ev = "r" if (stt[i] and int(stt[i])) else "d"
-                out.append(row + "  " + paint(h[:1], c_h, col) + paint(ev, c_ev, col) + "\n")
+                vals = {"qm": (qm[i], None), "qc": (qc[i], None), "eq": (eq, c_eq),
+                        "enm": (enm, c_eq), "dm": (dm[i], c_dm), "ed": (ed, None),
+                        "tm": (tm[i], c_tm), "tc": (tc[i], None), "et": (et, None),
+                        "kp": (kp[i], None), "kd": (kd[i], None), "qch": (qch[i], None)}
+                cells = []
+                for key, _lbl, w, dec, _req in use:
+                    if key == "name":
+                        cells.append(pad(nm, w, False))
+                    elif key == "st":
+                        raw = h[:1] + (" " + ev if ev else "")
+                        body = paint(h[:1], c_h, col) + (" " + paint(ev, c_ev, col) if ev else "")
+                        cells.append(" " * max(0, w - dw(raw)) + body)
+                    else:
+                        v, cc = vals[key]
+                        txt = fmt(v, w, dec)
+                        cells.append(paint(txt, cc, col) if cc else txt)
+                out.append("  " + "".join(cells) + "\n")
 
             out.append("\n  " + paint("세션 최대 │ ", "d", col)
                        + paint(f"|Δq| {max(peak_eq):5.2f}°  |dq| {max(peak_dq):6.1f}dps  "

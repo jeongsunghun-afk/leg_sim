@@ -280,6 +280,10 @@ int main(int argc, char** argv){
 
   // ── 상태 ──
   std::vector<float> q_ch(NCH), dq_ch(NCH), tau_ch(NCH), kp_ch(NCH), kd_ch(NCH), zero(NCH,0.f);
+  // ★모드별 **실제로 내보낸 위치명령**. 발행해서 모니터가 "명령 vs 측정" 을 보여줄 수 있게 한다.
+  //   종전엔 안 냈다 — stand 가 순수 토크(kp=0)라 명령각이 무의미했기 때문이다.
+  //   그런데 STAND_KP_FLOOR 를 켜면서 **의미가 생겼다**(2026-08-20). 처짐을 보려면 필요하다.
+  std::vector<float> qcmd_ch(NCH, 0.f);
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
   // ★토크 통계 누적기 — 루프율로 쌓고 발행마다 비운다(위 ① 주석 참조).
   std::vector<double> ts_sum(jm.n_leg,0.0), ts_sq(jm.n_leg,0.0),
@@ -787,9 +791,11 @@ int main(int argc, char** argv){
     // ⑤ 모드 디스패치
     if(mode=="off"){
       for(int i=0;i<NCH;i++) q_ch[i]=0.f;
+      qcmd_ch = q_ch;
       hw->write_pos(q_ch.data(), zero.data(), zero.data(), NCH);     // enable=0 → 브리지가 0 토크
     } else if(mode=="hold"){
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      qcmd_ch = hold_ch;
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else if(mode=="home"){
       // ★S-curve — 가감속이 0 에서 시작·끝나므로 속도트립을 만들지 않는다.
@@ -798,6 +804,7 @@ int main(int argc, char** argv){
       const double sf = u*u*(3.0-2.0*u);
       for(int i=0;i<NCH;i++)
         q_ch[i] = home_from[i] + (float)(sf*(double)(home_to[i]-home_from[i]));
+      qcmd_ch = q_ch;
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
       if(u>=1.0 && !home_done){
@@ -821,6 +828,7 @@ int main(int argc, char** argv){
       std::vector<double> qj = jog_q;
       jm.clamp_joint(qj.data());                   // 관절한계(모델각) — 채널이 아니라 여기서
       jm.q_joint_to_ch(qj.data(), q_ch.data());
+      qcmd_ch = q_ch;
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반
@@ -948,6 +956,7 @@ int main(int argc, char** argv){
       //     측정각을 목표로 두면 err≡0(무효)이거나, 센서지연 때문에 err≈−q̇·τ = **음의 감쇠**가 된다.
       for(int i=0;i<NCH;i++)
         stand_ref[i] = stand_hold[i] + (float)(bs*(double)(stand_to[i]-stand_hold[i]));
+      qcmd_ch = stand_ref;
       hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
     }
@@ -961,6 +970,13 @@ int main(int argc, char** argv){
       // ★ucStatus(=ERROR VECTOR 하위 8비트)를 **원값 그대로** 낸다 (2026-08-20).
       //   종전엔 "fault" 라는 라벨만 나가서, 무엇 때문에 걸렸는지 알 수 없었다.
       //   과전류·과온·엔코더·통신 중 뭔지 알아야 조치가 갈린다.
+      // 명령각을 **모델각**으로 바꿔 낸다(측정 q_leg_deg 와 같은 좌표라 바로 비교된다)
+      std::string qcmds="[", dqcmds="[";
+      { std::vector<double> qc(jm.n_leg); jm.ch_to_q_joint(qcmd_ch.data(), qc.data());
+        for(int i2=0;i2<jm.n_leg;i2++){ char b[24];
+          std::snprintf(b,sizeof b,"%s%.3f", i2?",":"", qc[i2]); qcmds+=b;
+          std::snprintf(b,sizeof b,"%s0.0", i2?",":""); dqcmds+=b; }
+        qcmds+="]"; dqcmds+="]"; }
       std::string errs="[";
       std::string health="[", inst="[", qs="[", qchs="[";
       // ★2026-08-13 `q_leg_deg` 에 **채널각**을 넣고 있었다(모델각 계약 위반).
@@ -1038,7 +1054,8 @@ int main(int argc, char** argv){
         "\"qp_fail_pct\":%.1f,\"qp_K\":%d,\"qp_cerr\":[%.4f,%.4f,%.4f],"
         // ★home 진행률(0~1) — GUI 가 이미 표시할 준비가 돼 있다(teleop_gui_biped:526).
         //   10초짜리 램프라 운전자가 "지금 얼마나 갔나" 를 볼 수 있어야 한다.
-        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s}",
+        "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s,"
+        "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
@@ -1051,7 +1068,7 @@ int main(int argc, char** argv){
         c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
-        (errs+"]").c_str());
+        (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str());
       write_state(stt_p, buf);
     }
 

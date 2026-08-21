@@ -158,7 +158,14 @@ def main() -> int:
             out.append(paint(f"{hdr:<92}", "R" if stale else "b", col) + "\n")
             flags = []
             if stale:
-                flags.append(paint(f"*** STALE {age_ms:.0f}ms — 제어기가 발행을 멈췄다 ***", "R", col))
+                # ★"제어기" 가 Emb 로 오해받았다(2026-08-20). 둘은 다른 프로세스다:
+                #   Emb(RobotEmbedded)  = SHM ↔ EtherCAT 중계. **상태파일을 안 쓴다.**
+                #   제어기(biped_emb.py / biped_deploy) = 이 파일을 발행하는 쪽.
+                #   ⚠제어기가 죽어도 모터는 안 멈춘다 — Emb 가 SHM 의 마지막 명령을
+                #     1kHz 로 계속 재전송한다. 그래서 종료 시 kp=kd=τ=0 을 써야 한다.
+                flags.append(paint(
+                    f"*** STALE {age_ms:.0f}ms — 상태파일이 안 갱신된다 "
+                    f"(Emb 아님. biped_emb.py / biped_deploy 확인) ***", "R", col))
             if st.get("estop_latched") or st.get("estop"):
                 flags.append(paint(f"E-STOP 래치: {st.get('estop_reason','?')}", "R", col))
             if st.get("wd_trip"):

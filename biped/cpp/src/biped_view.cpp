@@ -6,6 +6,7 @@
 #include <mujoco/mujoco.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <functional>
 #include <cstdlib>
 #include <cmath>
 #include <chrono>
@@ -27,15 +28,65 @@ static std::string json_str(const std::string& s,const char* key,const std::stri
   if(q2==std::string::npos) return def; return s.substr(q1+1,q2-q1-1);
 }
 
-static void publish_state(mjModel* m, mjData* d, BipedControl& c, const std::string& mode, const std::string& path){
+// ★★2026-08-21 축별 배열을 같이 낸다 — **`monitor_plot.py` 를 sim 에도 쓰기 위해서**다.
+//   종전엔 스칼라 8개(mode·base_z·vx_cmd·vx_act·yaw·tilt·x·y)만 내서, 값 모니터를 붙여도
+//   토크 그래프가 **비어 나왔다**. 그래서 sim 수치는 `biped_sim` 의 TAU_DBG 표로 따로
+//   뽑아 손으로 대조해야 했다. 필드명을 `biped_deploy` 와 **같게** 맞추면 모니터가
+//   시뮬인지 실기인지 구분하지 않아도 되고, 같은 화면 형식으로 나란히 볼 수 있다.
+//
+//   ⚠토크 두 열의 뜻이 실기와 미묘하게 다르다 — 읽을 때 주의:
+//     `tau_leg_nm`  = `qfrc_actuator` = **실제 관절토크**. 실기의 같은 이름과 직접 비교된다.
+//     `tau_cmd_nm`  = `d->ctrl` = **액추에이터 지령**. hip·thigh 는 관절토크와 같지만,
+//                     발목이 tendon 에 물려 있어 **calf·foot 은 다르다**(모터축 지령이
+//                     두 DOF 에 걸린다). 실기의 채널↔관절 구분과 같은 성격이다.
+//   ⚠sim 에는 드라이버 게인이 없다 ⇒ kp_leg·kd_leg 는 0 으로 낸다(실기 순수토크모드와 동일).
+struct TauWin {                                  // 발행창 통계(루프율로 누적 — 발행율이 아니라)
+  std::vector<double> sum, sq, mn, mx; long n=0;
+  void init(int k){ sum.assign(k,0.0); sq.assign(k,0.0); mn.assign(k,1e300); mx.assign(k,-1e300); n=0; }
+  void add(const mjData* d, int k){
+    for(int j=0;j<k;j++){ double v=d->qfrc_actuator[6+j];
+      sum[j]+=v; sq[j]+=v*v; if(v<mn[j])mn[j]=v; if(v>mx[j])mx[j]=v; }
+    n++;
+  }
+};
+
+static void arr(std::ostringstream& o, const char* key, int n,
+                const std::function<double(int)>& f, int prec=3){
+  o<<",\""<<key<<"\":[";
+  std::streamsize p=o.precision(); o.precision(prec);
+  for(int j=0;j<n;j++){ if(j) o<<","; o<<f(j); }
+  o.precision(p); o<<"]";
+}
+
+static void publish_state(mjModel* m, mjData* d, BipedControl& c, const std::string& mode,
+                          const std::string& path, TauWin& tw, double loop_hz){
+  static const double R2D=57.29577951308232;
   double* q=&d->qpos[3];
   double roll=atan2(2*(q[0]*q[1]+q[2]*q[3]),1-2*(q[1]*q[1]+q[2]*q[2]));
   double pitch=asin(std::max(-1.0,std::min(1.0,2*(q[0]*q[2]-q[3]*q[1]))));
   double yaw=atan2(2*(q[0]*q[3]+q[1]*q[2]),1-2*(q[2]*q[2]+q[3]*q[3]));
+  double tilt=std::hypot(roll,pitch)*R2D;
+  const int NJ=m->nu;                            // 다리 관절 수(=액추에이터 수)
   std::ostringstream o; o.precision(4); o<<std::fixed;
-  o<<"{\"mode\":\""<<mode<<"\",\"base_z\":"<<d->qpos[2]<<",\"vx_cmd\":"<<c.vx_cmd
-   <<",\"vx_act\":"<<d->qvel[0]<<",\"wz_cmd\":"<<c.wz_cmd<<",\"yaw\":"<<yaw*57.29578
-   <<",\"tilt\":"<<std::hypot(roll,pitch)*57.29578<<",\"x\":"<<d->qpos[0]<<",\"y\":"<<d->qpos[1]<<"}";
+  o<<"{\"mode\":\""<<mode<<"\",\"backend\":\"sim\""
+   <<",\"base_z\":"<<d->qpos[2]<<",\"vx_cmd\":"<<c.vx_cmd
+   <<",\"vx_act\":"<<d->qvel[0]<<",\"wz_cmd\":"<<c.wz_cmd<<",\"yaw\":"<<yaw*R2D
+   <<",\"tilt\":"<<tilt<<",\"tilt_deg\":"<<tilt<<",\"loop_hz\":"<<loop_hz
+   <<",\"x\":"<<d->qpos[0]<<",\"y\":"<<d->qpos[1];
+  arr(o,"q_leg_deg", NJ,[&](int j){ return d->qpos[7+j]*R2D; },2);
+  arr(o,"dq_leg_dps",NJ,[&](int j){ return d->qvel[6+j]*R2D; },2);
+  arr(o,"tau_leg_nm",NJ,[&](int j){ return d->qfrc_actuator[6+j]; });
+  arr(o,"tau_cmd_nm",NJ,[&](int j){ return d->ctrl[j]; });
+  const long n=tw.n;
+  arr(o,"tau_std_nm",NJ,[&](int j){ if(!n) return 0.0;
+      double mu=tw.sum[j]/n; return std::sqrt(std::max(0.0, tw.sq[j]/n-mu*mu)); });
+  arr(o,"tau_min_nm",NJ,[&](int j){ return n? tw.mn[j] : 0.0; });
+  arr(o,"tau_max_nm",NJ,[&](int j){ return n? tw.mx[j] : 0.0; });
+  o<<",\"tau_win_n\":"<<n;
+  arr(o,"kp_leg",NJ,[&](int){ return 0.0; },1);   // sim 은 드라이버 게인이 없다
+  arr(o,"kd_leg",NJ,[&](int){ return 0.0; },1);
+  o<<"}";
+  tw.init(NJ);                                    // 창을 비운다 — 다음 발행까지 다시 쌓는다
   std::string tmp=path+".tmp"; std::ofstream f(tmp); f<<o.str(); f.close();
   std::rename(tmp.c_str(),path.c_str());
 }
@@ -79,6 +130,7 @@ int main(int argc,char**argv){
   const char* CMDFILE=getenv("CMDFILE");
   std::string STATE_PUB=getenv("STATE_PUB")?getenv("STATE_PUB"):"/tmp/biped_state.json";
   double dt=m->opt.timestep; long frame=0; int falls=0;
+  TauWin tw; tw.init(m->nu); double loop_hz=1.0/dt;    // 창 통계 누적기(발행마다 비운다)
   double est_perr=0, est_verr=0;                        // 추정오차(HUD·고스트용)
   auto wall0=std::chrono::steady_clock::now(); double sim0=d->time;
   while(!glfwWindowShouldClose(win)){
@@ -105,13 +157,14 @@ int main(int argc,char**argv){
       else if(est_ctrl) dl.step(m,d,c,dt);                 // ★추정+지연보상 폐루프(배포 경로)
       else c.control(dt);
       mj_step(m,d);
+      tw.add(d,m->nu);          // 루프율로 토크 통계 누적(발행율이 아니라)
       if(!off && d->qpos[2]<0.2){ c.reset(); c.com_ref_z=body_h; est_reset(); falls++; wall0=std::chrono::steady_clock::now(); sim0=d->time; break; }  // 낙상 자동리셋(off는 제외)
     }
     if(est_ctrl){                                       // GT 대비 추정오차(고스트/HUD)
       est_perr=std::sqrt(std::pow(dl.est.p[0]-d->qpos[0],2)+std::pow(dl.est.p[1]-d->qpos[1],2)+std::pow(dl.est.p[2]-d->qpos[2],2));
       est_verr=std::sqrt(std::pow(dl.est.v[0]-d->qvel[0],2)+std::pow(dl.est.v[1]-d->qvel[1],2)+std::pow(dl.est.v[2]-d->qvel[2],2));
     }
-    if(frame%3==0) publish_state(m,d,c,mode,STATE_PUB);
+    if(frame%3==0) publish_state(m,d,c,mode,STATE_PUB,tw,loop_hz);
     mjrRect vp={0,0,0,0}; glfwGetFramebufferSize(win,&vp.width,&vp.height);
     mjv_updateScene(m,d,&opt,NULL,&cam,mjCAT_ALL,&scn);
     if(est_ctrl && scn.ngeom+6<=scn.maxgeom){           // ★고스트: GT(초록)·추정(주황) base 마커 + 드리프트 이격선(17-DOF 방식)

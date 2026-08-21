@@ -357,11 +357,34 @@ dpg.create_context()
 #   ⚠깨져 보였던 것은 **MuJoCo 뷰어** 쪽이다(mjr_overlay = ASCII 전용 비트맵 폰트).
 #     둘은 별개다 — 뷰어 HUD 는 영문으로 바꿨고(biped_monitor.cpp), 여기는 TTF 를 쓴다.
 #   폰트 파일이 없으면 라벨이 깨져 JOG 검증에서 축 이름을 못 읽으므로 기동 시 경고한다.
+#   ★고정 경로 목록만으로는 못 찾는다 — 사용자가 `~/.local/share/fonts` 에 깔아둔 폰트를
+#     놓친다(2026-08-21 실측: 이 기기는 시스템 경로 셋이 다 없고 NanumGothic 이 홈에 있었다).
+#     그래서 고정 목록 뒤에 **fontconfig 질의**를 붙인다. 그러면 어디에 깔았든 잡힌다.
+def _fc_korean():
+    """fc-list 로 한글 글리프가 있는 TTF/TTC 를 찾는다. fontconfig 이 없으면 조용히 포기."""
+    import shutil, subprocess
+    if not shutil.which('fc-list'):
+        return []
+    try:
+        out = subprocess.run(['fc-list', ':lang=ko', 'file'],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    paths = []
+    for line in out.splitlines():
+        p = line.split(':')[0].strip()
+        if p.lower().endswith(('.ttf', '.ttc', '.otf')):
+            paths.append(p)
+    return paths
+
 _FONT_CANDS = [os.environ.get('GUI_FONT', ''),
                '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
                '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
-               '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc']
+               '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc',
+               os.path.expanduser('~/.local/share/fonts/NanumGothic-Regular.ttf')]
 _FONT = next((f for f in _FONT_CANDS if f and os.path.exists(f)), None)
+if _FONT is None:                                   # 마지막 수단 — 시스템에 뭐가 있든 찾는다
+    _FONT = next((f for f in _fc_korean() if os.path.exists(f)), None)
 _kf = None
 if _FONT:
     with dpg.font_registry():

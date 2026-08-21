@@ -57,6 +57,24 @@ int main(int argc,char**argv){
   std::vector<double> tmin(m->nu, 1e300), tmax(m->nu,-1e300);
   long wn=0, nwin=0; double wt0=-1;
   double grf[2]={0,0}; long nacc=0;
+
+  // ★QPOS_LOG=<파일> — **재생용 궤적 덤프**(t + qpos 전체).
+  //   이 저장소의 뷰어(`biped_view`)는 GLFW 인데, libglfw3-dev 가 없는 기기에선 아예
+  //   빌드되지 않는다. WSLg 에서는 깔아도 인터랙티브 GLFW 가 검은 화면이 되는 이력이 있다.
+  //   ⇒ sim 은 헤드리스로 **궤적만** 남기고, 그리기는 EGL 오프스크린이 맡는다
+  //     (`tools/render_traj.py`). 이러면 화면이 없는 서버·CI 에서도 그림이 나온다.
+  //   QPOS_HZ 로 표본율(기본 50Hz) — 500Hz 를 그대로 쓰면 파일만 커지고 눈으론 같다.
+  std::FILE* qlog=nullptr; int qdec=1;
+  if(const char* p=getenv("QPOS_LOG")){
+    qlog = std::fopen(p,"w");
+    if(!qlog) std::printf("[sim] ⚠QPOS_LOG 열기 실패: %s\n", p);
+    else {
+      const double ts = m->opt.timestep;      // dt 는 아래에서 선언된다 — 여기선 모델에서 직접
+      double hz = getenv("QPOS_HZ") ? atof(getenv("QPOS_HZ")) : 50.0;
+      qdec = std::max(1, (int)std::lround(1.0/(hz*ts)));
+      std::fprintf(qlog, "# nq=%d dt=%.6f dec=%d hz=%.1f\n", m->nq, ts, qdec, 1.0/(qdec*ts));
+    }
+  }
   if(getenv("CONTACT")) c.set_contact_mode(atoi(getenv("CONTACT")));   // ★0=1점 점발보행·1=2점 평발정적
   if(getenv("STAND_CZ")) c.com_ref_z=atof(getenv("STAND_CZ"));         // 정적 높이 테스트
   c.vx_cmd=vx;
@@ -82,6 +100,11 @@ int main(int argc,char**argv){
       std::printf("  t%.2f com=(%+.3f,%+.3f,%.3f) v=(%+.2f,%+.2f) pitch%+.1f roll%+.1f sw=%d\n",
         i*dt,d->subtree_com[0],d->subtree_com[1],d->subtree_com[2],d->qvel[0],d->qvel[1],pitch*57.3,roll*57.3,c.swing); }
     mj_step(m,d);
+    if(qlog && i%qdec==0){                  // 재생용 궤적(데시메이션)
+      std::fprintf(qlog, "%.4f", i*dt);
+      for(int j=0;j<m->nq;j++) std::fprintf(qlog, " %.6f", d->qpos[j]);
+      std::fputc('\n', qlog);
+    }
     if(tau_win>0 && (T - i*dt) <= tau_win){                  // 정상상태 창만 집계
       const double tn = i*dt;
       if(wt0<0) wt0=tn;
@@ -157,5 +180,6 @@ int main(int argc,char**argv){
     else
       std::printf("  ⚠지면반력 0 — 접촉이 없다(공중이거나 낙상). 토크값도 의미 없다.\n");
   }
+  if(qlog){ std::fclose(qlog); std::printf("[sim] 궤적 기록 완료 → %s\n", getenv("QPOS_LOG")); }
   mj_deleteData(d); mj_deleteModel(m); return 0;
 }

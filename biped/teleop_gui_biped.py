@@ -54,13 +54,21 @@ NJ = len(JOG_NAMES)
 #     그래서 버튼마다 **가장 예민한 축의 트립각**을 같이 찍는다 — 숫자만 보고 올리면
 #     접지 순간 그 축이 먼저 트립한다(calf 는 kp_joint 180 이라 ×5 에서 1.0° 다).
 #   ⚠kd 는 제어기가 **√배율**로 같이 올린다(ζ ∝ kd/√kp 보존). GUI 가 따로 안 보낸다.
-KP_STEPS = [1.0, 2.0, 3.0, 4.0, 5.0]
+# ★2026-08-21 ×5 까지로는 부족했다(사용자: "5배는 해야 잘될 때가 있다") → ×10 까지.
+#   ⚠deploy 의 POS_KP_SCALE_MAX 도 같이 올려야 한다 — 거기서 클램프한다.
+KP_STEPS = [1.0, 2.0, 3.0, 5.0, 8.0, 10.0]
 try:
     _tt = float(_cfg.get('safety', {}).get('tau_trip_nm', 15.0))
-    # kp_joint = kp_ch·gear_k²  (emb/README "게인도 좌표가 둘")
-    _kpj = [(j['name'], float(j['kp']) * float(j.get('gear_k', 1.0)) ** 2) for j in _cfg['joints']]
-    _tight = max(_kpj, key=lambda t: t[1])      # kp_joint 가 가장 큰 축 = 트립각이 가장 작다
-    KP_TRIP = [(_tight[0], _tt / (_tight[1] * math.pi / 180.0 * s)) for s in KP_STEPS]
+    # ★★트립은 **채널토크**로 걸린다(biped_deploy 가 hs.tau_nm 을 그대로 비교한다).
+    #   ⇒ 트립이 발생하는 **관절**토크는 tau_trip × gear_k 다. 종전엔 tau_trip 을 관절토크로
+    #     취급해 calf 를 1.5배·foot 을 1.2배 **보수적으로** 찍었다(실제보다 좁게 표시).
+    #       calf 예: 표시 4.77°/배율 → 실제 7.16°/배율
+    #   kp_joint = kp_ch·gear_k²  (emb/README "게인도 좌표가 둘")
+    #   ⇒ 트립각 = (tau_trip·gear_k) / (kp_ch·gear_k²·배율) = tau_trip / (kp_ch·gear_k·배율)
+    _e1 = [(j['name'], _tt / (float(j['kp']) * float(j.get('gear_k', 1.0))) * 180.0 / math.pi)
+           for j in _cfg['joints']]
+    _tight = min(_e1, key=lambda t: t[1])       # 트립각이 가장 작은 축 = 가장 예민하다
+    KP_TRIP = [(_tight[0], _tight[1] / s) for s in KP_STEPS]
 except Exception:
     KP_TRIP = [('?', float('nan'))] * len(KP_STEPS)
 

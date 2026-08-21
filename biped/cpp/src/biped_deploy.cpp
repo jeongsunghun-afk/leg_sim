@@ -303,7 +303,14 @@ int main(int argc, char** argv){
   //     계단으로 올리면 그 축의 토크가 **그 자리에서 5배**가 된다. 접지 중이면 τ_trip 이
   //     바로 걸린다. ⇒ POS_KP_RAMP_S(기본 1.0초) 동안 **선형으로** 옮긴다.
   //   ⚠stand/walk 는 이 배율을 안 쓴다 — 거기선 WBIC 와 싸우면 안 되고 STAND_KP_FLOOR 가 따로다.
-  const double KP_SCALE_MAX = getenv("POS_KP_SCALE_MAX") ? atof(getenv("POS_KP_SCALE_MAX")) : 5.0;
+  // ★2026-08-21 상한 5 → **10** (사용자: "5배는 해야 잘될 때가 있다" — 여유가 없었다).
+  //   ⚠올릴 수 있는 근거: 트립은 **채널토크**로 걸리므로 관절토크 기준 트립은
+  //     tau_trip×gear_k 다. 가장 예민한 calf 가 배율당 **7.16°** 이고 ×10 에서 0.72°.
+  //     (GUI 가 종전에 4.77°/배율로 찍던 것은 tau_trip 을 관절토크로 본 오차다 — 같이 고쳤다.)
+  //   ⚠정적 여유(트립각÷처짐)는 배율과 **무관**하다 — 둘 다 1/s 로 준다.
+  //     줄어드는 것은 외란·하중이양·스틱슬립 같은 **과도에 대한 절대 여유**다.
+  //     ×10 에서 calf 는 0.72° 과도에 트립한다. 그 위로 올리려면 여기를 다시 볼 것.
+  const double KP_SCALE_MAX = getenv("POS_KP_SCALE_MAX") ? atof(getenv("POS_KP_SCALE_MAX")) : 10.0;
   const double KP_RAMP_S    = getenv("POS_KP_RAMP_S")    ? atof(getenv("POS_KP_RAMP_S"))    : 1.0;
   const double KD_SCALE_ENV = getenv("POS_KD_SCALE") ? atof(getenv("POS_KD_SCALE")) : -1.0;
   double kp_scale_tgt = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;

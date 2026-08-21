@@ -57,6 +57,11 @@ NJ = len(JOG_NAMES)
 # ★2026-08-21 ×5 까지로는 부족했다(사용자: "5배는 해야 잘될 때가 있다") → ×10 까지.
 #   ⚠deploy 의 POS_KP_SCALE_MAX 도 같이 올려야 한다 — 거기서 클램프한다.
 KP_STEPS = [1.0, 2.0, 3.0, 5.0, 8.0, 10.0]
+# ★kd 배율 (2026-08-21). None = **자동(√kp)** — ζ ∝ kd/√kp 보존이 원칙이다.
+#   그런데 kd 는 **속도잡음을 그대로 토크로 증폭**한다(τ_ripple = kd_ch × dq_noise).
+#     정지 중 잡음 ±7dps 면 kp×10(kd×3.16)에서 hip 이 2.3Nm — 트립 15Nm 의 15%.
+#   ⇒ 잡음이 지배해 틱틱거리면 ζ 를 좀 포기하고 낮춘다. 진동이 나면 올린다.
+KD_STEPS = [None, 1.0, 1.5, 2.0, 3.0]
 try:
     _tt = float(_cfg.get('safety', {}).get('tau_trip_nm', 15.0))
     # ★★트립은 **채널토크**로 걸린다(biped_deploy 가 hs.tau_nm 을 그대로 비교한다).
@@ -204,15 +209,47 @@ def on_jog(sender, val, i):           # 각축 슬라이더 → 목표각(deg) �
     pub.set_jog(i, val)
 
 
+_kd_sel = [None]                      # 현재 고른 kd 배율(None = 자동 √kp)
+
+
+def _kp_now():
+    v = pub.cmd.get('pos_kp_scale', 1.0)
+    return float(v) if v else 1.0
+
+
+def _refresh_gain_lbl():
+    s = _kp_now()
+    kd = math.sqrt(s) if _kd_sel[0] is None else _kd_sel[0]
+    who, trip = KP_TRIP[KP_STEPS.index(s)] if s in KP_STEPS else ('?', float('nan'))
+    # ζ 는 kd/√kp 에 비례한다 — 자동이면 1.00 유지, 낮추면 그만큼 저감쇠가 된다.
+    zeta = kd / math.sqrt(s) if s > 0 else 1.0
+    tag = '자동(√kp)' if _kd_sel[0] is None else '수동'
+    dpg.set_value('kp_lbl', f'kp×{s:g}  ·  kd×{kd:.2f} {tag}  ·  ζ {zeta:.2f}배  ·  '
+                            f'트립 예민축 {who} {trip:.2f}°')
+    dpg.configure_item('kp_lbl', color=(210, 120, 100) if (trip < 2.0 or zeta < 0.7)
+                                 else (150, 155, 175))
+
+
 def set_kp_scale(s):
     """위치모드(home/hold/jog) 강성 배율. 제어기가 1초에 걸쳐 램프한다."""
     pub.set(pos_kp_scale=float(s))
     for k, v in enumerate(KP_STEPS):
         dpg.bind_item_theme(f'kpbtn_{k}', _kp_on if abs(v - s) < 1e-6 else _kp_off)
-    who, trip = KP_TRIP[KP_STEPS.index(s)] if s in KP_STEPS else ('?', float('nan'))
-    dpg.set_value('kp_lbl', f'현재 ×{s:g}  ·  kd×{math.sqrt(s):.2f}(ζ 보존)  ·  '
-                            f'트립 예민축 {who} {trip:.2f}°')
-    dpg.configure_item('kp_lbl', color=(210, 120, 100) if trip < 2.0 else (150, 155, 175))
+    _refresh_gain_lbl()
+
+
+def set_kd_scale(d):
+    """kd 배율. None = 자동(√kp, ζ 보존). 숫자로 주면 제어기가 그 값을 쓴다.
+
+    ★낮추면 토크 리플이 줄지만 ζ 가 같이 떨어진다 — 틱틱거림(잡음)과 진동(저감쇠)은
+      **다른 증상**이다. 정지 중 떨면 낮추고, 움직임 끝에 출렁이면 올린다.
+    """
+    _kd_sel[0] = d
+    pub.set(pos_kd_scale=(-1.0 if d is None else float(d)))
+    for k, v in enumerate(KD_STEPS):
+        on = (v is None and d is None) or (v is not None and d is not None and abs(v - d) < 1e-6)
+        dpg.bind_item_theme(f'kdbtn_{k}', _kp_on if on else _kp_off)
+    _refresh_gain_lbl()
 
 
 def jog_zero():                       # 전체 0(home)
@@ -514,7 +551,11 @@ with dpg.window(tag='main'):
             _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
             dpg.add_text('(S-curve)', color=(120, 130, 150))
         dpg.bind_item_theme(_hb, _home)
-        dpg.add_button(label='Hold', width=70, callback=lambda: set_mode('hold'))
+        # ★Hold 버튼 제거 (2026-08-21, 사용자: "안 쓸 것").
+        #   ⚠**모드 자체는 지우지 않았다** — 제어기가 내부 폴백으로 쓴다:
+        #     reset→hold · 접지거부→hold · 자세거부→hold · --start-mode hold.
+        #     지우면 갈 곳이 off(=limp=낙하)나 home(하중 실린 채 큰 이동)뿐이라 더 위험하다.
+        #   ⇒ 조작 표면에서만 뺀다. 필요하면 '정지·현자세'(reset)가 hold 로 들어간다.
         with dpg.group():              # ★2점 평발 = 정적 자세유지(보행 안 함)
             dpg.add_button(label='2점 평발 stand', width=130, callback=lambda: set_mode('stand'))
             dpg.add_text('(밑창 접지·정적)', color=(120, 130, 150))
@@ -522,10 +563,10 @@ with dpg.window(tag='main'):
             _wb = dpg.add_button(label='점발 보행', width=110, callback=lambda: set_mode('walk'))
             dpg.add_text('(발끝 1점·동적)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
-    dpg.add_text('복구 순서: Off 전원 → Home 복귀 → Hold → (접지·하중전달) → 2점 평발 stand'
+    dpg.add_text('복구 순서: Off 전원 → Home 복귀 → (접지·하중전달) → 2점 평발 stand'
                  '   · Off=명령토크 0 (Kp=Kd=τ=0)', color=(150, 155, 175))
     dpg.add_text('⚠매달린 채로 stand/보행을 켜지 말 것 — GRF 를 전제한 QP 라 해가 안 나오고 '
-                 '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home/hold 뿐.',
+                 '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home 뿐.',
                  color=(210, 150, 90))
     dpg.add_text('Home=제어기가 정한 자세로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기\n'
                  '  목표자세: 1점 점발 = config home.q_deg(전축 0, biped_emb.py 와 동일) · '
@@ -548,6 +589,17 @@ with dpg.window(tag='main'):
                 dpg.add_text(f'kp×{_s:g} · kd×{math.sqrt(_s):.2f}\n'
                              f'가장 예민한 축 {_who} — {_tr:.2f}° 에서 토크트립')
         dpg.add_text('', tag='kp_lbl', color=(150, 155, 175))
+    with dpg.group(horizontal=True):
+        dpg.add_text('kd 배율', color=(255, 205, 120))
+        for _k, _d in enumerate(KD_STEPS):
+            _lb = '자동' if _d is None else f'×{_d:g}'
+            dpg.add_button(label=_lb, width=52, tag=f'kdbtn_{_k}',
+                           callback=lambda _a, _b, u=_d: set_kd_scale(u))
+            with dpg.tooltip(f'kdbtn_{_k}'):
+                if _d is None:
+                    dpg.add_text('kd = √kp — ζ 보존(기본).\nkp 만 올리면 ζ 가 √배율만큼 떨어져 저감쇠 진동이 된다.')
+                else:
+                    dpg.add_text(f'kd 를 ×{_d:g} 로 고정.\n낮출수록 토크 리플(kd x 속도잡음)이 줄지만 ζ 도 같이 떨어진다.')
     dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '
                  '(τ_trip ÷ kp_joint). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',
                  color=(210, 150, 90))

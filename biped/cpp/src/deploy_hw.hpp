@@ -448,6 +448,10 @@ struct Cmd {
   //     옛 GUI 가 이 키를 안 보내는 것과 구분돼야 한다. 구분을 안 하면 옛 GUI 를 붙이는
   //     순간 hold 게인이 0 이 되어 **다리가 떨어진다.**
   double pos_kp_scale = -1.0;
+  // ★kd 배율 — **음수 = 미지정**(제어기가 √kp 로 자동). GUI 가 명시하면 그 값을 쓴다.
+  //   왜 따로 두나: ζ 보존(√kp)이 원칙이지만 **속도잡음이 지배하면** kd 를 덜 올려야 한다
+  //   (kd × dq_noise 가 그대로 토크 리플이다). 어느 쪽이 지배인지는 기체마다 다르다.
+  double pos_kd_scale = -1.0;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -484,6 +488,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.body_h = num("body_h",0.5); out.seq = (long long)num("seq",-1);
   out.jog_deg = list("jog_deg");
   out.pos_kp_scale = num("pos_kp_scale", -1.0);
+  out.pos_kd_scale = num("pos_kd_scale", -1.0);
   return true;
 }
 

@@ -316,6 +316,12 @@ int main(int argc, char** argv){
   double kp_scale_tgt = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
   kp_scale_tgt = std::max(0.0, std::min(KP_SCALE_MAX, kp_scale_tgt));
   double POS_KP = kp_scale_tgt;                    // ★램프 중인 **현재** 배율
+  // ★kd 배율 — 우선순위: 명령파일(pos_kd_scale) > env(POS_KD_SCALE) > 자동(√kp, ζ 보존).
+  //   자동이 기본인 이유는 ζ ∝ kd/√kp 라 kp 만 올리면 저감쇠 진동이 되기 때문이다.
+  //   ⚠그런데 kd 는 **속도잡음을 그대로 토크로 증폭**한다(τ_ripple = kd·dq_noise).
+  //     정지 중 잡음이 ±7dps 면 ×10 에서 hip 이 2.3Nm — 트립 15Nm 의 15% 다.
+  //     잡음이 지배하는 기체에서는 ζ 를 좀 포기하고 kd 를 낮추는 편이 낫다 ⇒ 조절 가능하게 둔다.
+  double kd_scale_cmd = -1.0;                      // 명령파일이 지정한 값(-1 = 미지정)
   double POS_KD = (KD_SCALE_ENV>=0) ? KD_SCALE_ENV : std::sqrt(std::max(1e-9, POS_KP));
   // ★축별 트립각[deg] = τ_trip / (kp_joint · π/180 · 배율). **가장 예민한 축**을 찍는다.
   //   kp_joint = kp_ch·gear_k² (emb/README "게인도 좌표가 둘").
@@ -556,6 +562,10 @@ int main(int argc, char** argv){
         if(fresh) last_cmd_t = lt;
         cmd = nc; body_h = nc.body_h;
         // ★강성 배율 수신 — **−1 은 "키 없음"**(옛 GUI)이라 무시한다. 0 은 유효한 값이다.
+        if(nc.pos_kd_scale >= 0.0 && std::fabs(nc.pos_kd_scale - kd_scale_cmd) > 1e-6){
+          kd_scale_cmd = nc.pos_kd_scale;
+          std::printf("[deploy] kd 배율 → ×%.2f (명령). 자동(√kp)을 덮어쓴다.\n", kd_scale_cmd);
+        }
         if(nc.pos_kp_scale >= 0.0){
           double want = std::max(0.0, std::min(KP_SCALE_MAX, nc.pos_kp_scale));
           if(std::fabs(want - kp_scale_tgt) > 1e-6){
@@ -920,6 +930,10 @@ int main(int argc, char** argv){
     // ★강성 배율 램프 — 목표까지 KP_RAMP_S 에 걸쳐 **선형**으로 옮긴다.
     //   계단으로 바꾸면 하중을 받아 err 만큼 벌어진 축의 토크가 그 자리에서 배율만큼
     //   튄다(τ=kp·err). 접지 중이면 그게 곧 τ_trip 이다.
+    // kd 배율: 명령 > env > 자동(√kp). kp 램프에 맞춰 매 틱 다시 계산한다.
+    POS_KD = (kd_scale_cmd>=0) ? kd_scale_cmd
+           : (KD_SCALE_ENV>=0) ? KD_SCALE_ENV
+           : std::sqrt(std::max(1e-9, POS_KP));
     if(POS_KP != kp_scale_tgt){
       const double step = (KP_RAMP_S>1e-6) ? (KP_SCALE_MAX/KP_RAMP_S)*dt : 1e9;
       double d0 = kp_scale_tgt - POS_KP;

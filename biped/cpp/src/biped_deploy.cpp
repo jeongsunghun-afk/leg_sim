@@ -329,7 +329,7 @@ int main(int argc, char** argv){
   //   ±10% 미검증이고 마찰도 있다.
   //   ⇒ 위치게인을 내리면서 WBIC 토크를 올린다. MIT 모드는 둘을 동시에 받으므로
   //     블렌드 중에는 위치제어가 받쳐 주고, 끝나면 순수토크가 된다.
-  double stand_t0=0, stand_T=0; std::vector<float> stand_hold(NCH,0.f);
+  double stand_t0=0, stand_T=0; std::vector<float> stand_hold(NCH,0.f), stand_to(NCH,0.f), stand_ref(NCH,0.f);
   std::string mode = "off", prev_mode = "off", last_raw;
   bool estop = false, wd_tripped = false;
   double tau_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
@@ -629,6 +629,23 @@ int main(int argc, char** argv){
           }
           if(mode=="stand" || mode=="walk"){
             stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
+            // ★★2026-08-21 블렌드 목표를 **측정각에 얼리지 않는다** — 기하 자세로 램프한다.
+            //   종전엔 진입 순간 측정각(`stand_hold`)을 블렌드 내내 목표로 썼다. 그런데 그 값은
+            //   **하중 상태에 따라 반대로 편향**된다:
+            //       매달림 : PD 처짐만큼 아래로   (hip 5.247Nm/kp100 = 3.0° · thigh 2.6° …)
+            //       접지   : 지면반력에 밀려 위로
+            //   같은 의도 자세인데 언제 눌렀느냐로 hip 수 도가 갈리고, 그 편향이 블렌드 초반
+            //   **kp 가 아직 살아 있는 구간**의 서보 목표가 된다.
+            //   ⇒ 진입 시엔 측정각(계단 0), 블렌드가 끝날 때는 **Qflat8/Qhome8**(기하 진리).
+            //     같은 smoothstep 계수를 쓰므로 추가 튜닝이 없다.
+            //   ⚠목표를 처음부터 Qflat8 로 못 박으면 안 된다 — 로봇이 거기 없을 때 계단이 된다
+            //     (0° 자세에서 발목 채널 100.4° 요구 → 속도트립. `home` 이 생긴 이유다).
+            {
+              std::vector<double> qt(NJ);
+              for(int j=0;j<NJ;j++) qt[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
+              jm.q_ctrl_to_ch(qt.data(), stand_to.data());
+              jm.clamp_ch_via_joint(stand_to.data());
+            }
             // ★2.5초 (2026-08-20). 1.0초로는 ch7 이 202dps 로 임계를 1% 넘겼다.
             //   ⚠발목 채널은 구조상 제일 잘 걸린다 — raw각이 (foot+calf) 라
             //     채널속도 = (q̇_foot + q̇_calf)×1.2 로 **두 관절의 합**이 잡힌다.
@@ -875,7 +892,13 @@ int main(int argc, char** argv){
       const double kd_scale = (1.0-bs) + bs*kdf;      // 블렌드 끝에서 kdf 로 수렴
       jm.kp_ch(kp_ch.data(), 1.0-bs); jm.kd_ch(kd_ch.data(), kd_scale);
       for(int i=0;i<NCH;i++) tau_ch[i] = (float)(bs*(double)tau_ch[i]);
-      hw->write_mit((bs<1.0? stand_hold.data() : q_ch.data()), zero.data(), tau_ch.data(),
+      // 목표: 측정각 → 기하 자세로 블렌드와 **같은 계수**로 이동. bs=1 이면 순수 Qflat8.
+      //   ⚠지금은 bs=1 에서 kp=0 이라 이 목표가 무영향이다. 그래도 측정각을 흘려보내지
+      //     않는다 — STAND_KP_FLOOR 를 켜는 순간 **의미 있는 목표가 이미 들어가 있어야** 한다.
+      //     측정각을 목표로 두면 err≡0(무효)이거나, 센서지연 때문에 err≈−q̇·τ = **음의 감쇠**가 된다.
+      for(int i=0;i<NCH;i++)
+        stand_ref[i] = stand_hold[i] + (float)(bs*(double)(stand_to[i]-stand_hold[i]));
+      hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
     }
 

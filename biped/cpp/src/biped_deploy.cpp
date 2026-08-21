@@ -627,6 +627,33 @@ int main(int argc, char** argv){
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
           }
+          // ★★자세 거리 가드 (2026-08-21). 블렌드 목표가 기하 자세로 **이동**하게 바뀌면서
+          //   생긴 위험을 막는다. 종전엔 목표가 측정각에 얼어 있어 아무리 멀어도 안 움직였다.
+          //   지금은 2.5초 안에 그 거리를 쓸어버린다 — `home` 을 건너뛰면 위험하다:
+          //       발목이 100° 떨어져 있으면 피크 ≈ 0.25·kp_joint 43.2·1.75rad ≈ **18.9 Nm**
+          //       → 토크트립 15 Nm 초과
+          //   ⚠"자동으로 home 을 돌리면 되지 않나" 는 **틀렸다.** home 은 매달린 채 하는
+          //     동작이고 stand 는 접지 후다. stand 안에서 home 을 돌리면 **하중이 실린 채로
+          //     다리를 크게 움직이게** 된다. 그래서 자동 실행이 아니라 **거부**가 맞다.
+          if((mode=="stand" || mode=="walk") && !ground_refused){
+            std::vector<double> qt0(NJ); std::vector<float> to0(NCH,0.f);
+            for(int j=0;j<NJ;j++) qt0[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
+            jm.q_ctrl_to_ch(qt0.data(), to0.data());
+            jm.clamp_ch_via_joint(to0.data());
+            double far=0; int fch=-1;
+            for(int j=0;j<NJ;j++){ int ch=cfg.joints[j].channel;
+              double dd=std::fabs((double)to0[ch]-(double)hs.q_deg[ch]);
+              if(dd>far){ far=dd; fch=ch; } }
+            //   임계 15° — 처짐(채널 수 도)은 통과하고 "home 안 돌림"(채널 100°)은 걸린다.
+            const double lim = getenv("STAND_POSE_LIM") ? atof(getenv("STAND_POSE_LIM")) : 15.0;
+            if(far > lim){
+              std::printf("[deploy] ⛔ **자세가 목표에서 멀다** — stand 거부, hold 유지.\n"
+                          "         ch%d 가 %.1f° 어긋나 있다(허용 %.1f°). **먼저 home 을 돌릴 것.**\n"
+                          "         (강제: STAND_POSE_LIM=999 — 블렌드가 그 거리를 2.5초에 쓸어 트립할 수 있다)\n",
+                          fch, far, lim);
+              nm = "hold"; mode = "hold"; ground_refused = true;
+            }
+          }
           if(mode=="stand" || mode=="walk"){
             stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
             // ★★2026-08-21 블렌드 목표를 **측정각에 얼리지 않는다** — 기하 자세로 램프한다.

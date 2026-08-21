@@ -53,3 +53,4 @@ cmd_biped.json
 
 # 적합 반출 꾸러미(14MB 산출물 — tools/pack_fit.sh 가 만든다)
 pace_fit_bundle.tar.gz
+biped/_master_tmp.mjcf

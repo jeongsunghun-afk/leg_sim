@@ -289,6 +289,25 @@ int main(int argc, char** argv){
   //   전부 죽어 있었다. 실제로 HL_foot 이 명령 +100° 인데 채널 −0.28° 에 머물러도
   //   모니터는 아무 경고를 못 냈다(2026-08-20).
   std::vector<float> kpcmd_ch(NCH, 0.f), kdcmd_ch(NCH, 0.f);
+  // ★★위치모드(home·hold) 게인 배율 (2026-08-20). 위치오차를 줄이려면 kp 를 올린다.
+  //   ⚠**두 가지가 같이 움직인다**:
+  //   ① 토크트립 — kp_ch 1 당 0.0175 Nm/deg 다(실측). kp 500 이면 8.75 Nm/deg 라
+  //      **1.7° 오차에서 트립(15Nm)** 이 걸린다. 게인을 올릴수록 트립이 예민해진다.
+  //   ② 감쇠비 ζ ∝ kd/√kp — kp 만 5배 올리면 ζ 가 **2.24배 떨어진다.**
+  //      지금도 속도잡음(±3~7dps)이 kd 를 타고 틱틱거리는데, 그게 진동으로 커진다.
+  //   ⇒ kd 를 **√배율**만큼 같이 올리는 것을 기본으로 한다(ζ 보존). 따로 주려면 POS_KD_SCALE.
+  //   ⚠stand 는 이 배율을 안 쓴다 — 거기선 WBIC 와 싸우면 안 되고 STAND_KP_FLOOR 가 따로 있다.
+  const double POS_KP = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
+  const double POS_KD = getenv("POS_KD_SCALE") ? atof(getenv("POS_KD_SCALE"))
+                                               : std::sqrt(std::max(1e-9, POS_KP));
+  if(POS_KP != 1.0 || POS_KD != 1.0){
+    const double tau_per_deg = 0.0175 * POS_KP;   // kp_ch 100 기준 축의 값
+    std::printf("[deploy] 위치게인 배율 kp×%.2f · kd×%.2f — hip kp_ch %.0f→%.0f\n"
+                "         ⚠트립까지 %.2f° (hip 기준 %.1fNm/deg · τ_trip %.0fNm)\n",
+                POS_KP, POS_KD, cfg.joints[0].kp, cfg.joints[0].kp*POS_KP,
+                cfg.tau_trip_nm/(cfg.joints[0].kp*tau_per_deg/100.0*100.0),
+                cfg.joints[0].kp*tau_per_deg/100.0*100.0, cfg.tau_trip_nm);
+  }
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
   // ★토크 통계 누적기 — 루프율로 쌓고 발행마다 비운다(위 ① 주석 참조).
   std::vector<double> ts_sum(jm.n_leg,0.0), ts_sq(jm.n_leg,0.0),
@@ -799,7 +818,7 @@ int main(int argc, char** argv){
       qcmd_ch = q_ch; kpcmd_ch = zero; kdcmd_ch = zero;
       hw->write_pos(q_ch.data(), zero.data(), zero.data(), NCH);     // enable=0 → 브리지가 0 토크
     } else if(mode=="hold"){
-      jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = hold_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else if(mode=="home"){
@@ -809,7 +828,7 @@ int main(int argc, char** argv){
       const double sf = u*u*(3.0-2.0*u);
       for(int i=0;i<NCH;i++)
         q_ch[i] = home_from[i] + (float)(sf*(double)(home_to[i]-home_from[i]));
-      jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
       if(u>=1.0 && !home_done){
@@ -833,7 +852,7 @@ int main(int argc, char** argv){
       std::vector<double> qj = jog_q;
       jm.clamp_joint(qj.data());                   // 관절한계(모델각) — 채널이 아니라 여기서
       jm.q_joint_to_ch(qj.data(), q_ch.data());
-      jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반

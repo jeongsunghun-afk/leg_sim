@@ -4,7 +4,9 @@
 //   데이터흐름:  HW.read → 관절매핑(deg→rad) → 추정(leg-odom) → 모델 주입 → mj_forward
 //              → BipedControl.control → d->ctrl(토크) → 관절매핑(rad→deg) → HW.write_mit
 //
-//   모드: off / hold / stand / walk       (jog·home 은 Python 앱 emb/app/biped_emb.py 담당)
+//   모드: off / hold / home / jog / stand / walk
+//     jog·home 은 위치제어(kp/kd, τ_ff 없음) · stand/walk 는 WBIC 토크(+kd 플로어).
+//     emb/app/biped_emb.py 와 **같은 config 키**를 읽는다(jog.max_speed_dps / home.*).
 //   ⚠ **모터 명령 writer 는 한 번에 하나만.** 이 바이너리를 돌릴 땐 biped_emb.py 를 끌 것.
 //
 //   실행:
@@ -298,6 +300,13 @@ int main(int argc, char** argv){
   //   ⇒ home 으로 먼저 그 자세까지 S-curve 로 간 뒤 hold→접지→stand 순서로 간다.
   std::vector<float> home_from(NCH,0.f), home_to(NCH,0.f);
   double home_t0=0, home_T=0; bool home_done=false;
+  // ★jog 램프 상태 (2026-08-21). **등속 램프**다 — home 의 S-curve 를 쓰지 않는다.
+  //   S-curve 는 "A→B 1회 이동" 전제인데 jog 목표는 슬라이더를 끄는 동안 **매 틱 바뀐다.**
+  //   그래서 살아 있는 목표를 속도클램프로 따라간다(biped_emb.py control/jog.py 와 같은 방식).
+  //   ⚠등속 램프는 출발·도착에서 가속도가 불연속이다(config 주석). jog 는 축 하나씩 천천히
+  //     쓰는 검증용이라 실무상 문제가 안 됐지만, 알고 쓰는 것과 모르고 쓰는 것은 다르다.
+  std::vector<double> jog_q(NJ, 0.0);        // 램프 중인 명령(**모델각 deg**)
+  double jog_prev_t = 0; bool jog_init = false;
   bool ground_refused=false;      // ★접지 가드 거부 래치(로그 폭주 방지)
   bool still_warned=false;        // ★정지 확인 거부 래치
   // ★★무장 직후 트레이스 (2026-08-20). hold 진입 즉시 속도트립이 반복되는데
@@ -328,11 +337,14 @@ int main(int argc, char** argv){
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
   hw->enable(0);
-  std::printf("[deploy] 모드: off/hold/**home**/stand/walk. GUI 로 조종(%s).\n"
-              "[deploy] home = %s 자세로 %.0fdps S-curve 이동(램프 %.1fs 설정).\n",
+  std::printf("[deploy] 모드: off/hold/**home**/**jog**/stand/walk. GUI 로 조종(%s).\n"
+              "[deploy] home = %s 자세로 %.0fdps S-curve 이동(램프 %.1fs 설정).\n"
+              "[deploy] jog  = 축별 목표각 추종 · %.0fdps 등속 램프 · 관절한계 클램프.\n",
               cmd_p.c_str(), c.cmode==1?"2점 평발 stand":"1점 점발",
-              cfg.home_speed_dps, cfg.home_min_time_s);
-  std::printf("[deploy] ⚠ jog 는 Python 앱 담당. writer 는 한 번에 하나만.\n");
+              cfg.home_speed_dps, cfg.home_min_time_s, cfg.jog_speed_dps);
+  // ★위 두 값은 **실제 파싱된 것**을 찍는다 — config 가 안 읽혀도 기본값으로 조용히
+  //   도는 걸 막는다. 2026-08-21 까지 실제로 그랬다(키가 safety 분기에 있어 무시됐다).
+  std::printf("[deploy] ⚠ 모터 명령 writer 는 한 번에 하나만 — biped_emb.py 와 동시 실행 금지.\n");
 
   // ★★기동 시 명령파일에 남아 있는 모드를 **그대로 실행하지 않는다** (2026-08-20).
   //   GUI 는 마지막 상태를 파일에 남긴다. 실제로 seq 14871 짜리 `"mode":"stand"` 가
@@ -472,7 +484,7 @@ int main(int argc, char** argv){
         cmd = nc; body_h = nc.body_h;
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
-        if(nm!="off" && nm!="hold" && nm!="home" && nm!="stand" && nm!="walk") nm = "off";   // jog 등 → off
+        if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk") nm = "off";
         // ★E-stop 래치는 명시적 off 로만 해제. 그 전까지 모드변경 무시.
         if(estop){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
@@ -541,6 +553,16 @@ int main(int argc, char** argv){
             std::printf("[deploy]   인계 게인 kp/kd = hip %.0f/%.1f · thigh %.0f/%.1f · calf %.0f/%.1f · foot %.0f/%.1f\n",
                         cfg.joints[0].kp,cfg.joints[0].kd, cfg.joints[1].kp,cfg.joints[1].kd,
                         cfg.joints[2].kp,cfg.joints[2].kd, cfg.joints[3].kp,cfg.joints[3].kd);
+          }
+          if(mode=="jog"){
+            // ★현재 **측정각에서** 시작한다(클램프 없이) — 명령 점프 방지.
+            //   한계로 클램프해서 시작하면, 현재 자세가 jog 범위 밖일 때 진입 즉시
+            //   한계까지 순간이동 명령이 나간다(= 막으려던 바로 그 점프).
+            //   biped_emb.py Jogger.reset 이 같은 이유로 클램프를 뺐다(2026-08-10).
+            jm.ch_to_q_joint(hs.q_deg.data(), jog_q.data());
+            jog_prev_t = lt; jog_init = true;
+            std::printf("[deploy] jog 진입 — 현재 자세에서 시작 · %.0f dps 제한 · 한계는 관절한계\n",
+                        cfg.jog_speed_dps);
           }
           if(mode=="home"){
             home_from = hs.q_deg;
@@ -728,6 +750,24 @@ int main(int argc, char** argv){
         std::printf("[deploy] home 도달 — 그 자세로 유지 중.\n"
                     "         다음: 크레인을 내려 접지 → **hold** 로 하중 이양 → stand\n");
       }
+    } else if(mode=="jog"){
+      // ★등속 램프로 **살아 있는 목표**를 따라간다. 목표는 GUI 의 jog_deg(모델각 deg).
+      //   jog_deg 가 없으면(옛 GUI) 현재 램프값을 유지 — 갑자기 0 으로 끌려가지 않게.
+      if(!jog_init){ jm.ch_to_q_joint(hs.q_deg.data(), jog_q.data()); jog_prev_t = lt; jog_init = true; }
+      double el = lt - jog_prev_t; jog_prev_t = lt;
+      el = std::max(0.0, std::min(el, 0.05));      // ⚠긴 정지 후 급이동 방지(Jogger.DT_CAP 과 동일)
+      const double step = cfg.jog_speed_dps * el;
+      if((int)cmd.jog_deg.size() >= NJ){
+        for(int j=0;j<NJ;j++){
+          double d0 = cmd.jog_deg[j] - jog_q[j];
+          jog_q[j] += std::max(-step, std::min(step, d0));
+        }
+      }
+      std::vector<double> qj = jog_q;
+      jm.clamp_joint(qj.data());                   // 관절한계(모델각) — 채널이 아니라 여기서
+      jm.q_joint_to_ch(qj.data(), q_ch.data());
+      jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반
       // 접촉: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
       //   ⚠추정에 쓰는 접촉이 제어기 자신의 계획이라 순환처럼 보이지만, 힘센서 없는

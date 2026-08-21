@@ -59,6 +59,7 @@ struct EmbCfg {
   // home 램프 — biped_emb.py 의 HomeTrajectory 와 **같은 설정 키**를 읽는다.
   //   두 제어기가 같은 자세로 같은 속도로 가야 운전자가 헷갈리지 않는다.
   double home_speed_dps = 15.0, home_acc_dps2 = 30.0, home_min_time_s = 0.6;
+  double jog_speed_dps  = 20.0;      // ★jog 등속 램프 속도(모델각 deg/s) — biped_emb.py 와 같은 키
 
   bool installed_has(int ch) const {
     return installed.empty() || std::find(installed.begin(), installed.end(), ch) != installed.end();
@@ -172,9 +173,16 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       else if(key=="tau_trip_nm") c.tau_trip_nm = num(8.0);
       else if(key=="tau_trip_ms") c.tau_trip_ms = num(50);
       else if(key=="vel_trip_dps") c.vel_trip_dps = num(200.0);
-      // ⚠home: 아래 키는 `home:` 블록에도 `jog:` 블록에도 있을 수 있다. 이 파서는
-      //   블록 구분 없이 키 이름으로만 읽으므로 이름이 겹치지 않는 것만 쓴다.
-      else if(key=="max_speed_dps") c.home_speed_dps = num(15.0);
+    // ★★2026-08-21 `jog:`·`home:` 을 **제 블록에서** 읽는다.
+    //   종전엔 이 세 키가 `safety` 분기 안에 있었다. 그런데 YAML 에서 그것들은 `jog:`·`home:`
+    //   아래에 있으므로 **한 번도 읽히지 않았다** — 늘 기본값으로 떨어졌다.
+    //   `home.max_speed_dps` 가 마침 기본값과 같은 15.0 이라 증상이 안 보였을 뿐이다
+    //   (`jog.max_speed_dps: 20.0` 은 그냥 무시되고 있었다).
+    //   ⚠section 추적은 파서에 이미 있었다(top-level 키에서 갱신). 분기만 잘못 놓였던 것이다.
+    } else if(section=="jog"){
+      if(key=="max_speed_dps") c.jog_speed_dps = num(20.0);
+    } else if(section=="home"){
+      if(key=="max_speed_dps") c.home_speed_dps = num(15.0);
       else if(key=="max_acc_dps2")  c.home_acc_dps2  = num(30.0);
       else if(key=="min_time_s")    c.home_min_time_s= num(0.6);
     }
@@ -423,6 +431,7 @@ struct Cmd {
   std::string mode = "off";
   double v=0, vy=0, w=0, body_h=0.5;
   long long seq=-1;
+  std::vector<double> jog_deg;           // ★축별 목표각(**모델각 deg**). 없으면 비어 있다
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -443,9 +452,21 @@ inline bool read_cmd(const std::string& path, Cmd& out){
     auto q1 = s.find('"', p); if(q1==std::string::npos) return dv;
     auto q2 = s.find('"', q1+1); if(q2==std::string::npos) return dv;
     return s.substr(q1+1, q2-q1-1); };
+  // ★jog_deg 배열 — GUI 가 축별 목표각(**모델각 deg**)을 낸다. 없으면 빈 벡터.
+  //   ⚠`num` 은 `"key":` 뒤를 stod 로 읽어 `[` 에서 실패하므로 배열엔 못 쓴다.
+  auto list=[&](const char* key)->std::vector<double>{
+    std::vector<double> out2;
+    std::string k = std::string("\"")+key+"\"";
+    auto p = s.find(k);      if(p==std::string::npos) return out2;
+    auto b = s.find('[', p); if(b==std::string::npos) return out2;
+    auto e = s.find(']', b); if(e==std::string::npos) return out2;
+    std::stringstream ls(s.substr(b+1, e-b-1)); std::string t;
+    while(std::getline(ls,t,',')){ try{ out2.push_back(std::stod(t)); }catch(...){} }
+    return out2; };
   out.mode = str("mode","off");
   out.v = num("v",0); out.vy = num("vy",0); out.w = num("w",0);
   out.body_h = num("body_h",0.5); out.seq = (long long)num("seq",-1);
+  out.jog_deg = list("jog_deg");
   return true;
 }
 

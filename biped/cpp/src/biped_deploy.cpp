@@ -327,7 +327,24 @@ int main(int argc, char** argv){
   //   가 채널 100.4° 가 된다). 속도트립 200dps 에 그냥 걸린다.
   //   ⇒ home 으로 먼저 그 자세까지 S-curve 로 간 뒤 hold→접지→stand 순서로 간다.
   std::vector<float> home_from(NCH,0.f), home_to(NCH,0.f);
-  double home_t0=0, home_T=0; bool home_done=false;
+  double home_t0=0, home_T=0; bool home_done=false, home_warned=false;
+  // ── 채널 이름(로그용). cfg.joints 에서 channel→name 을 만든다. 없으면 "ch%d".
+  std::vector<std::string> chname(NCH);
+  for(int i=0;i<NCH;i++) chname[i] = "ch"+std::to_string(i);
+  for(const auto& j : cfg.joints) if(j.channel>=0 && j.channel<NCH) chname[j.channel]=j.name;
+  // ★★자세유지 토크 비교 (2026-08-21, 사용자 요청).
+  //   묻고 있는 것: **같은 자세를 hold(위치제어)로 버틸 때와 stand(WBIC 토크)로 버틸 때
+  //   각 축이 내는 토크가 얼마나 다른가.** 둘이 크게 다르면 WBIC 의 모델(질량·중력·접촉
+  //   분배)이 실제와 어긋난다는 뜻이고, 그 차이가 곧 stand 가 처지는 이유다.
+  //   ⚠성립 조건: **두 모드의 목표자세가 같아야 한다.** cmode=1 이면 home 도 stand 도
+  //     Qflat8 이라 성립한다. 1점 점발(cmode=0)에서 home 이 설정 0° 로 가면 stand 목표
+  //     (Qhome8)와 달라 비교가 무의미하다 — 그때는 비교표에 경고를 붙인다.
+  std::vector<double> tau_acc(NCH,0.0); int tau_n=0; double tau_win_t0=0;
+  std::vector<double> tau_avg(NCH,0.0);                 // 최근 창의 평균 토크
+  std::vector<double> tau_hold(NCH,0.0), tau_stand(NCH,0.0);
+  std::vector<double> q_hold(NCH,0.0),   q_stand(NCH,0.0);
+  bool have_tau_hold=false, have_tau_stand=false;
+  double mode_t0=0;                                     // 현재 모드 진입시각
   // ★jog 램프 상태 (2026-08-21). **등속 램프**다 — home 의 S-curve 를 쓰지 않는다.
   //   S-curve 는 "A→B 1회 이동" 전제인데 jog 목표는 슬라이더를 끄는 동안 **매 틱 바뀐다.**
   //   그래서 살아 있는 목표를 속도클램프로 따라간다(biped_emb.py control/jog.py 와 같은 방식).
@@ -560,7 +577,9 @@ int main(int argc, char** argv){
           } else still_warned = false;
         }
         if(nm != mode){
-          prev_mode = mode; mode = nm;
+          prev_mode = mode; mode = nm; mode_t0 = lt;
+          // ★stand 를 다시 들어오면 비교를 새로 잡는다(hold 스냅샷은 남긴다 — 기준이니까).
+          if(mode=="stand") have_tau_stand=false;
           if(((mode!="off" && prev_mode=="off") || mode=="stand" || mode=="walk") && !trc){
             trc = fopen("/tmp/arm_trace.csv","w"); trc_t0 = lt;
             if(trc){ fprintf(trc,"t");
@@ -570,7 +589,31 @@ int main(int argc, char** argv){
           hw->enable(mode=="off" ? 0 : 1);
           if(mode=="hold"){
             std::vector<float> raw = hs.q_deg;             // 클램프 전
-            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            // ★★home → hold 는 **home 의 목표를 이어받는다** (2026-08-21, 사용자 요청).
+            //   하려는 것: home 자세를 잡고 hold 로 굳힌 뒤 **크레인을 내려 중력을 걸어도
+            //   그 자세를 유지**시키는 것. 그런데 종전처럼 진입 시 측정각을 래치하면,
+            //   매달린 채 이미 처져 있던 각이 목표가 된다 — 접지하면 거기서 더 처지고
+            //   그때 재진입하면 또 그 자리를 목표로 삼는다. **처짐이 누적된다.**
+            //   ⇒ 방금 home 이 지시한 자세(home_to)를 그대로 목표로 쓴다. 그러면 hold 는
+            //     "지금 자세 굳히기" 가 아니라 "home 자세로 버티기" 가 된다.
+            //   ⚠이건 진입 순간 **오차 0 이 아니다**(처진 만큼 계단). 그래서 얼마나 되는지
+            //     반드시 찍는다 — 크면 게인이 부족하거나 그 축이 구동되지 않은 것이다.
+            //   ⚠HOLD_LATCH=meas 로 종전(측정각 래치) 동작을 되돌릴 수 있다.
+            const char* hl = getenv("HOLD_LATCH");
+            const bool inherit = (prev_mode=="home") && !(hl && std::string(hl)=="meas");
+            if(inherit){
+              hold_ch = home_to;
+              double emx=0; int ech=-1;
+              for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+                double e=(double)home_to[i]-(double)raw[i];
+                if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
+              std::printf("[deploy] hold ← **home 목표 인계**(측정각 래치 아님).\n"
+                          "         진입 오차 최대 %s %+.2f° — 이만큼이 계단 명령이 된다.\n",
+                          ech>=0?chname[ech].c_str():"-", emx);
+            } else {
+              hold_ch = hs.q_deg;
+            }
+            jm.clamp_ch_via_joint(hold_ch.data());
             // ★hold 진입은 "측정각을 그대로 목표로" 라 **오차 0 이어야** 한다.
             //   그런데 실기에서 진입 즉시 ch2(204dps)·ch3(224dps) 속도트립이 났다.
             //   원인 후보가 둘이라 찍어서 가른다:
@@ -578,9 +621,12 @@ int main(int argc, char** argv){
             //         calf 에 의존한다 — 왕복이 항등이 아닐 수 있다)
             //     (b) 왕복은 항등인데 **게인 인계 점프**다(Emb kd 5.0 → 우리 3.5/2.0).
             //   Δ 가 0 이면 (b), 0 이 아니면 (a) 다. 한 번만 찍는다.
+            //   ⚠home 인계일 때는 이 진단이 성립하지 않는다 — 목표가 측정각이 아니니
+            //     Δ 가 0 이 아닌 게 정상이다. 그때는 클램프 영향만 따로 잰다.
+            std::vector<float> base = inherit ? home_to : raw;
             std::string dmsg; double dmx=0; int dch=-1;
             for(int i=0;i<NCH;i++){
-              double dd = (double)hold_ch[i]-(double)raw[i];
+              double dd = (double)hold_ch[i]-(double)base[i];
               if(std::fabs(dd)>std::fabs(dmx)){ dmx=dd; dch=i; }
               char b[48]; std::snprintf(b,sizeof b," ch%d %+.3f", i, dd); dmsg += b;
             }
@@ -605,23 +651,46 @@ int main(int argc, char** argv){
           }
           if(mode=="home"){
             home_from = hs.q_deg;
-            std::vector<double> qt(NJ);
-            for(int j=0;j<NJ;j++) qt[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
-            jm.q_ctrl_to_ch(qt.data(), home_to.data());
+            // ★★목표자세 (2026-08-21 수정) — **1점 점발은 biped_emb.py 와 같은 곳으로 간다.**
+            //   종전엔 cmode 와 무관하게 MJCF 기하에서 뽑은 Qhome8(thigh +11.6°·calf −38.5°)
+            //   로 갔다. biped_emb.py 는 설정의 `home.q_deg`(지금 전축 0°)로 간다.
+            //   ⇒ **같은 HOME 버튼인데 제어기에 따라 다른 자세**였다. 그게 "1점 점발에서
+            //     홈이 이상하게 움직인다" 의 정체다. 이제 설정 하나를 같이 읽는다.
+            //   ⚠2점 평발(cmode=1)은 그대로 **Qflat8**이다. 거긴 발바닥이 지면과 평행해야
+            //     하는 기하 조건이고, 0° 로 가면 stand 진입검사(채널 15°)에 걸려 못 선다.
+            //   ⚠설정에 home.q_deg 가 없으면 종전 Qhome8 로 폴백한다(조용히 0 으로 가면
+            //     크레인에 매달린 채 무릎이 38° 펴진다 — 폴백은 반드시 옛 동작이어야 한다).
+            const bool use_cfg_home = (c.cmode!=1 && (int)cfg.home_q_deg.size() >= NJ);
+            if(use_cfg_home){
+              jm.q_joint_to_ch(cfg.home_q_deg.data(), home_to.data());   // 설정은 **deg**
+            } else {
+              std::vector<double> qt(NJ);
+              for(int j=0;j<NJ;j++) qt[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
+              jm.q_ctrl_to_ch(qt.data(), home_to.data());                // 기하는 **rad**
+            }
             jm.clamp_ch_via_joint(home_to.data());
             double mx=0;
             for(int i=0;i<NCH;i++) if(cfg.installed_has(i))
               mx = std::max(mx, (double)std::fabs(home_to[i]-home_from[i]));
-            // smoothstep s=3u²−2u³ : 최대속도 1.5·Δ/T · 최대가속 6·Δ/T²
-            //   ⇒ T 를 둘 다 만족하게 잡으면 트립 임계 안에서 끝난다.
-            double T1 = 1.5*mx/std::max(1e-6, cfg.home_speed_dps);
-            double T2 = std::sqrt(6.0*mx/std::max(1e-6, cfg.home_acc_dps2));
+            // ★★궤적도 biped_emb.py 와 같은 **5차식** s=10τ³−15τ⁴+6τ⁵ 로 바꿨다(2026-08-21).
+            //   종전 smoothstep 3u²−2u³ 는 시작·끝에서 **가속도가 0 이 아니다**(6Δ/T²).
+            //   즉 HOME 을 누르는 순간 토크가 계단으로 튄다. 5차식은 경계 가속도까지 0 이라
+            //   그 계단이 없다 — 드라이버 래치오프가 잦은 지금 이건 취향 문제가 아니다.
+            //   극값: s'max = 1.875 (τ=0.5) · s''max = 10/√3 ≈ 5.7735
+            //   ⚠같은 v/a 한계면 T 가 1.25배 길어진다. 40dps·60dps² · Δ100° → 3.8s→4.7s.
+            //   ⚠거리 mx 는 **채널각**으로 잰다(biped_emb.py 는 관절각). 일부러 다르다:
+            //     발목 채널 = calf+foot 이라 채널 이동이 관절보다 크고, 속도트립도 채널
+            //     기준이다. 관절각으로 재면 발목 채널만 조용히 한계를 넘는다.
+            const double S_VMAX = 1.875, S_AMAX = 10.0/std::sqrt(3.0);
+            double T1 = S_VMAX*mx/std::max(1e-6, cfg.home_speed_dps);
+            double T2 = std::sqrt(S_AMAX*mx/std::max(1e-6, cfg.home_acc_dps2));
             home_T = std::max(std::max(T1,T2), cfg.home_min_time_s);
-            home_t0 = lt; home_done = false;
+            home_t0 = lt; home_done = false; home_warned = false;
             std::printf("[deploy] home → **%s** 자세 · 최대이동 %.1f° · %.1fs 램프"
-                        "(S-curve · 최대 %.0fdps ≪ 트립 %.0f)\n",
-                        c.cmode==1?"2점 평발 stand":"1점 점발 home",
-                        mx, home_T, 1.5*mx/home_T, cfg.vel_trip_dps);
+                        "(5차 S-curve · 최대 %.0fdps ≪ 트립 %.0f)\n",
+                        use_cfg_home ? "설정 home.q_deg (biped_emb.py 와 동일)"
+                                     : (c.cmode==1?"2점 평발 Qflat8":"1점 점발 Qhome8(폴백)"),
+                        mx, home_T, S_VMAX*mx/home_T, cfg.vel_trip_dps);
           }
           // ★★접지 확인 없이 stand 를 못 켜게 막는다 (2026-08-20 실기).
           //   매달린 채 stand 를 누르면 WBIC 가 요구하는 지면반력을 지면이 못 내줘
@@ -812,6 +881,16 @@ int main(int argc, char** argv){
       } else { fclose(trc); trc=nullptr; std::printf("[deploy] 트레이스 저장 완료\n"); }
     }
 
+    // ★자세유지 토크 — 0.5초 창의 **평균**을 굴린다. 한 틱 값은 마찰·양자화로 튄다.
+    {
+      for(int i=0;i<NCH;i++) tau_acc[i] += (double)hs.tau_nm[i];
+      tau_n++;
+      if(lt - tau_win_t0 >= 0.5 && tau_n>0){
+        for(int i=0;i<NCH;i++){ tau_avg[i] = tau_acc[i]/tau_n; tau_acc[i]=0.0; }
+        tau_n=0; tau_win_t0=lt;
+      }
+    }
+
     // ⑤ 모드 디스패치
     if(mode=="off"){
       for(int i=0;i<NCH;i++) q_ch[i]=0.f;
@@ -822,10 +901,11 @@ int main(int argc, char** argv){
       qcmd_ch = hold_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else if(mode=="home"){
-      // ★S-curve — 가감속이 0 에서 시작·끝나므로 속도트립을 만들지 않는다.
+      // ★5차 S-curve s(τ)=10τ³−15τ⁴+6τ⁵ — biped_emb.py control/home.py 와 **같은 식**.
+      //   경계 속도·가속도가 둘 다 0 이라 진입/도착에서 토크가 계단으로 안 튄다.
       double u = (home_T>0) ? (lt-home_t0)/home_T : 1.0;
       u = std::max(0.0, std::min(1.0, u));
-      const double sf = u*u*(3.0-2.0*u);
+      const double sf = u*u*u*(10.0 - 15.0*u + 6.0*u*u);
       for(int i=0;i<NCH;i++)
         q_ch[i] = home_from[i] + (float)(sf*(double)(home_to[i]-home_from[i]));
       jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
@@ -835,6 +915,28 @@ int main(int argc, char** argv){
         home_done = true;
         std::printf("[deploy] home 도달 — 그 자세로 유지 중.\n"
                     "         다음: 크레인을 내려 접지 → **hold** 로 하중 이양 → stand\n");
+      }
+      // ★★**도달했는지 실제로 본다** (2026-08-21 신설, biped_emb.py 의 at_goal 과 같은 계약).
+      //   종전 "home 도달" 은 **시간이 다 됐다**는 뜻일 뿐이었다. 그래서 HR_hip 이 두 번
+      //   연속 **0° 움직이고** 끝났는데도 화면엔 "도달" 이라고만 떴다(같은 +11.22° 잔차).
+      //   ⇒ 시간이 끝난 뒤 0.3s 정착을 주고, 측정각이 목표에서 settle 밖이면 **한 번만** 경고.
+      //   ⚠경고일 뿐 정지시키지 않는다 — 매달린 채로 처지는 건 정상이고, 여기서 끊으면
+      //     운전자가 다음 단계로 못 간다. 판단은 사람이 한다.
+      if(home_done && !home_warned && lt-home_t0 > home_T + 0.3){
+        home_warned = true;
+        std::string bad; double wmax=0;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+          double e = (double)hs.q_deg[i] - (double)home_to[i];
+          if(std::fabs(e) > cfg.home_settle_deg){
+            char b[64]; std::snprintf(b,sizeof b," %s%+.1f°", chname[i].c_str(), e);
+            bad += b; wmax = std::max(wmax, std::fabs(e));
+          }
+        }
+        if(!bad.empty())
+          std::printf("[deploy] ⚠ home **도달 실패**(허용 %.1f°, 최대 %.1f°):%s\n"
+                      "         0° 근처 잔차면 부하 처짐이다. **이동량만큼 그대로 남았으면\n"
+                      "         그 축은 구동이 안 된 것이다** — 모니터에서 토크를 볼 것.\n",
+                      cfg.home_settle_deg, wmax, bad.c_str());
       }
     } else if(mode=="jog"){
       // ★등속 램프로 **살아 있는 목표**를 따라간다. 목표는 GUI 의 jog_deg(모델각 deg).
@@ -985,6 +1087,64 @@ int main(int argc, char** argv){
                     kp_ch.data(), kd_ch.data(), NCH);
     }
 
+    // ★★자세유지 토크 스냅샷 — hold(위치제어) vs stand(WBIC 토크) 비교용.
+    //   같은 자세를 버티는 데 각 축이 실제로 내는 토크를 두 모드에서 각각 잡아 둔다.
+    //   ⚠정착을 기다린다: hold 는 진입 1.5s, stand 는 **블렌드가 끝나고** 1.5s.
+    //     그 전 값은 계단 응답이라 "유지 토크" 가 아니다.
+    {
+      const bool hold_settled  = (mode=="hold")  && (lt-mode_t0 > 1.5);
+      const bool stand_settled = (mode=="stand") && (lt-mode_t0 > stand_T + 1.5);
+      if(hold_settled){
+        tau_hold = tau_avg;
+        for(int i=0;i<NCH;i++) q_hold[i]=(double)hs.q_deg[i];
+        have_tau_hold = true;
+      }
+      if(stand_settled){
+        tau_stand = tau_avg;
+        for(int i=0;i<NCH;i++) q_stand[i]=(double)hs.q_deg[i];
+        if(!have_tau_stand && have_tau_hold){
+          have_tau_stand = true;
+          // 자세가 실제로 같은지 먼저 본다 — 다르면 토크 차이는 해석 불가다.
+          double qmx=0; int qch=-1;
+          for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+            double e=q_stand[i]-q_hold[i];
+            if(std::fabs(e)>std::fabs(qmx)){ qmx=e; qch=i; } }
+          std::printf("\n[deploy] ═══ 자세유지 토크: hold(위치제어) vs stand(WBIC) ═══\n"
+                      "  축         hold[Nm]  stand[Nm]     Δ[Nm]   |  q_hold   q_stand    Δq[°]\n");
+          double tmx=0; int tch=-1;
+          for(int i=0;i<NCH;i++){
+            if(!cfg.installed_has(i)) continue;
+            double dt_ = tau_stand[i]-tau_hold[i], dq_ = q_stand[i]-q_hold[i];
+            if(std::fabs(dt_)>std::fabs(tmx)){ tmx=dt_; tch=i; }
+            std::printf("  %-10s %8.3f  %8.3f  %+8.3f   | %7.2f  %7.2f  %+7.2f\n",
+                        chname[i].c_str(), tau_hold[i], tau_stand[i], dt_,
+                        q_hold[i], q_stand[i], dq_);
+          }
+          std::printf("  최대 Δτ %s %+.3f Nm · 최대 Δq %s %+.2f°\n",
+                      tch>=0?chname[tch].c_str():"-", tmx,
+                      qch>=0?chname[qch].c_str():"-", qmx);
+          // 해석을 사람이 매번 다시 하지 않게 여기 적어 둔다.
+          if(std::fabs(qmx) > 2.0)
+            std::printf("  ⚠자세가 %.1f° 어긋났다 — **토크 차이를 그대로 읽으면 안 된다.**\n"
+                        "    stand 가 그만큼 처졌다는 뜻이고, Δτ 에는 자세 차이의 중력분이 섞여 있다.\n", std::fabs(qmx));
+          if(c.cmode!=1)
+            std::printf("  ⚠1점 점발이다 — home 목표(설정 0°)와 stand 목표(Qhome8)가 **다른 자세**라\n"
+                        "    이 비교는 성립하지 않는다. 2점 평발(cmode=1)에서 볼 것.\n");
+          std::printf("  읽는 법: Δτ≈0 이면 WBIC 가 중력을 제대로 보상하고 있다.\n"
+                      "           Δτ 가 음이면 stand 가 **덜 내고 있다** — 그만큼 처진다.\n"
+                      "  CSV → /tmp/hold_vs_stand.csv\n\n");
+          if(FILE* cf = fopen("/tmp/hold_vs_stand.csv","w")){
+            fprintf(cf,"ch,name,tau_hold_nm,tau_stand_nm,dtau_nm,q_hold_deg,q_stand_deg,dq_deg\n");
+            for(int i=0;i<NCH;i++) if(cfg.installed_has(i))
+              fprintf(cf,"%d,%s,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f\n", i, chname[i].c_str(),
+                      tau_hold[i], tau_stand[i], tau_stand[i]-tau_hold[i],
+                      q_hold[i], q_stand[i], q_stand[i]-q_hold[i]);
+            fclose(cf);
+          }
+        }
+      }
+    }
+
     // ⑥ 상태 발행(~20Hz)
     double period = lt - prev_loop; prev_loop = lt;
     if(period > 0) hz_ema = 0.98*hz_ema + 0.02*(1.0/period);
@@ -1060,9 +1220,20 @@ int main(int argc, char** argv){
         std::snprintf(b,sizeof b,"%s%.3f", sep, ts_n? ts_max[i]:0.0); tmx += b;
       }
       tsd+="]"; tmn+="]"; tmx+="]";
+      // ★자세유지 토크 스냅샷 → **관절 좌표**로 발행(tau_leg_nm 과 같은 좌표라야 같이 읽힌다).
+      //   아직 안 잡혔으면 빈 배열 `[]` — 모니터가 "없음" 과 "0 Nm" 을 구분할 수 있어야 한다.
+      auto tau_snap = [&](const std::vector<double>& t, bool have){
+        if(!have) return std::string("[]");
+        std::vector<float> tf(NCH); for(int i=0;i<NCH;i++) tf[i]=(float)t[i];
+        std::vector<double> tj(jm.n_leg); jm.ch_to_tau_joint(tf.data(), tj.data());
+        std::string s="[";
+        for(int i=0;i<jm.n_leg;i++){ char b[32]; std::snprintf(b,sizeof b,"%s%.3f", i?",":"", tj[i]); s+=b; }
+        return s+"]"; };
+      const std::string thold = tau_snap(tau_hold, have_tau_hold);
+      const std::string tstand= tau_snap(tau_stand, have_tau_stand);
       const long ts_n_pub = ts_n;
       ts_reset();                       // 창을 비운다 — 다음 발행까지 다시 쌓는다
-      char buf[4096];   // ★3072 → 4096 (2026-08-20): 토크 창통계 3배열(std·min·max) 추가
+      char buf[5120];   // ★4096 → 5120 (2026-08-21): 자세유지 토크 스냅샷 2배열 추가
       std::snprintf(buf,sizeof buf,
         "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
         "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_leg\":%s,\"kd_leg\":%s,"
@@ -1083,7 +1254,9 @@ int main(int argc, char** argv){
         // ★home 진행률(0~1) — GUI 가 이미 표시할 준비가 돼 있다(teleop_gui_biped:526).
         //   10초짜리 램프라 운전자가 "지금 얼마나 갔나" 를 볼 수 있어야 한다.
         "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s,"
-        "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s}",
+        // ★자세유지 토크 스냅샷(관절 Nm). hold=위치제어로 버틸 때, stand=WBIC 로 버틸 때.
+        //   `[]` 는 **아직 안 잡혔다**는 뜻이다(0 Nm 이 아니라).
+        "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s,\"tau_hold_nm\":%s,\"tau_stand_nm\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
@@ -1096,7 +1269,7 @@ int main(int argc, char** argv){
         c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
-        (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str());
+        (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str());
       write_state(stt_p, buf);
     }
 

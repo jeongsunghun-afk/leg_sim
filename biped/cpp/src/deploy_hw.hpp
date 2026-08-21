@@ -59,6 +59,15 @@ struct EmbCfg {
   // home 램프 — biped_emb.py 의 HomeTrajectory 와 **같은 설정 키**를 읽는다.
   //   두 제어기가 같은 자세로 같은 속도로 가야 운전자가 헷갈리지 않는다.
   double home_speed_dps = 15.0, home_acc_dps2 = 30.0, home_min_time_s = 0.6;
+  // ★★home 목표자세 = `home.q_deg`(모델각 deg). biped_emb.py 와 **같은 값을 읽는다**.
+  //   2026-08-21 신설. 종전 deploy 는 이 키를 안 읽고 MJCF 기하에서 뽑은 Qhome8
+  //   (thigh +11.6° · calf −38.5°) 로 갔다. 그래서 같은 HOME 버튼인데 두 제어기가
+  //   **다른 자세**로 갔다 — "1점 점발에서 홈이 이상하게 움직인다" 의 정체다.
+  //   ⚠비었으면(키 없음) 종전대로 Qhome8 로 폴백한다. 2점 평발(cmode=1)은 이 값과
+  //     무관하게 Qflat8 로 간다 — 거긴 발바닥이 지면과 평행해야 하는 **기하 조건**이고,
+  //     0° 자세로 가면 stand 진입검사(15°)에 걸린다.
+  std::vector<double> home_q_deg;
+  double home_settle_deg = 0.5;      // 도달 판정[deg] — **측정각** 기준(biped_emb.py 와 동일)
   double jog_speed_dps  = 20.0;      // ★jog 등속 램프 속도(모델각 deg/s) — biped_emb.py 와 같은 키
 
   bool installed_has(int ch) const {
@@ -185,6 +194,8 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       if(key=="max_speed_dps") c.home_speed_dps = num(15.0);
       else if(key=="max_acc_dps2")  c.home_acc_dps2  = num(30.0);
       else if(key=="min_time_s")    c.home_min_time_s= num(0.6);
+      else if(key=="q_deg")         c.home_q_deg     = parse_list(val);
+      else if(key=="settle_deg")    c.home_settle_deg= num(0.5);
     }
   }
   if(c.joints.empty()){ err = "joints 를 하나도 못 읽었다 — 설정 형식 확인: " + path; return false; }

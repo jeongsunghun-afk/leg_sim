@@ -294,6 +294,32 @@ def main() -> int:
                         cells.append(paint(txt, cc, col) if cc else txt)
                 out.append("  " + "".join(cells) + "\n")
 
+            # ★★자세유지 토크: hold(위치제어) vs stand(WBIC) — 2026-08-21 사용자 요청.
+            #   묻고 있는 것: **같은 자세를 버티는 데 두 제어기가 내는 토크가 얼마나 다른가.**
+            #   hold 는 "이 자세를 지키는 데 실제로 필요한 토크" 를 실측으로 알려준다
+            #   (위치제어라 모델을 안 쓴다). stand 는 WBIC 가 **모델로 계산한** 토크다.
+            #   ⇒ Δ 가 곧 **모델 오차**다. 음수면 stand 가 덜 내고 있고, 그만큼 처진다.
+            #   ⚠비어 있으면(`[]`) 아직 안 잡힌 것이다 — 0 Nm 이 아니다.
+            th, ts_ = st.get("tau_hold_nm") or [], st.get("tau_stand_nm") or []
+            if th:
+                W = 9
+                out.append("\n  " + paint("자세유지 τ[Nm] │ hold=위치제어 실측 · stand=WBIC 계산 · "
+                                          "Δ<0 이면 stand 가 덜 낸다", "c", col) + "\n")
+                out.append("  " + pad("", 8, False)
+                           + "".join(pad(names[i], W, True) for i in range(nj)) + "\n")
+                def _trow(lbl, vec, colr=None):
+                    cs = "".join(fmt(vec[i] if i < len(vec) else None, W, 2) for i in range(nj))
+                    return "  " + paint(pad(lbl, 8, False), "d", col) + (paint(cs, colr, col) if colr else cs) + "\n"
+                out.append(_trow("hold", th))
+                if ts_:
+                    out.append(_trow("stand", ts_))
+                    dv = [ts_[i] - th[i] if (i < len(ts_) and i < len(th)) else None for i in range(nj)]
+                    worst = max((abs(v) for v in dv if v is not None), default=0.0)
+                    out.append(_trow("Δ", dv, lvl(worst, 0.5, 1.5)))
+                else:
+                    out.append("  " + paint(pad("stand", 8, False), "d", col)
+                               + paint("아직 안 잡혔다 — stand 로 전환하고 블렌드+1.5s 기다릴 것", "d", col) + "\n")
+
             out.append("\n  " + paint("세션 최대 │ ", "d", col)
                        + paint(f"|Δq| {max(peak_eq):5.2f}°  |dq| {max(peak_dq):6.1f}dps  "
                                f"|τ| {max(peak_tm):5.2f}Nm", "d", col) + "\n")

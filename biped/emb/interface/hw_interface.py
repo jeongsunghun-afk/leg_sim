@@ -6,6 +6,7 @@
 IMU RPY(deg) → quat(wxyz), gyro(deg/s) → rad/s. 접촉은 실기 힘센서 부재 시 추정(TODO).
 """
 from __future__ import annotations
+import os
 import numpy as np
 
 R2D = 180.0 / np.pi
@@ -27,6 +28,21 @@ class HwInterface:
     def __init__(self, backend, jmap: JointMap, imu_deg: bool = True):
         self.be = backend
         self.jm = jmap
+        # ★★위치모드 게인 배율 (2026-08-20) — C++ biped_deploy 와 **같은 env 이름**.
+        #   두 제어기가 같은 옵션을 갖게 한다. 한쪽에만 있으면 "올렸는데 안 변한다" 가 된다
+        #   (실제로 POS_KP_SCALE=5 를 이 앱에 줬는데 무시돼 그 혼동이 있었다).
+        #   ⚠kp 를 올리면 둘이 같이 움직인다:
+        #     ① 토크트립이 예민해진다 — kp_ch 1 당 0.0175 Nm/deg. 500 이면 1.71°에서 트립.
+        #     ② 감쇠비 ζ ∝ kd/√kp — kp 만 올리면 떨림이 커진다.
+        #   ⇒ kd 는 **√배율**을 기본으로 같이 올린다(ζ 보존). POS_KD_SCALE 로 따로 줄 수 있다.
+        #   적용 대상은 **위치모드 쓰기 3곳**(ramped·jog·hold)뿐이다.
+        self.POS_KP = float(os.environ.get("POS_KP_SCALE", "1.0"))
+        self.POS_KD = float(os.environ.get("POS_KD_SCALE", str(max(1e-9, self.POS_KP) ** 0.5)))
+        if self.POS_KP != 1.0 or self.POS_KD != 1.0:
+            print(f"[hw] 위치게인 배율 kp×{self.POS_KP:.2f} · kd×{self.POS_KD:.2f} "
+                  f"— hip kp {self.jm.kp_leg[0]:.0f}→{self.jm.kp_leg[0]*self.POS_KP:.0f} "
+                  f"· hip {self.jm.kp_leg[0]*self.POS_KP*0.0175:.1f} Nm/deg "
+                  f"(τ_trip ÷ 이 값 = 트립까지 각도)", flush=True)
         self.imu_deg = imu_deg
         self._raw = None
         self.n_write_fail = 0   # ★SHM 쓰기 실패 누적(부분실패는 위험한 방향으로 조용하다)
@@ -141,7 +157,8 @@ class HwInterface:
         hi = np.maximum(self.jm.jog_max, qm)
         qj = np.clip(qj, lo, hi)
         self._log_cmd(q_deg=qj)                      # ★클램프 **후** = 실제 나간 값
-        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj),
+                               self.jm.kp_ch(self.POS_KP), self.jm.kd_ch(self.POS_KD))
         if rc not in (0, None):
             self.n_write_fail += 1
         return rc
@@ -159,7 +176,8 @@ class HwInterface:
             return self.write_ramped(q_leg_joint_deg, q_meas_joint_deg)
         qj = self.jm.clamp_jog_joint(q_leg_joint_deg)
         self._log_cmd(q_deg=qj)
-        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj),
+                               self.jm.kp_ch(self.POS_KP), self.jm.kd_ch(self.POS_KD))
         if rc not in (0, None):
             self.n_write_fail += 1
         return rc
@@ -168,7 +186,8 @@ class HwInterface:
         """현재자세 홀드: **모델각** 입력, 관절한계 클램프 후 채널각으로 변환."""
         qj = self.jm.clamp_joint(q_leg_joint_deg)
         self._log_cmd(q_deg=qj)
-        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj), self.jm.kp_ch(), self.jm.kd_ch())
+        rc = self.be.write_pos(self.jm.q_joint_to_ch(qj),
+                               self.jm.kp_ch(self.POS_KP), self.jm.kd_ch(self.POS_KD))
         if rc not in (0, None):
             self.n_write_fail += 1
         return rc

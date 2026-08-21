@@ -49,6 +49,9 @@ int main(int argc,char**argv){
   //   ★★표준편차는 **발행창(0.05s)** 기준으로도 낸다. 실기는 20Hz 로 발행하면서 각 창의
   //     std 를 500Hz 로 계산해 실어 보낸다(`tau_std_nm`) — 창 길이가 다르면 비교가
   //     성립하지 않는다. 전체창 std 는 자세 변화까지 섞여 훨씬 커진다.
+  const double TAU_SCALE = getenv("TAU_SCALE") ? atof(getenv("TAU_SCALE")) : 1.0;
+  if(TAU_SCALE != 1.0) std::printf("[sim] ⚠TAU_SCALE=%.3f — 명령 토크의 %.0f%% 만 플랜트에 전달(α 재현)\n",
+                                  TAU_SCALE, TAU_SCALE*100);
   const double tau_win = getenv("TAU_DBG") ? atof(getenv("TAU_DBG")) : 0.0;
   const double PUB_DT = 0.05;                 // biped_deploy 의 상태 발행 주기와 같게
   std::vector<double> tsum(m->nu,0.0), tsq(m->nu,0.0);
@@ -99,6 +102,13 @@ int main(int argc,char**argv){
       double roll=std::atan2(2*(q[0]*q[1]+q[2]*q[3]),1-2*(q[1]*q[1]+q[2]*q[2]));
       std::printf("  t%.2f com=(%+.3f,%+.3f,%.3f) v=(%+.2f,%+.2f) pitch%+.1f roll%+.1f sw=%d\n",
         i*dt,d->subtree_com[0],d->subtree_com[1],d->subtree_com[2],d->qvel[0],d->qvel[1],pitch*57.3,roll*57.3,c.swing); }
+    // ★★TAU_SCALE — **토크 스케일 α 를 흉내낸다** (2026-08-21).
+    //   실기의 α(kt 오차·전류루프·감속비 오설정)는 "명령한 τ 의 α 배만 실제로 나온다" 는
+    //   현상이다. 컨트롤러는 100% 를 냈다고 믿는데 플랜트는 α 배만 받는다.
+    //   ⚠TORSO_ADD_KG 로는 이걸 재현할 수 없다 — 그건 **컨트롤러가 쓰는 모델도 같이**
+    //     무거워져서 불일치가 안 생긴다(biped_sim 은 제어와 물리가 같은 m/d 를 쓴다).
+    //     그래서 ctrl 을 직접 깎는다. 이게 모델↔플랜트 불일치를 만드는 유일한 지점이다.
+    if(TAU_SCALE != 1.0) for(int i=0;i<m->nu;i++) d->ctrl[i] *= TAU_SCALE;
     mj_step(m,d);
     if(qlog && i%qdec==0){                  // 재생용 궤적(데시메이션)
       std::fprintf(qlog, "%.4f", i*dt);

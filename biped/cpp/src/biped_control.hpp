@@ -67,6 +67,27 @@ struct BipedControl {
   double FLAT_WORI=5;                 // ★평발 보행 base pitch/roll 레벨링 가중
   double FLAT_WLEG=0.05;              // ★평발 정적 thigh/calf posture 가중(낮음=CoM 높이 조절 가능)
   double STANCE_KD=20, W_ORI=5, W_POST=1, W_ANKLE=20, MU_EFF=0.8*0.707, LAMZ_MIN=1;
+  // ★★2026-08-21 **CoM 적분항 — 기본 꺼짐(STAND_KI=0).**
+  //   왜 필요한가: WBIC 는 τ = h − Jᵀλ 인데 `h` 는 **모델의** 중력항이다. 모델이 실제보다
+  //   가볍거나(질량 8% 확인됨) 토크 스케일 α<1 이면 힘이 모자라고, **되잡을 항이 없다**.
+  //   지금 제어기는 CoM·자세 task 가 전부 PD 라 정상상태 오차가 **그대로 남는다**.
+  //
+  //   ⚠**기본을 꺼 두는 이유가 진단이다.** 지금 처짐은 모델 오차의 **유일한 관측창**이다 —
+  //     α·질량·gear_k 중 무엇이 틀렸는지 그 처짐으로 가른다. 적분을 켜면 셋 다 조용히
+  //     보상돼 증상이 사라지고, 원인을 영영 못 찾는다.
+  //     ⇒ 원인 규명(저울·처짐 대조)이 끝난 **뒤에** 잔차 보상용으로 켤 것.
+  //
+  //   ⚠와인드업 방지가 필수다. 아래 세 경우에 **적분을 얼리거나 비운다**:
+  //     ① QP 실패(중력보상 폴백) — 제어가 안 먹는데 쌓으면 복귀 순간 튄다
+  //     ② 접촉 부족(K<4) — 발이 뜬 상태의 오차는 되잡을 대상이 아니다
+  //     ③ 모드 진입 — 이전 세션의 적분을 물려받지 않는다
+  //   ⚠적분 출력은 **가속도 단위**로 클램프한다(CoM task 가 가속도 공간이라).
+  double dt_ctrl = 0.002;             // control(dt) 가 매 틱 갱신 — 적분에 쓴다
+  double STAND_KI = 0.0;              // CoM xy·z 적분이득 [1/s³] — 0 = 꺼짐
+  double STAND_I_CLAMP = 2.0;         // 적분 기여 상한 [m/s²] — 중력의 20% 수준
+  Vector3d com_i = Vector3d::Zero();  // 적분 누적 [m·s]
+  bool    ki_frozen = false;          // 직전 틱에 얼렸는지(상태 발행용)
+  void reset_com_i(){ com_i.setZero(); ki_frozen=false; }
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
   // ★2026-08-06: 하드코딩 폐기 → init() 이 MJCF 에서 읽는다. 감속비를 바꾸면 토크한계도
@@ -222,6 +243,9 @@ struct BipedControl {
     if(getenv("FLAT_CONTACT_ALL")) flat_contact_all=atoi(getenv("FLAT_CONTACT_ALL"));
     if(getenv("FRIC_ALL_MODES"))   FRIC_ALL_MODES  =atoi(getenv("FRIC_ALL_MODES"));
     if(getenv("SS_NOMINAL")) SS_NOMINAL=atof(getenv("SS_NOMINAL"));
+    // ★CoM 적분항 — **기본 0(꺼짐)**. 원인 규명이 끝난 뒤에만 켤 것(위 선언부 주석 참조).
+    if(getenv("STAND_KI"))      STAND_KI      = atof(getenv("STAND_KI"));
+    if(getenv("STAND_I_CLAMP")) STAND_I_CLAMP = atof(getenv("STAND_I_CLAMP"));
     // ★★2026-08-20 **좌우 발목 비대칭 주입**(진단 전용, 단위 = 도).
     //   실기 2점 stand 에서 두 밑창이 **반대로** 기울었다: HL −63.25 · HR −55.42
     //   (목표 −59.81). `Qflat8` 은 좌우 **완전 대칭**이라 시뮬에는 이 비대칭이 아예 없다
@@ -347,7 +371,25 @@ struct BipedControl {
     MatrixXd P=MatrixXd::Zero(nz,nz); VectorXd g=VectorXd::Zero(nz);
     // CoM task (xy+z)
     Vector3d kp(120,120,200), kd(20,20,25), comref(com_ref_xy[0],com_ref_xy[1],com_ref_z);
-    Vector3d a_com=kp.cwiseProduct(comref-c)-kd.cwiseProduct(Jc*qv);
+    Vector3d cerr = comref - c;
+    // ★적분항(기본 0). 얼리는 조건은 **적분하기 전에** 판정한다 — 이번 틱 오차를 쌓을지 말지다.
+    Vector3d a_i = Vector3d::Zero();
+    if(STAND_KI > 0.0){
+      //   ⚠접촉이 부족하면(K<4) 발이 뜬 상태의 오차라 되잡을 대상이 아니다. QP 실패도 같다
+      //     — 그때는 중력보상 폴백이라 제어가 안 먹는데 쌓으면 복귀 순간 튄다.
+      const bool healthy = (qp_K >= 4) && (qp_rate < 0.5);
+      ki_frozen = !healthy;
+      if(healthy){
+        com_i += cerr * dt_ctrl;
+        //   가속도 기여를 상한으로 잘라 되돌려 넣는다(적분 자체를 클램프해야 와인드업이 안 쌓인다).
+        for(int j=0;j<3;j++){
+          const double lim = STAND_I_CLAMP / std::max(1e-9, STAND_KI);
+          com_i[j] = std::max(-lim, std::min(lim, com_i[j]));
+        }
+      }
+      a_i = STAND_KI * com_i;
+    } else { com_i.setZero(); ki_frozen=false; }
+    Vector3d a_com=kp.cwiseProduct(cerr)-kd.cwiseProduct(Jc*qv)+a_i;
     P.topLeftCorner(nv,nv)+=Jc.transpose()*Jc; g.head(nv)-=Jc.transpose()*a_com;
     // 자세 레벨링(현재 yaw 프레임)
     Vector4d qc; for(int i=0;i<4;i++) qc[i]=d->qpos[3+i];
@@ -707,6 +749,7 @@ struct BipedControl {
   }
 
   void control(double dt){
+    dt_ctrl = dt;                     // ★적분항이 쓴다(wbic_stance 는 dt 를 안 받는다)
     double ya=base_yaw();
     if(trans_on){ do_transition(dt); return; }   // ★1점/2점 전환 굴림 재생 중
     // ★2점 평발: 정지=정적 양발지지(밑창 ZMP). 이동명령=평발 동적 보행(아래 게이트, wbic 다접촉).

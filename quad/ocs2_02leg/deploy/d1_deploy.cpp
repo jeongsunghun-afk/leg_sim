@@ -41,7 +41,10 @@ int main(int argc, char** argv) {
   { auto jc = ctrl.initialJointConfig(); std::vector<double> jNom(jc.data(), jc.data() + jc.size());
     hal.setInitialPose(ctrl.initialBaseZ(), jNom); }
   { double off[4][2]; hal.footOffsets(off); ctrl.setFootOffsets(off); }
-  MujocoTerrain terrain(hal.model(), hal.data());
+  MujocoTerrain mjTerrain(hal.model(), hal.data());
+  // ★검증/실기 데모: SYNTH_FLAT=1이면 인지 heightmap(HeightmapTerrainProvider, 평지 콜백)으로 — real 인지 플러그 배관 확인.
+  HeightmapTerrainProvider flatTerrain([](double, double) { return 0.0; });
+  TerrainProvider& terrain = std::getenv("SYNTH_FLAT") ? static_cast<TerrainProvider&>(flatTerrain) : static_cast<TerrainProvider&>(mjTerrain);
 
   // ── 명령 소스: CMDFILE(GUI) 또는 VX(고정) ──
   const char* cmdfile = std::getenv("CMDFILE");

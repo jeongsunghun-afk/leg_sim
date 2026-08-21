@@ -3,6 +3,7 @@
 //   스윙발이 지형면 위 clearance 유지 → 요철·계단 요철 추종. (갭 발판선택은 Phase 3b=convex FootPlacement.)
 //   heightmap은 매 제어틱 update()로 mj_ray 래스터(=A TerrainMap 방식). 제약이 shared_ptr 보유→in-place 갱신.
 #pragma once
+#include <functional>
 #include <ocs2_perceptive/distance_transform/DistanceTransformInterface.h>
 #include <mujoco/mujoco.h>
 #include <vector>
@@ -33,6 +34,12 @@ class MjTerrainSdf : public ocs2::DistanceTransformInterface {
       }
   }
 
+  // ★외부(인지 elevation map) heightmap으로 그리드 채움 — real TerrainProvider용(mj_ray 대신). heightAt(x,y)=인지 높이질의.
+  void setGrid(scalar_t cx, scalar_t cy, const std::function<scalar_t(scalar_t, scalar_t)>& heightAt) {
+    x0_ = cx - 0.5 * (nx_ - 1) * cell_; y0_ = cy - 0.5 * (ny_ - 1) * cell_;
+    for (int iy = 0; iy < ny_; ++iy) for (int ix = 0; ix < nx_; ++ix) h_[iy * nx_ + ix] = heightAt(x0_ + ix * cell_, y0_ + iy * cell_);
+  }
+
   // 쌍선형 보간 높이 h(x,y)
   scalar_t height(scalar_t x, scalar_t y) const {
     scalar_t fx = (x - x0_) / cell_, fy = (y - y0_) / cell_;
@@ -57,6 +64,12 @@ class MjTerrainSdf : public ocs2::DistanceTransformInterface {
     scalar_t dhdy = (height(p.x(), p.y() + e) - height(p.x(), p.y() - e)) / (2 * e);
     return {p.z() - height(p.x(), p.y()), vector3_t(-dhdx, -dhdy, 1.0)};
   }
+
+  int nx() const { return nx_; }
+  int ny() const { return ny_; }
+  scalar_t x0() const { return x0_; }
+  scalar_t y0() const { return y0_; }
+  scalar_t cell() const { return cell_; }
 
  private:
   int nx_, ny_;

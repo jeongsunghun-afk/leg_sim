@@ -54,9 +54,14 @@ if ! pgrep -f "biped_emb.py|biped_deploy" >/dev/null; then
   echo "   별도 터미널에서:  cd $HERE/emb && python3 app/biped_emb.py"
 fi
 
-pkill -f teleop_gui_biped 2>/dev/null || true
-pkill -f biped_monitor 2>/dev/null || true
-pkill -f monitor_state.py 2>/dev/null || true
+# ★재시작 대상은 **이 스크립트가 띄우는 것 전부**여야 한다 (2026-08-20 수정).
+#   종전엔 monitor_plot.py 가 목록에서 빠져 있었다 — 종료 안내(아래)에는 적혀 있는데
+#   정작 여기서 안 죽여서, 다시 띄울 때마다 **그래프 모니터만 중복으로 쌓였다.**
+#   중복이 쌓이면 CPU 를 먹고(실측: 뷰어+모니터가 27%) 500Hz 제어루프가 밀린다.
+#   ⚠목록을 늘릴 때 이 세 곳을 같이 고칠 것: ①여기 ②MON=graph 종료안내 ③MON=* 종료안내
+for _p in teleop_gui_biped biped_monitor monitor_state.py monitor_plot.py; do
+  pkill -f "$_p" 2>/dev/null || true
+done
 sleep 0.5
 # ★명령파일이 없으면 off 로 만들어 둔다(제어기가 먼저 떠 있어도 무장되지 않게)
 [ -f "$CMD" ] || echo '{"v":0.0,"vy":0.0,"w":0.0,"body_h":0.50,"mode":"off","seq":0}' > "$CMD"
@@ -104,6 +109,6 @@ case "${MON:-1}" in
     cd "$HERE" && QUAD_STATE="$STATE" exec python3 monitor_state.py ${MON_ARGS:-}
     ;;
   *)
-    echo "종료: pkill -f teleop_gui_biped; pkill -f biped_monitor"
+    echo "종료: pkill -f teleop_gui_biped; pkill -f biped_monitor; pkill -f monitor_state.py"
     ;;
 esac

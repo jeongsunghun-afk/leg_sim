@@ -50,6 +50,10 @@ BAD_DQ = float(os.environ.get("MON_BAD_DQ", "120"))        # 〃 (속도트립 2
 WARN_TAU_M = float(os.environ.get("MON_WARN_TAU_M", "8.0"))   # 측정토크[Nm] 경고
 BAD_TAU_M = float(os.environ.get("MON_BAD_TAU_M", "15.0"))    # 〃 (토크트립 15 와 동일)
 STALE_MS = float(os.environ.get("MON_STALE_MS", "500"))    # 이보다 오래된 상태 = 끊김
+# ★추종실패 판정 — kp 가 걸려 있는데 이만큼 벌어지면 그 축은 명령을 수행하지 못한다.
+#   10° 는 "정상 추종오차(수 °)" 와 "아예 안 감(수십 °)" 사이에 넉넉히 놓은 값이다.
+STUCK_DEG = float(os.environ.get("MON_STUCK_DEG", "10"))   # 위치오차[deg]
+STUCK_TAU = float(os.environ.get("MON_STUCK_TAU", "0.5"))  # 이보다 작으면 "토크를 안 낸다"
 KP_TO_NM_PER_DEG = 0.0175                                  # [실측 2026-08-05] kp 1 = 0.0175 Nm/deg
 
 C = {"r": "\033[31m", "y": "\033[33m", "g": "\033[32m", "d": "\033[2m",
@@ -184,6 +188,26 @@ def main() -> int:
                                        "R" if _sk >= 20 else "y", col))
                 else:
                     flags.append(paint(f"지연보상 {_lc:.1f}ms", "g", col))
+            # ★★**명령했는데 안 따라오는 축**을 직접 잡는다 (2026-08-20).
+            #   실기에서 HL_foot 이 명령 −59.8° 인데 +23.0° 에 머물고 토크가 0.03Nm 였는데
+            #   health=ok · err=0 이라 모니터가 **아무 경고도 안 냈다.** 엔코더가 살아 있으면
+            #   상태보고로는 안 드러난다 — "명령 vs 측정" 으로만 보인다.
+            #   ⚠kp 가 0 이면 판정하지 않는다(순수 토크모드에선 위치오차가 정상이다).
+            _bad = []
+            for _i in range(nj):
+                if not (kp[_i] and kp[_i] > 1):
+                    continue
+                if qm[_i] is None or qc[_i] is None:
+                    continue
+                _e = abs(qm[_i] - qc[_i])
+                if _e < STUCK_DEG:
+                    continue
+                _t = abs(tm[_i]) if tm[_i] is not None else None
+                _why = ("토크 0 — 구동 안 됨" if (_t is not None and _t < STUCK_TAU)
+                        else "토크는 나오는데 안 움직임 — 기구 걸림")
+                _bad.append(f"{names[_i]} Δ{_e:.0f}° ({_why})")
+            if _bad:
+                flags.append(paint("⛔ 추종실패: " + " · ".join(_bad), "R", col))
             out.append(("  " + "   ".join(flags) if flags else "  " + paint("이상 없음", "g", col)) + "\n")
 
             # ★★터미널 폭에 맞춰 열을 고른다 (2026-08-20).

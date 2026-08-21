@@ -284,6 +284,11 @@ int main(int argc, char** argv){
   //   종전엔 안 냈다 — stand 가 순수 토크(kp=0)라 명령각이 무의미했기 때문이다.
   //   그런데 STAND_KP_FLOOR 를 켜면서 **의미가 생겼다**(2026-08-20). 처짐을 보려면 필요하다.
   std::vector<float> qcmd_ch(NCH, 0.f);
+  // ★실제로 내보낸 게인도 같이 기록한다. 종전엔 발행값이 **0.0 하드코딩**이었다 —
+  //   그래서 모니터의 "≈Nm"(위치오차→토크 환산)도, "kp 걸렸는데 안 따라옴" 판정도
+  //   전부 죽어 있었다. 실제로 HL_foot 이 명령 +100° 인데 채널 −0.28° 에 머물러도
+  //   모니터는 아무 경고를 못 냈다(2026-08-20).
+  std::vector<float> kpcmd_ch(NCH, 0.f), kdcmd_ch(NCH, 0.f);
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
   // ★토크 통계 누적기 — 루프율로 쌓고 발행마다 비운다(위 ① 주석 참조).
   std::vector<double> ts_sum(jm.n_leg,0.0), ts_sq(jm.n_leg,0.0),
@@ -791,11 +796,11 @@ int main(int argc, char** argv){
     // ⑤ 모드 디스패치
     if(mode=="off"){
       for(int i=0;i<NCH;i++) q_ch[i]=0.f;
-      qcmd_ch = q_ch;
+      qcmd_ch = q_ch; kpcmd_ch = zero; kdcmd_ch = zero;
       hw->write_pos(q_ch.data(), zero.data(), zero.data(), NCH);     // enable=0 → 브리지가 0 토크
     } else if(mode=="hold"){
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
-      qcmd_ch = hold_ch;
+      qcmd_ch = hold_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else if(mode=="home"){
       // ★S-curve — 가감속이 0 에서 시작·끝나므로 속도트립을 만들지 않는다.
@@ -804,8 +809,8 @@ int main(int argc, char** argv){
       const double sf = u*u*(3.0-2.0*u);
       for(int i=0;i<NCH;i++)
         q_ch[i] = home_from[i] + (float)(sf*(double)(home_to[i]-home_from[i]));
-      qcmd_ch = q_ch;
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
       if(u>=1.0 && !home_done){
         home_done = true;
@@ -828,8 +833,8 @@ int main(int argc, char** argv){
       std::vector<double> qj = jog_q;
       jm.clamp_joint(qj.data());                   // 관절한계(모델각) — 채널이 아니라 여기서
       jm.q_joint_to_ch(qj.data(), q_ch.data());
-      qcmd_ch = q_ch;
       jm.kp_ch(kp_ch.data()); jm.kd_ch(kd_ch.data());
+      qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반
       // 접촉: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
@@ -956,7 +961,7 @@ int main(int argc, char** argv){
       //     측정각을 목표로 두면 err≡0(무효)이거나, 센서지연 때문에 err≈−q̇·τ = **음의 감쇠**가 된다.
       for(int i=0;i<NCH;i++)
         stand_ref[i] = stand_hold[i] + (float)(bs*(double)(stand_to[i]-stand_hold[i]));
-      qcmd_ch = stand_ref;
+      qcmd_ch = stand_ref; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
     }
@@ -1017,8 +1022,12 @@ int main(int argc, char** argv){
         std::snprintf(b,sizeof b,"%s%.2f", sep, dq_ctrl[i]*JointMap::R2D); dqs   += b;  // 측정 속도
         std::snprintf(b,sizeof b,"%s%.3f", sep, tau_meas[i]);             taus  += b;  // 측정 토크
         std::snprintf(b,sizeof b,"%s%.3f", sep, tau_ctrl[i]);             taucs += b;  // 명령 토크
-        std::snprintf(b,sizeof b,"%s0.0",  sep);                          kps   += b;
-        std::snprintf(b,sizeof b,"%s0.0",  sep);                          kds   += b;
+        // ★채널게인 → **관절게인**: kp_joint = kp_ch · gear_k²  (emb/README "게인도 좌표가 둘")
+        //   측정·명령이 전부 모델각이므로 게인도 관절 좌표여야 같이 읽힌다.
+        { const auto& jj = cfg.joints[i]; const double k2 = jj.gear_k*jj.gear_k;
+          std::snprintf(b,sizeof b,"%s%.2f", sep, (double)kpcmd_ch[jj.channel]*k2); kps += b; }
+        { const auto& jj = cfg.joints[i]; const double k2 = jj.gear_k*jj.gear_k;
+          std::snprintf(b,sizeof b,"%s%.2f", sep, (double)kdcmd_ch[jj.channel]*k2); kds += b; }
       }
       dqs+="]"; taus+="]"; taucs+="]"; kps+="]"; kds+="]";
       // ★창 통계(500Hz 누적) → 발행. 창이 비면(첫 틱) 빈 배열 대신 0 을 낸다.

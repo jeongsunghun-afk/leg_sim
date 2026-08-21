@@ -292,7 +292,7 @@ def actuator_wrap(m, idx, names, ctrl_space="tendon"):
       실기 드라이버는 **채널각**으로 PD 를 건다. foot 의 채널각은
           q_ch = (q_foot + coef·q_calf)·sign·k + offset      (coef=+1, biped_emb.yaml)
       이므로 드라이버가 보는 오차는 q_foot 이 아니라 **(q_foot + q_calf)** 의 오차다.
-      kp_joint = kp_ch·k² 도 그 raw 오차에 곱해지는 값이다(τ_joint = k²·kp_ch·Δraw).
+      kp_raw = kp_ch·k² 도 그 raw 오차에 곱해지는 값이다(τ_raw = k²·kp_ch·Δraw).
       MJCF 는 이미 foot 액추에이터를 `<fixed>` tendon(coef 1,1)으로 옮겨 뒀는데
       — **힘을 주는 쪽만** 옮겼고 `rollout` 의 오차는 관절각에 남아 있었다.
 
@@ -387,7 +387,8 @@ def cost_of(q_sim, q_real, w=None):
 def load_data(path):
     z = np.load(path, allow_pickle=True)
     return dict(t=z["t"], q=z["q"], q_cmd=z["q_cmd"], dq=z["dq"],
-                kp=z["kp_joint"], kd=z["kd_joint"], gear_n=z["gear_n"],
+                kp=(z["kp_raw"] if "kp_raw" in z else z["kp_joint"]),      # 옛 npz 폴백
+                kd=(z["kd_raw"] if "kd_raw" in z else z["kd_joint"]), gear_n=z["gear_n"],
                 names=[str(x) for x in z["names"]], dt=float(z["dt"]))
 
 
@@ -1003,7 +1004,8 @@ def main() -> int:
 
     # ── ★unseen PD gains 검증 (원문의 주 검증) ──────────────────────────────
     #   따로 뺀 구간 궤적보다 강하다: 게인이 바뀌면 kp·err 순환이나 과적합이 바로 드러난다.
-    #   ⚠게인은 **그 데이터셋의 것**을 쓴다(npz 에 kp_joint/kd_joint 가 들어 있다).
+    #   ⚠게인은 **그 데이터셋의 것**을 쓴다(npz 에 kp_raw/kd_raw 가 들어 있다.
+    #     2026-08-21 이전 npz 는 같은 값을 kp_joint/kd_joint 로 담고 있다 — 폴백으로 읽는다).
     if a.validate:
         V = load_data(a.validate)
         if list(V["names"]) != list(D["names"]):

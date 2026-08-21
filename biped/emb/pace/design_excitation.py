@@ -271,7 +271,7 @@ def main() -> int:
         q_cmd = home + cm.apply_mirror(q_cmd - home, names, a.mirror)
 
     # ★게인은 **관절공간**으로. collect_multichirp 이 npz 에 저장하는 것과 같은 환산이다
-    #   (kp_joint = kp_ch·k²). 여기서 갈리면 감도가 통째로 틀린다.
+    #   (kp_raw = kp_ch·k², raw 좌표). 여기서 갈리면 감도가 통째로 틀린다.
     import actuator_test as at
     kp_ch = at._gain(mc["kp"]); kd_ch = at._gain(mc["kd"])
     kp = np.array([kp_ch[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])

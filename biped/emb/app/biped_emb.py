@@ -673,8 +673,11 @@ def main():
                   extra["q_cmd_deg"]  = [round(float(v), 2) for v in hw.cmd_q_deg]
                   extra["dq_cmd_dps"] = [round(float(v), 2) for v in hw.cmd_dq_dps]
                   extra["tau_cmd_nm"] = [round(float(v), 3) for v in hw.cmd_tau_nm]
-                  extra["kp_leg"]     = [round(float(v), 1) for v in hw.cmd_kp]
-                  extra["kd_leg"]     = [round(float(v), 2) for v in hw.cmd_kd]
+                  # ★raw 좌표로 낸다: kp_raw = kp_ch·gear_k² (cmd_kp 는 채널값·다리순).
+                  #   C++ biped_deploy 와 **같은 좌표·같은 키**여야 한다 — 2026-08-21 정정.
+                  _k2 = hw.jm.k ** 2
+                  extra["kp_raw"]     = [round(float(v), 1) for v in hw.cmd_kp * _k2]
+                  extra["kd_raw"]     = [round(float(v), 2) for v in hw.cmd_kd * _k2]
                   # ★ucStatus 원값 (2026-08-13). 종전엔 `health` 문자열로만 나가서
                   #   **"fault" 라는 것만 알고 왜인지는 못 봤다.**
                   #   ucStatus = MD80 DEFAULT_RESPONSE 의 **ERROR VECTOR 하위 8bit**

@@ -143,6 +143,20 @@ int main(int argc, char** argv){
       char b[96]; std::snprintf(b,sizeof b," %s(ch%d,s%+.0f,off%+.1f)", j.name.c_str(), j.channel, j.sign, j.offset_deg);
       s += b; }
     std::printf("[deploy] 매핑:%s\n", s.c_str()); }
+  // ★★게인을 **두 좌표로 나란히** 찍는다 (2026-08-21).
+  //   config 의 kp/kd 는 **채널** 기준인데(드라이버 MIT 의 err 이 채널각이라 그대로 나간다),
+  //   값 모니터·상태 JSON 은 **raw** 기준으로 낸다(kp_raw = kp_ch·gear_k²). 관절 아니다.
+  //   숫자가 두 배 넘게 달라 보이는 게 정상인데, 그걸 모르면 "설정이 안 먹었다" 로 오해한다
+  //   (실제로 2026-08-21 에 그 오해가 있었다 — 채널값 80/30 이 보여 수정이 안 먹은 줄 알았다).
+  //   ⇒ 기동 시 둘을 같이 보여 주면 그 자리에서 대조된다.
+  { std::string s;
+    for(auto& j : cfg.joints){
+      const double k2 = j.gear_k*j.gear_k;
+      char b[128]; std::snprintf(b,sizeof b, " %s kp %.0f→%.1f · kd %.1f→%.1f;",
+                                 j.name.c_str(), j.kp, j.kp*k2, j.kd, j.kd*k2);
+      s += b; }
+    std::printf("[deploy] 게인(채널→raw, ×gear_k²):%s\n", s.c_str());
+    std::printf("         ⚠config 는 **채널**, 모니터·상태는 **관절**이다. 달라 보이는 게 정상.\n"); }
   if(!cfg.installed.empty()){
     std::string s; for(int ch : cfg.installed){ char b[8]; std::snprintf(b,sizeof b," %d",ch); s+=b; }
     std::printf("[deploy] 실장 채널:%s (나머지는 명령은 나가지만 통신 없어 무효)\n", s.c_str());
@@ -323,12 +337,20 @@ int main(int argc, char** argv){
   //     잡음이 지배하는 기체에서는 ζ 를 좀 포기하고 kd 를 낮추는 편이 낫다 ⇒ 조절 가능하게 둔다.
   double kd_scale_cmd = -1.0;                      // 명령파일이 지정한 값(-1 = 미지정)
   double POS_KD = (KD_SCALE_ENV>=0) ? KD_SCALE_ENV : std::sqrt(std::max(1e-9, POS_KP));
-  // ★축별 트립각[deg] = τ_trip / (kp_joint · π/180 · 배율). **가장 예민한 축**을 찍는다.
-  //   kp_joint = kp_ch·gear_k² (emb/README "게인도 좌표가 둘").
+  // ★축별 트립각[deg] — **가장 예민한 축**을 찍는다.
+  //   ⚠**gear_k 는 1승이다** (2026-08-21 정정. 종전 2승이라 calf 를 4.77°/배율로 찍었다).
+  //     트립은 **채널토크**로 걸린다(아래 tau_trip 비교가 hs.tau_nm 을 그대로 본다)
+  //     ⇒ 트립 시점의 raw 토크 = tau_trip·gear_k, raw 강성 = kp_ch·gear_k² 이므로
+  //         트립각 = (tau_trip·gear_k)/(kp_ch·gear_k²·배율) = tau_trip/(kp_ch·gear_k·배율)
+  //     config(biped_emb.yaml "트립각 계산은 1승이다")·GUI(teleop_gui_biped.py)는 이미
+  //     1승이었다. **여기만 안 고쳐져 있었다** — 위 :3xx 주석이 "GUI 도 같이 고쳤다" 고
+  //     적어 두고 정작 이 코드는 2승인 채였다(주석만 고친 상태).
+  //   ⚠kp_ch·gear_k² 는 **raw 좌표** 강성이다(모델각 아님). 모델각 강성은 발목 커플링
+  //     때문에 축별 스칼라로 못 쓴다 — 비대각이 있는 행렬이 된다. emb/README 참조.
   auto trip_deg = [&](double sc)->std::pair<std::string,double>{
     std::string who="-"; double best=1e30;
     for(const auto& j : cfg.joints){
-      double kpj = j.kp*j.gear_k*j.gear_k, nmd = kpj*M_PI/180.0*std::max(1e-9,sc);
+      const double nmd = j.kp*j.gear_k*M_PI/180.0*std::max(1e-9,sc);   // ★1승
       if(cfg.tau_trip_nm/nmd < best){ best = cfg.tau_trip_nm/nmd; who = j.name; }
     }
     return {who,best}; };
@@ -784,7 +806,7 @@ int main(int argc, char** argv){
           // ★★자세 거리 가드 (2026-08-21). 블렌드 목표가 기하 자세로 **이동**하게 바뀌면서
           //   생긴 위험을 막는다. 종전엔 목표가 측정각에 얼어 있어 아무리 멀어도 안 움직였다.
           //   지금은 2.5초 안에 그 거리를 쓸어버린다 — `home` 을 건너뛰면 위험하다:
-          //       발목이 100° 떨어져 있으면 피크 ≈ 0.25·kp_joint 43.2·1.75rad ≈ **18.9 Nm**
+          //       발목이 100° 떨어져 있으면 피크 ≈ 0.25·kp_raw 43.2·1.75rad ≈ **18.9 Nm**
           //       → 토크트립 15 Nm 초과
           //   ⚠"자동으로 home 을 돌리면 되지 않나" 는 **틀렸다.** home 은 매달린 채 하는
           //     동작이고 stand 는 접지 후다. stand 안에서 home 을 돌리면 **하중이 실린 채로
@@ -1262,8 +1284,13 @@ int main(int argc, char** argv){
         std::snprintf(b,sizeof b,"%s%.2f", sep, dq_ctrl[i]*JointMap::R2D); dqs   += b;  // 측정 속도
         std::snprintf(b,sizeof b,"%s%.3f", sep, tau_meas[i]);             taus  += b;  // 측정 토크
         std::snprintf(b,sizeof b,"%s%.3f", sep, tau_ctrl[i]);             taucs += b;  // 명령 토크
-        // ★채널게인 → **관절게인**: kp_joint = kp_ch · gear_k²  (emb/README "게인도 좌표가 둘")
-        //   측정·명령이 전부 모델각이므로 게인도 관절 좌표여야 같이 읽힌다.
+        // ★채널게인 → **raw 게인**: kp_raw = kp_ch · gear_k²  (emb/README "게인도 좌표가 둘")
+        //   ⚠"관절(모델각) 게인" 이 아니다 (2026-08-21 정정). Δq_ch = s·Δq_**raw** 이므로
+        //     이 값이 곱해지는 상대는 raw 오차다. 발목만 raw ≠ 모델각이라 거기서 갈린다.
+        //     모델각 강성은 K = Aᵀ·diag(kp_raw)·A 로 **비대각이 생겨** 축별 스칼라로 못 낸다
+        //     (calf 180 → 223.2). ⇒ 스칼라로 낼 수 있는 정직한 좌표는 raw 뿐이다.
+        //   ⚠키 이름이 kp_leg → **kp_raw** 로 바뀌었다. 좌표를 이름에 박아 둔다 —
+        //     종전엔 같은 키를 C++ 은 ×k², Python 은 채널 그대로 실어 calf 가 180 vs 80 이었다.
         { const auto& jj = cfg.joints[i]; const double k2 = jj.gear_k*jj.gear_k;
           std::snprintf(b,sizeof b,"%s%.2f", sep, (double)kpcmd_ch[jj.channel]*k2); kps += b; }
         { const auto& jj = cfg.joints[i]; const double k2 = jj.gear_k*jj.gear_k;
@@ -1297,7 +1324,7 @@ int main(int argc, char** argv){
       char buf[5120];   // ★4096 → 5120 (2026-08-21): 자세유지 토크 스냅샷 2배열 추가
       std::snprintf(buf,sizeof buf,
         "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
-        "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_leg\":%s,\"kd_leg\":%s,"
+        "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_raw\":%s,\"kd_raw\":%s,"
         // ★창 통계 — **500Hz 로 계산**한 값이다(발행 20Hz 표본이 아니라). tau_win_n 은
         //   그 창에 들어간 표본 수 = 통계의 신뢰도. 0 이면 통계를 읽지 말 것.
         "\"tau_std_nm\":%s,\"tau_min_nm\":%s,\"tau_max_nm\":%s,\"tau_win_n\":%ld,"

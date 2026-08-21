@@ -1,7 +1,7 @@
 """interface/joint_map.py — biped 컨트롤러(8-DOF, rad) ↔ Gait 채널(10, deg) 변환.
 
 ★★용어 표준 (이 저장소 전체. emb/RL_INTERFACE.md §0 과 동일) — 각도는 **네 층**이다:
-    모터축각 θ_m  : 실제 모터 샤프트 회전각 = 모델각 × 실제감속비. 직접 관측 불가.
+    모터축각 θ_m  : 실제 모터 샤프트 회전각 = **raw각** × 실제감속비. 직접 관측 불가.
     채널각   q_ch : 드라이버가 SHM 으로 주고받는 값 = θ_m/7 (드라이버가 전축 7:1 가정)
     raw각    q_raw: (q_ch − offset)/(sign·k). 감속비·부호·영점 제거, **커플링 미해제**
     모델각   q_joint: MJCF qpos. 커플링까지 해제. GUI·뷰어·정책이 쓰는 유일한 단위
@@ -52,8 +52,12 @@ class JointMap:
         self._couple(js)                       # 기구 커플링(calf→foot) 파싱. 아래 참조
         self.min_deg = np.array([j["min_deg"] for j in js], float)
         self.max_deg = np.array([j["max_deg"] for j in js], float)
-        self.kp_leg  = np.array([j["kp"] for j in js], float)
-        self.kd_leg  = np.array([j["kd"] for j in js], float)
+        # ★이름 규칙(2026-08-21): 게인 이름은 **좌표를 반드시 달고**, 배열순서는 따로 쓴다.
+        #     kp_ch      채널 좌표 (config·SHM·드라이버).  kp_raw = kp_ch·gear_k²  raw 좌표.
+        #     `_leg` 접미사는 **8축 다리순 배열**이라는 뜻이지 좌표가 아니다.
+        #   ⚠`kp_joint`(스칼라)·`kp_leg`(좌표 없음) 는 폐기됐다 — emb/README "게인 이름 규칙".
+        self.kp_ch_leg = np.array([j["kp"] for j in js], float)   # 채널좌표 · 다리순 8
+        self.kd_ch_leg = np.array([j["kd"] for j in js], float)
         self.n_channel = int(cfg["shm"]["n_channel"])
 
         w = cfg.get("waist", {})
@@ -327,13 +331,13 @@ class JointMap:
     # ── 게인·한계 (채널 배열) ──────────────────────────────────────────────
     def kp_ch(self, leg_scale=1.0) -> np.ndarray:
         out = np.zeros(self.n_channel)
-        out[self.ch] = self.kp_leg * leg_scale
+        out[self.ch] = self.kp_ch_leg * leg_scale
         for c in self.waist_ch: out[c] = self.waist_kp
         return out
 
     def kd_ch(self, leg_scale=1.0) -> np.ndarray:
         out = np.zeros(self.n_channel)
-        out[self.ch] = self.kd_leg * leg_scale
+        out[self.ch] = self.kd_ch_leg * leg_scale
         for c in self.waist_ch: out[c] = self.waist_kd
         return out
 

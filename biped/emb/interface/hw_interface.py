@@ -40,8 +40,8 @@ class HwInterface:
         self.POS_KD = float(os.environ.get("POS_KD_SCALE", str(max(1e-9, self.POS_KP) ** 0.5)))
         if self.POS_KP != 1.0 or self.POS_KD != 1.0:
             print(f"[hw] 위치게인 배율 kp×{self.POS_KP:.2f} · kd×{self.POS_KD:.2f} "
-                  f"— hip kp {self.jm.kp_leg[0]:.0f}→{self.jm.kp_leg[0]*self.POS_KP:.0f} "
-                  f"· hip {self.jm.kp_leg[0]*self.POS_KP*0.0175:.1f} Nm/deg "
+                  f"— hip kp_ch {self.jm.kp_ch_leg[0]:.0f}→{self.jm.kp_ch_leg[0]*self.POS_KP:.0f} "
+                  f"· hip {self.jm.kp_ch_leg[0]*self.POS_KP*0.0175:.1f} Nm/deg "
                   f"(τ_trip ÷ 이 값 = 트립까지 각도)", flush=True)
         self.imu_deg = imu_deg
         self._raw = None
@@ -109,9 +109,9 @@ class HwInterface:
         self.cmd_dq_dps = np.asarray(dq_dps, float).copy() if dq_dps is not None else np.zeros(n)
         self.cmd_tau_nm = np.asarray(tau_nm, float).copy() if tau_nm is not None else np.zeros(n)
         self.cmd_kp = (np.full(n, kp, float) if np.isscalar(kp) else
-                       (np.asarray(kp, float).copy() if kp is not None else self.jm.kp_leg.copy()))
+                       (np.asarray(kp, float).copy() if kp is not None else self.jm.kp_ch_leg.copy()))
         self.cmd_kd = (np.full(n, kd, float) if np.isscalar(kd) else
-                       (np.asarray(kd, float).copy() if kd is not None else self.jm.kd_leg.copy()))
+                       (np.asarray(kd, float).copy() if kd is not None else self.jm.kd_ch_leg.copy()))
 
     def ctrl_state(self):
         """모델기반용 상태: (q_rad[8], dq_rad[8], quat_wxyz[4], gyro_rad[3], acc[3], contact[2])."""
@@ -209,15 +209,17 @@ class HwInterface:
                       flush=True)
         return rc
 
-    def write_torque(self, q_ctrl_rad, dq_ctrl_rad, tau_ctrl_nm, kp_leg=0.0, kd_leg=0.0):
+    def write_torque(self, q_ctrl_rad, dq_ctrl_rad, tau_ctrl_nm, kp_scale=0.0, kd_scale=0.0):
+        # ★인자는 게인이 아니라 **배율**이다(0 = 순수토크). 종전 이름 kp_leg 는
+        #   config 게인 배열과 같은 이름이라 게인으로 오해됐다 — 2026-08-21 개명.
         """모델기반: 컨트롤러 토크(Nm) → 채널 MIT. kp/kd=0 = 순수 토크."""
         self._log_cmd(q_deg=np.asarray(q_ctrl_rad, float) * R2D,
                       dq_dps=np.asarray(dq_ctrl_rad, float) * R2D,
-                      tau_nm=tau_ctrl_nm, kp=kp_leg, kd=kd_leg)
+                      tau_nm=tau_ctrl_nm, kp=kp_scale, kd=kd_scale)
         q = self.jm.q_ctrl_to_ch(q_ctrl_rad)
         dq = self.jm.dq_ctrl_to_ch(dq_ctrl_rad)
         tau = self.jm.tau_ctrl_to_ch(tau_ctrl_nm)
-        self.be.write_mit(q, dq, tau, self.jm.kp_ch(kp_leg), self.jm.kd_ch(kd_leg))
+        self.be.write_mit(q, dq, tau, self.jm.kp_ch(kp_scale), self.jm.kd_ch(kd_scale))
 
     def enable(self, on: bool):
         self.be.enable(on)

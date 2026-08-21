@@ -30,7 +30,7 @@ while time.time() - t0 < DUR:
         "tau_min_nm": [round(v, 3) for v in LO],
         "tau_max_nm": [round(v, 3) for v in HI],
         "tau_win_n": 25,
-        "kp_leg": [0.0] * 8, "kd_leg": [0.0] * 8,
+        "kp_raw": [0.0] * 8, "kd_raw": [0.0] * 8,
         "rpy_deg": [0.0, 0.0, 0.0], "tilt_deg": 0.2, "loop_hz": 500.0,
         "motors_on": True,
         "health": ["ok"] * 8, "installed": [True] * 8,

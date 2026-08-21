@@ -522,8 +522,10 @@ def main() -> int:
         _base = (f"pace_multichirp{_sfx}" if a.gains == "id"
                  else f"pace_multichirp_val{_sfx}")
         path = os.path.join(a.out, _base + ".npz")   # save_npz 가 _abort/.prev 를 붙인다
-        # ★관절공간 게인으로 저장한다 — 시뮬은 모델각으로 돌기 때문이다.
-        #   τ_joint = kp_ch·k²·Δq_joint  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
+        # ★**raw 좌표** 게인으로 저장한다 (2026-08-21 이름 정정 — 값은 종전과 같다).
+        #   τ_raw = kp_ch·k²·Δq_raw  (부호는 토크에서도 같이 뒤집혀 상쇄된다)
+        #   ⚠종전 이름 kp_joint 는 틀렸다: 채널각은 raw각의 함수지 모델각의 함수가 아니다.
+        #     hip·thigh·calf 는 raw==모델각이라 같고 **발목에서만** 갈린다. emb/README 참조.
         kp_j = np.array([kp[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         kd_j = np.array([kd[c] * jm.k[i] ** 2 for i, c in enumerate(jm.ch)])
         # ⚠이 값이 CMA-ES 롤아웃의 제어법칙이 된다. 수집 때 쓴 게인과 **반드시 같아야** 한다.
@@ -533,7 +535,7 @@ def main() -> int:
                  t=T_, q=Qm, q_cmd=QC,
                  dq=DQ, tau_ch=TAU, cur_ch=CUR,
                  stt=STT, conn=CONN,
-                 kp_joint=kp_j, kd_joint=kd_j, gear_k=jm.k, gear_n=np.array(
+                 kp_raw=kp_j, kd_raw=kd_j, gear_k=jm.k, gear_n=np.array(
                      [float([x for x in spec["joints"] if x["ch"] == c][0]["gear"])
                       for c in jm.ch]),
                  names=np.array(jm.names), home=home, dt=_dt_real,

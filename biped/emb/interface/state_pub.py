@@ -50,10 +50,17 @@ def leg_extra(jm, dq_ch=None, tau_ch=None, q_cmd_ch=None, tau_cmd_ch=None,
         # ★τ_ff 명령. PACE 는 이게 가진 본체다 — 위치만 보면 시험의 절반이 안 보인다.
         #   측정토크와 **같은 변환**(gear_k·커플링 전치)을 거쳐야 나란히 놓고 뺄 수 있다.
         e["tau_cmd_nm"] = [round(float(v), 3) for v in jm.ch_to_tau_joint(tau_cmd_ch)]
+    # ★게인은 **raw 좌표**로 낸다: kp_raw = kp_ch·gear_k²  (2026-08-21 정정)
+    #   ⚠종전엔 채널값을 그대로 `kp_leg` 로 실었는데, C++ biped_deploy 는 같은 키에
+    #     ×gear_k² 를 실었다 — 같은 로봇·같은 모니터인데 calf 가 **80 vs 180** 으로 찍혔다.
+    #     좌표를 키 이름에 박아 두 발행자를 맞춘다.
+    #   ⚠모델각(관절) 게인으로 내지 않는 이유: 발목 커플링 때문에 모델각 강성은
+    #     Aᵀ·diag(kp_raw)·A 라 **비대각이 생겨** 축별 스칼라로 쓸 수 없다.
+    _k2 = jm.k ** 2
     if kp is not None:
-        e["kp_leg"] = [round(float(v), 1) for v in _np.asarray(kp, float)[jm.ch]]
+        e["kp_raw"] = [round(float(v), 1) for v in _np.asarray(kp, float)[jm.ch] * _k2]
     if kd is not None:
-        e["kd_leg"] = [round(float(v), 2) for v in _np.asarray(kd, float)[jm.ch]]
+        e["kd_raw"] = [round(float(v), 2) for v in _np.asarray(kd, float)[jm.ch] * _k2]
     return e
 
 

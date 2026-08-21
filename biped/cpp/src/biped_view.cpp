@@ -36,10 +36,12 @@ static std::string json_str(const std::string& s,const char* key,const std::stri
 //
 //   ⚠토크 두 열의 뜻이 실기와 미묘하게 다르다 — 읽을 때 주의:
 //     `tau_leg_nm`  = `qfrc_actuator` = **실제 관절토크**. 실기의 같은 이름과 직접 비교된다.
-//     `tau_cmd_nm`  = `d->ctrl` = **액추에이터 지령**. hip·thigh 는 관절토크와 같지만,
-//                     발목이 tendon 에 물려 있어 **calf·foot 은 다르다**(모터축 지령이
-//                     두 DOF 에 걸린다). 실기의 채널↔관절 구분과 같은 성격이다.
-//   ⚠sim 에는 드라이버 게인이 없다 ⇒ kp_leg·kd_leg 는 0 으로 낸다(실기 순수토크모드와 동일).
+//     `tau_cmd_nm`  = `d->ctrl` = **액추에이터 지령**. 관절토크와 다른 축은 **calf 뿐이다**
+//                     (`u_calf = τ_calf − τ_foot`, biped_wbic.hpp:21 이 `i%4==2` 만 전단한다).
+//                     ⚠**foot 은 같다** — `u_foot = τ_foot`. A⁻ᵀ 의 foot 행이 항등이라서다.
+//                     2026-08-21 정정: 종전 "calf·foot 은 다르다" 는 틀렸다. 각도가 어긋나는
+//                     축(foot)과 토크가 어긋나는 축(calf)이 **서로 다르다** — 여기가 제일 헷갈린다.
+//   ⚠sim 에는 드라이버 게인이 없다 ⇒ kp_raw·kd_raw 는 0 으로 낸다(실기 순수토크모드와 동일).
 struct TauWin {                                  // 발행창 통계(루프율로 누적 — 발행율이 아니라)
   std::vector<double> sum, sq, mn, mx; long n=0;
   void init(int k){ sum.assign(k,0.0); sq.assign(k,0.0); mn.assign(k,1e300); mx.assign(k,-1e300); n=0; }
@@ -83,8 +85,8 @@ static void publish_state(mjModel* m, mjData* d, BipedControl& c, const std::str
   arr(o,"tau_min_nm",NJ,[&](int j){ return n? tw.mn[j] : 0.0; });
   arr(o,"tau_max_nm",NJ,[&](int j){ return n? tw.mx[j] : 0.0; });
   o<<",\"tau_win_n\":"<<n;
-  arr(o,"kp_leg",NJ,[&](int){ return 0.0; },1);   // sim 은 드라이버 게인이 없다
-  arr(o,"kd_leg",NJ,[&](int){ return 0.0; },1);
+  arr(o,"kp_raw",NJ,[&](int){ return 0.0; },1);   // sim 은 드라이버 게인이 없다
+  arr(o,"kd_raw",NJ,[&](int){ return 0.0; },1);
   o<<"}";
   tw.init(NJ);                                    // 창을 비운다 — 다음 발행까지 다시 쌓는다
   std::string tmp=path+".tmp"; std::ofstream f(tmp); f<<o.str(); f.close();

@@ -11,7 +11,7 @@
   제어기가 발행하는 키를 그대로 쓴다:
     q_leg_deg  dq_leg_dps  tau_leg_nm      측정 (모델각 deg · deg/s · 관절 Nm)
     q_cmd_deg  dq_cmd_dps  tau_cmd_nm      명령 (같은 단위)
-    kp_leg kd_leg health installed mode loop_hz ...
+    kp_raw kd_raw health installed mode loop_hz ...
   ⚠단위는 전부 **모델각**이다(채널각 아님). q_ch_deg 는 --ch 로 따로 볼 수 있다.
 
 없는 키는 `—` 로 뜬다. 두 경우가 있다:
@@ -142,7 +142,11 @@ def main() -> int:
             qm = get(st, "q_leg_deg", nj);   qc = get(st, "q_cmd_deg", nj)
             dm = get(st, "dq_leg_dps", nj);  dc = get(st, "dq_cmd_dps", nj)
             tm = get(st, "tau_leg_nm", nj);  tc = get(st, "tau_cmd_nm", nj)
-            kp = get(st, "kp_leg", nj);      kd = get(st, "kd_leg", nj)
+            # ★kp_raw = kp_ch·gear_k² (raw 좌표). 옛 발행자는 `kp_leg` 를 냈는데 그건
+            #   C++/Python 이 서로 다른 좌표였다 — 폴백은 두되 값은 못 믿는다.
+            #   ⚠get() 은 없을 때 [None]*n(=truthy)을 주므로 `or` 폴백이 안 걸린다. 키로 본다.
+            kp = get(st, "kp_raw" if "kp_raw" in st else "kp_leg", nj)
+            kd = get(st, "kd_raw" if "kd_raw" in st else "kd_leg", nj)
             qch = get(st, "q_ch_deg", nj)
             # ★ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit(벤더 확인 2026-08-14).
             #   'fault' 라는 것만 알고 왜인지 못 보던 걸 숫자로 드러낸다.

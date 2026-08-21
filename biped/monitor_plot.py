@@ -61,7 +61,7 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 #     발산 대역(30~65Hz)이 통째로 접힌다 — 리플을 과소평가한다. 받아서 그리기만 한다.
 LOG_KEYS = ("q_leg_deg", "q_cmd_deg", "dq_leg_dps", "dq_cmd_dps",
             "tau_leg_nm", "tau_cmd_nm", "tau_std_nm", "tau_min_nm", "tau_max_nm",
-            "kp_leg", "kd_leg", "stt_raw")
+            "kp_raw", "kd_raw", "stt_raw")
 # ★stt = ucStatus 원값 = MD80 ERROR VECTOR 하위 8bit. 래치오프 원인의 유일한 단서라
 #   그래프엔 안 그려도 **로그에는 반드시** 남긴다.
 LOG_SUFFIX = ("q_m", "q_c", "dq_m", "dq_c", "tau_m", "tau_c",
@@ -387,7 +387,7 @@ def main() -> int:
             dpg.set_axis_limits(f"y_{key}", lo - pad, hi + pad)
 
         # 숫자 판독 — 그래프는 추세, 숫자는 현재값. 둘 다 필요하다.
-        kp = col(st, "kp_leg", nj)[i]
+        kp = col(st, "kp_raw", nj)[i]        # raw 좌표 = kp_ch·gear_k²
         parts = []
         for key, mk, ck, unit, _l, _fl in SIG:
             m = col(st, mk, nj)[i]

@@ -45,6 +45,25 @@ except Exception:
     pass
 NJ = len(JOG_NAMES)
 
+# ── ★위치모드 강성 배율 (2026-08-21) ────────────────────────────────────────
+#   home/hold/jog 의 kp 에 곱하는 배율. **stand/walk 는 안 쓴다**(WBIC 와 싸우면 안 된다).
+#   왜 GUI 로 빼는가: 접지시켜 하중을 걸며 "이 자세를 지키려면 얼마나 세야 하나" 를 찾는
+#   작업이라, 매번 제어기를 껐다 켜며 env 를 바꾸는 게 실무상 불가능하다.
+#
+#   ⚠올릴수록 **토크트립까지의 각도가 줄어든다.** τ_trip ÷ (kp_joint·π/180·배율) 이다.
+#     그래서 버튼마다 **가장 예민한 축의 트립각**을 같이 찍는다 — 숫자만 보고 올리면
+#     접지 순간 그 축이 먼저 트립한다(calf 는 kp_joint 180 이라 ×5 에서 1.0° 다).
+#   ⚠kd 는 제어기가 **√배율**로 같이 올린다(ζ ∝ kd/√kp 보존). GUI 가 따로 안 보낸다.
+KP_STEPS = [1.0, 2.0, 3.0, 4.0, 5.0]
+try:
+    _tt = float(_cfg.get('safety', {}).get('tau_trip_nm', 15.0))
+    # kp_joint = kp_ch·gear_k²  (emb/README "게인도 좌표가 둘")
+    _kpj = [(j['name'], float(j['kp']) * float(j.get('gear_k', 1.0)) ** 2) for j in _cfg['joints']]
+    _tight = max(_kpj, key=lambda t: t[1])      # kp_joint 가 가장 큰 축 = 트립각이 가장 작다
+    KP_TRIP = [(_tight[0], _tt / (_tight[1] * math.pi / 180.0 * s)) for s in KP_STEPS]
+except Exception:
+    KP_TRIP = [('?', float('nan'))] * len(KP_STEPS)
+
 
 class Pub:
     def __init__(self, path=CMD):
@@ -57,8 +76,11 @@ class Pub:
         #   hold 는 "지금 그 자리를 유지" 라 인계 시 움직임이 0 이다.
         #   ⚠stand/walk 와 달리 hold 는 모델기반 제어가 아니다 — 측정각 임피던스 유지뿐.
         #   sim 에서는 컨트롤러가 hold 를 모르면 무시하므로 무해하다.
+        # ★pos_kp_scale=1.0 으로 시작한다 — GUI 를 띄우는 것만으로 강성이 바뀌면 안 된다.
+        #   (제어기 쪽 env POS_KP_SCALE 은 **이 값이 도착하는 순간 덮인다.** GUI 를 쓸 거면
+        #    env 로 주지 말고 여기 버튼으로 줄 것.)
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'hold', 'contact': '2pt',
-                    'jog_deg': [0.0] * NJ, 'seq': 0}
+                    'jog_deg': [0.0] * NJ, 'pos_kp_scale': 1.0, 'seq': 0}
         self._pub()
 
     def set_jog(self, i, val):
@@ -172,6 +194,17 @@ def on_height(_, val): pub.set(body_h=round(val, 3))
 
 def on_jog(sender, val, i):           # 각축 슬라이더 → 목표각(deg) 발행
     pub.set_jog(i, val)
+
+
+def set_kp_scale(s):
+    """위치모드(home/hold/jog) 강성 배율. 제어기가 1초에 걸쳐 램프한다."""
+    pub.set(pos_kp_scale=float(s))
+    for k, v in enumerate(KP_STEPS):
+        dpg.bind_item_theme(f'kpbtn_{k}', _kp_on if abs(v - s) < 1e-6 else _kp_off)
+    who, trip = KP_TRIP[KP_STEPS.index(s)] if s in KP_STEPS else ('?', float('nan'))
+    dpg.set_value('kp_lbl', f'현재 ×{s:g}  ·  kd×{math.sqrt(s):.2f}(ζ 보존)  ·  '
+                            f'트립 예민축 {who} {trip:.2f}°')
+    dpg.configure_item('kp_lbl', color=(210, 120, 100) if trip < 2.0 else (150, 155, 175))
 
 
 def jog_zero():                       # 전체 0(home)
@@ -414,6 +447,14 @@ with dpg.theme() as _home:                  # Home 복귀 = 파랑(이동은 하
     with dpg.theme_component(dpg.mvButton):
         dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 85, 140))
         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 115, 185))
+with dpg.theme() as _kp_on:                 # 강성 배율 — 선택된 단계(주황)
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (185, 110, 40))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (215, 140, 60))
+with dpg.theme() as _kp_off:                # 강성 배율 — 나머지(어둡게)
+    with dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (44, 48, 62))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (70, 76, 96))
 
 with dpg.window(tag='main'):
     dpg.add_text('biped teleop  —  MPC + WBIC (event-DCM)', color=(150, 200, 255))
@@ -478,8 +519,30 @@ with dpg.window(tag='main'):
     dpg.add_text('⚠매달린 채로 stand/보행을 켜지 말 것 — GRF 를 전제한 QP 라 해가 안 나오고 '
                  '중력보상 폴백으로 떨어진다(겉보기엔 안정돼 보인다). 매달려서 되는 건 off/jog/home/hold 뿐.',
                  color=(210, 150, 90))
-    dpg.add_text('Home=제어기가 정한 자세로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기\n  ⚠목표자세는 **제어기마다 다르다**: biped_emb.py=config home.q_deg(전축 0) · biped_deploy=**2점 평발 stand 자세**(Qflat8, 발목 채널 100.4°)',
+    dpg.add_text('Home=제어기가 정한 자세로 전축 동시 S-curve 이동 · Hold=지금 그 자리를 잡기\n'
+                 '  목표자세: 1점 점발 = config home.q_deg(전축 0, biped_emb.py 와 동일) · '
+                 '2점 평발 = Qflat8(발목 채널 100.4°, 밑창 수평)',
                  color=(150, 155, 175))
+    # ── ★위치모드 강성 5단계 (2026-08-21) ────────────────────────────────────
+    #   home/hold/jog 의 kp 배율. **stand/walk 에는 안 걸린다**(WBIC 와 싸우면 안 된다).
+    #   쓰는 자리: home 으로 자세를 잡고 hold 로 굳힌 뒤 **크레인을 내려 하중을 실을 때**,
+    #   그 자세를 지키려면 얼마나 세야 하는지 여기서 올려 가며 찾는다.
+    #   ⚠제어기가 1초에 걸쳐 램프한다 — 계단으로 바꾸면 벌어져 있던 축의 토크가
+    #     그 자리에서 배율만큼 튀어 접지 중에 τ_trip 이 바로 걸린다.
+    dpg.add_text('● 위치모드 강성 (home·hold·jog 의 kp 배율 — stand/walk 무관)',
+                 color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        for _k, _s in enumerate(KP_STEPS):
+            _who, _tr = KP_TRIP[_k]
+            dpg.add_button(label=f'×{_s:g}', width=52, tag=f'kpbtn_{_k}',
+                           callback=lambda _a, _b, u=_s: set_kp_scale(u))
+            with dpg.tooltip(f'kpbtn_{_k}'):
+                dpg.add_text(f'kp×{_s:g} · kd×{math.sqrt(_s):.2f}\n'
+                             f'가장 예민한 축 {_who} — {_tr:.2f}° 에서 토크트립')
+        dpg.add_text('', tag='kp_lbl', color=(150, 155, 175))
+    dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '
+                 '(τ_trip ÷ kp_joint). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',
+                 color=(210, 150, 90))
     dpg.add_separator()
     # ── ★각축(JOG) 패널: 8관절 슬라이더(모터 1:1) + 실측 + 통신 상태 LED ──
     dpg.add_text('● 각축 JOG 검증 (슬라이더=목표각° · 실측° · ●=상태LED)', color=(255, 205, 120))
@@ -521,6 +584,7 @@ if _kf is not None:
     dpg.bind_font(_kf)
 dpg.create_viewport(title='biped teleop', width=700, height=800)
 dpg.setup_dearpygui(); dpg.show_viewport(); dpg.set_primary_window('main', True)
+set_kp_scale(1.0)      # ★강성 버튼 초기 선택 표시(×1). Pub 기본값과 반드시 일치시킬 것.
 
 # ★absent(미장착)를 dead(배선됐는데 두절)와 다른 색으로 둔다 — 전자는 정상, 후자는 고장이다.
 #   같은 회색으로 뭉뚱그리면 "원래 없는 축" 과 "죽은 축" 이 구분되지 않는다.

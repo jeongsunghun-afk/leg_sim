@@ -258,8 +258,24 @@ cd ~/simulation/biped/cpp && ./build/biped_deploy --mjcf ../biped_flatfoot.mjcf 
 
 ```bash
 cd ~/simulation/biped/cpp
-POS_KP_SCALE=3 ./build/biped_deploy --mjcf ../biped_flatfoot.mjcf --start-mode off
+./build/biped_deploy --mjcf ../biped_flatfoot.mjcf --start-mode off
 ```
+
+강성은 **GUI 에서 조절한다**(2026-08-21). `● 위치모드 강성` 행의 `×1 ×2 ×3 ×4 ×5`.
+접지시키며 하중을 걸어 가는 작업이라, 매번 제어기를 껐다 켜며 env 를 바꾸는 게 실무상
+불가능하다. `POS_KP_SCALE` env 는 **초기값일 뿐**이고 GUI 값이 도착하면 덮인다.
+
+| 배율 | HL_calf 트립각 | kd |
+|---|---|---|
+| ×1 | 4.77° | ×1.00 |
+| ×3 | **1.59°** | ×1.73 |
+| ×5 | **0.95°** | ×2.24 |
+
+⚠제어기가 **1초에 걸쳐 램프**한다(`POS_KP_RAMP_S`). 계단으로 바꾸면 하중을 받아 err 만큼
+  벌어진 축의 토크가 그 자리에서 배율만큼 튄다 — 접지 중이면 그게 곧 τ_trip 이다.
+⚠`×5` 상한은 `POS_KP_SCALE_MAX`. 그 위 값을 보내면 조용히 잘린다.
+⚠kd 는 제어기가 **√배율**로 같이 올린다(ζ ∝ kd/√kp 보존). kp 만 올리면 지금도 있는
+  속도잡음(±3~7dps)이 진동으로 커진다. 따로 주려면 `POS_KD_SCALE`.
 
 | 순서 | 하는 일 | 확인 |
 |---|---|---|

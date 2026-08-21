@@ -195,6 +195,14 @@ def main() -> int:
                                        "R" if _sk >= 20 else "y", col))
                 else:
                     flags.append(paint(f"지연보상 {_lc:.1f}ms", "g", col))
+            # ★위치모드 강성 배율(GUI 조절). `pos_kp_scale`=지금 나가는 값 · `_target`=요구값.
+            #   둘이 다르면 **아직 램프 중**이다 — 그 사이 토크가 변하므로 보여야 한다.
+            _ks, _kt = st.get("pos_kp_scale"), st.get("pos_kp_target")
+            if _ks is not None and (abs(_ks - 1.0) > 1e-3 or (_kt is not None and abs(_kt - 1.0) > 1e-3)):
+                if _kt is not None and abs(_kt - _ks) > 1e-3:
+                    flags.append(paint(f"강성 kp×{_ks:.2f}→×{_kt:.2f} 램프중", "y", col))
+                else:
+                    flags.append(paint(f"강성 kp×{_ks:.2f}", "y" if _ks > 3.0 else "g", col))
             # ★★**명령했는데 안 따라오는 축**을 직접 잡는다 (2026-08-20).
             #   실기에서 HL_foot 이 명령 −59.8° 인데 +23.0° 에 머물고 토크가 0.03Nm 였는데
             #   health=ok · err=0 이라 모니터가 **아무 경고도 안 냈다.** 엔코더가 살아 있으면

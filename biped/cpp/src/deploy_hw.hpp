@@ -443,6 +443,11 @@ struct Cmd {
   double v=0, vy=0, w=0, body_h=0.5;
   long long seq=-1;
   std::vector<double> jog_deg;           // ★축별 목표각(**모델각 deg**). 없으면 비어 있다
+  // ★위치모드 강성 배율 (2026-08-21). GUI 의 [강성] 버튼이 낸다.
+  //   ⚠**−1 = 키 없음**이다(0 이 아니라). 0 은 "게인을 0 으로" 라는 유효한 값이고,
+  //     옛 GUI 가 이 키를 안 보내는 것과 구분돼야 한다. 구분을 안 하면 옛 GUI 를 붙이는
+  //     순간 hold 게인이 0 이 되어 **다리가 떨어진다.**
+  double pos_kp_scale = -1.0;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -478,6 +483,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.v = num("v",0); out.vy = num("vy",0); out.w = num("w",0);
   out.body_h = num("body_h",0.5); out.seq = (long long)num("seq",-1);
   out.jog_deg = list("jog_deg");
+  out.pos_kp_scale = num("pos_kp_scale", -1.0);
   return true;
 }
 

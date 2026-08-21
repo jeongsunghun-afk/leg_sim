@@ -297,16 +297,33 @@ int main(int argc, char** argv){
   //      지금도 속도잡음(±3~7dps)이 kd 를 타고 틱틱거리는데, 그게 진동으로 커진다.
   //   ⇒ kd 를 **√배율**만큼 같이 올리는 것을 기본으로 한다(ζ 보존). 따로 주려면 POS_KD_SCALE.
   //   ⚠stand 는 이 배율을 안 쓴다 — 거기선 WBIC 와 싸우면 안 되고 STAND_KP_FLOOR 가 따로 있다.
-  const double POS_KP = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
-  const double POS_KD = getenv("POS_KD_SCALE") ? atof(getenv("POS_KD_SCALE"))
-                                               : std::sqrt(std::max(1e-9, POS_KP));
-  if(POS_KP != 1.0 || POS_KD != 1.0){
-    const double tau_per_deg = 0.0175 * POS_KP;   // kp_ch 100 기준 축의 값
-    std::printf("[deploy] 위치게인 배율 kp×%.2f · kd×%.2f — hip kp_ch %.0f→%.0f\n"
-                "         ⚠트립까지 %.2f° (hip 기준 %.1fNm/deg · τ_trip %.0fNm)\n",
-                POS_KP, POS_KD, cfg.joints[0].kp, cfg.joints[0].kp*POS_KP,
-                cfg.tau_trip_nm/(cfg.joints[0].kp*tau_per_deg/100.0*100.0),
-                cfg.joints[0].kp*tau_per_deg/100.0*100.0, cfg.tau_trip_nm);
+  //   ★★2026-08-21 **런타임 조절**로 바꿨다(사용자 요청: GUI 에 강성 버튼).
+  //   env 는 초기값일 뿐이고, 명령파일의 `pos_kp_scale` 이 오면 그쪽을 따른다.
+  //   ⚠**갑자기 바꾸면 안 된다.** 하중을 받아 err 만큼 벌어진 상태에서 배율을 1→5 로
+  //     계단으로 올리면 그 축의 토크가 **그 자리에서 5배**가 된다. 접지 중이면 τ_trip 이
+  //     바로 걸린다. ⇒ POS_KP_RAMP_S(기본 1.0초) 동안 **선형으로** 옮긴다.
+  //   ⚠stand/walk 는 이 배율을 안 쓴다 — 거기선 WBIC 와 싸우면 안 되고 STAND_KP_FLOOR 가 따로다.
+  const double KP_SCALE_MAX = getenv("POS_KP_SCALE_MAX") ? atof(getenv("POS_KP_SCALE_MAX")) : 5.0;
+  const double KP_RAMP_S    = getenv("POS_KP_RAMP_S")    ? atof(getenv("POS_KP_RAMP_S"))    : 1.0;
+  const double KD_SCALE_ENV = getenv("POS_KD_SCALE") ? atof(getenv("POS_KD_SCALE")) : -1.0;
+  double kp_scale_tgt = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
+  kp_scale_tgt = std::max(0.0, std::min(KP_SCALE_MAX, kp_scale_tgt));
+  double POS_KP = kp_scale_tgt;                    // ★램프 중인 **현재** 배율
+  double POS_KD = (KD_SCALE_ENV>=0) ? KD_SCALE_ENV : std::sqrt(std::max(1e-9, POS_KP));
+  // ★축별 트립각[deg] = τ_trip / (kp_joint · π/180 · 배율). **가장 예민한 축**을 찍는다.
+  //   kp_joint = kp_ch·gear_k² (emb/README "게인도 좌표가 둘").
+  auto trip_deg = [&](double sc)->std::pair<std::string,double>{
+    std::string who="-"; double best=1e30;
+    for(const auto& j : cfg.joints){
+      double kpj = j.kp*j.gear_k*j.gear_k, nmd = kpj*M_PI/180.0*std::max(1e-9,sc);
+      if(cfg.tau_trip_nm/nmd < best){ best = cfg.tau_trip_nm/nmd; who = j.name; }
+    }
+    return {who,best}; };
+  {
+    auto t1 = trip_deg(POS_KP);
+    std::printf("[deploy] 위치게인 배율 kp×%.2f · kd×%.2f (GUI 로 조절 · 최대 ×%.0f · 램프 %.1fs)\n"
+                "         ⚠가장 예민한 축 %s — **%.2f° 에서 토크트립**(τ_trip %.0fNm)\n",
+                POS_KP, POS_KD, KP_SCALE_MAX, KP_RAMP_S, t1.first.c_str(), t1.second, cfg.tau_trip_nm);
   }
   std::vector<double> q_ctrl(NJ), dq_ctrl(NJ), tau_ctrl(NU);
   // ★토크 통계 누적기 — 루프율로 쌓고 발행마다 비운다(위 ① 주석 참조).
@@ -531,6 +548,18 @@ int main(int argc, char** argv){
         last_raw = nc.raw;                          //   (biped_emb.read_cmd_fresh 와 같은 이유)
         if(fresh) last_cmd_t = lt;
         cmd = nc; body_h = nc.body_h;
+        // ★강성 배율 수신 — **−1 은 "키 없음"**(옛 GUI)이라 무시한다. 0 은 유효한 값이다.
+        if(nc.pos_kp_scale >= 0.0){
+          double want = std::max(0.0, std::min(KP_SCALE_MAX, nc.pos_kp_scale));
+          if(std::fabs(want - kp_scale_tgt) > 1e-6){
+            auto t2 = trip_deg(want);
+            std::printf("[deploy] 강성 kp×%.2f → **×%.2f** (%.1fs 램프) — 트립 예민축 %s **%.2f°**\n",
+                        POS_KP, want, KP_RAMP_S, t2.first.c_str(), t2.second);
+            if(want > kp_scale_tgt && (mode=="stand" || mode=="walk"))
+              std::printf("[deploy]   ⚠지금 %s 다 — 이 배율은 home/hold/jog 에만 걸린다(무영향).\n", mode.c_str());
+            kp_scale_tgt = want;
+          }
+        }
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
         if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk") nm = "off";
@@ -879,6 +908,17 @@ int main(int argc, char** argv){
                   (mode=="hold")? (double)hold_ch[i] : (double)q_ch[i]);
         fprintf(trc,"\n");
       } else { fclose(trc); trc=nullptr; std::printf("[deploy] 트레이스 저장 완료\n"); }
+    }
+
+    // ★강성 배율 램프 — 목표까지 KP_RAMP_S 에 걸쳐 **선형**으로 옮긴다.
+    //   계단으로 바꾸면 하중을 받아 err 만큼 벌어진 축의 토크가 그 자리에서 배율만큼
+    //   튄다(τ=kp·err). 접지 중이면 그게 곧 τ_trip 이다.
+    if(POS_KP != kp_scale_tgt){
+      const double step = (KP_RAMP_S>1e-6) ? (KP_SCALE_MAX/KP_RAMP_S)*dt : 1e9;
+      double d0 = kp_scale_tgt - POS_KP;
+      POS_KP += std::max(-step, std::min(step, d0));
+      if(std::fabs(kp_scale_tgt - POS_KP) < 1e-6) POS_KP = kp_scale_tgt;
+      POS_KD = (KD_SCALE_ENV>=0) ? KD_SCALE_ENV : std::sqrt(std::max(1e-9, POS_KP));
     }
 
     // ★자세유지 토크 — 0.5초 창의 **평균**을 굴린다. 한 틱 값은 마찰·양자화로 튄다.
@@ -1256,7 +1296,10 @@ int main(int argc, char** argv){
         "\"lat_comp_ms\":%.2f,\"lc_skip_pct\":%.1f,\"home_progress\":%.3f,\"err\":%s,"
         // ★자세유지 토크 스냅샷(관절 Nm). hold=위치제어로 버틸 때, stand=WBIC 로 버틸 때.
         //   `[]` 는 **아직 안 잡혔다**는 뜻이다(0 Nm 이 아니라).
-        "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s,\"tau_hold_nm\":%s,\"tau_stand_nm\":%s}",
+        // ★강성 배율 — `pos_kp_scale` 은 **지금 실제로 나가고 있는 값**(램프 중이면 중간값),
+        //   `pos_kp_target` 은 GUI 가 요구한 값이다. 둘이 다르면 아직 옮겨 가는 중이다.
+        "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s,\"tau_hold_nm\":%s,\"tau_stand_nm\":%s,"
+        "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
@@ -1269,7 +1312,8 @@ int main(int argc, char** argv){
         c.qp_rate*100.0, c.qp_K, c.qp_cerr[0], c.qp_cerr[1], c.qp_cerr[2],
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
-        (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str());
+        (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
+        POS_KP, kp_scale_tgt, POS_KD);
       write_state(stt_p, buf);
     }
 

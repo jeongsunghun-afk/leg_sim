@@ -414,8 +414,12 @@ int main(int argc, char** argv){
       else frz_t[i]=0.0;
       prv_q[i]=hs.q_deg[i]; prv_dq[i]=hs.dq_dps[i]; prv_t[i]=hs.tau_nm[i];
     }
+    // ⚠**mock 은 제외한다** (2026-08-21). MockHw 는 명령이 없으면 값이 안 변하는 게 정상이라
+    //   전 채널이 동결로 잡히고 **무장이 막힌다** — `--mock` 으로는 off 말고 아무 모드도
+    //   못 들어가서 배포경로를 오프로봇으로 검증할 수 없었다.
+    //   기동 생존확인(아래)은 이미 `!mock` 로 제외돼 있었다. 이쪽만 빠져 있어 짝이 안 맞았다.
     { std::string fz; int nfz=0;
-      for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && frz_t[i]>0.5){
+      for(int i=0;i<NCH;i++) if(!mock && cfg.installed_has(i) && frz_t[i]>0.5){
         char b[16]; std::snprintf(b,sizeof b," ch%d",i); fz+=b; nfz++; }
       if(nfz && !frz_warned){ frz_warned=true;
         // ★몇 축이 얼었는지로 **어느 구간이 끊겼는지** 가른다 (2026-08-20).
@@ -497,6 +501,13 @@ int main(int argc, char** argv){
                  std::printf("[deploy] 명령 잠금 해제 — %s 수신\n", nm.c_str()); }
         }
         if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
+        // ★★거부는 **래치**다 (2026-08-21, mock 실측으로 발견).
+        //   종전엔 `ground_refused` 가 **검사만** 건너뛰게 했다. 그런데 GUI 는 stand 를
+        //   20ms 마다 재전송하므로, 다음 폴에서 nm!=mode 로 다시 진입하고 검사는 건너뛴 채
+        //   **그대로 stand 로 들어갔다.** 즉 거부가 한 틱만 유효했다.
+        //   ⚠접지 검사도 같은 경로였다 — 이 커밋 이전엔 "접지 안 됨" 도 한 번만 막혔다.
+        //   ⇒ 다른 모드를 한 번 고를 때까지 stand/walk 를 hold 로 눌러 둔다.
+        if(ground_refused && (nm=="stand" || nm=="walk")) nm = "hold";
         // ★★**움직이는 중에는 무장하지 않는다** (2026-08-20 실기).
         //   속도트립은 *측정* 속도로 걸린다 — 우리가 명령을 안 줘도, 로봇이 이미
         //   무너지는 중이면 무장하는 순간 그대로 트립한다(ch6 201dps · ch2 204 · ch3 224).

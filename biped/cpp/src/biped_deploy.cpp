@@ -425,8 +425,15 @@ int main(int argc, char** argv){
   //   kd 만 남긴다 — kp=kd=0 순수토크가 30~65Hz 에서 발산한 전례가 그대로 적용된다.
   //   ⚠크면 뻑뻑해서 무중력 느낌이 안 난다. 작으면 발산 위험. 0.30 에서 시작한다.
   const double FLOAT_KD = getenv("FLOAT_KD") ? atof(getenv("FLOAT_KD")) : 0.30;
-  //   ★FLOAT_AXES="1,5" — 그 **채널만** 무중력, 나머지는 진입 자세로 위치유지.
-  //     비우면 전 축. ⚠전 축을 한꺼번에 놓으면 자세가 무너진다 — 한 축씩 볼 것.
+  //   ★**기본은 전 축이다.** 무중력은 다리 전체를 무게 없이 만드는 것이 목적이다 —
+  //     축이 서로 커플링돼 있어(hip 이 처지면 thigh 의 중력이 바뀐다) 전 축을 같이 놓아야
+  //     실제 상황이고, 한 축씩은 나머지가 잡아 주므로 인위적이다.
+  //     그리고 τ_ff = G_model(q_meas) 를 **매 틱 다시 계산**하므로 모델을 통한 폐루프가 된다:
+  //     α 가 모자라 처져도 접히면서 필요 중력이 줄어 **어딘가에서 평형을 찾는다**(무한낙하 아님).
+  //   ★FLOAT_AXES="1,5" — **1회용 디버그**다. 그 채널만 뜨고 나머지는 진입 자세로 위치유지.
+  //     쓰는 자리: 전 축을 놓기 전에 **부호를 확인**할 때. 어느 축의 sign 이 반대면 그 축만
+  //     폭주하는데, 전 축을 한꺼번에 놓으면 어느 축이 원인인지 안 보인다.
+  //     좌우 α 를 따로 재고 싶을 때도 쓴다(FLOAT_AXES=0 / =4 로 hip 좌우).
   std::set<int> float_axes;
   if(const char* fa=getenv("FLOAT_AXES")){
     std::stringstream ss(fa); std::string t;
@@ -804,7 +811,7 @@ int main(int argc, char** argv){
                         "         ⚠매달린 상태 전용. 손으로 밀어 보며 중립 배율을 찾는다.\n"
                         "         ⚠마찰(관절 0.6~0.9Nm)은 안 지워진다 — 뻑뻑한 게 정상이다.\n",
                         GRAV_SCALE, FLOAT_KD,
-                        float_axes.empty() ? "전축" : "지정축만(FLOAT_AXES)");
+                        float_axes.empty() ? "**전축**(기본)" : "지정축만(FLOAT_AXES · 디버그)");
             }
           }
           if(mode=="hold"){

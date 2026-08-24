@@ -15,6 +15,17 @@
     ⚠**MuJoCo 로드 검증 미실시** — 생성 환경(Pi)에 mujoco 가 없다. 노트북에서 반드시 확인할 것.
   -->
   <compiler angle="radian" meshdir="03_Leg_UFDF_Colision_260811_1/meshes_mjcf/" />
+  <!-- ★2026-08-24 calf·foot 관절한계를 biped_flatfoot.mjcf·config 와 맞췄다.
+       종전: calf -1.0821(-62.0°) · foot 상한 0.44(**+25.21°**)
+       현재: calf -1.1868(-68.0°) · foot 상한 1.1694(**+67.0°**)
+       ⚠왜 — **배포가 로드하는 모델이 이 파일인데**(biped_deploy.cpp:87) config 의
+         소프트한계(min/max_deg)보다 좁았다. 발목이 **41.8°** 어긋나 있었다.
+         biped_deploy 는 config 한계로 클램프한 뒤 d->qpos 에 주입하고 mj_forward 를 돈다
+         ⇒ 모델 밖 각도면 MuJoCo 가 **한계 구속력**을 만들어 WBIC 의 h(중력·바이어스)를
+           오염시킨다. jog 로 발목을 +25° 넘게 몰면 도달한다.
+       ⚠config 주석(biped_emb.yaml)이 *"foot max_deg +25.2 → +67.0 (2026-08-12).
+         calf 와 같은 종류의 사고다"* 라 적고 있다 — **이 파일만 그 사고를 갖고 있었다.**
+         flatfoot 은 이미 -1.1868 / 1.1694 였다. 즉 되돌리는 게 아니라 밀린 동기화다. -->
   <asset>
     <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.33 0.36 0.40" rgb2="0.42 0.45 0.50" width="512" height="512" />
     <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="12 12" reflectance="0.12" />
@@ -51,11 +62,11 @@
             <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_thigh_link_collision" />
             <body name="HL_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 0.000115677 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 -6.32969e-10 -0.00116384 -1.22739e-10" />
-              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
+              <joint name="HL_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
               <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_calf_link_collision" />
               <body name="HL_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.39397e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
-                <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 0.44" actuatorfrcrange="-100.8 100.8" />
+                <joint name="HL_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 1.1694" actuatorfrcrange="-100.8 100.8" />
                 <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HL_foot_link_collision" />
                 <body name="HL_foot_contact_link" pos="0.025353 0 -0.14378">
                   <inertial pos="0.00167427 -8.03431e-09 -0.00949524" mass="0.0420009" fullinertia="1.23353e-05 1.66282e-05 1.63264e-05 -6.12961e-12 -7.26317e-07 -7.88503e-13" />
@@ -76,11 +87,11 @@
             <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_thigh_link_collision" />
             <body name="HR_calf_link" pos="0.13192 0 -0.1884">
               <inertial pos="-0.075484 -0.000113252 -0.0672663" mass="0.65207" fullinertia="0.00111501 0.00267927 0.00159557 5.2813e-10 -0.00116384 8.19537e-11" />
-              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.0821 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
+              <joint name="HR_calf_joint" pos="0 0 0" axis="0 1 0" range="-1.1868 0.87" actuatorfrcrange="-226.8 226.8" />   <!-- ★226.8=126+100.8: calf 관절은 무릎·발목 **두 드라이브**의 힘을 받는다(발목이 tendon 으로 [1,1] 기여). 드라이브 한계는 actuator ctrlrange 다 -->
               <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_calf_link_collision" />
               <body name="HR_foot_link" pos="-0.18768 0 -0.15748">
                 <inertial pos="0.0107476 -1.394e-12 -0.0609525" mass="0.204919" fullinertia="0.000271645 0.000305655 3.80453e-05 -1.07641e-10 4.25117e-05 -1.89644e-11" />
-                <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 0.44" actuatorfrcrange="-100.8 100.8" />
+                <joint name="HR_foot_joint" pos="0 0 0" axis="0 1 0" range="-1.48 1.1694" actuatorfrcrange="-100.8 100.8" />
                 <geom type="mesh" group="1" density="0" rgba="0.75294 0.75294 0.75294 1" mesh="HR_foot_link_collision" />
                 <body name="HR_foot_contact_link" pos="0.025353 0 -0.14378">
                   <inertial pos="0.00167427 -8.03431e-09 -0.00949524" mass="0.0420009" fullinertia="1.23353e-05 1.66282e-05 1.63264e-05 -6.12961e-12 -7.26317e-07 -7.88503e-13" />

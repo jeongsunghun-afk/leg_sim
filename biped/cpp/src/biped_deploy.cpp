@@ -26,6 +26,7 @@
 #include "biped_control.hpp"
 #include "state_estimator.hpp"
 #include "deploy_hw.hpp"
+#include "freeze_forensics.hpp"      // ★동결 증거 수집(링버퍼·Emb 생존·NIC·사건로그)
 #include "sim_hw.hpp"
 #include <Eigen/Dense>
 #include <csignal>
@@ -555,6 +556,25 @@ int main(int argc, char** argv){
   //   ⇒ 채널별로 (q,dq,tau) 가 **한 번도 안 바뀐 시간**을 세어 직접 이름 붙인다.
   std::vector<float> prv_q(NCH,1e9f), prv_dq(NCH,0.f), prv_t(NCH,0.f);
   std::vector<double> frz_t(NCH,0.0);  bool frz_warned=false; int frozen_now=0;
+  // ★★동결 증거 수집기 (2026-08-24). 여덟 번 넘게 났는데 원인을 모르는 이유는
+  //   **증거가 남지 않아서**다 — 배너는 스크롤백에만 찍히고 재기동에 사라진다.
+  //   ⇒ 직전 N 초를 링버퍼에 계속 굴리고, 동결 순간 CSV+사건로그로 떨어뜨린다.
+  //   FREEZE_PRE_S=0 으로 끌 수 있다(메모리 ~2.4MB/3초).
+  Ring frz_ring;
+  const double FRZ_PRE_S = getenv("FREEZE_PRE_S") ? atof(getenv("FREEZE_PRE_S")) : 3.0;
+  if(FRZ_PRE_S > 0) frz_ring.init(FRZ_PRE_S, dt, NCH);
+  const std::string FRZ_LOG = getenv("FREEZE_LOG") ? getenv("FREEZE_LOG")
+                                                   : "/tmp/biped_freeze_log.tsv";
+  int emb_pid = EmbSnap::find_pid();
+  NicSnap nic0 = NicSnap::take();          // 기동 시점 기준선 — CRC 증가분을 보려면 필요하다
+  EmbSnap emb0 = EmbSnap::take(emb_pid);
+  double emb0_t = now_s();
+  int frz_event = 0;                        // 이 세션의 동결 횟수(파일명에 쓴다)
+  std::printf("[deploy] 동결 증거수집 ON — 직전 %.1fs 링버퍼 · 사건로그 %s\n"
+              "         Emb pid=%s · NIC %s carrier=%lld rx_crc=%lld\n",
+              FRZ_PRE_S, FRZ_LOG.c_str(),
+              emb_pid>0 ? std::to_string(emb_pid).c_str() : "**못 찾음**",
+              nic0.ifname.c_str(), nic0.carrier, nic0.rx_crc);
   // ★★stand 진입 블렌드 (2026-08-20 실기). hold→stand 는 위치제어(kp 100/50/80/30)에서
   //   **kp=kd=0 순수토크**로 한 틱에 바뀐다. 그 순간 WBIC 토크가 조금만 모자라도
   //   그대로 주저앉는다(실기 관측). 시뮬은 α=1 이라 안 드러난다 — 실기는 토크 스케일이
@@ -596,6 +616,8 @@ int main(int argc, char** argv){
                     "         GUI 에서 버튼을 다시 눌러야 반영된다(기동 즉시 무장 방지).\n",
                     c0.mode.c_str()); } }
   double t0 = now_s(), prev_loop = t0; long long k = 0; bool overrun_warned=false;
+  mode_t0 = t0; tau_win_t0 = t0;   // ★0 으로 두면 "모드 2274초째" 같은 값이 나온다(절대시각)
+
   int rc = 0;
   while(!g_stop && (now_s()-t0) < T){
     double lt = now_s();
@@ -647,12 +669,20 @@ int main(int argc, char** argv){
       else frz_t[i]=0.0;
       prv_q[i]=hs.q_deg[i]; prv_dq[i]=hs.dq_dps[i]; prv_t[i]=hs.tau_nm[i];
     }
+    // ★링버퍼에 이번 틱을 밀어 넣는다. 명령각은 **직전 틱**의 발행값이다(디스패치가 아래라서).
+    //   1틱(2ms) 어긋나는데, 동결 원인 상관에는 무관하다 — 대신 항상 채워져 있는 게 중요하다.
+    if(!frz_ring.buf.empty())
+      frz_ring.push(lt, hs.q_deg.data(), hs.dq_dps.data(), hs.tau_nm.data(),
+                    hs.cur_a.data(), qcmd_ch.data());
     // ⚠**mock 은 제외한다** (2026-08-21). MockHw 는 명령이 없으면 값이 안 변하는 게 정상이라
     //   전 채널이 동결로 잡히고 **무장이 막힌다** — `--mock` 으로는 off 말고 아무 모드도
     //   못 들어가서 배포경로를 오프로봇으로 검증할 수 없었다.
     //   기동 생존확인(아래)은 이미 `!mock` 로 제외돼 있었다. 이쪽만 빠져 있어 짝이 안 맞았다.
+    //   ★FREEZE_TEST=1 은 mock 에서도 이 검사를 켠다 — **증거수집 경로를 오프로봇에서
+    //     검증하기 위한 것**이다(MockHw 는 값이 안 변하므로 즉시 발화한다).
     { std::string fz; int nfz=0;
-      for(int i=0;i<NCH;i++) if(!mock && cfg.installed_has(i) && frz_t[i]>0.5){
+      const bool fz_en = !mock || (getenv("FREEZE_TEST") && atoi(getenv("FREEZE_TEST")));
+      for(int i=0;i<NCH;i++) if(fz_en && cfg.installed_has(i) && frz_t[i]>0.5){
         char b[16]; std::snprintf(b,sizeof b," ch%d",i); fz+=b; nfz++; }
       if(nfz && !frz_warned){ frz_warned=true;
         // ★몇 축이 얼었는지로 **어느 구간이 끊겼는지** 가른다 (2026-08-20).
@@ -671,6 +701,65 @@ int main(int argc, char** argv){
                    "!!   MCU 는 살아 있고 그 아래 **FDCAN(그 다리)** 이 끊긴 것이다.",
           all_ch ? "" : "\n!!   ⚠전원 재투입으로 잠깐 풀려도 재발한다 — 배선·커넥터·종단저항을 볼 것.",
           std::string(72,'!').c_str());
+
+        // ═══ 증거 수집 (2026-08-24) ═══════════════════════════════════════
+        //   여기까지의 배너는 "얼었다" 만 말한다. 아래가 **왜** 를 좁히는 부분이다.
+        frz_event++;
+        // ① Emb 가 아직 CPU 를 쓰고 있나 — 0.15초 두 점을 재서 본다.
+        //   ⚠이게 **결정적 갈림길**이다. 여덟 번 동안 한 번도 구분한 적이 없다:
+        //     CPU 가 늘고 있다 → Emb 는 돌고 EtherCAT 이 죽었다(슬레이브/배선/노이즈)
+        //     CPU 가 멈췄다   → Emb 자체가 스톨/데드락이다(전원 OFF/ON 은 헛수고다)
+        if(emb_pid<=0) emb_pid = EmbSnap::find_pid();
+        EmbSnap e1 = EmbSnap::take(emb_pid);
+        sleep_s(0.15);
+        EmbSnap e2 = EmbSnap::take(emb_pid);
+        const long long dj = (e1.jiffies>=0 && e2.jiffies>=0) ? (e2.jiffies-e1.jiffies) : -1;
+        // ② 물리링크 — carrier 0 이면 케이블/커넥터다. CRC 증가는 전기적 노이즈다.
+        NicSnap n1 = NicSnap::take();
+        const long long dcrc = (n1.rx_crc>=0 && nic0.rx_crc>=0) ? n1.rx_crc-nic0.rx_crc : -1;
+        const long long derr = (n1.rx_err>=0 && nic0.rx_err>=0) ? n1.rx_err-nic0.rx_err : -1;
+        // ③ 동결 **직전** 1초의 채널별 최대 |τ| · |dq| · |I| — 하중/전류 상관용.
+        double tpk[16]={0}, dpk[16]={0}, cpk[16]={0};
+        frz_ring.peaks(lt - 0.5, 1.0, tpk, dpk, cpk);   // 얼기 시작한 시점(-0.5s) 이전 1초
+        double tmax=0, cmax=0; int tch=-1;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+          if(tpk[i]>tmax){ tmax=tpk[i]; tch=i; } if(cpk[i]>cmax) cmax=cpk[i]; }
+        // ④ 직전 구간 CSV
+        char dp[128]; std::snprintf(dp,sizeof dp,"/tmp/freeze_pre_%d.csv", frz_event);
+        size_t nrow = frz_ring.dump(dp);
+
+        std::fprintf(stderr,
+          "!! ── 증거 ──────────────────────────────────────────────────────\n"
+          "!!  Emb 프로세스   pid %d · state %s · 0.15s CPU %+lld jiffies → **%s**\n"
+          "!!  물리링크 %s    carrier %lld · rx_crc %+lld · rx_err %+lld → **%s**\n"
+          "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I| %.2fA · 모드 %s(%.1fs째)\n"
+          "!!  직전 %.1fs 기록 → %s (%zu행)\n"
+          "!!  사건로그(누적) → %s   ← **여기를 여러 번 모아 놓고 봐야 원인이 보인다**\n"
+          "%s\n\n",
+          emb_pid, e2.state.c_str(), dj,
+          dj<0 ? "판정불가(pid 못 찾음)"
+               : (dj>0 ? "Emb 는 살아서 돈다 ⇒ EtherCAT 이 죽었다"
+                       : "**Emb 가 멈췄다** ⇒ 전원 OFF/ON 이 아니라 Emb 재기동이 답이다"),
+          n1.ifname.c_str(), n1.carrier, dcrc, derr,
+          n1.carrier==0 ? "**링크 끊김 = 케이블/커넥터**"
+                        : (dcrc>0 ? "**CRC 오류 증가 = 전기적 노이즈(모터 전류) 의심**"
+                                  : "링크 정상 ⇒ 슬레이브/MCU 쪽"),
+          tmax, tch>=0?chname[tch].c_str():"-", cmax, mode.c_str(), lt-mode_t0,
+          FRZ_PRE_S, nrow?dp:"(없음)", nrow, FRZ_LOG.c_str(),
+          std::string(72,'!').c_str());
+
+        // ⑤ 사건로그 한 줄 append — 재기동해도 남는다.
+        char row[1024];
+        std::snprintf(row,sizeof row,
+          "%s\t%.1f\t%s\t%.1f\t%d\t%s\t%s\t%lld\t%s\t%lld\t%lld\t%lld\t%.2f\t%s\t%.2f\t%.0f\t%s",
+          wall_stamp().c_str(), lt-t0, mode.c_str(), lt-mode_t0, nfz,
+          all_ch?"EtherCAT":"FDCAN", fz.c_str(),
+          dj, e2.state.c_str(), n1.carrier, dcrc, derr,
+          tmax, tch>=0?chname[tch].c_str():"-", cmax, hz_ema, nrow?dp:"-");
+        freeze_log_append(FRZ_LOG,
+          "when\tuptime_s\tmode\tin_mode_s\tn_frozen\tclass\tchannels\t"
+          "emb_dcpu_jif\temb_state\tnic_carrier\td_rx_crc\td_rx_err\t"
+          "pre_tau_max_nm\tpre_tau_ch\tpre_cur_max_a\tloop_hz\tpre_csv", row);
       } else if(!nfz) frz_warned=false;
       if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
       frozen_now = nfz; }

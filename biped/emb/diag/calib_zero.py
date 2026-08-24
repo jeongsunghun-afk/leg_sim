@@ -104,6 +104,8 @@ def main() -> int:
                     help="모터가 여자된 상태에서도 강행(권장하지 않음 — 위 주석 참조)")
     ap.add_argument("--max-shift", type=float, default=3.0,
                     help="새 offset 이 이만큼[deg] 넘게 바뀌면 확인을 요구한다")
+    ap.add_argument("--only", help="이 축만 갱신(콤마구분 이름). 나머지는 현행 offset 유지. "
+                                   "예: --only HL_hip,HR_hip")
     ap.add_argument("--settle-tol", type=float, default=0.2,
                     help="정지 판정 허용 변동폭[deg]")
     a = ap.parse_args()
@@ -223,12 +225,35 @@ def main() -> int:
         _raw_ref[_d] = ref[_d] + _c * ref[_s]
     new = [ch[i] - float(_raw_ref[i]) * float(_jm.sk[i]) for i in range(n)]
 
+    # ── ★★--only: 일부 축만 갱신한다 (2026-08-24) ──────────────────────────
+    #   왜 필요한가 — **재현되는 축과 안 되는 축이 한 판에 섞여 나온다.** 매달린 채
+    #   limp 이면 thigh·foot 은 자유 진자라 잴 때마다 다르고(이번 37°·48°),
+    #   hip 은 기구가 잡아 줘서 재현된다. 전 축 --apply 는 그 둘을 구분하지 못해
+    #   **믿을 수 있는 축까지 못 고치게** 만든다("나머지가 못 미더우니 통째로 보류").
+    #   ⇒ 믿는 축만 골라서 반영한다. 나머지는 old 를 그대로 둔다(계산값을 버린다).
+    #   ⚠골라낸 축이 정말 재현되는지는 **사람이 판단한다.** 이 옵션은 그 판단을
+    #     실행할 수단일 뿐, 재현성을 보증하지 않는다 — 아래 재현성 표는 그대로 나온다.
+    only = None
+    if a.only:
+        want = [w.strip() for w in a.only.split(",") if w.strip()]
+        bad = [w for w in want if w not in names]
+        if bad:
+            sys.exit(f"✗ --only 에 없는 축: {bad}\n  가능: {', '.join(names)}")
+        only = set(want)
+        held = [names[i] for i in range(n) if names[i] not in only]
+        for i in range(n):
+            if names[i] not in only:
+                new[i] = old[i]          # ★계산값을 버리고 현행 유지
+        print(f"  ▸ --only {', '.join(want)} — 이 축만 갱신한다.")
+        print(f"    나머지 {len(held)}축은 **현행 유지**: {', '.join(held)}\n")
+
     print(f"  {'축':10} {'sign·k':>7} {'채널각':>9} {'기준모델각':>11} "
           f"{'현 offset':>10} {'→ 새 offset':>12} {'변화':>8}")
     print("  " + "-" * 74)
     for i in range(n):
+        tag = "" if only is None else ("  ← 갱신" if names[i] in only else "  (유지)")
         print(f"  {names[i]:10} {float(_jm.sk[i]):+7.2f} {ch[i]:+9.2f} {ref[i]:+11.2f} "
-              f"{old[i]:+10.2f} {new[i]:+12.2f} {new[i]-old[i]:+8.2f}")
+              f"{old[i]:+10.2f} {new[i]:+12.2f} {new[i]-old[i]:+8.2f}{tag}")
     print()
 
     # ── 검증: 새 offset 으로 기준자세가 정말 ref 로 읽히는가 (실제 JointMap 으로) ──
@@ -243,11 +268,28 @@ def main() -> int:
     for i, c in enumerate(jm.ch):
         q_ch_full[c] = ch[i]
     back = jm.ch_to_q_joint(q_ch_full)
-    err = float(np.max(np.abs(back - np.array(ref))))
-    print(f"  ▸ 왕복검증: 새 offset 적용 시 기준자세가 {list(np.round(back,3))} 로 읽힌다")
+    # ★검증 범위는 **갱신하는 축**뿐이다 (2026-08-24, --only 도입과 함께).
+    #   왜: 이 검사는 "offset 식이 맞는가" 를 보는 것이지 "로봇이 기준자세인가" 가 아니다.
+    #   --only 에서 유지축은 옛 offset 을 그대로 쓰므로 지금 자세가 ref 로 안 읽히는 게
+    #   **정상**이다(자유 진자라 어디에 있든 상관없다). 전 축으로 재면 그게 통째로 '실패' 로
+    #   잡혀 갱신을 막는다 — 실제로 그렇게 막혔다(최대오차 58.5° = HL_calf 의 현재 자세).
+    idx = [i for i in range(n) if (only is None or names[i] in only)]
+    err = float(np.max(np.abs(back[idx] - np.array(ref)[idx]))) if idx else 0.0
+    scope = "전 축" if only is None else f"갱신축({', '.join(names[i] for i in idx)})"
+    print(f"  ▸ 왕복검증({scope}): 새 offset 적용 시 기준자세가 "
+          f"{[round(float(back[i]),3) for i in idx]} 로 읽힌다")
     print(f"    최대오차 {err:.6f}°  →  {'✅ 통과' if err < 1e-6 else '❌ 실패'}")
     if err >= 1e-6:
         print("    ✗ 식이 안 맞는다. 적용하지 말 것."); return 1
+    if only is not None:
+        # 유지축이 **지금** 어떻게 읽히는지 같이 보여준다 — 크면 그 축은 기준자세가 아니다.
+        hold_i = [i for i in range(n) if names[i] not in only]
+        worst = max(hold_i, key=lambda i: abs(back[i]-ref[i])) if hold_i else None
+        if worst is not None:
+            print(f"    (유지축은 지금 자세로 " +
+                  " · ".join(f"{names[i]} {back[i]:+.1f}°" for i in hold_i) + " 로 읽힌다 —")
+            print(f"     기준자세가 아니라는 뜻이고, 그래서 갱신하지 않는 것이다. "
+                  f"최대 {names[worst]} {back[worst]-ref[worst]:+.1f}°)")
     print()
 
     # ── 재현성 검사 ────────────────────────────────────────────────────────

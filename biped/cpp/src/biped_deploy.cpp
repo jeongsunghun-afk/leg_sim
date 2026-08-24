@@ -842,9 +842,31 @@ int main(int argc, char** argv){
             //   ⚠이건 진입 순간 **오차 0 이 아니다**(처진 만큼 계단). 그래서 얼마나 되는지
             //     반드시 찍는다 — 크면 게인이 부족하거나 그 축이 구동되지 않은 것이다.
             //   ⚠HOLD_LATCH=meas 로 종전(측정각 래치) 동작을 되돌릴 수 있다.
+            //   ★★**home 이 끝났을 때만 인계한다** (2026-08-24 실기에서 터졌다).
+            //     종전엔 prev_mode=="home" 이기만 하면 무조건 home_to 를 목표로 삼았다.
+            //     램프 **도중**에 hold 를 누르면 로봇은 아직 출발점 근처인데 목표가
+            //     도착점이 되어 **남은 이동량 전부가 계단 명령**이 된다.
+            //     실기 실측(2026-08-24): off→home 직후 hold → `진입 오차 최대 HL_foot +60.22°`
+            //       → kp_ch 30 × 1.05rad = **31.5 Nm**(채널) → ch3 **365dps** → 속도트립 limp.
+            //     즉 hold 가 "정지" 가 아니라 **가속**이었다. 배포경로 감사도 같은 것을
+            //     HIGH 로 잡았다("home 램프 도중 HOLD 를 누르면 …").
+            //   ⇒ 램프 중이면 **그 순간의 지령각(q_ch)** 을 래치한다. 계단이 0 이고,
+            //     측정각이 아니라 **지령**이라 처짐 누적도 안 생긴다(원래 인계의 목적).
             const char* hl = getenv("HOLD_LATCH");
-            const bool inherit = (prev_mode=="home") && !(hl && std::string(hl)=="meas");
-            if(inherit){
+            const bool meas_mode = (hl && std::string(hl)=="meas");
+            const bool from_home = (prev_mode=="home") && !meas_mode;
+            const bool inherit   = from_home && home_done;
+            if(from_home && !home_done){
+              hold_ch = q_ch;                       // 램프가 지금 지시하고 있던 자세
+              double emx=0; int ech=-1;
+              for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+                double e=(double)q_ch[i]-(double)raw[i];
+                if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
+              const double u = (home_T>0) ? std::min(1.0,(lt-home_t0)/home_T) : 1.0;
+              std::printf("[deploy] hold \u2190 **home \ub7a8\ud504 \ub3c4\uc911**(\uc9c4\ud589 %.0f%%) \u2014 \ub3c4\ucc29\uc810\uc774 \uc544\ub2c8\ub77c\\n"
+                          "         **\uc9c0\uae08 \uc9c0\ub839\uac01**\uc744 \ub798\uce58\ud55c\ub2e4(\uacc4\ub2e8 \ubc29\uc9c0). \uc9c4\uc785 \uc624\ucc28 \ucd5c\ub300 %s %+.2f\u00b0\\n",
+                          u*100.0, ech>=0?chname[ech].c_str():"-", emx);
+            } else if(inherit){
               hold_ch = home_to;
               double emx=0; int ech=-1;
               for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){

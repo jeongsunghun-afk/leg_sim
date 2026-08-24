@@ -92,6 +92,8 @@ def main() -> int:
     ap.add_argument("--settle", type=float, default=5.0, help="매 점 전에 home 으로 되돌리는 시간[s]")
     ap.add_argument("--abort-deg", type=float, default=25.0,
                     help="한 축이 이만큼 표류하면 그 점을 중단하고 home 으로")
+    ap.add_argument("--min-amp", type=float, default=0.30,
+                    help="교차로 인정할 최소 표류 진폭[deg]. 이보다 작으면 잡음/데드밴드로 본다")
     a = ap.parse_args()
 
     if q() is None:
@@ -164,10 +166,12 @@ def main() -> int:
                     if max(abs(b - c) for b, c in zip(q0, q1)) > a.abort_deg:
                         break
             d = [b - c for c, b in zip(q0, q1)]
-            rows.append((gv, d))
+            sat = [abs(v) >= a.abort_deg * 0.98 for v in d]   # 포화 = 데이터 아님
+            rows.append((gv, d, sat))
             mx = max(range(NJ), key=lambda i: abs(d[i]))
-            print(f"  ×{gv:.2f}  최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°   "
-                  + " ".join(f"{v:+6.2f}" for v in d), flush=True)
+            print(f"  ×{gv:.2f}  최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°{'★포화' if any(sat) else '    '} "
+                  + " ".join((f"{v:+6.2f}" + ("*" if sat[i] else " ")) for i, v in enumerate(d)),
+                  flush=True)
     except KeyboardInterrupt:
         print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
     finally:
@@ -179,22 +183,35 @@ def main() -> int:
     # ── 축별 영점교차 ────────────────────────────────────────────────────
     print("\n■ 결과 — 축별 중립점\n")
     print(f"  {'축':10s}{'g*':>8s}{'1/g*':>8s}{'데드밴드':>12s}   판정")
+    #   ★교차로 인정하려면 **의미 있는 진폭**이 있어야 한다. 안 그러면 −0.02 → +0.00 같은
+    #     양자화 잡음이 "완벽한 중립" 으로 둔갑한다(2026-08-24 실기에서 HL_calf/foot 이 그랬다).
+    #   ★그리고 배율을 바꿔도 표류가 **안 변하는** 축은 마찰 데드밴드에 묻힌 것이다.
+    #     calf(중력/마찰 0.47)·foot(0.30) 이 그렇다 — 이 방법으로는 원리적으로 못 잰다.
+    MINAMP = a.min_amp
     out = {}
     for i, n in enumerate(NAMES):
-        series = [(gv, d[i]) for gv, d in rows]
+        series = [(gv, d[i]) for gv, d, _ in rows if not _[i]]     # 포화점 제외
+        if len(series) < 2:
+            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   유효점 부족(포화)")
+            out[n] = None; continue
+        vals = [v for _, v in series]
+        span = max(vals) - min(vals)
+        if span < MINAMP:
+            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   "
+                  f"**측정 불가** — 배율에 반응 안 함(폭 {span:.2f}° < {MINAMP:.2f}°). 마찰 데드밴드")
+            out[n] = None; continue
         gs = None; band = None
         for (g1, d1), (g2, d2) in zip(series, series[1:]):
-            if d1 == 0.0:
-                gs = g1; band = 0.0; break
-            if d1 * d2 < 0:
+            if d1 * d2 < 0 and max(abs(d1), abs(d2)) >= MINAMP:
                 gs = g1 + (g2 - g1) * abs(d1) / (abs(d1) + abs(d2))
                 band = g2 - g1
                 break
         if gs is None:
-            # 부호가 안 바뀜 = 구간 밖. 어느 쪽인지 알려 준다.
-            sgn = series[0][1]
-            side = "경계 밖(더 낮게)" if sgn < 0 else "경계 밖(더 높게)"
-            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   {side}")
+            last = series[-1]
+            side = ("경계 밖 — **더 높게**" if last[1] * (1 if vals[0] > 0 else -1) > 0 else
+                    "경계 밖 — **더 낮게**")
+            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   {side} "
+                  f"(×{last[0]:.2f} 에서 {last[1]:+.2f}°)")
             out[n] = None
         else:
             print(f"  {n:10s}{gs:>8.3f}{1/gs:>8.3f}{band:>11.2f}   "
@@ -208,7 +225,8 @@ def main() -> int:
     ts = time.strftime("%Y%m%d-%H%M%S")
     path = f"/tmp/float_gstar_{ts}.json"
     with open(path, "w") as f:
-        json.dump({"grid": grid, "rows": [[g, d] for g, d in rows], "gstar": out}, f, indent=1)
+        json.dump({"grid": grid, "names": NAMES,
+                   "rows": [[g, d, s] for g, d, s in rows], "gstar": out}, f, indent=1)
     print(f"\n  원자료 → {path}   (이 파일을 그대로 전달하면 된다)")
     return 0
 

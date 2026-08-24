@@ -408,7 +408,12 @@ int main(int argc, char** argv){
     std::fill(ts_max.begin(),ts_max.end(),-1e300);
     ts_n=0;
   };
+  // ★부팅 초기값을 **0 벡터로 두지 않는다** (2026-08-24). Python 은 기동 시 측정각으로
+  //   초기화한다(biped_emb.py:333 `hold_leg = jm.ch_to_q_joint(_raw0.q_deg)`) — C++ 만 0 이었다.
+  //   첫 유효 상태를 받는 즉시 측정각으로 덮는다(아래 have_state 지점). 그 전에 쓰일 일은
+  //   없지만, 0 벡터가 남아 있으면 어떤 경로로든 전 축 0° 계단이 나갈 수 있다.
   std::vector<float> hold_ch(NCH, 0.f);
+  bool hold_ch_primed = false;
   HwState hs;
   // ★home 램프 상태 (2026-08-20 신설). stand 자세로 **속도제한을 걸어** 이동한다.
   //   왜 필요한가: `stand` 는 WBIC posture task 라 램프가 없다. 0° 자세에서 바로 누르면
@@ -607,7 +612,9 @@ int main(int argc, char** argv){
           }
         }
         have_state = true;
-        if(start_mode=="hold"){ mode="hold"; hold_ch=hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+        // ★2차 방어 — 첫 유효 상태로 hold 목표를 **선충전**한다(0 벡터 제거).
+        hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); hold_ch_primed = true;
+        if(start_mode=="hold"){ mode="hold";
           hw->enable(1);
           std::printf("[deploy] --start-mode hold — 현재 자세를 잡는다(무장).\n"); }
         std::printf("[deploy] 센서 준비됨 — 명령 수신 시작 (q_ch: %.1f %.1f %.1f %.1f ...)\n",
@@ -875,6 +882,18 @@ int main(int argc, char** argv){
               std::printf("[deploy] ⛔ **접지가 안 됐다** — stand 거부, hold 유지.\n"
                           "         크레인을 내려 발바닥을 붙이고 하중을 로봇에 넘긴 뒤 다시 누를 것.\n"
                           "         (강제로 진행하려면 GROUND_RATIO=0 — 매달림 stand 는 위험하다)\n");
+              // ★★**목표를 여기서 래치한다** (2026-08-24, 감사에서 CRITICAL 로 확인).
+              //   hold 진입 부작용(:725 부근)은 이 가드보다 **위**에 있어 이미 지나갔다.
+              //   래치를 안 하면 hold_ch 가 부팅 초기값(0 벡터)인 채로 :984 가 그걸 내보낸다:
+              //     실측(mock, home→stand) q_ch = [-1.0, 4.0, 39.1, **98.8**, -3.3, -6.5, -48.9, **-100.0**]
+              //     요구 채널토크 = kp_ch·err[rad] → HR_calf 68.2 Nm · HL_foot 51.7 Nm
+              //     = tau_trip 15Nm 의 **3.4~4.5배**. 드라이브 한계 안이라 드라이버가 실제로 낸다.
+              //   ⇒ 속도트립이 ~5ms 만에 걸려 limp 로 떨어진다. **부분 접지면 그대로 주저앉는다.**
+              //   ⚠화면엔 "거부, hold 유지" 라고 뜬다 — 유지할 hold 가 애초에 없었다.
+              //   ⚠Python(biped_emb.py)엔 이 버그가 없다: 가드가 FSM **진입 전에** 모드를 바꿔
+              //     `if fsm.entered(HOLD): hold_leg = q_leg.copy()` 가 정상 발화한다. C++ 이관에서만 갈라졌다.
+              hold_ch = (prev_mode=="home" && home_to.size()==(size_t)NCH) ? home_to : hs.q_deg;
+              jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
           }
@@ -902,6 +921,18 @@ int main(int argc, char** argv){
                           "         ch%d 가 %.1f° 어긋나 있다(허용 %.1f°). **먼저 home 을 돌릴 것.**\n"
                           "         (강제: STAND_POSE_LIM=999 — 블렌드가 그 거리를 2.5초에 쓸어 트립할 수 있다)\n",
                           fch, far, lim);
+              // ★★**목표를 여기서 래치한다** (2026-08-24, 감사에서 CRITICAL 로 확인).
+              //   hold 진입 부작용(:725 부근)은 이 가드보다 **위**에 있어 이미 지나갔다.
+              //   래치를 안 하면 hold_ch 가 부팅 초기값(0 벡터)인 채로 :984 가 그걸 내보낸다:
+              //     실측(mock, home→stand) q_ch = [-1.0, 4.0, 39.1, **98.8**, -3.3, -6.5, -48.9, **-100.0**]
+              //     요구 채널토크 = kp_ch·err[rad] → HR_calf 68.2 Nm · HL_foot 51.7 Nm
+              //     = tau_trip 15Nm 의 **3.4~4.5배**. 드라이브 한계 안이라 드라이버가 실제로 낸다.
+              //   ⇒ 속도트립이 ~5ms 만에 걸려 limp 로 떨어진다. **부분 접지면 그대로 주저앉는다.**
+              //   ⚠화면엔 "거부, hold 유지" 라고 뜬다 — 유지할 hold 가 애초에 없었다.
+              //   ⚠Python(biped_emb.py)엔 이 버그가 없다: 가드가 FSM **진입 전에** 모드를 바꿔
+              //     `if fsm.entered(HOLD): hold_leg = q_leg.copy()` 가 정상 발화한다. C++ 이관에서만 갈라졌다.
+              hold_ch = (prev_mode=="home" && home_to.size()==(size_t)NCH) ? home_to : hs.q_deg;
+              jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
           }

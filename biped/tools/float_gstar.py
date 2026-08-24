@@ -92,8 +92,8 @@ def main() -> int:
     ap.add_argument("--settle", type=float, default=5.0, help="매 점 전에 home 으로 되돌리는 시간[s]")
     ap.add_argument("--abort-deg", type=float, default=25.0,
                     help="한 축이 이만큼 표류하면 그 점을 중단하고 home 으로")
-    ap.add_argument("--min-amp", type=float, default=0.30,
-                    help="교차로 인정할 최소 표류 진폭[deg]. 이보다 작으면 잡음/데드밴드로 본다")
+    ap.add_argument("--min-amp", type=float, default=0.10,
+                    help="배율 전 구간의 표류율 폭[deg/s] 문턱. 이보다 작으면 마찰 데드밴드로 본다")
     a = ap.parse_args()
 
     if q() is None:
@@ -165,11 +165,19 @@ def main() -> int:
                     q1 = cur
                     if max(abs(b - c) for b, c in zip(q0, q1)) > a.abort_deg:
                         break
-            d = [b - c for c, b in zip(q0, q1)]
-            sat = [abs(v) >= a.abort_deg * 0.98 for v in d]   # 포화 = 데이터 아님
+            el = max(1e-3, time.time() - t0)
+            # ★★**표류율**(deg/s)로 기록한다 — 표류량이 아니라.
+            #   한 축이 abort 에 걸리면 그 점이 **조기 종료**돼 나머지 축의 관측창이 짧아진다.
+            #   그러면 표류량이 작게 나오고, 그게 "배율이 맞아간다" 로 오독된다.
+            #   실기 2차(2026-08-24)에서 실제로 그랬다: HR_hip 이 ×1.30 부터 포화해
+            #   HL_thigh 가 1.16 → 0.76 으로 줄었는데 **창이 짧아진 것**과 구분이 안 됐다.
+            #   ⇒ 경과시간으로 나누면 점끼리 비교가 성립한다.
+            d = [(b - c) / el for c, b in zip(q0, q1)]
+            sat = [abs(b - c) >= a.abort_deg * 0.98 for c, b in zip(q0, q1)]
             rows.append((gv, d, sat))
             mx = max(range(NJ), key=lambda i: abs(d[i]))
-            print(f"  ×{gv:.2f}  최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°{'★포화' if any(sat) else '    '} "
+            print(f"  ×{gv:.2f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
+                  + ("★포화" if any(sat) else "    ") + " "
                   + " ".join((f"{v:+6.2f}" + ("*" if sat[i] else " ")) for i, v in enumerate(d)),
                   flush=True)
     except KeyboardInterrupt:
@@ -198,11 +206,14 @@ def main() -> int:
         span = max(vals) - min(vals)
         if span < MINAMP:
             print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   "
-                  f"**측정 불가** — 배율에 반응 안 함(폭 {span:.2f}° < {MINAMP:.2f}°). 마찰 데드밴드")
+                  f"**측정 불가** — 배율에 반응 안 함(폭 {span:.2f}°/s < {MINAMP:.2f}). 마찰 데드밴드")
             out[n] = None; continue
+        #   ⚠점별 진폭 조건은 뺐다 — 실기 2차에서 HR_hip 이 +0.16 → −0.30 으로 교차했는데
+        #     `max(|d1|,|d2|) >= 0.30` 이 부동소수 경계에서 걸려 **교차를 놓쳤다.**
+        #     잡음 방어는 위의 span 검사가 이미 한다(HL_calf 폭 0.06° 는 거기서 걸린다).
         gs = None; band = None
         for (g1, d1), (g2, d2) in zip(series, series[1:]):
-            if d1 * d2 < 0 and max(abs(d1), abs(d2)) >= MINAMP:
+            if d1 * d2 < 0:
                 gs = g1 + (g2 - g1) * abs(d1) / (abs(d1) + abs(d2))
                 band = g2 - g1
                 break
@@ -211,7 +222,7 @@ def main() -> int:
             side = ("경계 밖 — **더 높게**" if last[1] * (1 if vals[0] > 0 else -1) > 0 else
                     "경계 밖 — **더 낮게**")
             print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   {side} "
-                  f"(×{last[0]:.2f} 에서 {last[1]:+.2f}°)")
+                  f"(×{last[0]:.2f} 에서 {last[1]:+.2f}°/s)")
             out[n] = None
         else:
             print(f"  {n:10s}{gs:>8.3f}{1/gs:>8.3f}{band:>11.2f}   "

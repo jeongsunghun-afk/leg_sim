@@ -422,6 +422,22 @@ int main(int argc, char** argv){
   //        α 인지 질량인지는 못 가리지만(둘 다 CAD 게이지), **제어기가 쓰는 게 G_CAD 라**
   //        "지금 얼마나 모자라나" 에는 정확히 답한다.
   double GRAV_SCALE = getenv("GRAV_SCALE") ? atof(getenv("GRAV_SCALE")) : 1.0;
+  //   ★★**축별 배율** (2026-08-24 실기에서 필요해졌다).
+  //     실기 관측: HR 은 잘 맞는데 **HL_hip 이 특히 약하고** HL_thigh 가 한쪽으로 흐른다.
+  //     무부하 실측이 이미 예측한 것이다 — ROTOR_I HL 7.652e-4 vs HR 7.121e-4(7.5%) ·
+  //     강성 6.5~14.0 vs 10.3~15.2 · 마찰 0.711 vs 0.632. **네 지표가 같은 방향**이었다.
+  //   ⇒ 공통 배율 하나로는 좌우를 **동시에 중립으로 못 만든다** — HL 을 맞추면 HR 이 뜬다.
+  //     축별 g* 를 따로 잡아야 α 의 좌우 분포가 나온다.
+  //   GRAV_SCALE_JOINT="1.15,1.10,1.0,1.0,1.0,1.0,1.0,1.0"  (관절 순서 8개)
+  //     미지정 축은 GRAV_SCALE 을 쓴다. GUI 배율은 **전 축에 곱해지는 공통 계수**로 남는다.
+  std::vector<double> grav_axis(NJ, -1.0);
+  if(const char* ga=getenv("GRAV_SCALE_JOINT")){
+    std::stringstream ss(ga); std::string t; int i=0;
+    while(std::getline(ss,t,',') && i<NJ){ if(!t.empty()) grav_axis[i]=atof(t.c_str()); i++; }
+    std::printf("[deploy] 축별 중력배율 GRAV_SCALE_JOINT =");
+    for(int j=0;j<NJ;j++) std::printf("  %s %.3f", cfg.joints[j].name.c_str(), grav_axis[j]<0?GRAV_SCALE:grav_axis[j]);
+    std::printf("\n");
+  }
   //   kd 만 남긴다 — kp=kd=0 순수토크가 30~65Hz 에서 발산한 전례가 그대로 적용된다.
   //   ⚠크면 뻑뻑해서 무중력 느낌이 안 난다. 작으면 발산 위험. 0.30 에서 시작한다.
   const double FLOAT_KD = getenv("FLOAT_KD") ? atof(getenv("FLOAT_KD")) : 0.30;
@@ -1249,7 +1265,9 @@ int main(int argc, char** argv){
       d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
       for(int i=0;i<6;i++) d->qvel[i]=0.0;
       mj_forward(m,d);
-      for(int j=0;j<NJ;j++) tau_ctrl[j] = GRAV_SCALE * d->qfrc_bias[6+j];
+      //   축별 배율이 있으면 그걸, 없으면 공통 GRAV_SCALE. GUI 의 배율은 공통 쪽에 실린다.
+      for(int j=0;j<NJ;j++)
+        tau_ctrl[j] = (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE) * d->qfrc_bias[6+j];
       // ★관절토크 → 채널. tau_ctrl_to_ch 가 **커플링 전치**(τ_raw_calf = τ_calf − c·τ_foot)와
       //   gear_k 나눗셈을 같이 한다. 직접 나누면 발목에서 틀린다.
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());

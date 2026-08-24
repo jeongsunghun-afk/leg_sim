@@ -1745,6 +1745,16 @@ int main(int argc, char** argv){
       const long ts_n_pub = ts_n;
       ts_reset();                       // 창을 비운다 — 다음 발행까지 다시 쌓는다
       char buf[5120];   // ★4096 → 5120 (2026-08-21): 자세유지 토크 스냅샷 2배열 추가
+      // 런타임에 안 변하므로 한 번만 만든다.
+      static std::string offs_json;
+      if(offs_json.empty()){
+        offs_json = "[";
+        for(size_t i=0;i<cfg.joints.size();i++){
+          char b[32]; std::snprintf(b,sizeof b,"%s%.3f", i?",":"", cfg.joints[i].offset_deg);
+          offs_json += b;
+        }
+        offs_json += "]";
+      }
       std::snprintf(buf,sizeof buf,
         "{\"mode\":\"%s\",\"backend\":\"%s\",\"q_leg_deg\":%s,\"q_ch_deg\":%s,"
         "\"dq_leg_dps\":%s,\"tau_leg_nm\":%s,\"tau_cmd_nm\":%s,\"kp_raw\":%s,\"kd_raw\":%s,"
@@ -1770,7 +1780,13 @@ int main(int argc, char** argv){
         // ★강성 배율 — `pos_kp_scale` 은 **지금 실제로 나가고 있는 값**(램프 중이면 중간값),
         //   `pos_kp_target` 은 GUI 가 요구한 값이다. 둘이 다르면 아직 옮겨 가는 중이다.
         "\"q_cmd_deg\":%s,\"dq_cmd_dps\":%s,\"tau_hold_nm\":%s,\"tau_stand_nm\":%s,"
-        "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f}",
+        // ★영점 — **이 프로세스가 기동 시 읽은 값**이다(config 파일의 현재값이 아니다).
+        //   config 를 고쳐도 재시작 전에는 안 바뀐다. GUI 가 파일값과 이걸 나란히 놓아
+        //   "제어기가 아직 옛 영점을 쓴다" 를 보여 준다.
+        //   ⇒ 그래서 GUI 가 채널각↔모델각 역산식을 **복사할 필요가 없다.** 그 복사본이
+        //     stale 이 되는 게 이 저장소가 반복해서 당한 버그다(joint_map 규칙 복제 주석 참조).
+        "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,"
+        "\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
@@ -1784,7 +1800,7 @@ int main(int argc, char** argv){
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
-        POS_KP, kp_scale_tgt, POS_KD);
+        POS_KP, kp_scale_tgt, POS_KD, offs_json.c_str());
       write_state(stt_p, buf);
     }
 

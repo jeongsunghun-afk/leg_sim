@@ -315,6 +315,52 @@ _calib_busy = [False]
 _calib_buf  = ['']          # 리스트 = 클로저 없이 가변(위 _last_file_hb 와 같은 관용)
 
 
+# ── ★영점 표 (2026-08-24) ────────────────────────────────────────────────
+#   두 줄을 나란히 놓는다:
+#     config  — 파일(emb/config/biped_emb.yaml)의 **지금** 값
+#     제어기  — 제어기가 **기동 시 읽은** 값(state 의 `offset_deg`)
+#   ★둘이 다르면 = config 는 바뀌었는데 제어기가 아직 옛 영점을 쓴다 = **재시작 필요**.
+#     이게 cc321fc 가 "⚠재시작해야 반영된다" 로 경고했던 그 함정이다. 이제 눈에 보인다.
+#   ★제어기 값은 **제어기가 직접 발행**한다. GUI 가 채널각↔모델각 역산식을 복사하지
+#     않는다 — 그 복사본이 stale 이 되는 게 이 저장소가 반복해서 당한 버그다
+#     (바로 위 JOG_LIM 주석이 같은 실수를 기록해 뒀다).
+_off_cache = [0.0, None]     # (mtime, 값) — yaml 을 매 프레임 파싱하지 않는다
+_off_live  = [None]          # 제어기가 발행한 값(렌더 루프가 채운다)
+_off_base  = [None]          # [영점] 을 누른 시각의 config 값 — Δ 의 기준
+
+
+def _off_cfg_read():
+    """config 파일의 offset_deg. 파일이 바뀔 때만 다시 읽는다."""
+    try:
+        mt = os.path.getmtime(_cfgp)
+        if mt != _off_cache[0]:
+            import yaml as _y
+            _off_cache[0] = mt
+            _off_cache[1] = [float(j['offset_deg']) for j in _y.safe_load(open(_cfgp))['joints']]
+    except Exception:
+        _off_cache[1] = None
+    return _off_cache[1]
+
+
+def _refresh_offsets():
+    cf, lv, diff = _off_cfg_read(), _off_live[0], False
+    for i in range(NJ):
+        c = cf[i] if (cf and i < len(cf)) else None
+        l = lv[i] if (lv and i < len(lv)) else None
+        dpg.set_value('offc_%d' % i, '—' if c is None else '%+.2f' % c)
+        dpg.set_value('offl_%d' % i, '—' if l is None else '%+.2f' % l)
+        bad = (c is not None and l is not None and abs(c - l) > 0.005)
+        dpg.configure_item('offl_%d' % i, color=(240, 170, 90) if bad else (130, 200, 140))
+        diff = diff or bad
+        b = _off_base[0][i] if (_off_base[0] and i < len(_off_base[0])) else None
+        d = (c - b) if (c is not None and b is not None) else None
+        dpg.set_value('offd_%d' % i, '' if (d is None or abs(d) < 0.005) else '%+.2f' % d)
+    dpg.set_value('off_msg',
+                  '⚠제어기가 옛 영점을 쓴다 — 재시작해야 반영된다  '
+                  '(cd ~/simulation/biped/emb && diag/emb_ctl.sh stop && diag/emb_ctl.sh start)'
+                  if diff else '')
+
+
 def _calib_say(txt, append=True):
     _calib_buf[0] = (_calib_buf[0] + txt) if append else txt
     try:
@@ -355,6 +401,7 @@ def _run_into_panel(argv, cwd):
 
 def _calib_worker():
     _calib_say('', append=False)
+    _off_base[0] = _off_cfg_read()      # ★Δ 의 기준 — 지금 값을 찍어 두고, 뒤에 비교한다
     if not os.path.exists(_CALIB_PY):
         _calib_say('✗ 도구가 없다: %s\n' % _CALIB_PY); _calib_busy[0] = False; return
 
@@ -790,7 +837,25 @@ with dpg.window(tag='main'):
                  color=(210, 150, 90))
     dpg.add_separator()
     # ── ★영점 (2026-08-24) ────────────────────────────────────────────────
-    dpg.add_text('● 영점 — 계산 → 적용 → 중력표 재생성까지 한 번에', color=(255, 205, 120))
+    dpg.add_text('● 영점 offset_deg — 계산 → 적용 → 중력표 재생성까지 한 번에', color=(255, 205, 120))
+    with dpg.table(header_row=True, policy=dpg.mvTable_SizingFixedFit,
+                   borders_innerV=True, borders_outerH=True, borders_outerV=True):
+        dpg.add_table_column(label='')
+        for _n in JOG_NAMES:
+            dpg.add_table_column(label=_n)
+        with dpg.table_row():                      # 파일의 지금 값
+            dpg.add_text('config')
+            for _i in range(NJ):
+                dpg.add_text('—', tag='offc_%d' % _i)
+        with dpg.table_row():                      # 제어기가 기동 시 읽은 값
+            dpg.add_text('제어기')
+            for _i in range(NJ):
+                dpg.add_text('—', tag='offl_%d' % _i, color=(130, 200, 140))
+        with dpg.table_row():                      # [영점] 누르기 전 대비 변화
+            dpg.add_text('Δ')
+            for _i in range(NJ):
+                dpg.add_text('', tag='offd_%d' % _i, color=(255, 180, 90))
+    dpg.add_text('', tag='off_msg', color=(240, 170, 90))
     with dpg.group(horizontal=True):
         _zb = dpg.add_button(label='영점', width=100, callback=on_calib_zero)
         dpg.bind_item_theme(_zb, _stop)      # ★config 를 바꾸는 동작 — 정지계열 색으로 구분
@@ -865,10 +930,12 @@ set_kp_scale(1.0)      # ★강성 버튼 초기 선택 표시(×1). Pub 기본�
 _LED = {'ok': (60, 210, 90), 'fault': (235, 200, 60),
         'dead': (150, 90, 90), 'absent': (48, 50, 58)}
 _last_file_hb = [0.0]          # ★파일 하트비트 타이머(리스트=클로저 없이 가변)
+_last_off_ref = [0.0]          # 영점 표 갱신 타이머
 while dpg.is_dearpygui_running():
     try:
         with open(STATE) as f:
             st = json.load(f)
+        _off_live[0] = st.get('offset_deg')      # ★제어기가 **기동 시 읽은** 영점
         if 'health' in st or 'q_leg_deg' in st:          # ── emb(app/biped_emb) 상태: LED+실측 ──
             q = st.get('q_leg_deg', [0.0] * NJ)
             health = st.get('health', ['dead'] * NJ)
@@ -901,7 +968,13 @@ while dpg.is_dearpygui_running():
                     st['est_perr']*100, st['est_verr'], st.get('est_x', 0), st.get('est_y', 0))
         dpg.set_value('state', line)
     except Exception:
+        _off_live[0] = None
         dpg.set_value('state', '(컨트롤러 대기중…)')
+    # ★영점 표 갱신 2Hz — yaml 은 mtime 이 바뀔 때만 다시 읽으니 사실상 공짜다.
+    if time.time() - _last_off_ref[0] > 0.5:
+        _last_off_ref[0] = time.time()
+        try: _refresh_offsets()
+        except Exception: pass
     # ★연속 발행: 스틱을 가만히 눌러 유지해도(=drag 이벤트 없음) 명령이 계속 전송되게.
     #   dpg drag 핸들러는 마우스가 움직일 때만 발화 → 정지 유지 시 패킷 끊김 → sim이 옛 명령 유지/누락.
     #   매 프레임 현재 pub.cmd를 UDP로 재전송(≈60Hz)해 이벤트 타이밍 의존 제거.

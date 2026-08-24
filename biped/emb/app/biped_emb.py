@@ -699,6 +699,9 @@ def main():
               extra["estop_sticky"] = bool(estop_sticky)
               extra["estop_recent"] = len(estop_hist)
               extra["estop_log"] = estop_log[-5:]      # ★해제돼도 남는다(원인 추적용)
+              # ★영점 — **기동 시 읽은 값**이다(config 파일의 현재값이 아니다).
+              #   GUI 가 파일값과 나란히 놓아 "재시작 필요" 를 보여 준다. cpp 쪽과 같은 계약.
+              extra["offset_deg"] = [round(float(j["offset_deg"]), 3) for j in cfg["joints"]]
               publish_state(fsm.mode, q_leg, rpy, hz_ema, fsm.mode != FSM.OFF, be_name, extra)
               last_pub = loop_t
 

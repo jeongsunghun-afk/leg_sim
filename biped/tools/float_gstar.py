@@ -281,7 +281,11 @@ def main() -> int:
         """
         res = {}
         for i, n in enumerate(NAMES):
-            ser = [(gv, d[i]) for gv, d, st in rows if not st[i]]
+            # ★포화점을 **버리지 않는다** (2026-08-24 실기에서 당함). HR_thigh 가 ×1.50 에서
+            #   −15.4°/s 로 명백히 떴는데, 포화 제외 때문에 g_hi 를 못 잡고 "상한 밖" 이 나왔다.
+            #   포화는 **크기**가 잘린 것이지 **방향**은 유효하다 — 문턱 판정은 방향만 쓴다.
+            #   (영교차 보간은 크기를 쓰므로 거기선 계속 제외한다.)
+            ser = [(gv, d[i]) for gv, d, st in rows]
             if len(ser) < 3:
                 res[n] = (None, None, None, None, "유효점 부족"); continue
             sgn = 1.0 if ser[0][1] >= 0 else -1.0          # 낙하방향

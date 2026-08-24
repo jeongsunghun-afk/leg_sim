@@ -104,11 +104,32 @@ def main() -> int:
     #   1.00~1.15 구간이 +0.03/+0.03/+0.02/−0.01 인데, 이건 3초 동안 0.06~0.09° 다.
     #   엔코더 잡음·크리프와 구분이 안 된다. 그런데 보간은 거기서 g*=1.136 을 뽑았다.
     #   ⇒ 문턱을 넘는 점만 "실제로 움직였다" 로 치고, 그 사이는 **마찰 밴드**로 남긴다.
+    # ★★축별 스윕 (2026-08-24). 왜 필요한가 — **전 축 동시 스윕은 가장 약한 축에 끌려간다.**
+    #   실측: 배율 1.35 에서 HR_thigh 가 −11.72°/s 로 폭주해 관측창이 8s→2.1s 로 무너졌고,
+    #   그 위 배율은 통째로 버려졌다. 그런데 HL_thigh 의 답은 **바로 그 위**에 있었다.
+    #   ⇒ 다른 축은 자기 중립점(--hold)에 묶어 두고 **한 축만** 훑는다. 아무도 안 폭주한다.
+    #   ⚠--hold 는 축별로 줘야 의미가 있다. 미지정 축은 1.0 이다.
+    ap.add_argument("--axis", default=None,
+                    help="이 축만 훑는다(예 HL_thigh). 나머지는 --hold 값에 고정")
+    ap.add_argument("--hold", default=None,
+                    help="--axis 사용 시 나머지 축의 배율 8개(콤마). 생략하면 전부 1.0")
     ap.add_argument("--v-move", type=float, default=0.10,
                     help="이 속도[°/s] 이상이라야 '움직였다'로 친다(브래킷 판독 문턱)")
     ap.add_argument("--min-amp", type=float, default=0.10,
                     help="배율 전 구간의 표류율 폭[deg/s] 문턱. 이보다 작으면 마찰 데드밴드로 본다")
     a = ap.parse_args()
+
+    # ★인자 검증은 **로봇을 건드리기 전에** 한다. 종전엔 생존확인(home 5s) 뒤에야
+    #   축 이름 오타가 드러났다 — 오타 하나에 다리를 한 번 움직이게 된다.
+    if a.axis and a.axis not in NAMES:
+        print(f"✗ 축 이름이 틀렸다: {a.axis}\n  가능: {', '.join(NAMES)}")
+        return 1
+    if a.hold:
+        _t = [x for x in a.hold.split(",") if x.strip()]
+        if len(_t) != NJ:
+            print(f"✗ --hold 는 {NJ}개여야 한다(받은 것 {len(_t)}개)"); return 1
+    if a.hold and not a.axis:
+        print("✗ --hold 는 --axis 와 함께 써야 한다(단독으로는 효과가 없다)"); return 1
 
     if q() is None:
         print("✗ /tmp/biped_state.json 에서 q_leg_deg 를 못 읽는다.")
@@ -259,6 +280,58 @@ def main() -> int:
 
     grid1 = grid
     rows1, rows2, res2 = [], [], None
+
+    # ── ★축별 스윕 경로 — 여기서 끝낸다(2차 패스 없음) ────────────────────
+    if a.axis:
+        ax = NAMES.index(a.axis)                      # 이름 검증은 위에서 이미 했다
+        hold_v = [float(x) for x in a.hold.split(",")] if a.hold else [1.0] * NJ
+        print(f"■ ★축별 스윕 — **{a.axis}** 만 {grid[0]:.2f}~{grid[-1]:.2f} 로 훑는다")
+        print("  나머지 축 고정배율: " + " ".join(f"{n.split('_')[1][:2]}{v:.2f}"
+                                             for n, v in zip(NAMES, hold_v)))
+        print("  ⇒ 다른 축이 자기 중립점에 있으면 폭주하지 않는다 = 관측창이 안 무너진다\n")
+        rows = []
+        try:
+            for gv in grid:
+                _bias[0] = list(hold_v); _bias[0][ax] = gv
+                hold("home", a.settle)
+                q0 = q()
+                if q0 is None:
+                    print("✗ 상태를 못 읽는다 — 중단"); break
+                t0 = time.time(); q1 = q0
+                while time.time() - t0 < a.dwell:
+                    send(mode="float", grav_scale=1.0)
+                    time.sleep(0.05)
+                    cur = q()
+                    if cur:
+                        q1 = cur
+                        if abs(q1[ax] - q0[ax]) > a.abort_deg:
+                            break
+                el = max(1e-3, time.time() - t0)
+                d = [(y - x) / el for x, y in zip(q0, q1)]
+                sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
+                rows.append((gv, d, sat))
+                print(f"  ×{gv:.3f} [{el:.1f}s] {a.axis:9s}{d[ax]:+7.2f}°/s"
+                      + ("★포화" if sat[ax] else "     ")
+                      + "  (그 외 최대 " + f"{max(abs(v) for i, v in enumerate(d) if i != ax):.2f})",
+                      flush=True)
+        except KeyboardInterrupt:
+            print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
+        finally:
+            _bias[0] = None
+            try: hold("home", 1.5); send(mode="hold")
+            except Exception: pass
+        br = bracket(rows)
+        gs, bd, lo, hi, why = br[a.axis]
+        print(f"\n■ 결과 — {a.axis}\n")
+        f = lambda v: f"{v:.3f}" if v is not None else "—"
+        print(f"  g_lo {f(lo)} · g_hi {f(hi)}")
+        if gs:
+            print(f"  ★g* = **{gs:.3f}**   1/g* = **{1/gs:.3f}**   밴드 {bd:.3f}")
+            print(f"    밴드×G_CAD/2 = τ_c/α  (G_CAD 는 MJCF 에서 뽑을 것)")
+        else:
+            print(f"  {why}")
+        return 0
+
     try:
         rows1 = sweep(grid1, f"1차 — 공통 배율 {grid1[0]:.2f}~{grid1[-1]:.2f} (축별 대략값을 잡는다)")
         res1 = crossings(rows1)

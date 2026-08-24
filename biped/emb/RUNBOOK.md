@@ -625,6 +625,69 @@ MAB SDK 의 비트 정의(`~/CANdle-SDK/candlelib/src/MD/MDStatus.hpp`)를 참�
   `quickStatus` 라면 bit4 가 "하드웨어 에러 있음" 요약이고 상세는 별도 레지스터다.
   **실제 값을 한 번 보면 갈린다** — 그게 지금 `err` 열을 넣은 이유다.
 
+## ★2026-08-24 — 동결 증거수집이 자동으로 남는다
+
+### 왜 여덟 번을 겪고도 원인을 모르나 — **Emb 가 증거를 계산해서 버린다**
+
+`~/ZSource/RobotEmbedded/communications/commEtherCATm.cpp` 를 읽어 보면 진단이 이미 있다:
+
+```cpp
+const int wkc = commEtherCATm_RoundTrip();
+if (wkc < m_stEtherCAT.expectedWkc){
+    m_stEtherCAT.wkcErrorCount++;            // ← 세고 있다
+    m_stEtherCAT.consecutiveWkcError++;
+    if (consecutiveWkcError >= 10) return commEtherCATm_CheckState();
+    return ENUM_ETHERCAT_ERROR_WKC;          // ← 반환한다
+}
+```
+
+게터까지 있다 — `GetWkcErrorCount` · `GetCycleCount` · `GetRoundTripUsec` · `GetExpectedWKC`.
+**그런데 부르는 곳이 없다.** 그리고 유일한 호출자는
+
+```cpp
+commMCU.cpp:163:    commEtherCATm_Proc();     // ← 반환값을 버린다
+```
+
+⇒ WKC 오류 경로에 `printf` 가 **하나도 없고**, 반환값도 안 본다. EtherCAT 이 죽는 순간
+  Emb 는 **아무 로그도 남기지 않고** 마지막 버퍼를 계속 SHM 에 올린다(갱신 플래그까지 1).
+  우리가 장님인 건 우연이 아니라 **구조**다. 배너의 `health=ok` 도 여기서 나온다.
+
+### 그래서 밖에서 긁어 모은다 — `src/freeze_forensics.hpp`
+
+동결이 잡히면 배너 아래에 **증거 블록**이 자동으로 붙고, 파일 두 개가 남는다.
+
+| 무엇 | 어디 | 왜 |
+|---|---|---|
+| 직전 3초 전 채널 (q·dq·τ·I·명령) | `/tmp/freeze_pre_<N>.csv` | **동결 전**이 알고 싶은 것이다. 배너 시점은 이미 0.5초 늦다 |
+| 사건 한 줄 (누적) | `/tmp/biped_freeze_log.tsv` | **재기동해도 남는다.** 여덟 번을 나란히 놓고 봐야 상관관계가 보인다 |
+
+증거 블록이 가르는 것 — **지금까지 한 번도 구분하지 못한 갈림길들**이다:
+
+```
+!!  Emb 프로세스   pid 15573 · state R · 0.15s CPU +15 jiffies → **Emb 는 살아서 돈다 ⇒ EtherCAT 이 죽었다**
+!!  물리링크 eth0    carrier 1 · rx_crc +0 · rx_err +0 → **링크 정상 ⇒ 슬레이브/MCU 쪽**
+!!  직전 1초 최대  |τ| 6.42Nm(HL_calf) · |I| 3.10A · 모드 home(3.7s째)
+```
+
+| 읽는 곳 | 값 | 뜻 |
+|---|---|---|
+| Emb CPU | **늘어난다** | Emb 는 돌고 EtherCAT 이 죽었다 → 슬레이브/배선/노이즈 |
+| Emb CPU | **0** | **Emb 가 스톨했다** → 전원 OFF/ON 은 헛수고. Emb 재기동이 답이다 |
+| carrier | **0** | **케이블/커넥터**다. 물리 점검 |
+| rx_crc | **증가** | 전기적 노이즈(모터 전류) — 접지·차폐를 볼 것 |
+| carrier 1 · crc 0 | | 링크는 깨끗하다 ⇒ 슬레이브(LAN9252)/MCU 쪽 |
+
+⚠env: `FREEZE_PRE_S`(기본 3.0 · 0=끔) · `FREEZE_LOG` · `ECAT_IFACE`(기본 `eth0` —
+  `commEtherCATm.cpp:173` 의 하드코딩과 맞춰야 한다) · `FREEZE_TEST=1`(mock 에서 경로 검증).
+
+### 남은 것 — Emb 에 `printf` 세 줄
+
+위 표로 **구간**은 가려지지만 "왜 WKC 가 깨졌나" 는 Emb 만 안다. `commEtherCATm_Proc` 의
+WKC 분기에 레이트리밋 `printf`(wkc/expectedWkc/연속횟수)와 `CheckState` 의 AL 상태를
+찍으면 그때 답이 나온다. **Pi 앱이라 재빌드만 하면 되고 플래싱은 없다.**
+
+---
+
 ## 고장 판별 — 값이 얼어붙었을 때
 
 Emb 는 EtherCAT OP 를 잃어도 **프로세스가 계속 돌고, 마지막 버퍼를 재발행하며,

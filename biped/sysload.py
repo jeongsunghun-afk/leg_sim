@@ -164,6 +164,28 @@ def _throttled():
 
 
 
+# ── ★EtherCAT 링크 끊김 카운터 (2026-08-24) ──────────────────────────────
+#   왜 필요한가 — 실기에서 **18분에 13회** 링크가 끊긴 게 확인됐다(dmesg).
+#   링크는 1~4초 만에 스스로 올라오지만 **EtherCAT OP 는 안 돌아온다**
+#   (commEtherCATm.cpp:520 이 조기 return 해 복구경로에 영영 도달 못 한다).
+#   ⇒ 1초짜리 깜빡임이 곧 영구 동결이다. 그런데 지금은 **동결이 나야만** 알 수 있다.
+#   ★상시로 세어 두면 ①동결 전에 미리 보이고 ②케이블 흔들기 시험을 이걸로 한다.
+#   ⚠"세션 중 증가분" 이 중요하다 — 누적값은 부팅 이후라 판단 근거가 안 된다.
+NIC = os.environ.get('ETHERCAT_NIC', 'eth0')
+_nic_base = [None]          # 첫 호출 때의 누적값 = 기준선
+
+
+def _carrier_changes():
+    """(세션 증가분, 누적). 못 읽으면 (None, None)."""
+    try:
+        v = int(open('/sys/class/net/%s/carrier_changes' % NIC).read().strip())
+    except Exception:
+        return None, None
+    if _nic_base[0] is None:
+        _nic_base[0] = v
+    return v - _nic_base[0], v
+
+
 # 문턱 — 여기서만 고친다(GUI 색과 모니터 표시가 같은 기준을 쓰게).
 WARN_C, CRIT_C = 70.0, 80.0
 WARN_CPU, CRIT_CPU = 80.0, 92.0
@@ -188,6 +210,11 @@ def line(per_proc=True):
         parts.append('⚠' + '·'.join(now))
     elif ever:
         parts.append('(이력:' + '·'.join(ever) + ')')
+    # ★링크 끊김 — 세션 증가분이 0 이 아니면 그 자체로 사고다(EtherCAT OP 는 안 돌아온다)
+    d_nic, tot_nic = _carrier_changes()
+    if d_nic is not None:
+        parts.append('링크%s %s' % (NIC, ('⛔+%d회(누적%d)' % (d_nic, tot_nic)) if d_nic
+                                    else 'OK(누적%d)' % tot_nic))
     if per_proc:
         per = []
         for lab, pid in _scan_pids():
@@ -197,7 +224,11 @@ def line(per_proc=True):
         if per:
             parts.append('│ 1코어기준  ' + '  '.join(per))
     sev = 0
-    if (t and t >= CRIT_C) or (cpu and cpu >= CRIT_CPU) or now:
+    # ★링크가 한 번이라도 끊겼으면 **무조건 최고 등급**이다 — 온도·CPU 보다 위다.
+    #   그 한 번이 EtherCAT 을 영구히 죽인다(스스로 복구 못 한다).
+    if d_nic:
+        sev = 2
+    elif (t and t >= CRIT_C) or (cpu and cpu >= CRIT_CPU) or now:
         sev = 2
     elif (t and t >= WARN_C) or (cpu and cpu >= WARN_CPU) or ever:
         sev = 1

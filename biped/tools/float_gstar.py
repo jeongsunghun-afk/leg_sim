@@ -38,6 +38,7 @@ NAMES = ["HL_hip", "HL_thigh", "HL_calf", "HL_foot",
          "HR_hip", "HR_thigh", "HR_calf", "HR_foot"]
 
 _seq = [0]
+_bias = [None]          # 축별 기준배율(2차 패스에서 심는다)
 
 
 def send(**kw):
@@ -45,6 +46,8 @@ def send(**kw):
     _seq[0] += 1
     c = {"v": 0.0, "vy": 0.0, "w": 0.0, "body_h": 0.38,
          "jog_deg": [0.0] * NJ, "pos_kp_scale": 1.0, "seq": _seq[0]}
+    if _bias[0] is not None:
+        c["grav_scale_joint"] = list(_bias[0])
     c.update(kw)
     # ★임시파일 이름에 **PID** 를 넣는다. GUI(teleop_gui_biped.py:128)도 `CMD + ".tmp"` 를
     #   쓰기 때문에, 같은 이름이면 GUI 의 os.replace 가 우리 tmp 를 먼저 가져가고
@@ -92,6 +95,10 @@ def main() -> int:
     ap.add_argument("--settle", type=float, default=5.0, help="매 점 전에 home 으로 되돌리는 시간[s]")
     ap.add_argument("--abort-deg", type=float, default=25.0,
                     help="한 축이 이만큼 표류하면 그 점을 중단하고 home 으로")
+    ap.add_argument("--fine-step", type=float, default=0.02,
+                    help="2차 패스의 공통배수 간격")
+    ap.add_argument("--fine-n", type=int, default=5,
+                    help="2차 패스 점수(±n). 기본 ±5 = 0.90~1.10")
     ap.add_argument("--min-amp", type=float, default=0.10,
                     help="배율 전 구간의 표류율 폭[deg/s] 문턱. 이보다 작으면 마찰 데드밴드로 본다")
     a = ap.parse_args()
@@ -146,87 +153,112 @@ def main() -> int:
         return 1
     print()
 
-    rows = []          # [(g, [drift × 8])]
-    try:
-        for gi, gv in enumerate(grid):
+    def sweep(grid, tag, bias=None, mult=False):
+        """한 번의 스윕. bias 가 있으면 축별로 심고 grid 는 **공통 배수**가 된다."""
+        _bias[0] = bias
+        out_rows = []
+        print(f"\n■ {tag}")
+        for gv in grid:
+            if bias is not None:
+                _bias[0] = [b * gv for b in bias]     # 축별 기준 × 공통배수
             hold("home", a.settle)
             q0 = q()
             if q0 is None:
-                print("✗ 상태를 못 읽는다 — 중단"); return 1
-
-            # float 로 dwell 동안. 중간에 과표류면 조기 종료.
-            t0 = time.time()
-            q1 = q0
+                print("✗ 상태를 못 읽는다 — 중단"); return out_rows
+            t0 = time.time(); q1 = q0
             while time.time() - t0 < a.dwell:
-                send(mode="float", grav_scale=gv)
+                send(mode="float", grav_scale=(1.0 if bias is not None else gv))
                 time.sleep(0.05)
                 cur = q()
                 if cur:
                     q1 = cur
-                    if max(abs(b - c) for b, c in zip(q0, q1)) > a.abort_deg:
+                    if max(abs(x - y) for x, y in zip(q0, q1)) > a.abort_deg:
                         break
             el = max(1e-3, time.time() - t0)
-            # ★★**표류율**(deg/s)로 기록한다 — 표류량이 아니라.
-            #   한 축이 abort 에 걸리면 그 점이 **조기 종료**돼 나머지 축의 관측창이 짧아진다.
-            #   그러면 표류량이 작게 나오고, 그게 "배율이 맞아간다" 로 오독된다.
-            #   실기 2차(2026-08-24)에서 실제로 그랬다: HR_hip 이 ×1.30 부터 포화해
-            #   HL_thigh 가 1.16 → 0.76 으로 줄었는데 **창이 짧아진 것**과 구분이 안 됐다.
-            #   ⇒ 경과시간으로 나누면 점끼리 비교가 성립한다.
-            d = [(b - c) / el for c, b in zip(q0, q1)]
-            sat = [abs(b - c) >= a.abort_deg * 0.98 for c, b in zip(q0, q1)]
-            rows.append((gv, d, sat))
+            d = [(y - x) / el for x, y in zip(q0, q1)]
+            sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
+            out_rows.append((gv, d, sat))
             mx = max(range(NJ), key=lambda i: abs(d[i]))
-            print(f"  ×{gv:.2f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
+            print(f"  ×{gv:.3f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
                   + ("★포화" if any(sat) else "    ") + " "
                   + " ".join((f"{v:+6.2f}" + ("*" if sat[i] else " ")) for i, v in enumerate(d)),
                   flush=True)
+            # ⚠창이 무너지면 그 위는 전부 무의미하다 — 조기 종료한다
+            if el < a.dwell * 0.35:
+                print(f"  ⚠관측창이 {el:.1f}s 로 무너졌다({a.dwell:.0f}s 목표의 "
+                      f"{el/a.dwell*100:.0f}%) — 이 위 배율은 **다른 축까지 오염**시킨다. 스윕 중단.")
+                break
+        return out_rows
+
+    def crossings(rows, label=""):
+        """축별 영점교차. 포화점 제외 + 전 구간 폭 문턱으로 잡음을 거른다."""
+        res = {}
+        for i, n in enumerate(NAMES):
+            ser = [(gv, d[i]) for gv, d, st in rows if not st[i]]
+            if len(ser) < 2:
+                res[n] = (None, "유효점 부족(포화)"); continue
+            vals = [v for _, v in ser]
+            if max(vals) - min(vals) < a.min_amp:
+                res[n] = (None, f"**측정 불가** — 배율 무반응(폭 {max(vals)-min(vals):.2f}°/s). 마찰 데드밴드")
+                continue
+            gs = None
+            for (g1, d1), (g2, d2) in zip(ser, ser[1:]):
+                if d1 * d2 < 0:
+                    gs = g1 + (g2 - g1) * abs(d1) / (abs(d1) + abs(d2)); break
+            if gs is None:
+                last = ser[-1]
+                res[n] = (None, f"경계 밖 (×{last[0]:.3f} 에서 {last[1]:+.2f}°/s)")
+            else:
+                res[n] = (gs, "부족" if gs > 1.02 else "과다" if gs < 0.98 else "맞음")
+        return res
+
+    grid1 = grid
+    rows1, rows2, res2 = [], [], None
+    try:
+        rows1 = sweep(grid1, f"1차 — 공통 배율 {grid1[0]:.2f}~{grid1[-1]:.2f} (축별 대략값을 잡는다)")
+        res1 = crossings(rows1)
+
+        # ★★2차 — 1차 값을 **축별로 심고** 공통 배수만 훑는다.
+        #   그러면 모든 축이 자기 중립점 근처에 있어 **어느 축도 폭주하지 않는다** ⇒ 관측창이 안 무너진다.
+        #   1차에서 못 잡은 축은 마지막 배율(또는 1.0)로 심어 둔다 — 최소한 폭주는 막는다.
+        bias = []
+        for i, n in enumerate(NAMES):
+            g0 = res1[n][0]
+            if g0 is None:
+                ser = [(gv, d[i]) for gv, d, st in rows1 if not st[i]]
+                g0 = ser[-1][0] if ser else 1.0
+            bias.append(round(g0, 3))
+        print("\n■ 1차 결과를 축별로 심는다")
+        print("  " + " ".join(f"{n.split('_')[1][:2]}{b:.2f}" for n, b in zip(NAMES, bias)))
+        fine = [round(1.0 + k * a.fine_step, 4)
+                for k in range(-a.fine_n, a.fine_n + 1)]
+        rows2 = sweep(fine, f"2차 — 축별 기준 × 공통배수 {fine[0]:.3f}~{fine[-1]:.3f}", bias=bias)
+        res2 = crossings(rows2)
     except KeyboardInterrupt:
         print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
     finally:
+        _bias[0] = None
         try:
             hold("home", 1.5); send(mode="hold")
         except Exception as e:
             print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI 로 직접 hold 를 눌러 둘 것")
 
-    # ── 축별 영점교차 ────────────────────────────────────────────────────
+    # ── 최종 ────────────────────────────────────────────────────────────
     print("\n■ 결과 — 축별 중립점\n")
-    print(f"  {'축':10s}{'g*':>8s}{'1/g*':>8s}{'데드밴드':>12s}   판정")
-    #   ★교차로 인정하려면 **의미 있는 진폭**이 있어야 한다. 안 그러면 −0.02 → +0.00 같은
-    #     양자화 잡음이 "완벽한 중립" 으로 둔갑한다(2026-08-24 실기에서 HL_calf/foot 이 그랬다).
-    #   ★그리고 배율을 바꿔도 표류가 **안 변하는** 축은 마찰 데드밴드에 묻힌 것이다.
-    #     calf(중력/마찰 0.47)·foot(0.30) 이 그렇다 — 이 방법으로는 원리적으로 못 잰다.
-    MINAMP = a.min_amp
+    print(f"  {'축':10s}{'g*':>9s}{'1/g*':>8s}   판정 / 근거")
     out = {}
     for i, n in enumerate(NAMES):
-        series = [(gv, d[i]) for gv, d, _ in rows if not _[i]]     # 포화점 제외
-        if len(series) < 2:
-            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   유효점 부족(포화)")
-            out[n] = None; continue
-        vals = [v for _, v in series]
-        span = max(vals) - min(vals)
-        if span < MINAMP:
-            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   "
-                  f"**측정 불가** — 배율에 반응 안 함(폭 {span:.2f}°/s < {MINAMP:.2f}). 마찰 데드밴드")
-            out[n] = None; continue
-        #   ⚠점별 진폭 조건은 뺐다 — 실기 2차에서 HR_hip 이 +0.16 → −0.30 으로 교차했는데
-        #     `max(|d1|,|d2|) >= 0.30` 이 부동소수 경계에서 걸려 **교차를 놓쳤다.**
-        #     잡음 방어는 위의 span 검사가 이미 한다(HL_calf 폭 0.06° 는 거기서 걸린다).
-        gs = None; band = None
-        for (g1, d1), (g2, d2) in zip(series, series[1:]):
-            if d1 * d2 < 0:
-                gs = g1 + (g2 - g1) * abs(d1) / (abs(d1) + abs(d2))
-                band = g2 - g1
-                break
+        gs, why = (res2 or res1)[n]
+        if gs is not None and res2:
+            gs = bias[i] * gs                       # 2차는 **공통배수**라 기준을 곱해 되돌린다
         if gs is None:
-            last = series[-1]
-            side = ("경계 밖 — **더 높게**" if last[1] * (1 if vals[0] > 0 else -1) > 0 else
-                    "경계 밖 — **더 낮게**")
-            print(f"  {n:10s}{'—':>8s}{'—':>8s}{'—':>12s}   {side} "
-                  f"(×{last[0]:.2f} 에서 {last[1]:+.2f}°/s)")
+            gs, why = res1[n]
+            why = (why + " (1차)") if gs is None else (why + " ← 1차만")
+        if gs is None:
+            print(f"  {n:10s}{'—':>9s}{'—':>8s}   {why}")
             out[n] = None
         else:
-            print(f"  {n:10s}{gs:>8.3f}{1/gs:>8.3f}{band:>11.2f}   "
-                  + ("부족" if gs > 1.02 else "과다" if gs < 0.98 else "맞음"))
+            print(f"  {n:10s}{gs:>9.3f}{1/gs:>8.3f}   {why}")
             out[n] = round(gs, 3)
 
     print("\n■ 그대로 붙여 쓸 수 있는 축별 배율")
@@ -236,8 +268,10 @@ def main() -> int:
     ts = time.strftime("%Y%m%d-%H%M%S")
     path = f"/tmp/float_gstar_{ts}.json"
     with open(path, "w") as f:
-        json.dump({"grid": grid, "names": NAMES,
-                   "rows": [[g, d, s] for g, d, s in rows], "gstar": out}, f, indent=1)
+        json.dump({"names": NAMES, "grid1": grid1,
+                   "rows1": [[g, d, st] for g, d, st in rows1],
+                   "rows2": [[g, d, st] for g, d, st in rows2],
+                   "bias": bias if rows2 else None, "gstar": out}, f, indent=1)
     print(f"\n  원자료 → {path}   (이 파일을 그대로 전달하면 된다)")
     return 0
 

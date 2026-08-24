@@ -456,6 +456,11 @@ struct Cmd {
   // ★중력보상 배율(float 모드). **음수 = 미지정**(제어기 기본 1.0).
   //   중립점을 브래킷해 찾는 것이 목적이라 GUI 가 0.05 단위로 올리고 내린다.
   double grav_scale = -1.0;
+  // ★★축별 중력배율 — 명령파일로도 준다(env GRAV_SCALE_JOINT 는 기동 시 1회뿐이라
+  //   스윕 중에 못 바꾼다). 8개(관절 순서). 비어 있으면 env/공통값을 쓴다.
+  //   ⇒ 이게 있어야 **2단 측정**이 된다: 1차로 축별 대략값을 잡고 그걸 심어 둔 뒤,
+  //     2차에서 공통 배수만 훑으면 **어느 축도 폭주하지 않아** 창이 안 무너진다.
+  std::vector<double> grav_scale_joint;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -494,6 +499,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.pos_kp_scale = num("pos_kp_scale", -1.0);
   out.pos_kd_scale = num("pos_kd_scale", -1.0);
   out.grav_scale   = num("grav_scale",   -1.0);   // float(무중력) 모드 중력보상 배율
+  out.grav_scale_joint = list("grav_scale_joint");
   return true;
 }
 

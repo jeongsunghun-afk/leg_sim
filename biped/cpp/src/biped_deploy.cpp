@@ -826,6 +826,17 @@ int main(int argc, char** argv){
             kp_scale_tgt = want;
           }
         }
+        // ★축별 배율을 명령파일로 받는다 — env 는 기동 1회뿐이라 스윕 중에 못 바꾼다.
+        if((int)nc.grav_scale_joint.size() >= NJ){
+          bool ch=false;
+          for(int j=0;j<NJ;j++) if(std::fabs(nc.grav_scale_joint[j]-grav_axis[j])>1e-9) ch=true;
+          if(ch){
+            for(int j=0;j<NJ;j++) grav_axis[j] = nc.grav_scale_joint[j];
+            std::printf("[deploy] 축별 중력배율(명령) =");
+            for(int j=0;j<NJ;j++) std::printf(" %.3f", grav_axis[j]);
+            std::printf("\n");
+          }
+        }
         if(nc.grav_scale >= 0.0 && std::fabs(nc.grav_scale-GRAV_SCALE) > 1e-9){
           GRAV_SCALE = std::max(0.0, std::min(3.0, nc.grav_scale));
           std::printf("[deploy] 중력보상 배율 → **×%.3f**%s\n", GRAV_SCALE,

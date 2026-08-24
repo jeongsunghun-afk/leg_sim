@@ -27,6 +27,35 @@
 #include "state_estimator.hpp"
 #include "deploy_hw.hpp"
 #include "freeze_forensics.hpp"      // ★동결 증거 수집(링버퍼·Emb 생존·NIC·사건로그)
+
+// ── ★SoC 열·클럭 스냅샷 (2026-08-24) ────────────────────────────────────
+//   왜 동결 증거에 넣는가 — 실기에서 **88.7°C** 가 찍혔다(Pi5 는 80°C 소프트·85°C 강제
+//   클럭다운). 스로틀은 **RT 우선순위로 못 막는다**: 스레드를 가리지 않고 전부 느려진다.
+//   `RT_PRIO=50` 이 안 먹혔던 것과 앞뒤가 맞는 유일한 경로라, 동결마다 기록해 둔다.
+//   ⚠온도만 봐선 인과를 못 정한다. **동결 때만 높은지 평상시도 높은지**를 갈라야 해서
+//     사건로그에 매번 남긴다 — 여러 건을 모아 놓고 봐야 상관이 보인다.
+struct SocSnap {
+  double temp_c = -1;      // 최고 thermal zone
+  double mhz    = -1;      // 최고 현재 클럭
+  long   thr    = -1;      // vcgencmd get_throttled (없으면 -1)
+  static SocSnap take(){
+    SocSnap s;
+    for(int z=0; z<8; z++){
+      char f[96]; std::snprintf(f,sizeof f,"/sys/class/thermal/thermal_zone%d/temp",z);
+      if(FILE* fp=std::fopen(f,"r")){ long v=0; if(std::fscanf(fp,"%ld",&v)==1){
+        double c=v/1000.0; if(c>0 && c<200 && c>s.temp_c) s.temp_c=c; } std::fclose(fp); }
+    }
+    for(int c=0; c<8; c++){
+      char f[128]; std::snprintf(f,sizeof f,"/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq",c);
+      if(FILE* fp=std::fopen(f,"r")){ long v=0; if(std::fscanf(fp,"%ld",&v)==1){
+        double m=v/1000.0; if(m>s.mhz) s.mhz=m; } std::fclose(fp); }
+    }
+    if(FILE* fp=popen("vcgencmd get_throttled 2>/dev/null","r")){
+      char b[64]={0}; if(std::fgets(b,sizeof b,fp)){ const char* eq=std::strchr(b,'=');
+        if(eq) s.thr = std::strtol(eq+1,nullptr,0); } pclose(fp); }
+    return s;
+  }
+};
 #include "sim_hw.hpp"
 #include <Eigen/Dense>
 #include <csignal>
@@ -749,6 +778,30 @@ int main(int argc, char** argv){
         double tmax=0, cmax=0; int tch=-1;
         for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
           if(tpk[i]>tmax){ tmax=tpk[i]; tch=i; } if(cpk[i]>cmax) cmax=cpk[i]; }
+        // ③-b ★**모터 상태워드(ucStatus)** — 세 가설이 여기서 갈린다 (2026-08-24).
+        //   RUNBOOK 이 정리한 hardwareStatus 하위 6bit:
+        //     0 OverCurrent · **1 OverVoltage** · 2 UnderVoltage
+        //     3 MotorTemp   · 4 MosfetTemp     · 5 ADCCurrentOffset
+        //   ⇒ bit1 이면 **회생 과전압**(손으로 밀거나 다리가 떨어지며 발전한다).
+        //     bit3/4 면 **드라이버 과온**. bit2 면 전원 새그. 전부 0 이면 모터는 멀쩡했고
+        //     EtherCAT/마스터 쪽이다.
+        //   ⚠ERROR VECTOR 가 hardwareStatus 인지 quickStatus 인지는 미확인이다(RUNBOOK).
+        //     그래서 **해석을 강요하지 않고 원값을 같이 남긴다.**
+        //   ⚠동결이면 이 값도 **얼어붙은 마지막 값**이다 — 얼기 직전 상태라 오히려 그게 맞다.
+        std::string sttx = "";
+        long stt_or = 0;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i) && i<(int)hs.status.size()){
+          char b[24]; std::snprintf(b,sizeof b,"%s%02x", sttx.empty()?"":",", hs.status[i]&0xff);
+          sttx += b; stt_or |= (hs.status[i]&0xff);
+        }
+        if(sttx.empty()) sttx = "미보고";
+        std::string sttwhy;
+        { const char* NM[6]={"과전류","**과전압(회생)**","저전압","모터과온","MOSFET과온","ADC오프셋"};
+          for(int b=0;b<6;b++) if(stt_or&(1<<b)){ if(!sttwhy.empty()) sttwhy+="·"; sttwhy+=NM[b]; }
+          if(sttwhy.empty()) sttwhy = stt_or ? "비트 정의 밖(원값 확인)" : "**전부 0 — 모터는 정상보고**"; }
+        // ③-c SoC 열·클럭·스로틀
+        const SocSnap soc = SocSnap::take();
+
         // ④ 직전 구간 CSV
         char dp[128]; std::snprintf(dp,sizeof dp,"/tmp/freeze_pre_%d.csv", frz_event);
         size_t nrow = frz_ring.dump(dp);
@@ -757,6 +810,8 @@ int main(int argc, char** argv){
           "!! ── 증거 ──────────────────────────────────────────────────────\n"
           "!!  Emb 프로세스   pid %d · state %s · 0.15s CPU %+lld jiffies → **%s**\n"
           "!!  물리링크 %s    carrier %lld · rx_crc %+lld · rx_err %+lld → **%s**\n"
+          "!!  모터 상태워드  [%s] → **%s**\n"
+          "!!  SoC           %.1f°C · %.0fMHz · throttled %s%s\n"
           "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I| %.2fA · 모드 %s(%.1fs째)\n"
           "!!  직전 %.1fs 기록 → %s (%zu행)\n"
           "!!  사건로그(누적) → %s   ← **여기를 여러 번 모아 놓고 봐야 원인이 보인다**\n"
@@ -769,6 +824,10 @@ int main(int argc, char** argv){
           n1.carrier==0 ? "**링크 끊김 = 케이블/커넥터**"
                         : (dcrc>0 ? "**CRC 오류 증가 = 전기적 노이즈(모터 전류) 의심**"
                                   : "링크 정상 ⇒ 슬레이브/MCU 쪽"),
+          sttx.c_str(), sttwhy.c_str(),
+          soc.temp_c, soc.mhz,
+          soc.thr<0 ? "(vcgencmd 없음)" : (soc.thr ? "★0x" : "0x"),
+          soc.thr<0 ? "" : (soc.thr&0x7 ? " ⚠지금 걸려 있다" : (soc.thr ? " (이력만)" : "")),
           tmax, tch>=0?chname[tch].c_str():"-", cmax, mode.c_str(), lt-mode_t0,
           FRZ_PRE_S, nrow?dp:"(없음)", nrow, FRZ_LOG.c_str(),
           std::string(72,'!').c_str());
@@ -776,15 +835,18 @@ int main(int argc, char** argv){
         // ⑤ 사건로그 한 줄 append — 재기동해도 남는다.
         char row[1024];
         std::snprintf(row,sizeof row,
-          "%s\t%.1f\t%s\t%.1f\t%d\t%s\t%s\t%lld\t%s\t%lld\t%lld\t%lld\t%.2f\t%s\t%.2f\t%.0f\t%s",
+          "%s\t%.1f\t%s\t%.1f\t%d\t%s\t%s\t%lld\t%s\t%lld\t%lld\t%lld\t%.2f\t%s\t%.2f\t%.0f\t"
+          "%s\t%ld\t%.1f\t%.0f\t%ld",
           wall_stamp().c_str(), lt-t0, mode.c_str(), lt-mode_t0, nfz,
           all_ch?"EtherCAT":"FDCAN", fz.c_str(),
           dj, e2.state.c_str(), n1.carrier, dcrc, derr,
-          tmax, tch>=0?chname[tch].c_str():"-", cmax, hz_ema, nrow?dp:"-");
+          tmax, tch>=0?chname[tch].c_str():"-", cmax, hz_ema,
+          sttx.c_str(), stt_or, soc.temp_c, soc.mhz, soc.thr, nrow?dp:"-");
         freeze_log_append(FRZ_LOG,
           "when\tuptime_s\tmode\tin_mode_s\tn_frozen\tclass\tchannels\t"
           "emb_dcpu_jif\temb_state\tnic_carrier\td_rx_crc\td_rx_err\t"
-          "pre_tau_max_nm\tpre_tau_ch\tpre_cur_max_a\tloop_hz\tpre_csv", row);
+          "pre_tau_max_nm\tpre_tau_ch\tpre_cur_max_a\tloop_hz\t"
+          "stt_hex\tstt_or\tsoc_temp_c\tsoc_mhz\tthrottled\tpre_csv", row);
       } else if(!nfz) frz_warned=false;
       if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
       frozen_now = nfz; }

@@ -99,6 +99,13 @@ def main() -> int:
                     help="2차 패스의 공통배수 간격")
     ap.add_argument("--fine-n", type=int, default=5,
                     help="2차 패스 점수(±n). 기본 ±5 = 0.90~1.10")
+    # ★★브래킷 판독의 문턱 (2026-08-24). 이 값보다 느린 표류는 **안 움직인 것**으로 본다.
+    #   왜 필요한가 — 영교차 보간은 **잡음에서도 교차를 만들어낸다.** 실측 HR_thigh 는
+    #   1.00~1.15 구간이 +0.03/+0.03/+0.02/−0.01 인데, 이건 3초 동안 0.06~0.09° 다.
+    #   엔코더 잡음·크리프와 구분이 안 된다. 그런데 보간은 거기서 g*=1.136 을 뽑았다.
+    #   ⇒ 문턱을 넘는 점만 "실제로 움직였다" 로 치고, 그 사이는 **마찰 밴드**로 남긴다.
+    ap.add_argument("--v-move", type=float, default=0.10,
+                    help="이 속도[°/s] 이상이라야 '움직였다'로 친다(브래킷 판독 문턱)")
     ap.add_argument("--min-amp", type=float, default=0.10,
                     help="배율 전 구간의 표류율 폭[deg/s] 문턱. 이보다 작으면 마찰 데드밴드로 본다")
     a = ap.parse_args()
@@ -212,6 +219,44 @@ def main() -> int:
                 res[n] = (gs, "부족" if gs > 1.02 else "과다" if gs < 0.98 else "맞음")
         return res
 
+    def bracket(rows):
+        """★마찰 브래킷 판독 — 영교차 보간 대신 **밴드의 두 끝**을 읽는다.
+
+        물리: 낙하는 G − α·g·G_CAD > τ_c 일 때, 상승은 그 반대일 때만 일어난다.
+            g_lo = (G−τ_c)/(α·G_CAD)   ← 마지막으로 **지고 있던** 배율
+            g_hi = (G+τ_c)/(α·G_CAD)   ← 처음으로 **뜨는** 배율
+            g*   = (g_lo+g_hi)/2       ← 마찰이 소거된다
+            밴드 = g_hi − g_lo = 2τ_c/(α·G_CAD)   ← **τ_c/α 를 덤으로 준다**
+        ⇒ 올라가는 한 번의 스윕에 두 경계가 **이미 들어 있다.** 양방향 스윕이 필요 없다.
+          종전 판독(영교차 보간)은 이 밴드 정보를 버리고, 잡음에서도 교차를 만들어냈다.
+
+        ★낙하방향은 **최저 배율의 부호**로 자동 판정한다 — 거기가 중력이 가장 우세한 점이라
+          축별 부호규약을 손으로 적을 필요가 없다(적으면 반드시 어긋난다).
+        """
+        res = {}
+        for i, n in enumerate(NAMES):
+            ser = [(gv, d[i]) for gv, d, st in rows if not st[i]]
+            if len(ser) < 3:
+                res[n] = (None, None, None, None, "유효점 부족"); continue
+            sgn = 1.0 if ser[0][1] >= 0 else -1.0          # 낙하방향
+            g_lo = g_hi = None
+            for gv, v in ser:
+                if v * sgn >= a.v_move:
+                    g_lo = gv                              # 계속 갱신 → 마지막 낙하점
+            for gv, v in ser:
+                if v * sgn <= -a.v_move:
+                    g_hi = gv; break                       # 첫 상승점
+            if g_lo is not None and g_hi is not None:
+                res[n] = ((g_lo + g_hi) / 2, g_hi - g_lo, g_lo, g_hi, "브래킷")
+            elif g_lo is not None:
+                res[n] = (None, None, g_lo, None, f"g* > {g_lo:.3f} — **상한 밖**(--hi 를 올릴 것)")
+            elif g_hi is not None:
+                res[n] = (None, None, None, g_hi, f"g* < {g_hi:.3f} — **하한 밖**(--lo 를 내릴 것)")
+            else:
+                res[n] = (None, None, None, None,
+                          f"전 구간 정지(<{a.v_move:.2f}°/s) — 마찰 밴드가 스윕보다 넓다")
+        return res
+
     grid1 = grid
     rows1, rows2, res2 = [], [], None
     try:
@@ -243,8 +288,28 @@ def main() -> int:
         except Exception as e:
             print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI 로 직접 hold 를 눌러 둘 것")
 
+    # ── ★브래킷 판독 (2026-08-24) — 이쪽이 물리적으로 옳다 ────────────────
+    #   ⚠아래 '영교차' 표와 **나란히** 낸다. 종전 표를 지우지 않는 이유:
+    #     지금까지 쌓인 기록이 그 판독 기준이라, 갑자기 바꾸면 과거와 비교가 끊긴다.
+    try:
+        br = bracket(rows1)
+        print("\n■ ★브래킷 판독 — 마찰 밴드의 두 끝 (1차 스윕)\n")
+        print(f"  문턱 |v| ≥ {a.v_move:.2f}°/s 이상이라야 '움직였다'로 친다\n")
+        print(f"  {'축':10s}{'g_lo':>8s}{'g_hi':>8s}{'g*':>9s}{'1/g*':>8s}{'밴드':>8s}   근거")
+        for n in NAMES:
+            gs, bd, lo, hi, why = br[n]
+            f = lambda v: f"{v:.3f}" if v is not None else "—"
+            print(f"  {n:10s}{f(lo):>8s}{f(hi):>8s}"
+                  f"{(f'{gs:.3f}' if gs else '—'):>9s}"
+                  f"{(f'{1/gs:.3f}' if gs else '—'):>8s}"
+                  f"{(f'{bd:.3f}' if bd else '—'):>8s}   {why}")
+        print("\n  밴드 = 2·τ_c/(α·G_CAD) — 여기에 G_CAD/2 를 곱하면 **τ_c/α** 가 나온다.")
+        print("  g* 가 '—' 인데 g_lo 만 있으면 스윕 상한을 올릴 것(--hi).")
+    except Exception as e:
+        print(f"  ⚠브래킷 판독 실패({type(e).__name__}: {e})")
+
     # ── 최종 ────────────────────────────────────────────────────────────
-    print("\n■ 결과 — 축별 중립점\n")
+    print("\n■ 결과 — 축별 중립점(영교차 보간 · 종전 기준)\n")
     print(f"  {'축':10s}{'g*':>9s}{'1/g*':>8s}   판정 / 근거")
     out = {}
     for i, n in enumerate(NAMES):

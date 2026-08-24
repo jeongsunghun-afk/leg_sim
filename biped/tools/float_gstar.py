@@ -29,7 +29,7 @@
     python3 tools/float_gstar.py --dwell 4 --settle 6
 """
 from __future__ import annotations
-import argparse, json, math, os, sys, time
+import argparse, glob, json, math, os, subprocess, sys, time
 
 CMD = "/tmp/biped_cmd.json"
 STT = "/tmp/biped_state.json"
@@ -46,7 +46,10 @@ def send(**kw):
     c = {"v": 0.0, "vy": 0.0, "w": 0.0, "body_h": 0.38,
          "jog_deg": [0.0] * NJ, "pos_kp_scale": 1.0, "seq": _seq[0]}
     c.update(kw)
-    tmp = CMD + ".tmp"
+    # ★임시파일 이름에 **PID** 를 넣는다. GUI(teleop_gui_biped.py:128)도 `CMD + ".tmp"` 를
+    #   쓰기 때문에, 같은 이름이면 GUI 의 os.replace 가 우리 tmp 를 먼저 가져가고
+    #   우리 os.replace 는 FileNotFoundError 로 죽는다(2026-08-24 실기에서 실제로 그랬다).
+    tmp = "%s.%d.tmp" % (CMD, os.getpid())
     with open(tmp, "w") as f:
         json.dump(c, f)
     os.replace(tmp, CMD)
@@ -96,6 +99,27 @@ def main() -> int:
         print("  biped_deploy 가 떠 있는지 확인할 것.")
         return 1
 
+    # ★★**경쟁 발행자 검사** — GUI 가 떠 있으면 20ms 마다 자기 모드로 덮어쓴다.
+    #   그러면 float 와 hold 가 번갈아 들어가 측정이 통째로 무의미해진다(그리고 로봇이 떤다).
+    try:
+        r = subprocess.run(["pgrep", "-af", "teleop_gui_biped"],
+                           capture_output=True, text=True, timeout=3)
+        others = [l for l in r.stdout.splitlines() if "pgrep" not in l]
+    except Exception:
+        others = []
+    if others:
+        print("✗ **teleop GUI 가 떠 있다.** GUI 도 20ms 마다 같은 명령파일을 쓰므로")
+        print("  이 스크립트와 모드를 번갈아 덮어쓴다 — 측정이 성립하지 않는다.")
+        for l in others:
+            print("    " + l[:100])
+        print("  → GUI 를 닫고 다시 실행할 것. (뷰어·모니터는 무관하다)")
+        return 1
+
+    # ★E-stop 래치를 먼저 푼다. 래치 중이면 어떤 모드도 안 먹고 로봇이 limp 라
+    #   표류가 전부 0 으로 나와 "중립점을 찾았다" 처럼 보인다 — 최악의 오독이다.
+    send(mode="off"); time.sleep(0.4)
+    hold("off", 0.6)
+
     grid = []
     g = a.lo
     while g <= a.hi + 1e-9:
@@ -106,6 +130,19 @@ def main() -> int:
     print(f"  배율 {grid[0]:.2f}~{grid[-1]:.2f} ({len(grid)}점) · 각 점 {a.dwell:.0f}s · "
           f"매번 home {a.settle:.0f}s 복귀")
     print("  ⚠크레인에 매달린 상태여야 한다. 손을 대지 말 것.\n")
+
+    # ★생존 확인 — home 을 한 번 돌려 로봇이 **실제로 움직이는지** 본다.
+    #   안 움직이면 E-stop 래치이거나 통신 두절이다. 그 상태로 스윕하면 전 축 표류 0 이
+    #   나오고, 그건 "완벽한 중립" 이 아니라 **아무 데이터도 없는 것**이다.
+    qa = q(); hold("home", max(3.0, a.settle)); qb = q()
+    moved = max(abs(x - y) for x, y in zip(qa, qb)) if (qa and qb) else 0.0
+    print(f"  생존 확인 — home 으로 최대 {moved:.2f}° 이동")
+    if moved < 0.5:
+        print("✗ **로봇이 안 움직인다.** E-stop 래치이거나 통신이 끊긴 상태다.")
+        print("  이대로 재면 전 축 표류가 0 으로 나와 '완벽한 중립' 처럼 보인다 — 측정 아님.")
+        print("  → 제어기 로그에서 E-STOP/동결을 확인하고 복구한 뒤 다시 실행할 것.")
+        return 1
+    print()
 
     rows = []          # [(g, [drift × 8])]
     try:
@@ -131,9 +168,13 @@ def main() -> int:
             mx = max(range(NJ), key=lambda i: abs(d[i]))
             print(f"  ×{gv:.2f}  최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°   "
                   + " ".join(f"{v:+6.2f}" for v in d), flush=True)
+    except KeyboardInterrupt:
+        print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
     finally:
-        hold("home", 2.0)
-        send(mode="hold")
+        try:
+            hold("home", 1.5); send(mode="hold")
+        except Exception as e:
+            print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI 로 직접 hold 를 눌러 둘 것")
 
     # ── 축별 영점교차 ────────────────────────────────────────────────────
     print("\n■ 결과 — 축별 중립점\n")

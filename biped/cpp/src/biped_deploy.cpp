@@ -952,8 +952,8 @@ int main(int argc, char** argv){
                 double e=(double)q_ch[i]-(double)raw[i];
                 if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
               const double u = (home_T>0) ? std::min(1.0,(lt-home_t0)/home_T) : 1.0;
-              std::printf("[deploy] hold \u2190 **home \ub7a8\ud504 \ub3c4\uc911**(\uc9c4\ud589 %.0f%%) \u2014 \ub3c4\ucc29\uc810\uc774 \uc544\ub2c8\ub77c\\n"
-                          "         **\uc9c0\uae08 \uc9c0\ub839\uac01**\uc744 \ub798\uce58\ud55c\ub2e4(\uacc4\ub2e8 \ubc29\uc9c0). \uc9c4\uc785 \uc624\ucc28 \ucd5c\ub300 %s %+.2f\u00b0\\n",
+              std::printf("[deploy] hold \u2190 **home \ub7a8\ud504 \ub3c4\uc911**(\uc9c4\ud589 %.0f%%) \u2014 \ub3c4\ucc29\uc810\uc774 \uc544\ub2c8\ub77c\n"
+                          "         **\uc9c0\uae08 \uc9c0\ub839\uac01**\uc744 \ub798\uce58\ud55c\ub2e4(\uacc4\ub2e8 \ubc29\uc9c0). \uc9c4\uc785 \uc624\ucc28 \ucd5c\ub300 %s %+.2f\u00b0\n",
                           u*100.0, ech>=0?chname[ech].c_str():"-", emx);
             } else if(inherit){
               hold_ch = home_to;

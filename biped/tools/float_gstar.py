@@ -66,6 +66,25 @@ def state():
         return {}
 
 
+def estopped():
+    """★E-stop 래치 여부. 래치되면 **전 축 무여자**라 그 뒤 모든 점이 쓰레기다.
+
+    왜 필요한가 (2026-08-24 실기에서 당함) — 스윕 첫 점에서 속도트립이 걸려 래치되면
+    나머지 구간이 통째로 limp 다. 무여자면 중력보상이 0 이니 표류가 **배율과 무관하게
+    일정**해진다. 실측 HL_thigh 가 0.60~2.00 전 구간 +0.34°/s 로 붙어 있었는데,
+    그게 "마찰 밴드" 처럼 보여서 "g* > 2.0" 이라는 허구의 결론이 나왔다.
+    ⇒ 이건 데이터가 없는 것이지 넓은 밴드가 아니다. **구분해서 중단해야 한다.**
+    """
+    try:
+        st = json.load(open(STATE))
+    except Exception:
+        return None
+    for k in ("estop", "estop_latched"):
+        if st.get(k):
+            return st.get("estop_reason") or k
+    return None
+
+
 def q():
     s = state()
     for k in ("q_leg_deg", "q_deg", "q_leg"):
@@ -205,6 +224,12 @@ def main() -> int:
             el = max(1e-3, time.time() - t0)
             d = [(y - x) / el for x, y in zip(q0, q1)]
             sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
+            es = estopped()
+            if es:
+                print(f"\n  ⛔ **E-stop 래치** ({es}) — 스윕 중단.")
+                print("     래치되면 전 축 무여자다. 이 뒤 점들은 표류가 배율과 무관해져")
+                print("     **넓은 마찰 밴드처럼 보인다** — 데이터가 아니다.")
+                return out_rows
             out_rows.append((gv, d, sat))
             mx = max(range(NJ), key=lambda i: abs(d[i]))
             print(f"  ×{gv:.3f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
@@ -309,6 +334,13 @@ def main() -> int:
                 el = max(1e-3, time.time() - t0)
                 d = [(y - x) / el for x, y in zip(q0, q1)]
                 sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
+                es = estopped()
+                if es:
+                    print(f"\n  ⛔ **E-stop 래치** ({es}) — 여기서 중단한다.")
+                    print("     래치되면 전 축이 무여자라 이 뒤 모든 점이 쓰레기다.")
+                    print("     표류가 배율과 무관하게 일정해져서 **넓은 마찰 밴드처럼 보인다.**")
+                    print("     → 제어기 로그에서 트립 축·값을 확인하고, 스윕 상한을 낮춰 다시 할 것.")
+                    break
                 rows.append((gv, d, sat))
                 print(f"  ×{gv:.3f} [{el:.1f}s] {a.axis:9s}{d[ax]:+7.2f}°/s"
                       + ("★포화" if sat[ax] else "     ")

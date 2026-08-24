@@ -124,12 +124,43 @@ def _temp_c():
 
 
 def _freq_ghz():
+    """(현재, 최대) GHz. 최대 대비 낮으면 스로틀이거나 그냥 한가한 것이다."""
+    cur = mx = None
     try:
-        v = max(int(open('/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq' % i).read())
-                for i in range(os.cpu_count() or 1))
-        return v / 1e6
+        cur = max(int(open('/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq' % i).read())
+                  for i in range(os.cpu_count() or 1)) / 1e6
+        mx = max(int(open('/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq' % i).read())
+                 for i in range(os.cpu_count() or 1)) / 1e6
     except Exception:
-        return None
+        pass
+    return cur, mx
+
+
+# ── ★스로틀 검출 (Raspberry Pi) ───────────────────────────────────────────
+#   왜 필요한가: 온도가 문턱을 넘으면 SoC 가 클럭을 내린다. 그러면 **RT 우선순위로도
+#   못 막는다** — 스로틀은 스레드를 가리지 않고 전부 느리게 만든다.
+#   EtherCAT 동결 조사에서 RT_PRIO=50 이 안 먹혔던 것과 앞뒤가 맞는 유일한 경로다.
+#   ⇒ 그래서 "지금 스로틀 중" 과 "한 번이라도 있었나" 를 갈라서 본다.
+_VC = [None]                                   # vcgencmd 경로(한 번만 찾는다). False=없음
+_THR_NOW = ((0, '저전압'), (1, '클럭제한'), (2, '스로틀'), (3, '온도한계'))
+_THR_EVER = ((16, '저전압'), (17, '클럭제한'), (18, '스로틀'), (19, '온도한계'))
+
+
+def _throttled():
+    """(지금 걸린 것들, 이력에 있는 것들). vcgencmd 가 없으면 (None, None)."""
+    if _VC[0] is None:
+        import shutil
+        _VC[0] = shutil.which('vcgencmd') or False
+    if not _VC[0]:
+        return None, None
+    try:
+        import subprocess
+        r = subprocess.run([_VC[0], 'get_throttled'], capture_output=True, text=True, timeout=3)
+        v = int(r.stdout.strip().split('=')[1], 0)
+    except Exception:
+        return None, None
+    return ([n for b, n in _THR_NOW if v & (1 << b)],
+            [n for b, n in _THR_EVER if v & (1 << b)])
 
 
 
@@ -139,13 +170,24 @@ WARN_CPU, CRIT_CPU = 80.0, 92.0
 
 
 def line(per_proc=True):
-    """(표시문자열, 심각도 0/1/2). 1Hz 정도로 부르면 된다."""
+    """(표시문자열, 심각도 0/1/2). 1Hz 정도로 부르면 된다.
+
+    ★단위를 라벨에 박아 둔다 — 전체는 **코어 합**, 프로세스는 **1코어** 기준이라
+      같은 줄에 기준이 다른 두 숫자가 섞인다. 안 적으면 반드시 오해가 생긴다
+      (실제로 "CPU 38% 인데 Emb 91% 면 뭐가 맞나" 를 물어보셨다).
+    """
+    ncpu = os.cpu_count() or 1
     cpu, t = _cpu_total_pct(), _temp_c()
-    parts = ['CPU %s' % ('--' if cpu is None else '%.0f%%' % cpu)]
-    fq = _freq_ghz()
-    if fq:
-        parts.append('%.2fGHz' % fq)
+    parts = ['CPU %s(%d코어합)' % ('--' if cpu is None else '%.0f%%' % cpu, ncpu)]
+    cur, mx = _freq_ghz()
+    if cur:
+        parts.append('%.2f/%.2fGHz' % (cur, mx) if mx else '%.2fGHz' % cur)
     parts.append('온도 %s' % ('--' if t is None else '%.1f°C' % t))
+    now, ever = _throttled()
+    if now:
+        parts.append('⚠' + '·'.join(now))
+    elif ever:
+        parts.append('(이력:' + '·'.join(ever) + ')')
     if per_proc:
         per = []
         for lab, pid in _scan_pids():
@@ -153,10 +195,10 @@ def line(per_proc=True):
             if v is not None:
                 per.append('%s %.0f%%' % (lab, v))
         if per:
-            parts.append('│  ' + '  '.join(per))
+            parts.append('│ 1코어기준  ' + '  '.join(per))
     sev = 0
-    if (t and t >= CRIT_C) or (cpu and cpu >= CRIT_CPU):
+    if (t and t >= CRIT_C) or (cpu and cpu >= CRIT_CPU) or now:
         sev = 2
-    elif (t and t >= WARN_C) or (cpu and cpu >= WARN_CPU):
+    elif (t and t >= WARN_C) or (cpu and cpu >= WARN_CPU) or ever:
         sev = 1
     return '  '.join(parts), sev

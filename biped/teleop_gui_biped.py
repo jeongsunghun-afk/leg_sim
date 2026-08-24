@@ -280,31 +280,36 @@ def jog_zero():                       # 전체 0(home)
     pub.set(jog_deg=[0.0] * NJ)
 
 
-# ── ★영점 계산 (2026-08-24) ──────────────────────────────────────────────
-#   무엇을 하는가: `emb/diag/calib_zero.py` 를 **--apply 없이** 돌려, 지금 자세에서
-#   나오는 offset_deg 를 **계산만 해서** 보여준다. 모터에도 config 에도 쓰지 않는다.
+# ── ★영점 (2026-08-24) ───────────────────────────────────────────────────
+#   버튼 **한 번**에 셋을 순서대로 한다:
+#       ① calib_zero.py                → 계산. 표를 창에 찍는다(무엇이 박히는지 보인다)
+#       ② calib_zero.py --apply        → config 의 offset_deg
+#       ③ gen_grav_table.py --apply    → spec 의 중력표
+#
+#   ★③이 이 버튼의 존재 이유다. 중력표는 **채널각으로 색인**돼 있어서, offset 만 바꾸고
+#     표를 두면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓴다. 실제로 그렇게 됐었다
+#     (HR_calf offset 13.05°). 손으로 두 명령을 치는 한 언제든 또 빠뜨린다 — 버튼이 묶는다.
+#   ★그래서 ③의 인터프리터를 **①보다 먼저** 확인하고, 없으면 아예 시작하지 않는다.
+#     반쪽 상태(offset 새것 + 표 낡은것)를 만드느니 아무것도 안 하는 게 낫다.
+#
+#   ★`--force` 는 **절대 안 넣는다.** 2026-08-21(cc321fc) 에 그걸 강행해 HR_calf 가
+#     모델각 −8.70° 인 채로 박혔고, 그 커밋은 "이상하면 여기를 볼 것" 이라 적어 뒀다.
+#     지금 thigh 좌우 비대칭이 그 후과로 의심된다. ⇒ 3° 문턱은 살려 둔다.
 #
 #   ⚠**삭제된 '제어기 재시작' 버튼과 다르다.** 그건 `emb_ctl.sh` 의 가드(중복기동·로그
 #     필터·신선도)를 GUI 가 **우회**해서 지웠다. 이건 우회할 가드가 없다 —
 #     calib_zero.py 의 게이트(상태 신선도 3s · off 모드 · 정지 8s · 재현성 · 변화량 3°)는
 #     전부 **도구 안**에 있고 GUI 는 그 도구를 그대로 실행할 뿐이다.
-#     ⇒ 그래서 여기서 게이트를 **다시 구현하지 않는다.** 도구가 거부하면 그 말을 그대로 띄운다.
+#     ⇒ 그래서 여기서 게이트를 **다시 구현하지 않는다.** 도구가 거부하면 그 말을 그대로 띄우고
+#       거기서 멈춘다(①이 막히면 ②③은 아예 안 돈다).
 #       (게이트를 GUI 에도 복사하면 도구가 바뀔 때 조용히 갈라진다 — calib_zero.py 가
 #        환산식 복사본을 갖고 있다가 stale 이 됐던 것과 같은 실수다.)
 #
-#   ★`--force` 는 **절대 넣지 않는다.** 2026-08-21(cc321fc) 에 그걸 강행해 HR_calf 가
-#     모델각 −8.70° 인 채로 박혔고, 그 커밋은 "이상하면 여기를 볼 것" 이라 적어 뒀다.
-#     지금 thigh 좌우 비대칭이 그 후과로 의심된다. ⇒ 3° 게이트는 살려 둔다.
-#   ★`--apply` 는 [영점적용] 버튼에만 붙는다. 그 버튼은 **두 가지를 한 쌍으로** 한다:
-#       ① calib_zero.py --apply        (config 의 offset_deg)
-#       ② gen_grav_table.py --apply    (spec 의 중력표 — **채널각으로 색인**돼 있다)
-#     ②를 빠뜨리면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓴다. 실제로 그렇게 됐었다.
-#     ⇒ 그래서 ②의 인터프리터를 **①보다 먼저** 확인하고, 없으면 아예 적용하지 않는다.
-#       반쪽 상태(offset 새것 + 표 낡은것)를 만드느니 아무것도 안 하는 게 낫다.
-#
-#   ★`python3` 로 띄운다 — sys.executable 이 아니다. GUI 를 다른 인터프리터(venv 등)로
-#     띄웠어도 문서에 적힌 실행법과 **같은 것**이 돌아야 한다(yaml·numpy 는 python3 에 있다).
+#   ★`python3` 로 띄운다 — sys.executable 이 아니다. GUI 를 다른 인터프리터로 띄웠어도
+#     문서에 적힌 실행법과 **같은 것**이 돌아야 한다(yaml·numpy 는 python3 에 있다).
+#     단 ③은 mujoco 가 필요해 따로 찾는다(Pi 시스템 python 에는 없다 — 도구 주석).
 _CALIB_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb', 'diag', 'calib_zero.py')
+_GRAV_PY  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools', 'gen_grav_table.py')
 _EMB_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
 _calib_busy = [False]
 _calib_buf  = ['']          # 리스트 = 클로저 없이 가변(위 _last_file_hb 와 같은 관용)
@@ -318,56 +323,6 @@ def _calib_say(txt, append=True):
         pass
 
 
-def _calib_worker():
-    _calib_say('', append=False)
-    if not os.path.exists(_CALIB_PY):
-        _calib_say('✗ 도구가 없다: %s\n' % _CALIB_PY); _calib_busy[0] = False; return
-    _calib_say('$ cd %s && python3 diag/calib_zero.py\n'
-               '  (계산만 — config 도 모터도 건드리지 않는다)\n'
-               '  ⏳정지 게이트 8초가 있다. 매달린 채 limp 이면 hip·thigh·foot 은 자유\n'
-               '    진자라 여기서 거부당하는 게 정상이다 — 지그로 물리고 다시 누를 것.\n'
-               '%s\n' % (_EMB_DIR, '─' * 74))
-    try:
-        pr = subprocess.Popen(['python3', '-u', _CALIB_PY], cwd=_EMB_DIR,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, bufsize=1)
-    except Exception as e:
-        _calib_say('✗ 실행 실패: %s\n' % e); _calib_busy[0] = False; return
-    try:
-        for line in pr.stdout:
-            _calib_say(line)
-        rc = pr.wait(timeout=30)
-    except Exception as e:
-        _calib_say('\n✗ 중단: %s\n' % e)
-        try: pr.kill()
-        except Exception: pass
-        rc = -1
-    _calib_say('%s\n종료코드 %d — %s\n' % ('─' * 74, rc,
-               '계산 완료(적용 안 됨)' if rc == 0 else '게이트에 막혔다(위 메시지 참조)'))
-    if rc == 0:
-        _calib_ok[0] = time.time()   # ★[영점적용] 이 이걸 요구한다(120초). 보고 나서 누르라는 뜻.
-        _calib_say('\n위 표의 **→ 새 offset** 이 마음에 들면 [영점적용] 을 누를 것(두 번 클릭).\n'
-                   '  그 버튼은 offset 과 **중력표를 한 쌍으로** 갱신한다.\n'
-                   '⚠3° 문턱에 막히면 지그가 덜 물린 것이다. 이 버튼들에 --force 는 없다.\n')
-    _calib_busy[0] = False
-
-
-def on_calib_zero():
-    """영점 계산 — 백그라운드 스레드. 렌더 루프를 막으면 안 된다(도구가 8초+ 걸린다)."""
-    if _calib_busy[0]:
-        return
-    _calib_busy[0] = True
-    dpg.configure_item('calib_win', show=True)
-    threading.Thread(target=_calib_worker, daemon=True).start()
-
-
-# ★중력표 생성기는 **mujoco 가 필요하다** — Pi 의 시스템 python 에는 없다(도구 주석).
-#   ⇒ 쓸 수 있는 인터프리터를 찾아 둔다. 못 찾으면 영점적용 자체를 막는다.
-_GRAV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools', 'gen_grav_table.py')
-_calib_ok = [0.0]           # 마지막으로 **계산이 통과한** 시각. 적용은 이걸 요구한다.
-_calib_armed = [0.0]        # 2단 클릭 무장 시각
-
-
 def _find_mujoco_py():
     """mujoco 를 import 할 수 있는 python 을 찾는다. 없으면 None."""
     import sys as _sys
@@ -375,57 +330,70 @@ def _find_mujoco_py():
         if not cand:
             continue
         try:
-            r = subprocess.run([cand, '-c', 'import mujoco'], capture_output=True, timeout=25)
-            if r.returncode == 0:
+            if subprocess.run([cand, '-c', 'import mujoco'],
+                              capture_output=True, timeout=30).returncode == 0:
                 return cand
         except Exception:
             pass
     return None
 
 
-def _run_into_panel(argv, cwd, title):
-    """argv 를 돌리며 출력을 창에 흘린다. 반환 = 종료코드."""
-    _calib_say('\n%s\n$ %s\n%s\n' % ('─' * 74, ' '.join(argv), '─' * 74))
+def _run_into_panel(argv, cwd):
+    """argv 를 돌리며 출력을 창에 **줄 단위로** 흘린다. 반환 = 종료코드."""
+    bar = '─' * 74
+    _calib_say('\n' + bar + '\n$ ' + ' '.join(argv) + '\n' + bar + '\n')
     try:
         pr = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in pr.stdout:
             _calib_say(line)
-        return pr.wait(timeout=180)
+        return pr.wait(timeout=300)
     except Exception as e:
-        _calib_say('✗ %s 실패: %s\n' % (title, e))
+        _calib_say('✗ 실행 실패: %s\n' % e)
         return -1
 
 
-def _apply_worker():
-    # ── ★게이트 A: 중력표를 만들 수 있는가 — **offset 을 건드리기 전에** 본다 ──
+def _calib_worker():
+    _calib_say('', append=False)
+    if not os.path.exists(_CALIB_PY):
+        _calib_say('✗ 도구가 없다: %s\n' % _CALIB_PY); _calib_busy[0] = False; return
+
+    # ── ★게이트: 중력표를 만들 수 있는가 — **offset 을 건드리기 전에** 본다 ──
     _calib_say('중력표 생성기(mujoco) 확인 중…\n')
     gpy = _find_mujoco_py()
     if gpy is None or not os.path.exists(_GRAV_PY):
-        _calib_say('\n  ❌ **적용하지 않았다** — 중력표를 재생성할 수 없다.\n\n'
+        _calib_say('\n  ❌ **아무것도 하지 않았다** — 중력표를 재생성할 수 없다.\n\n'
                    '     mujoco 를 import 할 수 있는 python 을 못 찾았다.\n'
                    '     중력표는 **채널각으로 색인**돼 있어서, offset 만 바꾸고 표를 그대로\n'
                    '     두면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓰게 된다.\n'
                    '     ⇒ 반쪽 상태를 만드느니 아무것도 안 하는 게 낫다.\n\n'
-                   '     노트북에서 표를 만들어 커밋해 오거나, Pi 에 venv 를 만들 것:\n'
-                   '       ~/.venv-mujoco/bin/python3 tools/gen_grav_table.py --apply\n')
+                   '     노트북에서 표를 만들어 커밋해 오거나, Pi 에 venv 를 만들 것.\n')
         _calib_busy[0] = False; return
-    _calib_say('  ✅ %s\n' % gpy)
+    _calib_say('  ✅ ' + gpy + '\n')
 
-    # ── ①영점 적용 (★--force 없음 — 3° 게이트를 살려 둔다) ──
-    rc = _run_into_panel(['python3', '-u', _CALIB_PY, '--apply'], _EMB_DIR, 'calib_zero')
+    # ── ①계산 — 표를 먼저 찍는다. 무엇이 박히는지 창에 남는다 ──
+    _calib_say('\n⏳정지 게이트 8초가 있다. 매달린 채 limp 이면 hip·thigh·foot 은 자유\n'
+               '  진자라 여기서 거부당하는 게 정상이다 — 지그로 물리고 다시 누를 것.\n')
+    if _run_into_panel(['python3', '-u', _CALIB_PY], _EMB_DIR) != 0:
+        _calib_say('\n  ❌ 계산이 게이트에 막혔다 — **적용하지 않는다**(위 메시지 참조).\n')
+        _calib_busy[0] = False; return
+
+    # ── ②적용 (★--force 없음 — 3° 게이트를 살려 둔다) ──
+    rc = _run_into_panel(['python3', '-u', _CALIB_PY, '--apply'], _EMB_DIR)
     if rc != 0:
         _calib_say('\n  ❌ 영점이 적용되지 않았다(종료코드 %d). 중력표는 건드리지 않는다.\n'
-                   '     3° 문턱에 막혔다면 **지그가 덜 물린 것**이다 — 다시 물리고 계산부터.\n'
-                   '     (--force 는 이 버튼에 없다. 정말 필요하면 터미널에서, 이유를 알고 쓸 것.)\n' % rc)
+                   '     3° 문턱에 막혔다면 **지그가 덜 물린 것**이다 — 다시 물리고 누를 것.\n'
+                   '     (--force 는 이 버튼에 없다. 정말 필요하면 터미널에서, 이유를 알고 쓸 것.)\n'
+                   % rc)
         _calib_busy[0] = False; return
 
-    # ── ②중력표 재생성 — ①이 성공했으면 **반드시** 돈다 ──
-    rc2 = _run_into_panel([gpy, '-u', _GRAV_PY, '--apply'], os.path.dirname(_GRAV_PY), 'gen_grav_table')
+    # ── ③중력표 재생성 — ②가 성공했으면 **반드시** 돈다 ──
+    rc2 = _run_into_panel([gpy, '-u', _GRAV_PY, '--apply'], os.path.dirname(_GRAV_PY))
     if rc2 != 0:
         _calib_say('\n  ⚠⚠**반쪽 상태다** — offset 은 바뀌었는데 중력표가 낡았다(종료코드 %d).\n'
                    '     지금 중력보상은 틀린다. 표를 손으로 만들거나 영점을 되돌릴 것:\n'
-                   '       cd ~/simulation/biped/emb && cp config/biped_emb.yaml.bak config/biped_emb.yaml\n' % rc2)
+                   '       cd ~/simulation/biped/emb && cp config/biped_emb.yaml.bak config/biped_emb.yaml\n'
+                   % rc2)
     else:
         _calib_say('\n  ✅ **영점 + 중력표 둘 다 적용됐다.**\n\n'
                    '  다음:\n'
@@ -434,31 +402,18 @@ def _apply_worker():
                    '      확인: 기동 배너 `매핑:` 줄의 off- 값이 새 값인지.\n'
                    '   ② 재시작 뒤 **무중력으로 좌우 대조**할 것. 영점이 원인이었다면\n'
                    '      HL/HR thigh 가 이제 같은 배율에서 중립이 돼야 한다.\n'
-                   '   ③ 되돌리려면: config/biped_emb.yaml.bak (또는 git checkout)\n'
+                   '   ③ 되돌리려면 config/biped_emb.yaml.bak (또는 git checkout)\n'
                    '   ④ 마음에 들면 커밋할 것 — config 와 spec 이 **같이** 바뀌었다.\n')
     _calib_busy[0] = False
 
 
-def on_calib_apply():
-    """영점 적용 — ★3초 안에 두 번 눌러야 실행된다(오조작 방지)."""
+def on_calib_zero():
+    """영점 — 계산 → 적용 → 중력표까지. 백그라운드 스레드(도구가 10초+ 걸린다)."""
     if _calib_busy[0]:
         return
-    # ★계산을 먼저 통과했어야 한다 — 무엇이 박히는지 **보고 나서** 누르라는 뜻이다.
-    if time.time() - _calib_ok[0] > 120.0:
-        dpg.configure_item('calib_win', show=True)
-        _calib_say('\n  ▸ 먼저 [영점계산] 을 눌러 통과시킬 것. 무엇이 박히는지 보고 나서 적용한다.\n'
-                   '    (계산 통과 후 120초 안에만 적용할 수 있다 — 그 사이 자세가 바뀌었으면 다시 계산)\n')
-        return
-    now = time.time()
-    if now - _calib_armed[0] > 3.0:                    # 1차 클릭 = 무장
-        _calib_armed[0] = now
-        dpg.set_value('calib_arm_msg', '⚠ 3초 안에 한 번 더 누르면 **적용**한다')
-        return
-    _calib_armed[0] = 0.0
-    dpg.set_value('calib_arm_msg', '')
     _calib_busy[0] = True
     dpg.configure_item('calib_win', show=True)
-    threading.Thread(target=_apply_worker, daemon=True).start()
+    threading.Thread(target=_calib_worker, daemon=True).start()
 
 
 # ── ★제어기 재기동 (통신 두절 복구) ──────────────────────────────────────
@@ -834,30 +789,23 @@ with dpg.window(tag='main'):
                  '(τ_trip ÷ (kp_ch·gear_k)). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',
                  color=(210, 150, 90))
     dpg.add_separator()
-    # ── ★영점(offset) 점검 (2026-08-24) ────────────────────────────────────
-    dpg.add_text('● 영점(offset) 점검 — 계산만 한다. 적용은 터미널에서.', color=(255, 205, 120))
+    # ── ★영점 (2026-08-24) ────────────────────────────────────────────────
+    dpg.add_text('● 영점 — 계산 → 적용 → 중력표 재생성까지 한 번에', color=(255, 205, 120))
     with dpg.group(horizontal=True):
-        _zb = dpg.add_button(label='영점계산', width=100, callback=on_calib_zero)
-        _ab = dpg.add_button(label='영점적용', width=100, callback=on_calib_apply)
-        dpg.bind_item_theme(_ab, _stop)          # ★config 를 바꾸는 동작 — 정지계열 색으로 구분
+        _zb = dpg.add_button(label='영점', width=100, callback=on_calib_zero)
+        dpg.bind_item_theme(_zb, _stop)      # ★config 를 바꾸는 동작 — 정지계열 색으로 구분
         dpg.add_text('(Off 전원 + 지그 물린 상태에서)', color=(120, 130, 150))
-    dpg.add_text('', tag='calib_arm_msg', color=(240, 170, 90))
     with dpg.tooltip(_zb):
-        dpg.add_text('emb/diag/calib_zero.py 를 **--apply 없이** 실행한다.\n'
-                     'config 도 모터도 건드리지 않는다 — 지금 자세가 어떤 offset 을\n'
-                     '만드는지 계산해서 보여주기만 한다.\n\n'
+        dpg.add_text('★config 를 **실제로 바꾼다**. 한 번 누르면 셋을 순서대로 한다:\n'
+                     '  ① calib_zero.py              → 계산(표를 창에 찍는다)\n'
+                     '  ② calib_zero.py --apply      → config 의 offset_deg\n'
+                     '  ③ gen_grav_table.py --apply  → spec 의 중력표(채널각 색인)\n'
+                     '③을 빠뜨리면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓴다.\n'
+                     '③을 못 돌릴 상황이면(mujoco 없음) **아무것도 안 한다**.\n\n'
                      '⚠먼저 [Off 전원] 을 누를 것. 제어기가 축을 붙들고 있으면 그 자세는\n'
                      '  "제어기가 생각하는 홈" 이지 기준자세가 아니다 — 도구가 거부한다.\n'
                      '⚠정지 게이트 8초. 매달린 채 limp 이면 hip·thigh·foot 은 자유 진자라\n'
-                     '  거부되는 게 정상이다. 영점은 **기구(지그)** 가 정의해야 한다.')
-    with dpg.tooltip(_ab):
-        dpg.add_text('★config 를 **실제로 바꾼다**. 3초 안에 두 번 눌러야 실행된다.\n\n'
-                     '두 가지를 **한 쌍으로** 한다:\n'
-                     '  ① calib_zero.py --apply      → config 의 offset_deg\n'
-                     '  ② gen_grav_table.py --apply  → spec 의 중력표(채널각 색인)\n'
-                     '②를 빠뜨리면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓴다.\n'
-                     '②를 못 돌릴 상황이면(mujoco 없음) **①도 안 한다**.\n\n'
-                     '⚠먼저 [영점계산] 을 통과시킬 것 — 무엇이 박히는지 보고 나서 누른다.\n'
+                     '  거부되는 게 정상이다. 영점은 **기구(지그)** 가 정의해야 한다.\n'
                      '⚠--force 는 없다. 3° 문턱에 막히면 지그를 다시 물 것.\n'
                      '⚠적용 뒤 제어기 **재시작** 필요. 되돌리기는 biped_emb.yaml.bak.')
     dpg.add_separator()
@@ -898,7 +846,7 @@ with dpg.handler_registry():
 
 # ★영점 계산 출력창 — 'main' **밖**에 만든다(안에 넣으면 자식 위젯이 돼 창이 안 뜬다).
 #   기본 숨김. 버튼을 누를 때만 보인다 — 세로 공간을 상시 잡아먹지 않게.
-with dpg.window(label='영점 계산 — calib_zero.py (읽기전용 · 적용 안 함)', tag='calib_win',
+with dpg.window(label='영점 — 계산·적용·중력표 재생성', tag='calib_win',
                 width=660, height=470, pos=(20, 120), show=False):
     dpg.add_text('offset = 채널각(기준자세) − raw각(기준자세)·sign·k', color=(150, 155, 175))
     dpg.add_separator()

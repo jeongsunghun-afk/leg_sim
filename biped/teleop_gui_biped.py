@@ -63,6 +63,13 @@ KP_STEPS = [1.0, 2.0, 3.0, 5.0, 8.0, 10.0]
 #     정지 중 잡음 ±7dps 면 kp×10(kd×3.16)에서 hip 이 2.3Nm — 트립 15Nm 의 15%.
 #   ⇒ 잡음이 지배해 틱틱거리면 ζ 를 좀 포기하고 낮춘다. 진동이 나면 올린다.
 KD_STEPS = [None, 1.0, 1.5, 2.0, 3.0]
+
+# ── ★무중력(중력보상) 배율 (2026-08-24) ──────────────────────────────────────
+#   `float` 모드에서 τ_ff = GRAV_SCALE · G_model(q) 로 나간다.
+#   ★쓰는 법 — **중립점을 브래킷한다**: 올리며 다리가 뜨기 시작하는 g⁺,
+#     내리며 지기 시작하는 g⁻ 를 잡으면 마찰이 소거된다. g* = (g⁺+g⁻)/2.
+#     그 g* 가 곧 "지금 중력보상이 몇 % 모자라나" 다 — stand 처짐의 크기와 같다.
+GRAV_STEPS = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.30]
 try:
     _tt = float(_cfg.get('safety', {}).get('tau_trip_nm', 15.0))
     # ★★트립은 **채널토크**로 걸린다(biped_deploy 가 hs.tau_nm 을 그대로 비교한다).
@@ -95,7 +102,7 @@ class Pub:
         #   (제어기 쪽 env POS_KP_SCALE 은 **이 값이 도착하는 순간 덮인다.** GUI 를 쓸 거면
         #    env 로 주지 말고 여기 버튼으로 줄 것.)
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'hold', 'contact': '2pt',
-                    'jog_deg': [0.0] * NJ, 'pos_kp_scale': 1.0, 'seq': 0}
+                    'jog_deg': [0.0] * NJ, 'pos_kp_scale': 1.0, 'grav_scale': 1.0, 'seq': 0}
         self._pub()
 
     def set_jog(self, i, val):
@@ -238,6 +245,19 @@ def set_kp_scale(s):
     for k, v in enumerate(KP_STEPS):
         dpg.bind_item_theme(f'kpbtn_{k}', _kp_on if abs(v - s) < 1e-6 else _kp_off)
     _refresh_gain_lbl()
+
+
+def set_grav_scale(g):
+    """무중력(float) 모드의 중력보상 배율. **중립점 탐색용**이다.
+
+    ★판정: 배율을 올려 다리가 **뜨기 시작**하면 g⁺, 내려 **지기 시작**하면 g⁻.
+      마찰(관절 0.6~0.9Nm)이 데드밴드를 만들므로 **양방향 평균**이 참값이다.
+      g* > 1 이면 제어기의 중력보상이 그만큼 모자라다는 뜻이다.
+    """
+    pub.set(grav_scale=float(g))
+    for k, v in enumerate(GRAV_STEPS):
+        dpg.bind_item_theme(f'gvbtn_{k}', _kp_on if abs(v - g) < 1e-6 else _kp_off)
+    dpg.set_value('gv_lbl', f'×{g:.2f}   (중립 g* 를 찾는다 — 뜨면 내리고 지면 올린다)')
 
 
 def set_kd_scale(d):
@@ -540,6 +560,14 @@ with dpg.window(tag='main'):
         _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
         dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
+        with dpg.group():              # ★무중력 = 중력보상만. 매달린 상태 전용
+            _fb = dpg.add_button(label='무중력', width=100, callback=lambda: set_mode('float'))
+            dpg.add_text('(매달린 채만)', color=(120, 130, 150))
+        with dpg.tooltip(_fb):
+            dpg.add_text('중력보상(zero-g). τ_ff = 배율 × G_model(q) · kp=0 · kd 소량.\n'
+                         '손으로 밀어 자세를 잡을 수 있다.\n'
+                         '⚠접지 중이면 제어기가 **거부**한다 — 지면 반력을 모르는 채 밀어 올린다.\n'
+                         '⚠마찰(관절 0.6~0.9Nm)은 안 지워진다 — 뻑뻑한 게 정상이다.')
         # ★'제어기 재시작' 버튼 **삭제** (2026-08-14). 코드는 아래에 주석으로 남긴다.
         #   ⚠이 버튼은 `emb_ctl.sh` 를 **우회하고 RobotEmbedded 를 직접 띄웠다**:
         #       subprocess.Popen(['./src/RobotEmbedded'], stdout=open('/tmp/robotembedded.log','w'))
@@ -602,6 +630,25 @@ with dpg.window(tag='main'):
                     dpg.add_text('kd = √kp — ζ 보존(기본).\nkp 만 올리면 ζ 가 √배율만큼 떨어져 저감쇠 진동이 된다.')
                 else:
                     dpg.add_text(f'kd 를 ×{_d:g} 로 고정.\n낮출수록 토크 리플(kd x 속도잡음)이 줄지만 ζ 도 같이 떨어진다.')
+    # ── ★무중력 중력보상 배율 (2026-08-24) ──────────────────────────────────
+    dpg.add_text('● 무중력 중력보상 배율 (float 모드 전용 — 중립점 g* 를 찾는다)',
+                 color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        for _k, _g in enumerate(GRAV_STEPS):
+            dpg.add_button(label=f'×{_g:.2f}', width=58, tag=f'gvbtn_{_k}',
+                           callback=lambda _a, _b, u=_g: set_grav_scale(u))
+            with dpg.tooltip(f'gvbtn_{_k}'):
+                dpg.add_text(f'τ_ff = {_g:.2f} × G_model(q)\n'
+                             + ('모델대로 — 여기서 시작한다' if abs(_g-1.0) < 1e-9 else
+                                (f'모델보다 {(_g-1)*100:+.0f}% 세게' if _g > 1 else
+                                 f'모델보다 {(1-_g)*100:.0f}% 약하게')))
+        dpg.add_text('×1.00', tag='gv_lbl', color=(150, 155, 175))
+    dpg.add_text('찾는 법: 올려서 다리가 **뜨기 시작**하는 g⁺, 내려서 **지기 시작**하는 g⁻ → '
+                 'g* = (g⁺+g⁻)/2 가 참값(마찰 소거).\n'
+                 '  g* > 1 이면 중력보상이 그만큼 모자라다 — 그게 stand 처짐의 크기다. '
+                 'hip·thigh 로 볼 것(중력 5Nm 대라 마찰 0.8 에 안 묻힌다).',
+                 color=(150, 155, 175))
+    dpg.add_separator()
     dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '
                  '(τ_trip ÷ (kp_ch·gear_k)). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',
                  color=(210, 150, 90))

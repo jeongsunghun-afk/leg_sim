@@ -17,9 +17,12 @@
 // ★안전장치는 전부 emb/app/biped_emb.py 에서 이식했다. 실측으로 다듬어진 것들이라
 //   재발명하지 않는다 — 워치독 · tilt/토크/속도 E-stop(래치) · 종료 시 limp 반복기록.
 #include <mujoco/mujoco.h>
+#include <set>
+#include <sstream>
 #include "biped_control.hpp"
 #include "state_estimator.hpp"
 #include "deploy_hw.hpp"
+#include "sim_hw.hpp"
 #include <Eigen/Dense>
 #include <csignal>
 #include <ctime>
@@ -88,10 +91,13 @@ int main(int argc, char** argv){
   std::string cfg_p  = "../emb/config/biped_emb.yaml";
   std::string cmd_p  = "/tmp/biped_cmd.json";
   std::string stt_p  = "/tmp/biped_state.json";
-  bool mock = false; double T = 1e12; std::string start_mode = "off";
+  bool mock = false, simhw = false; double T = 1e12; std::string start_mode = "off";
   for(int i=1;i<argc;i++){
     std::string a = argv[i];
     if(a=="--mock") mock = true;
+    // ★--sim : **물리 백엔드**. 모드·워치독·트립이 전부 MuJoCo 플랜트 위에서 돈다.
+    //   --mock 은 물리가 없어 "블렌드가 안정한가·float 이 실제로 뜨는가" 를 못 본다.
+    else if(a=="--sim") simhw = true;
     else if(a=="--mjcf" && i+1<argc) mjcf = argv[++i];
     else if(a=="--config" && i+1<argc) cfg_p = argv[++i];
     else if(a=="--cmd" && i+1<argc) cmd_p = argv[++i];
@@ -256,8 +262,9 @@ int main(int argc, char** argv){
   long lc_n = 0, lc_skip = 0; bool lc_warned = false;
 
   // ── 하드웨어 ──
-  HwIface* hw = mock ? (HwIface*)new MockHw(NCH, dt)
-                     : (HwIface*)new ShmHw(cfg.lib, NCH);
+  HwIface* hw = simhw ? (HwIface*)new SimHw(mjcf, &jm, &cfg, NCH, dt)
+              : mock  ? (HwIface*)new MockHw(NCH, dt)
+                      : (HwIface*)new ShmHw(cfg.lib, NCH);
   if(!hw->init(cfg.recv_wait_ms)){
     auto* sh = dynamic_cast<ShmHw*>(hw);
     std::printf("✗ 하드웨어 초기화 실패\n  %s\n", sh? sh->err.c_str() : "?");
@@ -291,6 +298,14 @@ int main(int argc, char** argv){
       std::printf("[deploy] IMU 정상 — |acc|합 %.2f (중력 감지). tilt E-stop 유효.\n", a);
     }
   }
+  // ★CoM 적분의 xy 축은 IMU 가 살아 있을 때만 의미가 있다 (2026-08-24).
+  //   동체 자세를 모르면 cerr[xy] 가 근거 없는 값이라, 적분하면 "오른쪽으로 기움" 을 증폭한다.
+  //   z(높이)는 엔코더만으로 관측되므로 IMU 와 무관하게 유효하다. 상세는 biped_control.hpp.
+  c.imu_ok = !imu_dead;
+  if(c.STAND_KI > 0.0)
+    std::printf("[deploy] CoM 적분 STAND_KI=%.2f · 축=(%.0f,%.0f,%.0f)%s\n",
+                c.STAND_KI, c.KI_AXIS[0], c.KI_AXIS[1], c.KI_AXIS[2],
+                imu_dead ? "  ⚠IMU 사망 → **xy 강제 차단**(z 만 동작)" : "");
 
   // ── 상태 ──
   std::vector<float> q_ch(NCH), dq_ch(NCH), tau_ch(NCH), kp_ch(NCH), kd_ch(NCH), zero(NCH,0.f);
@@ -327,6 +342,28 @@ int main(int argc, char** argv){
   const double KP_SCALE_MAX = getenv("POS_KP_SCALE_MAX") ? atof(getenv("POS_KP_SCALE_MAX")) : 10.0;
   const double KP_RAMP_S    = getenv("POS_KP_RAMP_S")    ? atof(getenv("POS_KP_RAMP_S"))    : 1.0;
   const double KD_SCALE_ENV = getenv("POS_KD_SCALE") ? atof(getenv("POS_KD_SCALE")) : -1.0;
+  // ★★무중력(float) 모드 — 매달린 채 중력만 상쇄해 다리를 '무게 없이' 만든다 (2026-08-24).
+  //   ⚠두 가지 목적이 겹쳐 있다:
+  //     ① 기능 — 손으로 자세를 잡아 줄 수 있다(teach). 정비·캘리브레이션에 쓴다.
+  //     ② ★진단 — **중립점이 곧 "제어기가 몇 % 모자라나" 다.** GRAV_SCALE 을 올리며
+  //        다리가 뜨기 시작하는 g⁺, 내리며 지기 시작하는 g⁻ 를 잡으면 마찰이 소거된다:
+  //            g* = (g⁺+g⁻)/2      ⇒   α·(G_CAD/G_real) = 1/g*
+  //        g*=1.15 면 중력보상이 15% 모자란다는 뜻이고, 그게 그대로 stand 처짐의 크기다.
+  //        α 인지 질량인지는 못 가리지만(둘 다 CAD 게이지), **제어기가 쓰는 게 G_CAD 라**
+  //        "지금 얼마나 모자라나" 에는 정확히 답한다.
+  double GRAV_SCALE = getenv("GRAV_SCALE") ? atof(getenv("GRAV_SCALE")) : 1.0;
+  //   kd 만 남긴다 — kp=kd=0 순수토크가 30~65Hz 에서 발산한 전례가 그대로 적용된다.
+  //   ⚠크면 뻑뻑해서 무중력 느낌이 안 난다. 작으면 발산 위험. 0.30 에서 시작한다.
+  const double FLOAT_KD = getenv("FLOAT_KD") ? atof(getenv("FLOAT_KD")) : 0.30;
+  //   ★FLOAT_AXES="1,5" — 그 **채널만** 무중력, 나머지는 진입 자세로 위치유지.
+  //     비우면 전 축. ⚠전 축을 한꺼번에 놓으면 자세가 무너진다 — 한 축씩 볼 것.
+  std::set<int> float_axes;
+  if(const char* fa=getenv("FLOAT_AXES")){
+    std::stringstream ss(fa); std::string t;
+    while(std::getline(ss,t,',')) if(!t.empty()) float_axes.insert(atoi(t.c_str()));
+  }
+  std::vector<float> cfg_kp_ch(NCH,0.f), cfg_kd_ch(NCH,0.f);   // 배율 없는 설정 게인(유지축용)
+  jm.kp_ch(cfg_kp_ch.data(), 1.0); jm.kd_ch(cfg_kd_ch.data(), 1.0);
   double kp_scale_tgt = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
   kp_scale_tgt = std::max(0.0, std::min(KP_SCALE_MAX, kp_scale_tgt));
   double POS_KP = kp_scale_tgt;                    // ★램프 중인 **현재** 배율
@@ -434,10 +471,11 @@ int main(int argc, char** argv){
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
   hw->enable(0);
-  std::printf("[deploy] 모드: off/hold/**home**/**jog**/stand/walk. GUI 로 조종(%s).\n"
+  std::printf("[deploy] 모드: off/hold/**home**/**jog**/**float**/stand/walk. GUI 로 조종(%s).\n"
+              "[deploy] float = **무중력**(중력보상 ×%.2f · kd×%.2f) — **매달린 채만**. 접지 중이면 거부.\n"
               "[deploy] home = %s 자세로 %.0fdps S-curve 이동(램프 %.1fs 설정).\n"
               "[deploy] jog  = 축별 목표각 추종 · %.0fdps 등속 램프 · 관절한계 클램프.\n",
-              cmd_p.c_str(), c.cmode==1?"2점 평발 stand":"1점 점발",
+              cmd_p.c_str(), GRAV_SCALE, FLOAT_KD, c.cmode==1?"2점 평발 stand":"1점 점발",
               cfg.home_speed_dps, cfg.home_min_time_s, cfg.jog_speed_dps);
   // ★위 두 값은 **실제 파싱된 것**을 찍는다 — config 가 안 읽혀도 기본값으로 조용히
   //   도는 걸 막는다. 2026-08-21 까지 실제로 그랬다(키가 safety 분기에 있어 무시됐다).
@@ -599,9 +637,15 @@ int main(int argc, char** argv){
             kp_scale_tgt = want;
           }
         }
+        if(nc.grav_scale >= 0.0 && std::fabs(nc.grav_scale-GRAV_SCALE) > 1e-9){
+          GRAV_SCALE = std::max(0.0, std::min(3.0, nc.grav_scale));
+          std::printf("[deploy] 중력보상 배율 → **×%.3f**%s\n", GRAV_SCALE,
+                      (mode=="float") ? "" : "  (float 모드에서만 쓰인다)");
+        }
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
-        if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk") nm = "off";
+        if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk"
+           && nm!="float") nm = "off";                       // ★float = 무중력(중력보상)
         // ★E-stop 래치는 명시적 off 로만 해제. 그 전까지 모드변경 무시.
         if(estop){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
@@ -655,6 +699,37 @@ int main(int argc, char** argv){
               fprintf(trc,"\n");
               std::printf("[deploy] 트레이스 → /tmp/arm_trace.csv (3초 — 블렌드 전체)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
+          if(mode=="float"){
+            // ★★**접지 중이면 거부한다** — stand 의 접지 판정을 **역으로** 건다.
+            //   발이 땅에 닿은 채 중력보상을 켜면 지면 반력을 모르는 채로 밀어 올린다:
+            //   모델은 매달림(반력 0)을 가정하는데 실제로는 반력이 이미 무게를 받치고 있어
+            //   **중력보상분이 순수 잉여**가 되고 로봇이 튀어오르거나 한쪽 발로 밀어 넘어진다.
+            for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+            d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+            d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+            for(int i=0;i<6;i++) d->qvel[i]=0.0;
+            mj_forward(m,d);
+            std::vector<double> tm(NJ,0.0); jm.ch_to_tau_joint(hs.tau_nm.data(), tm.data());
+            double hang=0, meas=0;
+            for(int j=0;j<NJ;j++){ hang += std::fabs(d->qfrc_bias[6+j]); meas += std::fabs(tm[j]); }
+            const double ratio = (hang>1e-6) ? meas/hang : 0.0;
+            const double gmax = getenv("FLOAT_GROUND_MAX") ? atof(getenv("FLOAT_GROUND_MAX")) : 1.25;
+            std::printf("[deploy] 매달림 확인 — 실측 |t|합 %.2f Nm vs 매달림 예측 %.2f Nm . 비 %.2f (상한 %.2f)\n",
+                        meas, hang, ratio, gmax);
+            if(ratio > gmax){
+              std::printf("[deploy] STOP **접지 중이다** - 무중력 거부, hold 유지.\n"
+                          "         크레인으로 들어올려 발을 띄운 뒤 다시 누를 것.\n");
+              mode = "hold"; prev_mode = "float";
+            } else {
+            // ★유지축(FLOAT_AXES 밖)의 목표. 무중력축은 이 값을 안 쓴다.
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            std::printf("[deploy] **무중력(중력보상)** — 배율 ×%.3f · kd×%.2f · 축 %s\n"
+                        "         ⚠매달린 상태 전용. 손으로 밀어 보며 중립 배율을 찾는다.\n"
+                        "         ⚠마찰(관절 0.6~0.9Nm)은 안 지워진다 — 뻑뻑한 게 정상이다.\n",
+                        GRAV_SCALE, FLOAT_KD,
+                        float_axes.empty() ? "전축" : "지정축만(FLOAT_AXES)");
+            }
+          }
           if(mode=="hold"){
             std::vector<float> raw = hs.q_deg;             // 클램프 전
             // ★★home → hold 는 **home 의 목표를 이어받는다** (2026-08-21, 사용자 요청).
@@ -1040,6 +1115,52 @@ int main(int argc, char** argv){
       jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+    } else if(mode=="float"){
+      // ★★무중력(중력보상). **매달린 상태 전용** — 접지 중에는 위에서 거부한다.
+      //   식:  τ_cmd = GRAV_SCALE · G_model(q_meas)      (kp=0, kd=FLOAT_KD)
+      //   드라이버가 α 를 곱하므로 실제로는 α·GRAV_SCALE·G_CAD 가 나간다.
+      //   ⇒ 다리가 안 뜨고 안 지는 중립 배율 g* 에서  α·g*·G_CAD = G_real.
+      //   ⚠쿨롱마찰(관절 0.60~0.87 Nm)은 **안 지워진다** — 중력만 상쇄한다.
+      //     그래서 "놓은 자리에 서 있지만 밀 때는 뻑뻑한" 상태가 된다. 그 폭이 곧
+      //     중립점 브래킷의 데드밴드이고, 양방향 평균이 그걸 소거한다.
+      for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+      // ★베이스를 **고정**한다 — 크레인에 매달려 있으므로 부동베이스 추정이 무의미하고,
+      //   IMU 도 죽어 있다. qvel=0 이라 qfrc_bias 는 코리올리 없이 **순수 중력항**이 된다.
+      d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+      d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+      for(int i=0;i<6;i++) d->qvel[i]=0.0;
+      mj_forward(m,d);
+      for(int j=0;j<NJ;j++) tau_ctrl[j] = GRAV_SCALE * d->qfrc_bias[6+j];
+      // ★관절토크 → 채널. tau_ctrl_to_ch 가 **커플링 전치**(τ_raw_calf = τ_calf − c·τ_foot)와
+      //   gear_k 나눗셈을 같이 한다. 직접 나누면 발목에서 틀린다.
+      jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+      jm.kd_ch(kd_ch.data(), FLOAT_KD);
+      for(int i=0;i<NCH;i++) kp_ch[i] = 0.f;
+      if(getenv("FLOAT_DBG")){
+        static int nprint=0;
+        if(nprint < 8 && (nprint<4 || lt-mode_t0 > 0.5*nprint)){ nprint++;
+          std::printf("[float] tau_joint(qfrc_bias):");
+          for(int j=0;j<NJ;j++) std::printf(" %+.2f", tau_ctrl[j]);
+          std::printf("\n        tau_ch          :");
+          for(int j=0;j<NJ;j++) std::printf(" %+.2f", (double)tau_ch[cfg.joints[j].channel]);
+          std::printf("\n        q_joint[deg]    :");
+          for(int j=0;j<NJ;j++) std::printf(" %+.1f", q_ctrl[j]*JointMap::R2D);
+          std::printf("\n        dq_ch[dps]      :");
+          for(int j=0;j<NJ;j++) std::printf(" %+.1f", (double)hs.dq_dps[cfg.joints[j].channel]);
+          std::printf("\n"); std::fflush(stdout); }
+      }
+      // ★축 선택 — FLOAT_AXES="1,5" 면 그 채널만 뜨고 나머지는 **진입 자세로 위치유지**.
+      //   한 축씩 확인하는 것이 안전하다(전 축을 한꺼번에 놓으면 자세가 무너진다).
+      if(!float_axes.empty()){
+        for(int i=0;i<NCH;i++) if(!float_axes.count(i)){
+          tau_ch[i] = 0.f; q_ch[i] = hold_ch[i];
+          kp_ch[i] = cfg_kp_ch[i]; kd_ch[i] = cfg_kd_ch[i];
+        }
+      }
+      for(int i=0;i<NCH;i++) if(float_axes.empty() || float_axes.count(i)) q_ch[i] = hs.q_deg[i];
+      qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
+      hw->write_mit(q_ch.data(), zero.data(), tau_ch.data(),
+                    kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반
       // 접촉: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
       //   ⚠추정에 쓰는 접촉이 제어기 자신의 계획이라 순환처럼 보이지만, 힘센서 없는

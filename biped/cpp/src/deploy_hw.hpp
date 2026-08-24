@@ -452,6 +452,9 @@ struct Cmd {
   //   왜 따로 두나: ζ 보존(√kp)이 원칙이지만 **속도잡음이 지배하면** kd 를 덜 올려야 한다
   //   (kd × dq_noise 가 그대로 토크 리플이다). 어느 쪽이 지배인지는 기체마다 다르다.
   double pos_kd_scale = -1.0;
+  // ★중력보상 배율(float 모드). **음수 = 미지정**(제어기 기본 1.0).
+  //   중립점을 브래킷해 찾는 것이 목적이라 GUI 가 0.05 단위로 올리고 내린다.
+  double grav_scale = -1.0;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -489,6 +492,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.jog_deg = list("jog_deg");
   out.pos_kp_scale = num("pos_kp_scale", -1.0);
   out.pos_kd_scale = num("pos_kd_scale", -1.0);
+  out.grav_scale   = num("grav_scale",   -1.0);   // float(무중력) 모드 중력보상 배율
   return true;
 }
 

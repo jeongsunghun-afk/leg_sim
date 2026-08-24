@@ -82,11 +82,24 @@ struct BipedControl {
   //     ② 접촉 부족(K<4) — 발이 뜬 상태의 오차는 되잡을 대상이 아니다
   //     ③ 모드 진입 — 이전 세션의 적분을 물려받지 않는다
   //   ⚠적분 출력은 **가속도 단위**로 클램프한다(CoM task 가 가속도 공간이라).
+  //   ★★★2026-08-24 **축 분리 — 지금은 z 만 켠다. IMU 가 살아나면 되돌릴 것.**
+  //   ⚠왜: CoM 오차 `cerr` 를 쓰려면 **동체 자세**를 알아야 하는데, 이 로봇은 IMU 가 전부 0 이라
+  //     biped_deploy 가 `d->qpos[3..6]` 에 **항등 쿼터니언을 상수로** 넣고 있다(:1054).
+  //     ⇒ 모델은 "동체가 언제나 완벽히 수평" 이라고 믿는다. 그러면:
+  //         z (높이)  ✅ 관측된다 — 다리가 접히면 엔코더가 보고, CoM 이 실제로 내려간다
+  //         xy        ❌ **관측 안 된다** — 45° 기울어도 모델은 수평이라 cerr[xy] 가 근거 없는 값이다
+  //     그걸 적분하면 **미해결인 "오른쪽으로 기움" 을 적분이 증폭**한다. 그래서 xy 를 잠근다.
+  //   ★**되돌리는 조건**: emb/IMU_RECOVERY.md 대로 IMU 를 복구하고(Pi 앱 5줄),
+  //     기동 배너가 "IMU 정상 — |acc|합 …(중력 감지)" 를 찍으면 `KI_AXIS` 를 {1,1,1} 로.
+  //     그 전까지는 imu_ok=false 라 아래에서 **런타임으로도 강제 차단**된다(이중 안전).
+  //     되돌릴 때 같이 볼 것: tilt E-stop 도 그때 처음 살아난다(지금 크레인이 유일한 안전장치).
   double dt_ctrl = 0.002;             // control(dt) 가 매 틱 갱신 — 적분에 쓴다
-  double STAND_KI = 0.0;              // CoM xy·z 적분이득 [1/s³] — 0 = 꺼짐
+  double STAND_KI = 0.0;              // CoM 적분이득 [1/s³] — 0 = 꺼짐
   double STAND_I_CLAMP = 2.0;         // 적분 기여 상한 [m/s²] — 중력의 20% 수준
+  Vector3d KI_AXIS{0,0,1};            // ★축별 on/off. 기본 z 만. IMU 복구 후 {1,1,1}
+  bool     imu_ok = false;            // deploy 가 매 기동에 설정. false 면 xy 를 강제 차단
   Vector3d com_i = Vector3d::Zero();  // 적분 누적 [m·s]
-  bool    ki_frozen = false;          // 직전 틱에 얼렸는지(상태 발행용)
+  bool     ki_frozen = false;         // 직전 틱에 얼렸는지(상태 발행용)
   void reset_com_i(){ com_i.setZero(); ki_frozen=false; }
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
@@ -246,6 +259,10 @@ struct BipedControl {
     // ★CoM 적분항 — **기본 0(꺼짐)**. 원인 규명이 끝난 뒤에만 켤 것(위 선언부 주석 참조).
     if(getenv("STAND_KI"))      STAND_KI      = atof(getenv("STAND_KI"));
     if(getenv("STAND_I_CLAMP")) STAND_I_CLAMP = atof(getenv("STAND_I_CLAMP"));
+    // ★STAND_KI_AXIS="1,1,1" 로 xy 를 열 수 있다 — **IMU 가 살아난 뒤에만.**
+    //   imu_ok=false 면 여기서 켜도 런타임이 xy 를 다시 끈다(위 축 마스크).
+    if(const char* a=getenv("STAND_KI_AXIS")){
+      double v[3]={0,0,1}; if(sscanf(a,"%lf,%lf,%lf",&v[0],&v[1],&v[2])==3) KI_AXIS=Vector3d(v[0],v[1],v[2]); }
     // ★★2026-08-20 **좌우 발목 비대칭 주입**(진단 전용, 단위 = 도).
     //   실기 2점 stand 에서 두 밑창이 **반대로** 기울었다: HL −63.25 · HR −55.42
     //   (목표 −59.81). `Qflat8` 은 좌우 **완전 대칭**이라 시뮬에는 이 비대칭이 아예 없다
@@ -379,15 +396,19 @@ struct BipedControl {
       //     — 그때는 중력보상 폴백이라 제어가 안 먹는데 쌓으면 복귀 순간 튄다.
       const bool healthy = (qp_K >= 4) && (qp_rate < 0.5);
       ki_frozen = !healthy;
+      // ★축 마스크 — imu_ok 가 아니면 xy 를 **강제로** 끈다(KI_AXIS 를 잘못 켜도 막힌다).
+      Vector3d ax = KI_AXIS;
+      if(!imu_ok){ ax[0] = 0.0; ax[1] = 0.0; }
       if(healthy){
-        com_i += cerr * dt_ctrl;
+        com_i += cerr.cwiseProduct(ax) * dt_ctrl;   // 꺼진 축은 **누적 자체를 안 한다**
         //   가속도 기여를 상한으로 잘라 되돌려 넣는다(적분 자체를 클램프해야 와인드업이 안 쌓인다).
         for(int j=0;j<3;j++){
+          if(ax[j] == 0.0){ com_i[j] = 0.0; continue; }   // 꺼진 축은 비운다
           const double lim = STAND_I_CLAMP / std::max(1e-9, STAND_KI);
           com_i[j] = std::max(-lim, std::min(lim, com_i[j]));
         }
       }
-      a_i = STAND_KI * com_i;
+      a_i = STAND_KI * com_i.cwiseProduct(ax);
     } else { com_i.setZero(); ki_frozen=false; }
     Vector3d a_com=kp.cwiseProduct(cerr)-kd.cwiseProduct(Jc*qv)+a_i;
     P.topLeftCorner(nv,nv)+=Jc.transpose()*Jc; g.head(nv)-=Jc.transpose()*a_com;

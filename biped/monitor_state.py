@@ -49,6 +49,16 @@ WARN_DQ = float(os.environ.get("MON_WARN_DQ", "30"))       # 속도[dps] 경고
 BAD_DQ = float(os.environ.get("MON_BAD_DQ", "120"))        # 〃 (속도트립 200 의 60%)
 WARN_TAU_M = float(os.environ.get("MON_WARN_TAU_M", "8.0"))   # 측정토크[Nm] 경고
 BAD_TAU_M = float(os.environ.get("MON_BAD_TAU_M", "15.0"))    # 〃 (토크트립 15 와 동일)
+# ★CPU·온도 — GUI(teleop_gui_biped)와 **같은 모듈**을 쓴다. 양쪽에 복사하면 갈라진다.
+_sysload, _sys_t, _sys_txt = None, [0.0], ("", 0)
+try:
+    import sys as _s
+    _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sysload as _sysload
+    _sys_txt = [("", 0)]
+except Exception:
+    _sys_txt = [("", 0)]
+
 STALE_MS = float(os.environ.get("MON_STALE_MS", "500"))    # 이보다 오래된 상태 = 끊김
 # ★추종실패 판정 — kp 가 걸려 있는데 이만큼 벌어지면 그 축은 명령을 수행하지 못한다.
 #   10° 는 "정상 추종오차(수 °)" 와 "아예 안 감(수십 °)" 사이에 넉넉히 놓은 값이다.
@@ -160,6 +170,24 @@ def main() -> int:
                    f"loop={st.get('loop_hz',0):6.1f}Hz  tilt={st.get('tilt_deg',0):5.2f}°  "
                    f"age={age_ms:6.1f}ms")
             out.append(paint(f"{hdr:<92}", "R" if stale else "b", col) + "\n")
+            # ── ★CPU·온도 (2026-08-24) ─────────────────────────────────────
+            #   왜 여기 있나: 500Hz 루프가 CPU·온도에 직접 물려 있다. 열로 클럭이
+            #   내려가면 루프가 밀리고(실측 28~51ms 스톨), EtherCAT 동결 추적에서는
+            #   "Emb 가 CPU 100% 로 살아 있었다" 가 핵심 증거였다. 상시로 보여 준다.
+            #   ★계측은 sysload.py 가 한다 — GUI 와 **같은 코드**다(복사하지 않는다).
+            #   ⚠1초에 한 번만 갱신한다. 표는 훨씬 빨리 도는데 매 프레임 /proc 을
+            #     훑으면 모니터가 제 몫의 CPU 를 먹어 측정 대상을 오염시킨다.
+            if _sysload is not None:
+                if time.time() - _sys_t[0] >= 1.0:
+                    _sys_t[0] = time.time()
+                    try: _sys_txt[0] = _sysload.line()
+                    except Exception: _sys_txt[0] = ("", 0)
+                _t, _sev = _sys_txt[0]
+                if _t:
+                    # ★패딩은 dw() 로 — '온도'·'제어기' 같은 한글이 2칸을 먹어서
+                    #   f-string 의 len() 패딩으로는 열이 어긋난다(이 파일이 dw 를 둔 이유).
+                    out.append(paint(" " + _t + " " * max(0, 91 - dw(_t)),
+                                     ("d", "y", "R")[_sev], col) + "\n")
             flags = []
             if stale:
                 # ★"제어기" 가 Emb 로 오해받았다(2026-08-20). 둘은 다른 프로세스다:

@@ -27,9 +27,11 @@ H_DEF_1PT, H_DEF_2PT = 0.50, 0.38       # ★접촉모드별 기본 몸통높이
 #   실기(app/biped_emb.py) 배포 시 축별 목표각·통신 LED로 각 모터 확인. sim에선 inert(무해).
 JOG_NAMES = ['HL_hip', 'HL_thigh', 'HL_calf', 'HL_foot', 'HR_hip', 'HR_thigh', 'HR_calf', 'HR_foot']
 JOG_LIM   = [(-17, 17), (-67, 32), (-27, 32), (-40, 20)] * 2   # jog 안전범위(deg)=mjcf range×0.5
+# ★경로는 try 밖에 둔다 — yaml 이 없는 venv 에서도 영점 표는 이 경로를 써야 한다.
+#   (run_hw.sh 는 GUI 를 ~/.venvs/gui 로 띄운다. 거기 PyYAML 이 없을 수 있다.)
+_cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb', 'config', 'biped_emb.yaml')
 try:
     import yaml
-    _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb', 'config', 'biped_emb.yaml')
     _cfg = yaml.safe_load(open(_cfgp))
     _frac = float(_cfg.get('jog', {}).get('range_frac', 0.5))
     JOG_NAMES = [j['name'] for j in _cfg['joints']]
@@ -315,142 +317,27 @@ _calib_busy = [False]
 _calib_buf  = ['']          # 리스트 = 클로저 없이 가변(위 _last_file_hb 와 같은 관용)
 
 
-# ── ★CPU·온도 모니터 (2026-08-24) ────────────────────────────────────────
-#   왜 GUI 에 넣는가: 500Hz 제어루프는 **CPU 와 온도에 직접 물려 있다**.
-#     · Pi 가 열로 클럭을 내리면 루프가 밀린다(실측 28~51ms 스톨 사례가 있다)
-#     · EtherCAT 동결을 쫓을 때 "Emb 가 CPU 100% 로 살아 있었다" 가 핵심 증거였는데,
-#       그걸 보려면 그때마다 top 을 띄워야 했다. 상시로 보이게 한다.
-#     · run_hw.sh 가 뷰어·모니터를 여럿 띄우는데, 중복 기동이 CPU 를 먹어 루프를 민다
-#       (2026-08-21 monitor_plot 이 2개 쌓여 있었다). 그 상황이 바로 드러난다.
-#   ★의존성 없이 /proc·/sys 만 읽는다. 없는 항목은 조용히 건너뛴다(WSL 등).
-_CLK = os.sysconf('SC_CLK_TCK') if hasattr(os, 'sysconf') else 100
-_cpu_prev  = [None]          # (total, idle)
-_prc_prev  = {}              # pid → (ticks, t)
-_prc_scan  = [0.0, []]       # (마지막 스캔시각, [(label, pid)])
-_thermal   = [None]          # 온도 파일 경로 목록(한 번만 찾는다)
-_last_sys  = [0.0]
-# 이름 → 표시라벨. 앞에서 먼저 맞는 것 하나만 잡는다(중복 기동은 개수로 드러낸다).
-_WATCH = [('Emb', 'RobotEmbedded'), ('제어기', 'biped_deploy'), ('제어기', 'biped_emb.py'),
-          ('GUI', 'teleop_gui_biped'), ('뷰어', 'biped_monitor'), ('모니터', 'monitor_')]
-
-
-def _scan_pids():
-    """감시 대상 프로세스의 pid. 5초에 한 번만 스캔한다.
-
-    ★cmdline 만 보면 **bash 래퍼가 걸린다** — run_hw.sh 는
-        bash -lc "... teleop_gui_biped.py ..."
-      로 띄우므로 래퍼의 cmdline 에도 이름이 들어 있고, 래퍼는 CPU 를 안 쓰니
-      늘 0% 로 보인다. (삭제된 '제어기 재시작' 버튼이 같은 함정을 기록해 뒀다:
-      "명령줄 prefix 로는 sudo 래퍼를 못 잡는다" → 그래서 pgrep -x 를 썼다.)
-    ⇒ **comm(프로세스 이름)** 으로 가른다:
-        · 네이티브 바이너리(RobotEmbedded·biped_deploy·biped_monitor) → comm 이 곧 이름
-        · 파이썬 스크립트 → comm 은 'python3' 이라 cmdline 을 봐야 한다.
-          그때도 comm 이 python 계열일 것을 **요구**해서 셸 래퍼를 배제한다.
-    ⚠comm 은 커널이 15자로 자른다. 지금 대상은 최장 13자라 안전하다.
-    """
-    if time.time() - _prc_scan[0] < 5.0:
-        return _prc_scan[1]
-    _prc_scan[0] = time.time()
-    found, seen = [], set()
-    try:
-        for e in os.listdir('/proc'):
-            if not e.isdigit():
-                continue
-            try:
-                comm = open('/proc/%s/comm' % e).read().strip()
-                cl = open('/proc/%s/cmdline' % e, 'rb').read().replace(b'\0', b' ').decode('utf8', 'replace')
-            except Exception:
-                continue
-            for lab, needle in _WATCH:
-                if (lab, needle) in seen:
-                    continue
-                if comm == needle or (comm.startswith('python') and needle in cl):
-                    seen.add((lab, needle)); found.append((lab, int(e))); break
-    except Exception:
-        pass
-    _prc_scan[1] = found
-    return found
-
-
-def _cpu_total_pct():
-    """전체 CPU 사용률[%]. 두 번째 호출부터 값이 나온다."""
-    try:
-        f = open('/proc/stat').readline().split()[1:]
-        v = [int(x) for x in f[:8]]
-        tot, idle = sum(v), v[3] + v[4]
-        pv = _cpu_prev[0]; _cpu_prev[0] = (tot, idle)
-        if pv is None or tot <= pv[0]:
-            return None
-        return 100.0 * (1.0 - (idle - pv[1]) / float(tot - pv[0]))
-    except Exception:
-        return None
-
-
-def _proc_pct(pid):
-    try:
-        st = open('/proc/%d/stat' % pid).read()
-        fld = st[st.rindex(')') + 2:].split()      # ★comm 에 공백/괄호가 있어 rindex 로 자른다
-        tk = int(fld[11]) + int(fld[12])           # utime + stime
-        now = time.time(); pv = _prc_prev.get(pid); _prc_prev[pid] = (tk, now)
-        if pv is None or now <= pv[1]:
-            return None
-        return 100.0 * (tk - pv[0]) / _CLK / (now - pv[1])
-    except Exception:
-        _prc_prev.pop(pid, None)
-        return None
-
-
-def _temp_c():
-    if _thermal[0] is None:
-        c = []
-        try:
-            import glob as _g
-            c = sorted(_g.glob('/sys/class/thermal/thermal_zone*/temp'))
-        except Exception:
-            pass
-        _thermal[0] = c
-    hi = None
-    for f in _thermal[0]:
-        try:
-            v = int(open(f).read().strip()) / 1000.0
-            if 0 < v < 200 and (hi is None or v > hi):
-                hi = v
-        except Exception:
-            pass
-    return hi
-
-
-def _freq_ghz():
-    try:
-        v = max(int(open('/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq' % i).read())
-                for i in range(os.cpu_count() or 1))
-        return v / 1e6
-    except Exception:
-        return None
+# ── ★CPU·온도 (2026-08-24) — 계측은 sysload.py 가 한다 ──────────────────
+#   ★여기에 복사하지 않는다. 텍스트 모니터(monitor_state.py)도 같은 모듈을 쓴다 —
+#     양쪽에 복사하면 한쪽만 고쳐지고 조용히 갈라진다(이 파일의 JOG_LIM 주석 참조).
+_sysload = [None]
+try:
+    import sys as _s
+    _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sysload as _sysload_mod
+    _sysload[0] = _sysload_mod
+except Exception:
+    pass
+_last_sys = [0.0]
 
 
 def _refresh_sysload():
-    parts, cpu, t = [], _cpu_total_pct(), _temp_c()
-    parts.append('CPU %s' % ('--' if cpu is None else '%.0f%%' % cpu))
-    fq = _freq_ghz()
-    if fq:
-        parts.append('%.2fGHz' % fq)
-    parts.append('온도 %s' % ('--' if t is None else '%.1f°C' % t))
-    per = []
-    for lab, pid in _scan_pids():
-        v = _proc_pct(pid)
-        if v is not None:
-            per.append('%s %.0f%%' % (lab, v))
-    line = '  '.join(parts) + ('   │  ' + '  '.join(per) if per else '')
-    # ★색으로 경고한다 — 숫자를 읽기 전에 눈에 들어와야 한다.
-    #   온도 80°C 넘으면 클럭이 내려가고 그 순간 500Hz 루프가 밀린다.
-    col = (150, 220, 150)
-    if (t and t >= 80) or (cpu and cpu >= 92):
-        col = (235, 110, 110)
-    elif (t and t >= 70) or (cpu and cpu >= 80):
-        col = (240, 170, 90)
-    dpg.set_value('sysload', line)
-    dpg.configure_item('sysload', color=col)
+    """CPU·온도 — 계측은 sysload 모듈이 한다(텍스트 모니터와 **같은 코드**)."""
+    if _sysload[0] is None:
+        return
+    txt, sev = _sysload[0].line()
+    dpg.set_value('sysload', txt)
+    dpg.configure_item('sysload', color=((150, 220, 150), (240, 170, 90), (235, 110, 110))[sev])
 
 
 # ── ★영점 표 (2026-08-24) ────────────────────────────────────────────────
@@ -468,15 +355,38 @@ _off_base  = [None]          # [영점] 을 누른 시각의 config 값 — Δ �
 
 
 def _off_cfg_read():
-    """config 파일의 offset_deg. 파일이 바뀔 때만 다시 읽는다."""
+    """config 파일의 offset_deg. 파일이 바뀔 때만 다시 읽는다.
+
+    ★GUI 는 별도 venv(~/.venvs/gui)로 뜨고 거기 PyYAML 이 없을 수 있다.
+      그때는 **system python3 에 물어본다** — calib_zero.py 를 돌리는 그 인터프리터라
+      yaml 이 반드시 있다. mtime 캐시가 있어 파일이 바뀔 때만 도니 사실상 공짜다.
+    """
     try:
         mt = os.path.getmtime(_cfgp)
-        if mt != _off_cache[0]:
-            import yaml as _y
-            _off_cache[0] = mt
-            _off_cache[1] = [float(j['offset_deg']) for j in _y.safe_load(open(_cfgp))['joints']]
     except Exception:
         _off_cache[1] = None
+        return None
+    if mt == _off_cache[0]:
+        return _off_cache[1]
+    _off_cache[0] = mt
+    _off_cache[1] = None
+    try:                                        # ①같은 프로세스 안에 yaml 이 있으면 그대로
+        import yaml as _y
+        _off_cache[1] = [float(j['offset_deg']) for j in _y.safe_load(open(_cfgp))['joints']]
+        return _off_cache[1]
+    except Exception:
+        pass
+    try:                                        # ②없으면 system python3 에 물어본다
+        r = subprocess.run(
+            ['python3', '-c',
+             'import sys,json,yaml;'
+             'print(json.dumps([float(j["offset_deg"]) for j in '
+             'yaml.safe_load(open(sys.argv[1]))["joints"]]))', _cfgp],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            _off_cache[1] = [float(x) for x in json.loads(r.stdout)]
+    except Exception:
+        pass
     return _off_cache[1]
 
 

@@ -458,6 +458,31 @@ int main(int argc, char** argv){
   }
   std::vector<float> cfg_kp_ch(NCH,0.f), cfg_kd_ch(NCH,0.f);   // 배율 없는 설정 게인(유지축용)
   jm.kp_ch(cfg_kp_ch.data(), 1.0); jm.kd_ch(cfg_kd_ch.data(), 1.0);
+  //   ★★**stand/walk 토크 보정** (2026-08-24). 무중력에서 **측정한** 부족분을 넣는다.
+  //   무중력 중립점이 g* 면  α·(G_CAD/G_real) = 1/g*  이고, 그건 곧
+  //   "제어기가 요구한 토크의 1/g* 배만 실제로 나온다" 는 뜻이다.
+  //   ⇒ τ 를 **g\* 배**로 명령하면 실제 출력이 모델이 의도한 값이 된다.
+  //   실측(2026-08-24, 매달린 채): HR_hip g* = 1.125·1.167 → **1/g* = 0.873**
+  //     등속 스윕 hip 0.867~0.919 · 순수토크 프로브 0.874/0.904 와 겹친다(셋이 0.87).
+  //   ⚠**적분(STAND_KI)보다 낫다** — 적분은 모르는 오차를 더듬어 찾지만 이건 잰 값을 넣는다.
+  //     그리고 적분은 IMU 가 죽어 xy 를 못 쓰는데, 이건 그 제약이 없다.
+  //   ⚠**기본 1.0 = 꺼짐.** 접지 상태에서 토크를 올리는 것이라 크레인을 남긴 채 켤 것.
+  //   ⚠이게 α 인지 CAD 질량오차인지는 **아직 안 갈렸다**(다리 링크 저울이 가른다).
+  //     어느 쪽이든 "제어기가 모자란 만큼" 을 메우는 것이라 지금 쓰기에는 문제없다.
+  double STAND_TAU_SCALE = getenv("STAND_TAU_SCALE") ? atof(getenv("STAND_TAU_SCALE")) : 1.0;
+  std::vector<double> tau_axis(NJ, -1.0);            // 축별. <0 = 공통값 사용
+  if(const char* ta = getenv("STAND_TAU_SCALE_JOINT")){
+    std::stringstream ss(ta); std::string t; int i = 0;
+    while(std::getline(ss, t, ',') && i < NJ){ if(!t.empty()) tau_axis[i] = atof(t.c_str()); i++; }
+  }
+  if(STAND_TAU_SCALE != 1.0 || tau_axis[0] > 0){
+    std::printf("[deploy] ★stand 토크보정 ON —");
+    for(int j = 0; j < NJ; j++)
+      std::printf("  %s %.3f", cfg.joints[j].name.c_str(),
+                  tau_axis[j] > 0 ? tau_axis[j] : STAND_TAU_SCALE);
+    std::printf("\n"
+                "         ⚠접지 상태에서 토크가 그만큼 올라간다 — 크레인을 남긴 채 켤 것.\n");
+  }
   double kp_scale_tgt = getenv("POS_KP_SCALE") ? atof(getenv("POS_KP_SCALE")) : 1.0;
   kp_scale_tgt = std::max(0.0, std::min(KP_SCALE_MAX, kp_scale_tgt));
   double POS_KP = kp_scale_tgt;                    // ★램프 중인 **현재** 배율
@@ -1504,6 +1529,24 @@ int main(int argc, char** argv){
       // ★관절토크로 되돌려서 넘긴다 — joint_map(tau_ctrl_to_ch)이 **자기가 전단**하므로
       //   드라이브 토크를 그대로 주면 전단이 두 번 걸려 τ_calf−2·τ_foot 이 나간다.
       VectorXd tj = bipedwbic::drive_to_tau(u_drv);
+      // ★★토크 보정 — **관절 좌표에서** 곱한다(드라이브에서 곱하면 발목 전단과 섞인다).
+      //   ⚠곱한 뒤 **한계를 다시 건다.** 안 그러면 tau_max_frac 안전망을 우회한다.
+      //   ⚠`u_prev`(지연보상 롤아웃용)는 **보정 전** 값을 쓴다 — 보정은 α 를 상쇄해
+      //     실제 출력을 모델값으로 되돌리는 것이므로, 모델 예측에는 보정 전이 맞다.
+      {
+        bool any = (STAND_TAU_SCALE != 1.0) || (tau_axis[0] > 0);
+        if(any){
+          for(int i=0;i<NU && i<NJ;i++)
+            tj[i] *= (tau_axis[i] > 0 ? tau_axis[i] : STAND_TAU_SCALE);
+          VectorXd u2 = bipedwbic::tau_to_drive(tj);
+          for(int i=0;i<NU;i++){
+            double lim = (m->actuator_ctrllimited[i] ? m->actuator_ctrlrange[i*2+1] : 0.0) * cfg.tau_max_frac;
+            if(lim<=0) lim = 80.0;
+            u2[i] = std::max(-lim, std::min(lim, u2[i]));
+          }
+          tj = bipedwbic::drive_to_tau(u2);
+        }
+      }
       for(int i=0;i<NU;i++) tau_ctrl[i] = tj[i];
       jm.q_ctrl_to_ch(q_ctrl.data(), q_ch.data());        // 위치/속도는 참고값(kp=kd=0 이라 무영향)
       jm.dq_ctrl_to_ch(dq_ctrl.data(), dq_ch.data());

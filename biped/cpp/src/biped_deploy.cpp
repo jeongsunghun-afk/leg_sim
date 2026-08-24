@@ -18,6 +18,10 @@
 //   재발명하지 않는다 — 워치독 · tilt/토크/속도 E-stop(래치) · 종료 시 limp 반복기록.
 #include <mujoco/mujoco.h>
 #include <set>
+#include <dirent.h>
+#include <unistd.h>
+#include <fstream>
+#include <utility>
 #include <sstream>
 #include "biped_control.hpp"
 #include "state_estimator.hpp"
@@ -86,15 +90,66 @@ static void safe_shutdown(HwIface& hw, int n){
   }
 }
 
+// ── 중복 writer 차단 ────────────────────────────────────────────────────────
+// ★★저장소 최상위 불변식: **모터 명령 writer 는 한 번에 하나만.**
+//   그런데 강제는 `biped_emb.py`(:190~228)에만 있었고 **C++ 배포에는 없었다** — 경고문만 찍었다.
+//       biped_emb.py 먼저 → biped_deploy 나중  →  ❌ 안 막힘  ← 여기(2026-08-24 신설)
+//       biped_deploy 먼저 → biped_emb.py 나중  →  ✅ 막힘
+//   둘이 뜨면 SHM 에 서로 다른 명령을 번갈아 쓴다. 실기 사고: 2026-08-10 관절 **+18° ↔ −20°** 진동.
+//   ⚠Python 가드의 예외 셋을 그대로 옮긴다 — 안 옮기면 **가짜 경보가 진짜 경보를 무디게 한다**:
+//     ① 자기 자신·**조상 프로세스**(띄운 셸) 제외
+//     ② **빌드 프로세스** 제외 — `cmake --build --target biped_deploy` 등이 이름에 걸린다
+//        (2026-08-14 실기에서 실제로 오작동해 writer 가 없는데도 기동을 막았다)
+//     ③ pgrep/grep 자신 제외
+static std::vector<std::pair<int,std::string>> find_other_writers(){
+  static const char* PATS[]  = {"biped_emb.py","biped_deploy","mot_test","actuator_test.py"};
+  static const char* TOOLS[] = {"cmake","gmake","make","cc1plus","c++","g++","ld","ninja","sh","bash"};
+  const int me = (int)getpid();
+  std::set<int> anc;
+  for(int p=me, guard=0; p>1 && guard<32; guard++){
+    char sp[64]; std::snprintf(sp,sizeof sp,"/proc/%d/stat",p);
+    std::ifstream f(sp); if(!f) break;
+    std::string line; std::getline(f,line);
+    const size_t r = line.rfind(')');
+    if(r==std::string::npos) break;
+    int ppid=0; if(std::sscanf(line.c_str()+r+1, " %*c %d", &ppid)!=1) break;
+    if(ppid<=1) break; anc.insert(ppid); p=ppid;
+  }
+  std::vector<std::pair<int,std::string>> out;
+  DIR* dp = opendir("/proc"); if(!dp) return out;
+  while(dirent* e = readdir(dp)){
+    const int pid = atoi(e->d_name);
+    if(pid<=1 || pid==me || anc.count(pid)) continue;
+    char cp[64]; std::snprintf(cp,sizeof cp,"/proc/%d/cmdline",pid);
+    std::ifstream f(cp, std::ios::binary); if(!f) continue;
+    std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if(raw.empty()) continue;
+    std::string cl = raw; for(size_t i=0;i<cl.size();i++) if(cl[i]=='\0') cl[i]=' ';
+    if(cl.find("pgrep")!=std::string::npos || cl.find("grep")!=std::string::npos) continue;
+    std::string exe0 = cl.substr(0, cl.find(' '));
+    { size_t sl=exe0.find_last_of('/'); if(sl!=std::string::npos) exe0 = exe0.substr(sl+1); }
+    bool is_tool=false; for(const char* t : TOOLS) if(exe0==t){ is_tool=true; break; }
+    if(is_tool) continue;
+    for(const char* pat : PATS){
+      if(cl.find(pat)!=std::string::npos){
+        while(!cl.empty() && cl.back()==' ') cl.pop_back();
+        out.push_back(std::make_pair(pid, cl.substr(0, 90))); break; }
+    }
+  }
+  closedir(dp);
+  return out;
+}
+
 int main(int argc, char** argv){
   std::string mjcf   = "../biped_from_quad.mjcf";     // ★배포는 점발(1pt). §8-g 참조
   std::string cfg_p  = "../emb/config/biped_emb.yaml";
   std::string cmd_p  = "/tmp/biped_cmd.json";
   std::string stt_p  = "/tmp/biped_state.json";
-  bool mock = false, simhw = false; double T = 1e12; std::string start_mode = "off";
+  bool mock = false, simhw = false, force_writer = false; double T = 1e12; std::string start_mode = "off";
   for(int i=1;i<argc;i++){
     std::string a = argv[i];
-    if(a=="--mock") mock = true;
+    if(a=="--force") force_writer = true;          // ★중복 writer 강행(권장 안 함)
+    else if(a=="--mock") mock = true;
     // ★--sim : **물리 백엔드**. 모드·워치독·트립이 전부 MuJoCo 플랜트 위에서 돈다.
     //   --mock 은 물리가 없어 "블렌드가 안정한가·float 이 실제로 뜨는가" 를 못 본다.
     else if(a=="--sim") simhw = true;
@@ -260,6 +315,21 @@ int main(int argc, char** argv){
   }
   std::vector<double> u_prev(NU, 0.0);      // ★in-flight 토크. 롤아웃이 이걸 유지한다
   long lc_n = 0, lc_skip = 0; bool lc_warned = false;
+
+  // ── ★중복 writer 차단 (2026-08-24) ──
+  if(!mock && !simhw){
+    auto others = find_other_writers();
+    if(!others.empty()){
+      std::printf("\n✗ **모터 명령 writer 가 이미 실행 중이다.** 둘이 뜨면 SHM 에 서로 다른 명령을\n"
+                  "  번갈아 써서 관절이 진동한다(2026-08-10 실기 사고: +18° ↔ −20°).\n");
+      for(auto& [pid, cl] : others) std::printf("    PID %d: %s\n", pid, cl.c_str());
+      std::printf("  → 먼저 종료할 것:  kill");
+      for(auto& [pid, cl] : others) std::printf(" %d", pid);
+      std::printf("\n  (의도적으로 강행하려면 --force. 권장하지 않는다.)\n\n");
+      if(!force_writer){ mj_deleteData(d); mj_deleteModel(m); return 4; }
+      std::printf("  ⚠--force — 강행한다.\n");
+    }
+  }
 
   // ── 하드웨어 ──
   HwIface* hw = simhw ? (HwIface*)new SimHw(mjcf, &jm, &cfg, NCH, dt)
@@ -471,7 +541,7 @@ int main(int argc, char** argv){
   double stand_t0=0, stand_T=0; std::vector<float> stand_hold(NCH,0.f), stand_to(NCH,0.f), stand_ref(NCH,0.f);
   std::string mode = "off", prev_mode = "off", last_raw;
   bool estop = false, wd_tripped = false;
-  double tau_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
+  double tau_over_t0 = -1, vel_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
   Cmd cmd; double body_h = 0.5;
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
@@ -1035,13 +1105,24 @@ int main(int argc, char** argv){
           estop = true; mode="off"; hw->enable(0);
         }
       } else tau_over_t0 = -1;
-      // 속도는 즉시 트립(폭주를 지연시킬 이유가 없다)
+      // ★★속도도 **연속 초과**만 트립한다 (2026-08-24. 종전엔 즉시였다).
+      //   ⚠왜 바꿨나: `vel_trip_ms`(20ms)가 config 에 있는데 **C++ 은 파싱조차 안 했다** —
+      //     Python(biped_emb.py:555)만 디바운스를 걸고 배포는 단일 샘플로 끊었다.
+      //     같은 config 를 읽는 두 writer 가 다르게 동작하는 것 자체가 결함이다.
+      //   ⚠실무에서 물린다: **무중력(float) 모드는 사람이 손으로 다리를 민다.**
+      //     채널 200dps 는 thigh 기준 관절 200dps(calf 133 · foot 167)라 조금 빠르게 밀면 넘는다.
+      //     그 결과가 limp = **다리가 떨어진다.** 잡아 주려던 장치가 떨어뜨리는 셈이다.
+      //   ⚠그래도 20ms 는 짧게 둔다 — 진짜 폭주를 지연시키면 안 된다.
+      //     20ms 면 200dps 에서 4° 이동이고, 트립각 7.16°(calf) 안이다.
       if(!estop && vel_pk > cfg.vel_trip_dps){
-        std::printf("[deploy] ⛔ E-STOP: ch%d 속도 %.0fdps > %.0fdps → limp·래치\n",
-                    vch, vel_pk, cfg.vel_trip_dps);
-        estop = true; mode="off"; hw->enable(0);
-      }
-    } else tau_over_t0 = -1;
+        if(vel_over_t0 < 0) vel_over_t0 = lt;
+        else if((lt-vel_over_t0)*1000.0 >= cfg.vel_trip_ms){
+          std::printf("[deploy] ⛔ E-STOP: ch%d 속도 %.0fdps > %.0fdps 가 %.0fms 연속 → limp·래치\n",
+                      vch, vel_pk, cfg.vel_trip_dps, cfg.vel_trip_ms);
+          estop = true; mode="off"; hw->enable(0);
+        }
+      } else vel_over_t0 = -1;
+    } else { tau_over_t0 = -1; vel_over_t0 = -1; }
     if(estop) hw->enable(0);
 
     // ★트레이스 기록 — 무장 후 0.5초. 명령각은 hold/home 이 쓴 q_ch/hold_ch 다.

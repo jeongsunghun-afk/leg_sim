@@ -55,7 +55,7 @@ struct EmbCfg {
   double waist_kp = 10, waist_kd = 0.5;
   // safety
   double tilt_estop_deg = 40, watchdog_ms = 500, tau_max_frac = 0.6;
-  double tau_trip_nm = 8.0, tau_trip_ms = 50, vel_trip_dps = 200.0;
+  double tau_trip_nm = 8.0, tau_trip_ms = 50, vel_trip_dps = 200.0, vel_trip_ms = 20.0;
   // home 램프 — biped_emb.py 의 HomeTrajectory 와 **같은 설정 키**를 읽는다.
   //   두 제어기가 같은 자세로 같은 속도로 가야 운전자가 헷갈리지 않는다.
   double home_speed_dps = 15.0, home_acc_dps2 = 30.0, home_min_time_s = 0.6;
@@ -182,6 +182,7 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       else if(key=="tau_trip_nm") c.tau_trip_nm = num(8.0);
       else if(key=="tau_trip_ms") c.tau_trip_ms = num(50);
       else if(key=="vel_trip_dps") c.vel_trip_dps = num(200.0);
+      else if(key=="vel_trip_ms")  c.vel_trip_ms  = num(20.0);   // ★2026-08-24 — 종전엔 안 읽었다
     // ★★2026-08-21 `jog:`·`home:` 을 **제 블록에서** 읽는다.
     //   종전엔 이 세 키가 `safety` 분기 안에 있었다. 그런데 YAML 에서 그것들은 `jog:`·`home:`
     //   아래에 있으므로 **한 번도 읽히지 않았다** — 늘 기본값으로 떨어졌다.

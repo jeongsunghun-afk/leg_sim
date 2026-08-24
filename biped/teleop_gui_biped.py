@@ -280,6 +280,87 @@ def jog_zero():                       # 전체 0(home)
     pub.set(jog_deg=[0.0] * NJ)
 
 
+# ── ★영점 계산 (2026-08-24) ──────────────────────────────────────────────
+#   무엇을 하는가: `emb/diag/calib_zero.py` 를 **--apply 없이** 돌려, 지금 자세에서
+#   나오는 offset_deg 를 **계산만 해서** 보여준다. 모터에도 config 에도 쓰지 않는다.
+#
+#   ⚠**삭제된 '제어기 재시작' 버튼과 다르다.** 그건 `emb_ctl.sh` 의 가드(중복기동·로그
+#     필터·신선도)를 GUI 가 **우회**해서 지웠다. 이건 우회할 가드가 없다 —
+#     calib_zero.py 의 게이트(상태 신선도 3s · off 모드 · 정지 8s · 재현성 · 변화량 3°)는
+#     전부 **도구 안**에 있고 GUI 는 그 도구를 그대로 실행할 뿐이다.
+#     ⇒ 그래서 여기서 게이트를 **다시 구현하지 않는다.** 도구가 거부하면 그 말을 그대로 띄운다.
+#       (게이트를 GUI 에도 복사하면 도구가 바뀔 때 조용히 갈라진다 — calib_zero.py 가
+#        환산식 복사본을 갖고 있다가 stale 이 됐던 것과 같은 실수다.)
+#
+#   ★`--apply` 는 **절대 넣지 않는다.** 실제로 영점을 박는 건 터미널에서 해야 한다:
+#     ① `--force` 를 쓸지 말지 판단이 필요하고(2026-08-21 그걸 강행해 HR_calf 8.7° 가
+#        그대로 박혔다. 지금 thigh 좌우 비대칭이 그 후과로 의심된다)
+#     ② 적용 뒤 **중력표 재생성이 필수**다(표가 채널각으로 색인돼 있다).
+#     ⇒ 버튼 한 번으로 끝나는 일이 아니다. 계산까지만 GUI 가 돕는다.
+#
+#   ★`python3` 로 띄운다 — sys.executable 이 아니다. GUI 를 다른 인터프리터(venv 등)로
+#     띄웠어도 문서에 적힌 실행법과 **같은 것**이 돌아야 한다(yaml·numpy 는 python3 에 있다).
+_CALIB_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb', 'diag', 'calib_zero.py')
+_EMB_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'emb')
+_calib_busy = [False]
+_calib_buf  = ['']          # 리스트 = 클로저 없이 가변(위 _last_file_hb 와 같은 관용)
+
+
+def _calib_say(txt, append=True):
+    _calib_buf[0] = (_calib_buf[0] + txt) if append else txt
+    try:
+        dpg.set_value('calib_out', _calib_buf[0])
+    except Exception:
+        pass
+
+
+def _calib_worker():
+    _calib_say('', append=False)
+    if not os.path.exists(_CALIB_PY):
+        _calib_say('✗ 도구가 없다: %s\n' % _CALIB_PY); _calib_busy[0] = False; return
+    _calib_say('$ cd %s && python3 diag/calib_zero.py\n'
+               '  (계산만 — config 도 모터도 건드리지 않는다)\n'
+               '  ⏳정지 게이트 8초가 있다. 매달린 채 limp 이면 hip·thigh·foot 은 자유\n'
+               '    진자라 여기서 거부당하는 게 정상이다 — 지그로 물리고 다시 누를 것.\n'
+               '%s\n' % (_EMB_DIR, '─' * 74))
+    try:
+        pr = subprocess.Popen(['python3', '-u', _CALIB_PY], cwd=_EMB_DIR,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, bufsize=1)
+    except Exception as e:
+        _calib_say('✗ 실행 실패: %s\n' % e); _calib_busy[0] = False; return
+    try:
+        for line in pr.stdout:
+            _calib_say(line)
+        rc = pr.wait(timeout=30)
+    except Exception as e:
+        _calib_say('\n✗ 중단: %s\n' % e)
+        try: pr.kill()
+        except Exception: pass
+        rc = -1
+    _calib_say('%s\n종료코드 %d — %s\n' % ('─' * 74, rc,
+               '계산 완료(적용 안 됨)' if rc == 0 else '게이트에 막혔다(위 메시지 참조)'))
+    if rc == 0:
+        # ★적용은 터미널에서. 두 명령이 **한 쌍**이라는 걸 여기서 못 박는다 —
+        #   중력표를 안 고치면 8축 전부 자기 offset 만큼 밀린 중력보상을 쓴다.
+        _calib_say('\n실제로 박으려면 **터미널에서**(이 버튼은 못 한다):\n'
+                   '  cd ~/simulation/biped/emb\n'
+                   '  python3 diag/calib_zero.py --apply\n'
+                   '  ~/.venv-mujoco/bin/python3 ../tools/gen_grav_table.py --apply   ★필수\n'
+                   '⚠3° 문턱에 막히면 지그가 덜 물린 것이다. --force 로 넘기지 말 것.\n'
+                   '⚠적용 뒤에는 제어기를 **재시작**해야 반영된다.\n')
+    _calib_busy[0] = False
+
+
+def on_calib_zero():
+    """영점 계산 — 백그라운드 스레드. 렌더 루프를 막으면 안 된다(도구가 8초+ 걸린다)."""
+    if _calib_busy[0]:
+        return
+    _calib_busy[0] = True
+    dpg.configure_item('calib_win', show=True)
+    threading.Thread(target=_calib_worker, daemon=True).start()
+
+
 # ── ★제어기 재기동 (통신 두절 복구) ──────────────────────────────────────
 #   왜 필요한가: 실기 브링업 중 SHM/제어기가 이따금 끊긴다. 그때마다 터미널로 가서
 #   프로세스를 죽이고 다시 띄우는 게 번거롭다. GUI 에서 한 번에 복구한다.
@@ -653,6 +734,20 @@ with dpg.window(tag='main'):
                  '(τ_trip ÷ (kp_ch·gear_k)). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',
                  color=(210, 150, 90))
     dpg.add_separator()
+    # ── ★영점(offset) 점검 (2026-08-24) ────────────────────────────────────
+    dpg.add_text('● 영점(offset) 점검 — 계산만 한다. 적용은 터미널에서.', color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        _zb = dpg.add_button(label='영점계산', width=100, callback=on_calib_zero)
+        dpg.add_text('(Off 전원 + 지그 물린 상태에서)', color=(120, 130, 150))
+    with dpg.tooltip(_zb):
+        dpg.add_text('emb/diag/calib_zero.py 를 **--apply 없이** 실행한다.\n'
+                     'config 도 모터도 건드리지 않는다 — 지금 자세가 어떤 offset 을\n'
+                     '만드는지 계산해서 보여주기만 한다.\n\n'
+                     '⚠먼저 [Off 전원] 을 누를 것. 제어기가 축을 붙들고 있으면 그 자세는\n'
+                     '  "제어기가 생각하는 홈" 이지 기준자세가 아니다 — 도구가 거부한다.\n'
+                     '⚠정지 게이트 8초. 매달린 채 limp 이면 hip·thigh·foot 은 자유 진자라\n'
+                     '  거부되는 게 정상이다. 영점은 **기구(지그)** 가 정의해야 한다.')
+    dpg.add_separator()
     # ── ★각축(JOG) 패널: 8관절 슬라이더(모터 1:1) + 실측 + 통신 상태 LED ──
     dpg.add_text('● 각축 JOG 검증 (슬라이더=목표각° · 실측° · ●=상태LED)', color=(255, 205, 120))
     with dpg.group(horizontal=True):
@@ -687,6 +782,15 @@ with dpg.handler_registry():
     dpg.add_mouse_drag_handler(callback=lambda: (left.move(), right.move()))
     dpg.add_mouse_release_handler(callback=lambda: (left.release(), right.release()))
     dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Right, callback=lambda: (left.toggle_latch(), right.toggle_latch()))
+
+# ★영점 계산 출력창 — 'main' **밖**에 만든다(안에 넣으면 자식 위젯이 돼 창이 안 뜬다).
+#   기본 숨김. 버튼을 누를 때만 보인다 — 세로 공간을 상시 잡아먹지 않게.
+with dpg.window(label='영점 계산 — calib_zero.py (읽기전용 · 적용 안 함)', tag='calib_win',
+                width=660, height=470, pos=(20, 120), show=False):
+    dpg.add_text('offset = 채널각(기준자세) − raw각(기준자세)·sign·k', color=(150, 155, 175))
+    dpg.add_separator()
+    dpg.add_input_text(tag='calib_out', multiline=True, readonly=True,
+                       width=-1, height=390, default_value='')
 
 dpg.bind_theme(_dark)
 if _kf is not None:

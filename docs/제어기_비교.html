@@ -41,7 +41,7 @@
   <div class="box" style="border-width:2px;border-color:var(--a)"><b style="font-size:1.08em;color:var(--a)">★★★배포급 인벤토리 (2026-08-05) — 지금 쓸 수 있는 것</b>
   <ul>
     <li><b class="yes">★본선 배포급 = A (MPC Di Carlo SRBD + WBIC Kim + Raibert/capture)</b> — <b>17-DOF C++ 실시간(~5×)</b>. walk 0.3~0.6·trot ~1.4~1.75·run ~2.0 m/s (falls=0)·자동차식 허리조향(Ackermann)·경사 15° tilt1.2°·자세(서기/앉기/눕기/기립)·recovery·GUI(teleop_gui_17dof). <b>목표구조=`quad_ctrl`</b>(sim↔real 이식 골격, 이관 진행중)·<b>실기브리지=`biped/emb` 패턴 검증완료</b>(RobotSharedMem Gait/Pi).</li>
-    <li><b class="wa">△조건부 배포급 = D1 (OCS2 perceptive NMPC + WeightedWbc)</b> — 완만지형 전신 계획(발클리어런스·지형적응 base·SDF)·평지 robust·경사 ~8-10°. <b>단 ~0.2~0.3× 실시간(느림)·험지 non-robust</b>. GUI 배선(run_gui_d1.sh).</li>
+    <li><b class="wa">△조건부 배포급 = D1 (OCS2 perceptive NMPC + WeightedWbc)</b> — 완만지형 전신 계획(발클리어런스·지형적응 base·SDF)·평지 robust·경사 ~8-15°(GUI 등반 falls=0). <b>★C++ 배포 골격 착수(2026-08-20, `ocs2_02leg/deploy/`)</b>: 제어를 MuJoCo서 분리(State/Terrain/Command→τ, MuJoCo 비의존)·HAL 경계·MuJoCo-as-model 백엔드(sim 재현 falls=0). <b>D1 전용 GUI(teleop_gui_d1, trot/walk/bound)</b>. 단 ~0.2~0.3× 실시간·이산험지 non-robust(RL). 실기화=상태추정·인지 heightmap·real_hal 남음.</li>
     <li><b>별개 로봇 = biped/emb</b> — 모델기반 1점 walk/2점 stand(sim), emb 인터페이스 mock 검증·실모터 배선중.</li>
     <li><b class="no">연구(배포 아님)</b> = TAMOLS(pure-online Go2 8초 crawl 실증·injection 마진얇음·02_Leg 미완)·B/C(미안정)·CI-MPC(종결)·RL/DTC(학습중).</li>
     <li><b>★sim2real caveat</b>: A는 <b>시뮬 검증 배포급</b>. 실모터엔 액추에이터 물리 실측(로터관성·기어마찰·감쇠=#1갭)·EKF·접촉/지연 실측 남음(<a href="sim2real_checklist_17dof.html">sim2real 체크리스트</a>). <b>nav/SLAM=별도 스택</b>이 `quad_ctrl` cmd_vel(command)/odom(estimator) 경계에 플러그인.</li>
@@ -55,6 +55,15 @@
     <li><b>원칙</b>: 각 컨트롤러 고유 균형 메커니즘 — <b>A=Raibert/capture</b>(반응 휴리스틱)·<b>TAMOLS=GIAC</b>(계획 안정성)·<b>D1=NMPC</b>(예측+재계획). <b>교차 이식 금지</b>. 역할분담: 반응형 지형·외란=A · D1=전신 perceptive 계획(완만연속) · 강건 험지=RL(DTC). 상세=<a href="D1_OCS2_개발리포트.md">D1 리포트 §4.5</a>.</li>
   </ul></div>
 
+  <div class="box acc" style="border-width:2px"><b style="font-size:1.05em">★2026-08-25 D1 진전 (이번 세션) — 배포 골격·GUI 분리·인지 시각화·참조버그 수정</b>
+  <ul>
+    <li><b>C++ 배포 골격 착수</b>(<span class="mono">ocs2_02leg/deploy/</span>, d1_deploy): test02legMujoco 제어를 MuJoCo서 분리→<b>D1Controller</b>(입력=State[base pose/twist·q/dq·contact]+TerrainProvider+Command·출력=τ·MuJoCo 비의존). HAL 경계(quad_ctrl 규약 재사용)·MuJoCo-as-model 백엔드. 검증=평지 보행·slope8/15° 등반 <b>falls=0</b>(sim 재현). 남은 실기화=상태추정(InEKF)·인지 heightmap·real_hal. ⚠️OCS2/ROS2 heavy 스택→임베디드 RT는 A보다 무거움. <b>= "배포급" 아직 아님·"골격 착수"</b>(A만 본선 배포급 유지).</li>
+    <li><b class="wa">★GUI 등반 붕괴 근본수정(참조 이중계산 버그)</b>: "영상은 등반, GUI는 못 올라감"의 원인=cmdfile 경로서 base목표=<b>현재위치+vx·절대시간=이중계산</b>→참조 폭주→붕괴. 수정 후 cmdfile 구동 flat/8°/15° <b>falls=0</b>. <b>★위 "12-15° 멀티스레드 비결정 marginal"(2026-08-04)도 실은 이 버그+OMP 미설정</b>이었음 — 수정+<span class="mono">OMP_NUM_THREADS=1</span>로 8/15° 등반 falls=0·flat perceptive+격렬지터 falls=0 tilt2.6°(비결정 아님·perceptive는 명령에 취약 X).</li>
+    <li><b>A/D1 GUI 분리</b>: <b>teleop_gui_d1</b>(D1 배선된 것만=조이스틱 v/vy/w·게이트 trot/walk/<b>bound</b>·Ready/보행·Reset). A GUI(teleop_gui_17dof) 불변. D1 <b>bound 가능</b>(falls=0·v0.8서 trot보다 빠름).</li>
+    <li><b>인지 시각화·발판 정합</b>: 발판 마커=Raibert 노미널→<b>MPC 실제 계획 발</b>(정책 FK)로 → 발끝 정합 70→~6mm. <b>heightmap 시각화</b>(HMAP=컨트롤러 인지 지형격자 색표시). 실기 <b>TerrainProvider 인터페이스</b>(HeightmapTerrainProvider=인지 heightmap 플러그 지점, 콜백 배관 검증).</li>
+    <li><b>gap 재확인</b>: 인지·발판 스냅(216회)은 정상이나 <b>이산 gap 크로싱은 여전히 RL 영역</b>(병목=whole-body 동적실행, 인지 아님). heightmap/TerrainProvider는 <b>연속지형(경사·rough) 배포 인지 경로</b>지 gap용 아님.</li>
+  </ul></div>
+
   <h2><span class="n">1</span>핵심 비교표</h2>
   <div class="scroll"><table>
     <thead><tr>
@@ -62,7 +71,7 @@
       <th class="a">A <span class="chip cA">배포·본선</span></th>
       <th class="b">B <span class="chip cB">연구</span></th>
       <th class="c">C <span class="chip cC">연구</span></th>
-      <th class="d1">D1 <span class="chip cD">포팅·진행</span></th>
+      <th class="d1">D1 <span class="chip cD">배포골격 착수</span></th>
       <th class="ci">CI <span class="chip cCI">종결</span></th>
     </tr></thead>
     <tbody>

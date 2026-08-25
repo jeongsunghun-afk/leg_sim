@@ -461,6 +461,8 @@ struct Cmd {
   //   ⇒ 이게 있어야 **2단 측정**이 된다: 1차로 축별 대략값을 잡고 그걸 심어 둔 뒤,
   //     2차에서 공통 배수만 훑으면 **어느 축도 폭주하지 않아** 창이 안 무너진다.
   std::vector<double> grav_scale_joint;
+  double push_fz = 0.0;              // push(발밀기) 모드 목표 z-힘[N, 아래로 양수]
+  int    push_leg = 0;               // 0=HL · 1=HR
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -500,6 +502,8 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.pos_kd_scale = num("pos_kd_scale", -1.0);
   out.grav_scale   = num("grav_scale",   -1.0);   // float(무중력) 모드 중력보상 배율
   out.grav_scale_joint = list("grav_scale_joint");
+  out.push_fz  = num("push_fz", 0.0);
+  out.push_leg = (int)num("push_leg", 0);
   return true;
 }
 

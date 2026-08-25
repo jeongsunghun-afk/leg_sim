@@ -276,6 +276,30 @@ def set_kd_scale(d):
     _refresh_gain_lbl()
 
 
+# ── ★발밀기(push) — z-힘 제어 (2026-08-25) ──────────────────────────────
+#   발밑 저울로 α 를 **외부 기준**으로 재는 모드. τ = g*·G + Jᵀ(0,0,−F).
+#   ★한 점 값은 관절마찰(축당 2~3 N) 때문에 흐리다 — **0→50→0 램프 왕복의 평균**으로
+#     읽는다(g* 브래킷과 같은 소거). 제어기가 5 N/s 로 램프하므로 버튼은 목표만 정한다.
+PUSH_STEPS = [0, 10, 20, 30, 40, 50]
+_push = [0.0, 0]                      # [목표 N, 다리(0=HL·1=HR)]
+
+
+def set_push_fz(f):
+    _push[0] = float(f)
+    pub.set(push_fz=float(f), push_leg=int(_push[1]))
+    for k, v in enumerate(PUSH_STEPS):
+        dpg.bind_item_theme(f'pfbtn_{k}', _kp_on if abs(v - f) < 1e-6 else _kp_off)
+    dpg.set_value('push_lbl', f'{"HR" if _push[1] else "HL"} · 목표 {f:g} N (램프 5 N/s)')
+
+
+def set_push_leg(l):
+    _push[1] = int(l)
+    pub.set(push_leg=int(l), push_fz=float(_push[0]))
+    for k in (0, 1):
+        dpg.bind_item_theme(f'plbtn_{k}', _kp_on if k == l else _kp_off)
+    dpg.set_value('push_lbl', f'{"HR" if l else "HL"} · 목표 {_push[0]:g} N (램프 5 N/s)')
+
+
 def jog_zero():                       # 전체 0(home)
     for i in range(NJ):
         dpg.set_value(f'jog_{i}', 0.0)
@@ -800,6 +824,15 @@ with dpg.window(tag='main'):
         with dpg.group():              # ★무중력 = 중력보상만. 매달린 상태 전용
             _fb = dpg.add_button(label='무중력', width=100, callback=lambda: set_mode('float'))
             dpg.add_text('(매달린 채만)', color=(120, 130, 150))
+        with dpg.group():              # ★발밀기 = 무중력 + 발끝 z-힘 (저울 α 측정)
+            _pb = dpg.add_button(label='발밀기', width=100, callback=lambda: set_mode('push'))
+            dpg.add_text('(발밑에 저울)', color=(120, 130, 150))
+        with dpg.tooltip(_pb):
+            dpg.add_text('τ = g*·G(q) + Jᵀ(0,0,−F). 발밑 저울로 α 를 외부기준 측정.\n'
+                         '⚠F 는 항상 0 에서 시작해 5 N/s 로 램프한다(계단 없음).\n'
+                         '⚠크레인 줄 팽팽하게 — 미는 반작용을 줄이 받는다.\n'
+                         '읽는 법: 0→50→0 왕복, 올림/내림 저울값 평균(마찰 소거).\n'
+                         '기울기 = α (예상: 5 kg 명령 → 저울 ≈ 4.7 kg @ α 0.93)')
         with dpg.tooltip(_fb):
             dpg.add_text('중력보상(zero-g). τ_ff = 배율 × G_model(q) · kp=0 · kd 소량.\n'
                          '손으로 밀어 자세를 잡을 수 있다.\n'
@@ -885,6 +918,18 @@ with dpg.window(tag='main'):
                  '  g* > 1 이면 중력보상이 그만큼 모자라다 — 그게 stand 처짐의 크기다. '
                  'hip·thigh 로 볼 것(중력 5Nm 대라 마찰 0.8 에 안 묻힌다).',
                  color=(150, 155, 175))
+    # ── ★발밀기 z-힘 (2026-08-25) ──────────────────────────────────────────
+    dpg.add_text('● 발밀기 목표힘 (push 모드 전용 — 발밑 저울, 0→최대→0 왕복 평균으로 읽는다)',
+                 color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        for _k, _n in enumerate(('HL', 'HR')):
+            dpg.add_button(label=_n, width=44, tag=f'plbtn_{_k}',
+                           callback=lambda _a, _b, u=_k: set_push_leg(u))
+        dpg.add_text('│', color=(90, 95, 105))
+        for _k, _f in enumerate(PUSH_STEPS):
+            dpg.add_button(label=f'{_f:g}N', width=48, tag=f'pfbtn_{_k}',
+                           callback=lambda _a, _b, u=_f: set_push_fz(u))
+        dpg.add_text('', tag='push_lbl', color=(150, 155, 175))
     dpg.add_separator()
     dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '
                  '(τ_trip ÷ (kp_ch·gear_k)). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',

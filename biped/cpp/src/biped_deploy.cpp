@@ -452,6 +452,19 @@ int main(int argc, char** argv){
   //        α 인지 질량인지는 못 가리지만(둘 다 CAD 게이지), **제어기가 쓰는 게 G_CAD 라**
   //        "지금 얼마나 모자라나" 에는 정확히 답한다.
   double GRAV_SCALE = getenv("GRAV_SCALE") ? atof(getenv("GRAV_SCALE")) : 1.0;
+  // ── ★push(발밀기) 모드 (2026-08-25) — 발밑 저울로 α 를 **외부 기준**으로 잰다 ──
+  //   τ_cmd = g*축별·G_model(q) + Jᵀ·(0,0,−F)   (kp=0 · kd=FLOAT_KD)
+  //   저울 눈금 = α × F_명령  (중력 몫은 이미 아는 g* 가 중화 → 질량/CoM 오차와 분리된 α)
+  //   ★관절마찰(0.6~0.9 Nm ≈ 축당 2~3 N)이 있으므로 **한 점이 아니라 램프 왕복**으로 잰다:
+  //     F 를 0→50→0 으로 훑고 올림/내림 저울값의 평균 — g* 브래킷과 같은 소거 원리다.
+  //   ⚠calf·foot 토크 경로를 외부 기준으로 검증하는 **유일한** 방법이기도 하다
+  //     (g* 는 그 두 축에서 중력≪마찰이라 원리적으로 불가였다).
+  //   ⚠GRF 를 τ측정으로 역산하는 길은 이 하드웨어에 없다 — fCurrent=fTorque(명령 에코)라
+  //     실측 토크가 존재하지 않는다. 저울이 유일한 진실이다.
+  const double PUSH_RATE = getenv("PUSH_RATE") ? atof(getenv("PUSH_RATE")) : 5.0;   // [N/s]
+  const double PUSH_MAX  = getenv("PUSH_MAX")  ? atof(getenv("PUSH_MAX"))  : 60.0;  // [N]
+  const double PUSH_TAU_MAX = getenv("PUSH_TAU_MAX") ? atof(getenv("PUSH_TAU_MAX")) : 12.0; // [Nm/관절]
+  double push_fz_cur = 0.0;
   //   ★★**축별 배율** (2026-08-24 실기에서 필요해졌다).
   //     실기 관측: HR 은 잘 맞는데 **HL_hip 이 특히 약하고** HL_thigh 가 한쪽으로 흐른다.
   //     무부하 실측이 이미 예측한 것이다 — ROTOR_I HL 7.652e-4 vs HR 7.121e-4(7.5%) ·
@@ -643,7 +656,7 @@ int main(int argc, char** argv){
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
   hw->enable(0);
-  std::printf("[deploy] 모드: off/hold/**home**/**jog**/**float**/stand/walk. GUI 로 조종(%s).\n"
+  std::printf("[deploy] 모드: off/hold/**home**/**jog**/**float**/**push**/stand/walk. GUI 로 조종(%s).\n"
               "[deploy] float = **무중력**(중력보상 ×%.2f · kd×%.2f) — **매달린 채만**. 접지 중이면 거부.\n"
               "[deploy] home = %s 자세로 %.0fdps S-curve 이동(램프 %.1fs 설정).\n"
               "[deploy] jog  = 축별 목표각 추종 · %.0fdps 등속 램프 · 관절한계 클램프.\n",
@@ -932,7 +945,7 @@ int main(int argc, char** argv){
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
         if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk"
-           && nm!="float") nm = "off";                       // ★float = 무중력(중력보상)
+           && nm!="float" && nm!="push") nm = "off";  // ★float=무중력 · push=발밀기(힘제어)
         // ★E-stop 래치는 명시적 off 로만 해제. 그 전까지 모드변경 무시.
         if(estop){
           if(nm=="off"){ estop=false; std::printf("[deploy] E-stop 래치 해제(off 수신) — 재무장 가능\n"); }
@@ -986,6 +999,17 @@ int main(int argc, char** argv){
               fprintf(trc,"\n");
               std::printf("[deploy] 트레이스 → /tmp/arm_trace.csv (3초 — 블렌드 전체)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
+          if(mode=="push"){
+            // ★push 는 float 와 반대로 **접지(저울 접촉)가 전제**다 — 접지 거부를 안 건다.
+            //   대신 힘은 반드시 0 에서 시작해 램프로만 오른다(계단 금지 = 저울/발 충격 방지).
+            push_fz_cur = 0.0;
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            std::printf("[deploy] **발밀기(push)** — 다리 %s · τ = g*·G + Jᵀ(0,0,−F)\n"
+                        "         F 는 0 에서 시작, GUI 목표까지 %.1f N/s 램프 (상한 %.0f N)\n"
+                        "         ⚠발밑에 저울. 크레인 줄은 팽팽하게(반작용을 줄이 받는다).\n"
+                        "         ⚠마찰 소거는 **램프 왕복 평균**으로 — 한 점 값은 ±2~3 N/축 흐리다.\n",
+                        cmd.push_leg==1?"HR":"HL", PUSH_RATE, PUSH_MAX);
+          }
           if(mode=="float"){
             // ★★**접지 중이면 거부한다** — stand 의 접지 판정을 **역으로** 건다.
             //   발이 땅에 닿은 채 중력보상을 켜면 지면 반력을 모르는 채로 밀어 올린다:
@@ -1507,6 +1531,52 @@ int main(int argc, char** argv){
       qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_mit(q_ch.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
+    } else if(mode=="push"){
+      // ★발밀기 — float 와 같은 골격(베이스 고정·중력보상) + 선택 다리 발끝에 Jᵀ·F.
+      //   J 는 MuJoCo(mj_jacGeom)가 준다 — DH 수식을 복사하지 않는다(참조 구현
+      //   motion_controller.py 의 compute_contact_torque 와 같은 τ=Jᵀ·F_ref 패턴).
+      for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+      d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+      d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+      for(int i=0;i<6;i++) d->qvel[i]=0.0;
+      mj_forward(m,d);
+      for(int j=0;j<NJ;j++)
+        tau_ctrl[j] = (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE) * d->qfrc_bias[6+j];
+      // 힘 램프 — 계단 금지. 목표는 명령파일(GUI)에서, 상한은 env 에서.
+      { const double tgt = std::max(0.0, std::min(PUSH_MAX, cmd.push_fz));
+        const double stp = PUSH_RATE * dt;
+        push_fz_cur += std::max(-stp, std::min(stp, tgt - push_fz_cur)); }
+      // ★Jᵀ·(0,0,−F): 정역학 τ = G − Jᵀ·F_ext(로봇이 받는 반작용 +F↑)
+      //   = G + Jᵀ·(0,0,−F). z-행 × (−F) 를 그 다리 관절에 더한다.
+      //   (다른 다리 열은 트리 구조상 0 이라 전 축 더해도 무해)
+      if(push_fz_cur > 1e-6){
+        const int leg = (cmd.push_leg==1) ? 1 : 0;
+        static std::vector<mjtNum> jacp;
+        jacp.assign(3*m->nv, 0.0);
+        mj_jacGeom(m, d, jacp.data(), nullptr, c.sph[leg]);
+        for(int j=0;j<NJ;j++)
+          tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-push_fz_cur);
+      }
+      // 관절 상한 — push 가 더한 몫이 폭주하지 않게 (중력보상 포함 총량 기준)
+      for(int j=0;j<NJ;j++)
+        tau_ctrl[j] = std::max(-PUSH_TAU_MAX, std::min(PUSH_TAU_MAX, tau_ctrl[j]));
+      jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+      jm.kd_ch(kd_ch.data(), FLOAT_KD);
+      for(int i=0;i<NCH;i++) kp_ch[i] = 0.f;
+      if(getenv("PUSH_DBG")){
+        static double lastp=0;
+        if(lt-lastp > 1.0){ lastp=lt;
+          std::printf("[push] F=%.1fN(목표 %.1f) 다리 %s · tau_joint:",
+                      push_fz_cur, cmd.push_fz, cmd.push_leg==1?"HR":"HL");
+          for(int j=0;j<NJ;j++) std::printf(" %+.3f", tau_ctrl[j]);
+          std::printf("  q[deg]:");   // ★같은 틱의 자세 — 독립 검증은 이 q 로 재계산해야 시각차가 없다
+          for(int j=0;j<NJ;j++) std::printf(" %+.2f", q_ctrl[j]*JointMap::R2D);
+          std::printf("\n"); std::fflush(stdout); }
+      }
+      for(int i=0;i<NCH;i++) q_ch[i] = hs.q_deg[i];
+      qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
+      hw->write_mit(q_ch.data(), zero.data(), tau_ch.data(),
+                    kp_ch.data(), kd_ch.data(), NCH);
     } else {  // stand / walk — 모델기반
       // 접촉: 실기엔 발 힘센서가 없다. 게이트 위상(스탠스 다리)을 접촉으로 쓴다.
       //   ⚠추정에 쓰는 접촉이 제어기 자신의 계획이라 순환처럼 보이지만, 힘센서 없는
@@ -1847,7 +1917,7 @@ int main(int argc, char** argv){
         //   "제어기가 아직 옛 영점을 쓴다" 를 보여 준다.
         //   ⇒ 그래서 GUI 가 채널각↔모델각 역산식을 **복사할 필요가 없다.** 그 복사본이
         //     stale 이 되는 게 이 저장소가 반복해서 당한 버그다(joint_map 규칙 복제 주석 참조).
-        "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,"
+        "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,\"push_fz\":%.1f,"
         "\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
@@ -1862,7 +1932,7 @@ int main(int argc, char** argv){
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
-        POS_KP, kp_scale_tgt, POS_KD, offs_json.c_str());
+        POS_KP, kp_scale_tgt, POS_KD, push_fz_cur, offs_json.c_str());
       write_state(stt_p, buf);
     }
 

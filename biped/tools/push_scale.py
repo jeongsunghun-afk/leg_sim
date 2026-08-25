@@ -87,6 +87,8 @@ def main() -> int:
                     help='정지 판정 문턱[°] — 창 안 최대 |Δq|')
     ap.add_argument('--settle-timeout', type=float, default=8.0,
                     help='이 시간까지 정지 안 되면 ⚠표시하고 진행(버클링 신호)')
+    ap.add_argument('--no-home', action='store_true',
+                    help='시작 시 home 정렬을 건너뛴다(이미 원하는 자세일 때)')
     a = ap.parse_args()
 
     # ── 가드 — float_gstar 와 같은 이유들 ──────────────────────────────────
@@ -120,6 +122,33 @@ def main() -> int:
 
     th = threading.Thread(target=_heartbeat, daemon=True)
     th.start()
+
+    # ── ★시작 시 home 정렬 (2026-08-25) — GUI 를 끈 뒤에는 home 을 시킬 방법이
+    #   없고, GUI 종료~도구 시작 사이 워치독 limp 로 다리가 처져 있을 수도 있다.
+    #   ⇒ 도구가 직접 home 을 잡고, 엔코더 정지(같은 기준)로 도달을 확인한 뒤 push 로 간다.
+    if not a.no_home:
+        print('  home 정렬 중… (엔코더 정지로 도달 판정)')
+        _cur['mode'] = 'home'
+        t0 = time.time(); buf = []
+        while time.time() - t0 < 20.0:
+            q = st().get('q_leg_deg')
+            if q:
+                buf.append((time.time(), q))
+                buf = [(t, v) for t, v in buf if time.time() - t <= 1.5]
+                if len(buf) >= 2 and buf[0][0] <= time.time() - 1.4:
+                    span = max(max(v[j] for _, v in buf) - min(v[j] for _, v in buf)
+                               for j in range(NJ))
+                    if span < 0.15:
+                        break
+            if st().get('estop'):
+                print('⛔ E-stop — 중단'); _stop[0] = True; return 1
+            time.sleep(0.1)
+        print('  home 도달. ★저울 위치·발 접촉을 확인하고 엔터를 누르면 push 로 넘어간다.')
+        try:
+            input('  준비되면 엔터: ')
+        except EOFError:
+            pass
+        _cur['mode'] = 'push'
 
     rows = []
     try:

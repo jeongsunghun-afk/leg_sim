@@ -366,7 +366,15 @@ def main() -> int:
             out.append(paint("  Ctrl-C 종료 · 읽기전용(아무것도 쓰지 않는다) · 단위=모델각\n", "d", col))
             if not a.once:
                 out.append("\033[J")
-            sys.stdout.write("".join(out))
+            # ★잔상 제거 (2026-08-25 실기에서 당함). \033[H 는 커서만 홈으로 보내고
+            #   화면을 안 지운다 — 이전 프레임이 더 길었으면(모드 전환·경고줄·자세유지 블록)
+            #   그 아랫부분이 그대로 남아 "HR_foot 이 두 줄" 같은 유령 행이 보였다.
+            #   ⇒ 각 줄 끝에 \033[K(줄 끝까지 지움), 프레임 끝에 \033[J(화면 끝까지 지움).
+            #   \033[2J(전체 클리어)를 매 프레임 쓰지 않는 이유: 깜빡임이 생긴다.
+            frame = "".join(out)
+            if not a.once:
+                frame = frame.replace("\n", "\033[K\n") + "\033[J"
+            sys.stdout.write(frame)
             sys.stdout.flush()
             if a.once:
                 return 0

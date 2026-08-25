@@ -285,6 +285,8 @@ _push = [0.0, 0]                      # [목표 N, 다리(0=HL·1=HR)]
 
 
 def set_push_fz(f):
+    if f is None:                          # ★user_data 미전달 등 — 조용한 사망 방지
+        print('[gui] set_push_fz(None) — user_data 누락?'); return
     _push[0] = float(f)
     pub.set(push_fz=float(f), push_leg=int(_push[1]))
     # ★강조는 여기서 하지 않는다 — 실제 적용값(state.push_fz) 기준으로
@@ -910,8 +912,8 @@ with dpg.window(tag='main'):
     with dpg.group(horizontal=True):
         for _k, _s in enumerate(KP_STEPS):
             _who, _tr = KP_TRIP[_k]
-            dpg.add_button(label=f'×{_s:g}', width=52, tag=f'kpbtn_{_k}',
-                           callback=lambda _a, _b, u=_s: set_kp_scale(u))
+            dpg.add_button(label=f'×{_s:g}', width=52, tag=f'kpbtn_{_k}', user_data=_s,
+                           callback=lambda _s_, _a_, _u_: set_kp_scale(_u_))
             with dpg.tooltip(f'kpbtn_{_k}'):
                 dpg.add_text(f'kp×{_s:g} · kd×{math.sqrt(_s):.2f}\n'
                              f'가장 예민한 축 {_who} — {_tr:.2f}° 에서 토크트립')
@@ -920,8 +922,8 @@ with dpg.window(tag='main'):
         dpg.add_text('kd 배율', color=(255, 205, 120))
         for _k, _d in enumerate(KD_STEPS):
             _lb = '자동' if _d is None else f'×{_d:g}'
-            dpg.add_button(label=_lb, width=52, tag=f'kdbtn_{_k}',
-                           callback=lambda _a, _b, u=_d: set_kd_scale(u))
+            dpg.add_button(label=_lb, width=52, tag=f'kdbtn_{_k}', user_data=_d,
+                           callback=lambda _s_, _a_, _u_: set_kd_scale(_u_))
             with dpg.tooltip(f'kdbtn_{_k}'):
                 if _d is None:
                     dpg.add_text('kd = √kp — ζ 보존(기본).\nkp 만 올리면 ζ 가 √배율만큼 떨어져 저감쇠 진동이 된다.')
@@ -932,8 +934,8 @@ with dpg.window(tag='main'):
                  color=(255, 205, 120))
     with dpg.group(horizontal=True):
         for _k, _g in enumerate(GRAV_STEPS):
-            dpg.add_button(label=f'×{_g:.2f}', width=58, tag=f'gvbtn_{_k}',
-                           callback=lambda _a, _b, u=_g: set_grav_scale(u))
+            dpg.add_button(label=f'×{_g:.2f}', width=58, tag=f'gvbtn_{_k}', user_data=_g,
+                           callback=lambda _s_, _a_, _u_: set_grav_scale(_u_))
             with dpg.tooltip(f'gvbtn_{_k}'):
                 dpg.add_text(f'τ_ff = {_g:.2f} × G_model(q)\n'
                              + ('모델대로 — 여기서 시작한다' if abs(_g-1.0) < 1e-9 else
@@ -950,12 +952,12 @@ with dpg.window(tag='main'):
                  color=(255, 205, 120))
     with dpg.group(horizontal=True):
         for _k, _n in enumerate(('HL', 'HR')):
-            dpg.add_button(label=_n, width=44, tag=f'plbtn_{_k}',
-                           callback=lambda _a, _b, u=_k: set_push_leg(u))
+            dpg.add_button(label=_n, width=44, tag=f'plbtn_{_k}', user_data=_k,
+                           callback=lambda _s_, _a_, _u_: set_push_leg(_u_))
         dpg.add_text('│', color=(90, 95, 105))
         for _k, _f in enumerate(PUSH_STEPS):
-            dpg.add_button(label=f'{_f:g}N', width=48, tag=f'pfbtn_{_k}',
-                           callback=lambda _a, _b, u=_f: set_push_fz(u))
+            dpg.add_button(label=f'{_f:g}N', width=48, tag=f'pfbtn_{_k}', user_data=_f,
+                           callback=lambda _s_, _a_, _u_: set_push_fz(_u_))
         dpg.add_text('', tag='push_lbl', color=(150, 155, 175))
     dpg.add_separator()
     dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '

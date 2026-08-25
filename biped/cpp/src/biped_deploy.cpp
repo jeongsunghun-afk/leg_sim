@@ -1551,9 +1551,20 @@ int main(int argc, char** argv){
       //   (다른 다리 열은 트리 구조상 0 이라 전 축 더해도 무해)
       if(push_fz_cur > 1e-6){
         const int leg = (cmd.push_leg==1) ? 1 : 0;
+        // ★PUSH_POINT=heel: 발목 원점 구(sphere2)로 민다 — 힘선이 발목을 지나
+        //   발목토크 성분이 0 이 되어 foot 경로가 측정에서 원천 배제된다.
+        //   (발끝밀기는 정역학상 뒤꿈치 힘 0 설계라 두 점 접촉이 유지 안 됨 —
+        //    08-25 ② 스윕에서 뒤꿈치가 +6→+22mm 떠오른 것이 그 서명)
+        int push_geom = c.sph[leg];
+        { const char* pp = getenv("PUSH_POINT");
+          if(pp && std::string(pp)=="heel"){
+            if(c.has_heel) push_geom = c.sph2[leg];
+            else { static bool warned=false;
+                   if(!warned){ std::printf("[push] ⚠PUSH_POINT=heel 인데 heel 구 없는 모델 — 발끝으로 진행\n"); warned=true; } }
+          } }
         static std::vector<mjtNum> jacp;
         jacp.assign(3*m->nv, 0.0);
-        mj_jacGeom(m, d, jacp.data(), nullptr, c.sph[leg]);
+        mj_jacGeom(m, d, jacp.data(), nullptr, push_geom);
         for(int j=0;j<NJ;j++)
           tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-push_fz_cur);
       }
@@ -1566,8 +1577,10 @@ int main(int argc, char** argv){
       if(getenv("PUSH_DBG")){
         static double lastp=0;
         if(lt-lastp > 1.0){ lastp=lt;
-          std::printf("[push] F=%.1fN(목표 %.1f) 다리 %s · tau_joint:",
-                      push_fz_cur, cmd.push_fz, cmd.push_leg==1?"HR":"HL");
+          { const char* pp=getenv("PUSH_POINT");
+            std::printf("[push] F=%.1fN(목표 %.1f) 다리 %s·%s · tau_joint:",
+                      push_fz_cur, cmd.push_fz, cmd.push_leg==1?"HR":"HL",
+                      (pp&&std::string(pp)=="heel")?"뒤꿈치":"발끝"); }
           for(int j=0;j<NJ;j++) std::printf(" %+.3f", tau_ctrl[j]);
           std::printf("  q[deg]:");   // ★같은 틱의 자세 — 독립 검증은 이 q 로 재계산해야 시각차가 없다
           for(int j=0;j<NJ;j++) std::printf(" %+.2f", q_ctrl[j]*JointMap::R2D);

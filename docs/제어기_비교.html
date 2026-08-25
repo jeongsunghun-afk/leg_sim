@@ -112,7 +112,7 @@
         <td>WBIC QP <span class="mono">z=[관절가속;λ]</span> 직접토크</td>
         <td><span class="mono">kino_ID.solve</span>(TSID)→τ</td>
         <td><span class="mono">us[0]−K·δx</span>(Riccati)</td>
-        <td>WeightedWbc QP<span class="mono">[q̈·f·τ]</span>→τ</td>
+        <td>WeightedWbc QP<span class="mono">[q<sup style="font-size:.72em;vertical-align:.35em">¨</sup>·f·τ]</span>→τ</td>
         <td>저수준 PD+FF <span class="mono">u*/Kp+p_des</span></td></tr>
       <tr><td class="rowh"><b>출력 — 발행</b></td>
         <td>STATE_PUB v_cmd/v_act · 마커</td>
@@ -232,6 +232,33 @@
   <p style="font-size:8pt;color:var(--muted);margin:1.5mm 0"><b>※ pure-online 붕괴 ≠ Go2식 발벌림 누락</b> — 검증(2026-08-04): 02_Leg pure-online은 <b>Go2를 걷게 한 수정(발 좌우폭 모델화·base_z·COM_W walk센터)을 적용해도 못 살림</b>. 오히려 발폭을 모델값으로 강제하면(<span class="mono">TAM_PRM_MODEL</span>) base가 <b>z→0.07로 즉시 주저앉음</b>(falls826→1339). 이유: 하드코딩 stance(<span class="mono">y 0.10/0.22·z0 0.52</span>)가 <b>이미 02_Leg native 정합값</b>(Go2엔 과폭·과고라 그때만 좁혀/낮춰야 했음). ⇒ 02_Leg pure-online 붕괴의 원인 = foot-width 아닌 <b>재anchor death spiral + base sink</b>(injection이 A gait클럭으로 우회하는 바로 그 문제).</p>
   <p style="font-size:8pt;color:var(--muted);margin:1.5mm 0"><b>※ 다리 무게(로봇모델) vs 정식화(제어기) 분해</b> — 다리 distal 질량 0.35×(15.7→5.5kg)로 재실험: ①<b>pure-online은 여전히 붕괴</b>(falls826→1337·z→0.18) = 붕괴는 <b>다리무게 아닌 정식화 문제</b>(capture-point 부재+허리·발목 표류; Go2는 이상SRBD라 표류 작아 버팀). ②<b>injection 마진은 무거운 다리가 주범</b> — 가볍게 하니 <b>tilt 22°→3.5°·native 낙상 V0.4→falls0</b>. ⇒ "pure-online 걷/붕괴=제어기 지배, injection 깨끗/불안=로봇모델(다리무게) 지배". A(capture 내장)는 무거운 다리 그대로 2.5 m/s 완주 = <b>로봇이 못 걷는 게 아니라 TAMOLS 정식화가 이 로봇 표류를 못 잡음</b>.</p>
 
+  <h2><span class="n">2.2</span>DTC 실증 — 모델기반 계획 + RL 추종 <span class="sub" style="font-weight:400">Go2 검증 · 2026-08 · gap/stepping/parkour/D1계단</span></h2>
+  <div class="oneliner"><b>DTC(Jenelten 2024) = 모델기반 플래너(TAMOLS/D1 NMPC)가 발판·base 참조 생성 → RL이 추종+강건화.</b> ★02_Leg는 모델기반 험지 한계로 못 걸어 <b>Go2(안정 워커)로 파이프라인 검증</b>. <b style="color:var(--acc)">3대 결론:</b> ① <b class="yes">파이프라인 작동·robot-independence 확정</b>(D1 OCS2 NMPC→RL 계단 등반 terrain_level 0→3.9). ② <b class="no">발판의 값어치 = 지형-의존</b> — 관용/연속지형선 <b>발판 잉여</b>(emergent RL이 동률/추월, DTC-ON≈OFF), <b>정밀 강제지형(stepping·gap)서만 유의미</b>(그마저 로봇 능력 한계 근처). ③ <b class="wa">진짜 발판추종엔 세 조건(dyn-feasible 참조·gait 매칭·지형-고정 앵커)</b> 필수 — 특히 <b>gait 주파수 매칭</b>이 결정적.</div>
+  <div class="scroll"><table>
+    <thead><tr><th>실증 (Go2)</th><th>지형</th><th>결과</th><th>발판 값어치 판정</th></tr></thead>
+    <tbody>
+      <tr><td>gradient-TO(TAMOLS 캐시) <b>DTC-ON vs OFF</b></td><td>gap(관용)</td>
+        <td class="wa">완전 동률 (terrain_level~9 동시수렴)</td><td class="no">0 — 정책이 발판 무시(관용지형=emergent 충분)</td></tr>
+      <tr><td>parkour <b>DTC 표준험지</b> ON vs OFF</td><td>gap·step·stair·hurdle</td>
+        <td class="wa">동률 (hard지형선 OFF 근소우세)</td><td class="no">0 — bounded보상도 foothold_track 0.005(완전무시)</td></tr>
+      <tr><td>stepping-stone 발판추종</td><td>stepping(강제)</td>
+        <td class="yes">지형이 강제하면 추종 (terrain_level 9)</td><td class="wa">지형-의존 — 물리적 강제시만(scale 0.3 균형)</td></tr>
+      <tr><td><b>D1(OCS2 NMPC)→RL</b> faithful 재현</td><td>계단(solid)</td>
+        <td class="yes">★<b>등반 성공</b> terrain_level 0→3.9·falls0</td><td class="wa">base·발판 유도로 등반·단 발판 자체는 느슨</td></tr>
+      <tr><td><b>★gait 매칭</b> 수정 (주파수)</td><td>계단</td>
+        <td class="yes">종종걸음(2-4Hz)→1.39Hz = 안정(epLen 600→1048) + <b>진짜추종</b></td><td class="yes"><b>gait 맞으면 6.5cm median 실제추종</b>(1997 touchdown·77.8%&lt;10cm)</td></tr>
+      <tr><td>gap+walk (진행중)</td><td>gap(강제)</td>
+        <td class="wa">walk 3발지지=낙상0·2cm 정밀 / 단 scale1.0 over-track(1.12m 미횡단)→scale0.3 재조정중</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box acc"><b>★DTC 진짜 발판추종 성립 3조건</b>
+  <ul>
+    <li><b>① 참조 = dynamically-feasible + soft + 전진구동</b> — kinematic 참조(scripted base)는 RL 낙상. <b>OCS2 자기-rollout</b>(rolloutPolicy 실현가능 궤적)이라야 추종, 그리고 <b>soft tracking</b>(강추종=반응균형 죽여 낙상). solid 지형은 void처럼 전진을 강제 안 하므로 <b>명시 전진구동</b>(advancing base ref + progress 보상 + 정지=종료) 필수 — 없으면 계단아래 공짜보상에 안주(등반 0).</li>
+    <li><b>② gait 매칭 (★결정적)</b> — 참조 gait과 RL gait의 <b>패턴+주파수</b> 일치 필수. `fixed_gait`은 위상(패턴)만 고정하고 <b>주파수는 미고정</b>(WTW [2-4]Hz 랜덤)이라 D1 참조(trot 1.39Hz)보다 1.5~3× 빠른 종종걸음 → "걸음 너무 빠름"+보폭 안 맞아 발판에 못 착지(RL이 자기 빠른 trot, 발판은 위치만 참조). <b>주파수 고정(1.39Hz)→안정화 + 실측 6.5cm median 추종</b>.</li>
+    <li><b>③ 발판 앵커 = 지형-고정 · scale 지형-의존</b> — <b>재앵커(base-상대)</b>는 xy가 지형정보 없이 로봇 따라다녀 추종 무의미(scale↑시 corrupt). <b>지형-고정(절대)</b>이라야 발판이 진짜 지형점 = 게이밍 없이 추종가능. <b>scale은 지형-의존</b>: soft(0.3)=느슨하나 횡단, high(1.0)=tight 추종하나 연속지형선 climb비용(~21%)·정밀강제(gap)선 over-track(2cm 정밀히 놓으나 미횡단)→균형 필요. <b>gait=walk(3발지지)</b>가 정밀 배치엔 trot보다 유리.</li>
+  </ul></div>
+  <div class="box"><b>실무 위치</b> — <b>DTC는 강건성 돌파가 아니라 (a) 정밀지형 샘플효율 + (b) 모델기반 구조를 RL에 주입하는 원리적 경로.</b> 관용지형은 emergent RL로 충분(발판 잉여, DTC-ON≈OFF 반복확인). ★그래서 <b>배포 본선=A</b>(모델기반, 연속·반응) 유지 · <b>DTC=정밀 험지(stepping·gap·계단)용 RL 레퍼런스 공급</b>. 계획층 자산=TAMOLS solve(계획)·D1 OCS2(faithful NMPC 참조)·<a href="발판_표준_TAMOLS_방향.md">발판 표준·TAMOLS 방향</a>. 상세=메모리 <span class="mono">dtc-17dof-development</span>(P2~P5g)·영상 <span class="mono">go2_d1_dtc_climb·go2_d1_dtc_v7_gaitmatch</span>.</div>
+
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>
     <thead><tr><th>구성</th><th>계획기(TO) — 입력 · 고정 · 최적화</th><th>추종기 — 입력 · 고정 · 최적화</th><th>실시간</th><th>험지 크로싱</th></tr></thead>
@@ -247,7 +274,7 @@
         <td>FullDyn OCP + Riccati<br><span class="mono">입력</span> OCP 궤적(base_z 포함 최적화됨)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> Riccati 피드백(us−K·δx, 게인 오프라인)</td><td class="no">6–13 Hz</td><td class="no">❌ 지형 미적용</td></tr>
       <tr><td><span class="chip cD">D1</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Grandia 2023</span></td>
         <td>통합 Perceptive NMPC(OCS2)<br><span class="mono">입력</span> cmd_vel·지형 SDF<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base궤적·<b>발판위치</b>(SDF 지형적응)</td>
-        <td>WeightedWbc(단일 QP)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(qpos/qvel)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> soft-가중 QP[q̈·f·τ]→τ(FF+PD)</td><td class="yes">1 kHz WBC 실시간</td><td class="wa">동적TROT falls=0·Phase3b 통합·<b>연속지형(15°램프 base0.53→0.84·rough) blind 압도</b>·이산급단차=동적한계=RL</td></tr>
+        <td>WeightedWbc(단일 QP)<br><span class="mono">입력</span> NMPC 레퍼런스·상태(qpos/qvel)<br><span class="mono">고정</span> 접촉스케줄<br><span class="mono">최적화</span> soft-가중 QP[q<sup style="font-size:.72em;vertical-align:.35em">¨</sup>·f·τ]→τ(FF+PD)</td><td class="yes">1 kHz WBC 실시간</td><td class="wa">동적TROT falls=0·Phase3b 통합·<b>연속지형(15°램프 base0.53→0.84·rough) blind 압도</b>·이산급단차=동적한계=RL</td></tr>
       <tr><td><span class="chip cCI">CI</span><br><span class="mono" style="font-size:.72em;color:var(--muted)">Kim(HOUND) 2023</span></td>
         <td>Contact-Implicit(창발)<br><span class="mono">입력</span> 몸통 pose 참조·nominal stance<br><span class="mono">고정</span> <b>없음</b><br><span class="mono">최적화</span> <b>접촉모드·타이밍·발판·궤적 전부</b>(온라인 창발)</td>
         <td>PD+FF<br><span class="mono">입력</span> OCP 궤적(u*·p_des)·상태<br><span class="mono">고정</span> OCP 해<br><span class="mono">최적화</span> <b>없음</b>(저수준 PD+피드포워드 u*/Kp+p_des)</td><td class="wa">40 Hz 목표</td><td class="wa">준정적 자세O·동적보행X</td></tr>
@@ -257,7 +284,7 @@
       <tr><td class="acc"><b>TAMOLS</b>★<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2022</span></td>
         <td>TAMOLS(실시간 온라인)<br><span class="mono">입력</span> heightmap·<b>보행스케줄</b>·base/cmd 참조<br><span class="mono">고정</span> 보행순서·<b>타이밍</b>(접촉스케줄)<br><span class="mono">최적화</span> base pose spline·<b>발판위치</b>(+GIAC 안정성)</td>
         <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">500 Hz·~10× 실시간 ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°). 순수 online receding-horizon=<b>~0.3m stall</b>(재앵커 frame 한계, 미해결). ★<b>injection(A gait클럭+TAMOLS base·발판 주입)=지형 크로싱</b>(hsteps tilt&lt;1.2°·dsteps2 3.4°·falls=0). 단 짜깁기라 <b>마진 얇음</b></td></tr>
-      <tr><td class="acc"><b>DTC</b>★목표<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2024</span></td>
+      <tr><td class="acc"><b>DTC</b>★Go2검증<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2024</span></td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
         <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
     </tbody>
@@ -316,7 +343,7 @@
   <div class="box acc"><b>★추종기 핵심 실측·정리(2026-07-31)</b><br>
   ① <b>capture-point(A KCAP) ↔ GIAC(TAMOLS) = 상보</b>: 반응형 발배치("어디 디딜까") vs 계획형 실현가능성 제약("이 CoM 가속 되나"), 같은 CoM–지지 물리의 두 표현(ZMP/LIP·contact-wrench-cone 계보). <b>대체 아닌 보완</b>(다른 시간스케일).<br>
   ② <b>W_AM(각운동량 task)은 A도 미사용</b>(17dof W_AM=0, 주석 "외란복구 무의미·측방 push 오히려↑"). A의 push 복구 = <b>capture-point + MPC 예측</b>.<br>
-  ③ <b>모멘텀률 base FF(aBaseFF=Ab⁻¹(m·ḣ−Ȧv−Aj q̈))는 planner의 힘 필요</b>(D1 NMPC의 desired GRF→base 가속). <b>TAMOLS(무-힘, GIAC만)엔 직접 불가</b>. ★단 실측: <b>힘-생성형 base task(순수 PD)도 KD 튜닝(KD_B 10→30)이면 base_z 유지</b>(침하 0.38→0.52, 모멘텀률 FF 없이). ⇒ <b>TAMOLS 추종기 = 잘 튜닝된 힘-생성형 WBC</b>(ETH TAMOLS+RSL식, D1 WeightedWbc 템플릿)면 충분.<br>
+  ③ <b>모멘텀률 base FF(aBaseFF=Ab⁻¹(m·ḣ−Ȧv−Aj q<sup style="font-size:.72em;vertical-align:.35em">¨</sup>))는 planner의 힘 필요</b>(D1 NMPC의 desired GRF→base 가속). <b>TAMOLS(무-힘, GIAC만)엔 직접 불가</b>. ★단 실측: <b>힘-생성형 base task(순수 PD)도 KD 튜닝(KD_B 10→30)이면 base_z 유지</b>(침하 0.38→0.52, 모멘텀률 FF 없이). ⇒ <b>TAMOLS 추종기 = 잘 튜닝된 힘-생성형 WBC</b>(ETH TAMOLS+RSL식, D1 WeightedWbc 템플릿)면 충분.<br>
   ④ <b>capture-point를 D1 WBC swing target에 애드온 = 실패</b>(CAPTURE_K 전복 악화): NMPC가 발위치+GRF+base를 협조계획하는데 WBC서 발만 shift=계획-추종 불일치. → NMPC 내부(foothold cost)거나 힘-생성형 재구축. (D1은 tight-coupled, A는 loose-coupled라 A식은 추종기 capture 자연.)</div>
 
   <h2><span class="n">3</span>포지셔닝 <span class="sub" style="font-weight:400">각 제어기의 역할</span></h2>

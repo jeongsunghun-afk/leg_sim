@@ -173,13 +173,17 @@ def main() -> int:
             while time.time() - t0 < a.settle_timeout:
                 q = st().get('q_leg_deg')
                 if q:
-                    buf.append((time.time(), q))
-                    buf = [(t, v) for t, v in buf if time.time() - t <= a.settle]
-                    if len(buf) >= 2:
-                        span = max(max(v[j] for _, v in buf) - min(v[j] for _, v in buf)
+                    now = time.time()
+                    buf.append((now, q))
+                    buf = [(t, v) for t, v in buf if now - t <= a.settle * 2.0]
+                    win = [(t, v) for t, v in buf if now - t <= a.settle]
+                    if len(win) >= 2:
+                        span = max(max(v[j] for _, v in win) - min(v[j] for _, v in win)
                                    for j in range(NJ))
-                        # 창이 다 찼을 때만 판정(짧은 창의 우연한 정지를 배제)
-                        if buf[0][0] <= time.time() - a.settle * 0.95 and span < a.still_deg:
+                        # ★판정창(settle)이 표본으로 채워졌을 때만 — 가지치기 창(2×settle)을
+                        #   더 넉넉히 둬서 "오래된 표본이 판정 직전에 잘리는" 엡실론 오탐을 없앤다
+                        #   (2026-08-25 실기: 0.02° 정지인데 매 점 '정지 안 됨' 오탐이 났었다)
+                        if buf[0][0] <= now - a.settle and span < a.still_deg:
                             settled = True; break
                 time.sleep(0.1)
             s = st()

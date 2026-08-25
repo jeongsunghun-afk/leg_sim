@@ -147,6 +147,15 @@ def main() -> int:
         _t = [x for x in a.hold.split(",") if x.strip()]
         if len(_t) != NJ:
             print(f"✗ --hold 는 {NJ}개여야 한다(받은 것 {len(_t)}개)"); return 1
+        # ★숫자 변환까지 여기서 해 본다 (2026-08-25 실기에서 당함) — 개수만 보고 통과시켰더니
+        #   '<HL의 g*>' 같은 플레이스홀더가 **생존확인(home 47° 이동) 뒤에야** float() 에서
+        #   터졌다. 로봇을 움직인 다음에 죽는 검증은 검증이 아니다.
+        try:
+            [float(x) for x in _t]
+        except ValueError as e:
+            print(f"✗ --hold 에 숫자가 아닌 값이 있다: {e}")
+            print(f"   받은 것: {a.hold}")
+            return 1
     if a.hold and not a.axis:
         print("✗ --hold 는 --axis 와 함께 써야 한다(단독으로는 효과가 없다)"); return 1
 

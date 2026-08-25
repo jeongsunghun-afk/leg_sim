@@ -287,9 +287,9 @@ _push = [0.0, 0]                      # [목표 N, 다리(0=HL·1=HR)]
 def set_push_fz(f):
     _push[0] = float(f)
     pub.set(push_fz=float(f), push_leg=int(_push[1]))
-    for k, v in enumerate(PUSH_STEPS):
-        dpg.bind_item_theme(f'pfbtn_{k}', _kp_on if abs(v - f) < 1e-6 else _kp_off)
-    dpg.set_value('push_lbl', f'{"HR" if _push[1] else "HL"} · 목표 {f:g} N (램프 5 N/s)')
+    # ★강조는 여기서 하지 않는다 — 실제 적용값(state.push_fz) 기준으로
+    #   _refresh_mode_led 가 켠다. 클릭 반응은 라벨의 '목표' 표시가 준다.
+    dpg.set_value('push_lbl', f'{"HR" if _push[1] else "HL"} · 목표 {f:g} N 으로 램프 중…')
 
 
 def set_push_leg(l):
@@ -353,6 +353,33 @@ try:
 except Exception:
     pass
 _last_sys = [0.0]
+
+
+# ── ★모드/힘 LED — **제어기가 보고하는 실제 상태** 기준 (2026-08-25) ─────
+#   버튼 클릭이 아니라 state 의 mode·push_fz 로 켠다. 그래야 "명령이 안 먹었는데
+#   불만 들어오는" 거짓 표시가 없다 — 클릭해도 제어기가 거부(가드·옛 바이너리)하면
+#   불이 안 들어와서 **그 자체가 진단**이 된다.
+_MODE_BTNS = {'hold': 'mbtn_hold', 'off': 'mbtn_off', 'jog': 'mbtn_jog',
+              'float': 'mbtn_float', 'push': 'mbtn_push', 'home': 'mbtn_home',
+              'stand': 'mbtn_stand', 'walk': 'mbtn_walk'}
+
+
+def _refresh_mode_led(st):
+    md = st.get('mode')
+    for m, t in _MODE_BTNS.items():
+        try: dpg.bind_item_theme(t, _kp_on if m == md else _kp_off)
+        except Exception: pass
+    # 힘 버튼 — **실제 램프된 값**이 그 단계에 도달했을 때만 켠다(램프 중엔 아무것도 안 켜짐)
+    pf = st.get('push_fz')
+    if pf is not None:
+        for k, v in enumerate(PUSH_STEPS):
+            try: dpg.bind_item_theme(f'pfbtn_{k}', _kp_on if abs(pf - v) < 0.5 else _kp_off)
+            except Exception: pass
+        try:
+            tgt = pub.cmd.get('push_fz', 0.0)
+            dpg.set_value('push_lbl', f'{"HR" if _push[1] else "HL"} · 적용 {pf:.1f} N'
+                                      + (f' → 목표 {tgt:g}' if abs(pf - tgt) > 0.5 else ''))
+        except Exception: pass
 
 
 def _refresh_sysload():
@@ -816,16 +843,16 @@ with dpg.window(tag='main'):
     #     접촉모드가 동작 이름 안에 들어가야 한다. 평발/점발은 발 자세가 53° 다르고
     #     (밑창 수평 vs toe-down) 전환은 매달아서 해야 하는 별개 작업이다.
     with dpg.group(horizontal=True):   # 정지 → Off전원 → JOG → 재시작
-        _rb = dpg.add_button(label='정지·현자세', width=110, callback=lambda: set_mode('reset'))
+        _rb = dpg.add_button(label='정지·현자세', width=110, tag='mbtn_hold', callback=lambda: set_mode('reset'))
         dpg.bind_item_theme(_rb, _stop)
-        _ob = dpg.add_button(label='Off 전원', width=100, callback=lambda: set_mode('off'))
+        _ob = dpg.add_button(label='Off 전원', width=100, tag='mbtn_off', callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
-        dpg.add_button(label='JOG 검증', width=90, callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
+        dpg.add_button(label='JOG 검증', width=90, tag='mbtn_jog', callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
         with dpg.group():              # ★무중력 = 중력보상만. 매달린 상태 전용
-            _fb = dpg.add_button(label='무중력', width=100, callback=lambda: set_mode('float'))
+            _fb = dpg.add_button(label='무중력', width=100, tag='mbtn_float', callback=lambda: set_mode('float'))
             dpg.add_text('(매달린 채만)', color=(120, 130, 150))
         with dpg.group():              # ★발밀기 = 무중력 + 발끝 z-힘 (저울 α 측정)
-            _pb = dpg.add_button(label='발밀기', width=100, callback=lambda: set_mode('push'))
+            _pb = dpg.add_button(label='발밀기', width=100, tag='mbtn_push', callback=lambda: set_mode('push'))
             dpg.add_text('(발밑에 저울)', color=(120, 130, 150))
         with dpg.tooltip(_pb):
             dpg.add_text('τ = g*·G(q) + Jᵀ(0,0,−F). 발밑 저울로 α 를 외부기준 측정.\n'
@@ -848,7 +875,7 @@ with dpg.window(tag='main'):
         #   ⇒ 기동/재기동은 **`emb/diag/emb_ctl.sh` 한 곳으로** 모은다. GUI 는 모드만 바꾼다.
         #     복구:  cd ~/simulation/biped/emb && diag/emb_ctl.sh stop && diag/emb_ctl.sh start
         with dpg.group():              # ★Home=정해진 홈 자세로 S-curve 복귀(emb/control/home.py)
-            _hb = dpg.add_button(label='Home 복귀', width=100, callback=lambda: set_mode('home'))
+            _hb = dpg.add_button(label='Home 복귀', width=100, tag='mbtn_home', callback=lambda: set_mode('home'))
             dpg.add_text('(S-curve)', color=(120, 130, 150))
         dpg.bind_item_theme(_hb, _home)
         # ★Hold 버튼 제거 (2026-08-21, 사용자: "안 쓸 것").
@@ -857,10 +884,10 @@ with dpg.window(tag='main'):
         #     지우면 갈 곳이 off(=limp=낙하)나 home(하중 실린 채 큰 이동)뿐이라 더 위험하다.
         #   ⇒ 조작 표면에서만 뺀다. 필요하면 '정지·현자세'(reset)가 hold 로 들어간다.
         with dpg.group():              # ★2점 평발 = 정적 자세유지(보행 안 함)
-            dpg.add_button(label='2점 평발 stand', width=130, callback=lambda: set_mode('stand'))
+            dpg.add_button(label='2점 평발 stand', width=130, tag='mbtn_stand', callback=lambda: set_mode('stand'))
             dpg.add_text('(밑창 접지·정적)', color=(120, 130, 150))
         with dpg.group():              # ★1점 점발 = stepping 보행
-            _wb = dpg.add_button(label='점발 보행', width=110, callback=lambda: set_mode('walk'))
+            _wb = dpg.add_button(label='점발 보행', width=110, tag='mbtn_walk', callback=lambda: set_mode('walk'))
             dpg.add_text('(발끝 1점·동적)', color=(120, 130, 150))
         dpg.bind_item_theme(_wb, _walk)
     dpg.add_text('복구 순서: Off 전원 → Home 복귀 → (접지·하중전달) → 2점 평발 stand'
@@ -1024,6 +1051,7 @@ if _kf is not None:
 dpg.create_viewport(title='biped teleop', width=700, height=800)
 dpg.setup_dearpygui(); dpg.show_viewport(); dpg.set_primary_window('main', True)
 set_kp_scale(1.0)      # ★강성 버튼 초기 선택 표시(×1). Pub 기본값과 반드시 일치시킬 것.
+set_push_leg(0)        # ★발밀기 다리 초기 선택 표시(HL)
 
 # ★absent(미장착)를 dead(배선됐는데 두절)와 다른 색으로 둔다 — 전자는 정상, 후자는 고장이다.
 #   같은 회색으로 뭉뚱그리면 "원래 없는 축" 과 "죽은 축" 이 구분되지 않는다.
@@ -1036,6 +1064,7 @@ while dpg.is_dearpygui_running():
         with open(STATE) as f:
             st = json.load(f)
         _off_live[0] = st.get('offset_deg')      # ★제어기가 **기동 시 읽은** 영점
+        _refresh_mode_led(st)                    # ★모드/힘 LED — 실제 상태 기준
         if 'health' in st or 'q_leg_deg' in st:          # ── emb(app/biped_emb) 상태: LED+실측 ──
             q = st.get('q_leg_deg', [0.0] * NJ)
             health = st.get('health', ['dead'] * NJ)

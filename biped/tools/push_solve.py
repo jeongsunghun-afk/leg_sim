@@ -78,6 +78,11 @@ def analyze_sweep(rows, leg):
     bad = np.max(np.abs(Q - qref), axis=1) > 8.0
     # ── 상승가지 후반만: 시작 마찰전이 1.2 kgf 제외 · 30 N 초과(고력 처짐) 제외 ──
     use = up & ~bad & (F / G >= 1.2) & (F <= 30.0 + 1e-9)
+    # ★비단조 꼭짓점 마스킹 — 상승 최고점이 첫 하강점보다 낮으면 물리적으로 불가능
+    #   (마찰 루프는 하강 ≤ 꼭짓점): 꼭짓점 부근에서 접촉이 바뀐 서명(발끝 착지 누설 등).
+    #   HR 192523 에서 실측: 베이스 부양(크레인 스트랩)으로 −13 mm 가라앉으며 발끝 착지.
+    if ap + 1 < len(F) and S[ap] < S[ap + 1] - 1e-9:
+        use[ap] = False
     if use.sum() < 3:
         return None
     a, b = np.polyfit(F[use] / G, S[use], 1)

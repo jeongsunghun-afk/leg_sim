@@ -85,6 +85,18 @@ def analyze_sweep(rows, leg):
         use[ap] = False
     if use.sum() < 3:
         return None
+    # ★전이 꼬리 적응 제거 — 고정창(1.2 kgf)을 지나서도 스틱-슬립 전이가 이어지는
+    #   스윕(E4 HR 실측: 구간기울기 0.56→0.64→0.90)에서 최저힘 점이 적합선 아래로
+    #   처지면 곡률 오염이다: 잔차가 나머지 rms 의 −1.5배 아래면 버리고 재적합.
+    while use.sum() > 3:
+        a, b = np.polyfit(F[use] / G, S[use], 1)
+        res = S[use] - (a * F[use] / G + b)
+        i_lo = np.argmin(F[use])
+        rest = np.delete(res, i_lo)
+        if res[i_lo] < -1.5 * max(np.sqrt((rest**2).mean()), 0.01):
+            use[np.where(use)[0][i_lo]] = False
+        else:
+            break
     a, b = np.polyfit(F[use] / G, S[use], 1)
     res = S[use] - (a * F[use] / G + b)
     sig = max(np.sqrt((res**2).mean()) / (np.ptp(F[use]) / G) * 2, 0.01)
@@ -99,7 +111,12 @@ def solve_leg(entries):
     T = np.array([e['T'] for e in entries])
     sig = np.array([e['sigT'] for e in entries])
     A = Wm / sig[:, None]; y = T / sig
-    r, *_ = np.linalg.lstsq(A, y, rcond=None)
+    # ★물리 범위 구속(0.3~1.2) — 근평행 방정식의 시소 폭주를 막고 경계 도달을 보고
+    try:
+        from scipy.optimize import lsq_linear
+        r = lsq_linear(A, y, bounds=(0.3, 1.2)).x
+    except ImportError:
+        r, *_ = np.linalg.lstsq(A, y, rcond=None)
     U, sv, Vt = np.linalg.svd(A)               # Vt 4×4 전체 — 영공간까지
     k = int(np.sum(sv > max(sv[0], 1.0) * 1e-3))
     Vr, Vn = Vt[:k], Vt[k:]
@@ -162,7 +179,8 @@ def main():
             if nf > 0.5:
                 print(f"  r_{a:5s} = 미식별 (영공간 {nf:.2f} — 이 축을 보는 스윕이 없음)")
             else:
-                print(f"  r_{a:5s} = {v:.3f} ± {e:.3f}" + ("  ⚠약식별" if e > 0.15 else ""))
+                hit = "  ⛔경계" if (v <= 0.301 or v >= 1.199) else ""
+                print(f"  r_{a:5s} = {v:.3f} ± {e:.3f}" + ("  ⚠약식별" if e > 0.15 else "") + hit)
         for ent, p in zip(entries, pred):
             print(f"    {ent['tag']:24s} T측정 {ent['T']:.3f} vs 예측 {p:.3f}  ({(ent['T']-p)*1000:+.0f}×10⁻³)")
 

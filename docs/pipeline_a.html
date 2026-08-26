@@ -96,7 +96,7 @@
     <span class="t" style="color:var(--ok)">상태추정 (sim2real) — GT는 개발용, EST 성공이 배포 기준</span>
     <div class="d" style="margin-top:6px;line-height:1.7">
       실기엔 절대위치 센서가 없으므로 <b>제어기는 추정 상태로 돌아야</b> 진짜 sim2real이다. 그래서 <b>GT=궤적·제어기 검증용 옵션</b>, <b>EST(폐루프) 성공을 최종 배포 기준</b>으로 삼는다(<code>EST_CTRL</code>). 뷰어 '모니터 표시(viz)' 체크박스=추정 고스트(초록 GT vs 주황 EST) 시각 비교.<br>
-      <b>추정기(<code>state_estimator.hpp</code>, leg-odometry)</b> — IMU(자세·각속도) + 관절 엔코더(q,q̇) + 발 접촉만 사용, 절대위치 미사용(실기 동일):
+      <b>추정기(<code>state_estimator.hpp</code>, leg-odometry)</b> — IMU(자세·각속도) + 관절 엔코더(q,q<sup style="font-size:.72em;vertical-align:.35em">˙</sup>) + 발 접촉만 사용, 절대위치 미사용(실기 동일):
       <ul style="margin:6px 0 0;padding-left:20px">
         <li><b>자세</b>=IMU 직접 · <b>각속도</b>=자이로 직접.</li>
         <li><b>위치 z</b>=접촉발 기구학(평지 <code>ground_z</code> 기준, base_z=ground−mean(발 상대z)) → 드리프트 0.</li>
@@ -140,7 +140,7 @@
     <h3>비용</h3>
     <div class="eq">min<sub>U</sub> &nbsp;Σ<sub>k</sub> (x<sub>k</sub>−x<sub>ref</sub>)<sup>T</sup> Q (x<sub>k</sub>−x<sub>ref</sub>) &nbsp;+&nbsp; u<sub>k</sub><sup>T</sup> R u<sub>k</sub></div>
     <div class="eq">Q = diag( <b>200,200,100</b>, &nbsp;0,0,<b>200</b>, &nbsp;0,0,1, &nbsp;10,10,1, &nbsp;0 )&nbsp;&nbsp;<span class="lbl">R = 10<sup>−6</sup></span></div>
-    <p class="dim">자세(roll/pitch/yaw)·높이 z·ω<sub>z</sub>·수평속도 중시. xy 위치·수직속도=free(0). H=2(B<sub>q</sub><sup>T</sup>Q̄B<sub>q</sub>)+2R̄, diag+=1e−8(PD 보장).</p>
+    <p class="dim">자세(roll/pitch/yaw)·높이 z·ω<sub>z</sub>·수평속도 중시. xy 위치·수직속도=free(0). H=2(B<sub>q</sub><sup>T</sup>Q<sup style="font-size:.72em;vertical-align:.35em">ˉ</sup>B<sub>q</sub>)+2R<sup style="font-size:.72em;vertical-align:.35em">ˉ</sup>, diag+=1e−8(PD 보장).</p>
 
     <h3>제약</h3>
     <ul>

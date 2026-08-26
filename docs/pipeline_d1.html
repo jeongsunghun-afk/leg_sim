@@ -89,7 +89,7 @@
     <div class="arrow">↓ &nbsp;<span class="dim">지형 제약이 NMPC <b>안에</b> 들어감(주입층 아님)</span></div>
     <div class="stage mpc"><span class="rate">async · SQP ~4.5ms/it</span><span class="n">⑤</span><span class="t">NMPC — SqpMpc(HPIPM) 재계획</span><div class="d">centroidal 통합 OCP → base·발판·힘 궤적. + <b>perceptive 제약</b>(3a 발-지형 클리어런스 / 3b 발판배치). <code>useFeedbackPolicy=false</code>(개루프 참조)</div></div>
     <div class="arrow">↓ &nbsp;<span class="dim">MRT 참조 전달</span></div>
-    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">⑥</span><span class="t">WBC — WeightedWbc (wbc_legged)</span><div class="d">weighted QP [q̈(18)·f(12)·τ(12)]=42. FF+PD(τ=τ<sub>ff</sub>+τ<sub>pd</sub>) · 널스페이스 posture task(발목 표류 억제) → τ</div></div>
+    <div class="stage wbic"><span class="rate">1 kHz</span><span class="n">⑥</span><span class="t">WBC — WeightedWbc (wbc_legged)</span><div class="d">weighted QP [q<sup style="font-size:.72em;vertical-align:.35em">¨</sup>(18)·f(12)·τ(12)]=42. FF+PD(τ=τ<sub>ff</sub>+τ<sub>pd</sub>) · 널스페이스 posture task(발목 표류 억제) → τ</div></div>
     <div class="arrow">↓</div>
     <div class="stage"><span class="n">step</span><span class="t">mj_step <span class="dim">(1ms · solref 0.005 · GEARBOX)</span></span><div class="d">A와 동일 sim 세팅 — 동적 trot 안정의 근본조건</div></div>
   </div>
@@ -113,10 +113,10 @@
   <div class="card wbic">
     <h3>⑥ 하위 — WeightedWbc (legged_control 충실 포트)</h3>
     <p>NMPC 참조를 전신 토크로. legged WbcBase+WeightedWbc 이식 — <b>단일 weighted QP</b>(A의 계층 WBIC와 대비: soft-가중 단일 QP).</p>
-    <div class="eq"><span class="lbl">min </span>‖A<sub>base</sub>x−b<sub>base</sub>‖² + w<sub>sw</sub>‖swing‖² + w<sub>f</sub>‖f−f<sub>des</sub>‖² + w<sub>post</sub>‖posture‖²&nbsp;&nbsp;<span class="lbl">x=[q̈(18)·f(12)·τ(12)]</span></div>
+    <div class="eq"><span class="lbl">min </span>‖A<sub>base</sub>x−b<sub>base</sub>‖² + w<sub>sw</sub>‖swing‖² + w<sub>f</sub>‖f−f<sub>des</sub>‖² + w<sub>post</sub>‖posture‖²&nbsp;&nbsp;<span class="lbl">x=[q<sup style="font-size:.72em;vertical-align:.35em">¨</sup>(18)·f(12)·τ(12)]</span></div>
     <div class="eq"><span class="lbl">hard: </span>full-EOM [M,−Jᵀ,−Sᵀ]x=−nle · no-contact-motion · swing zero-force · τ limit · friction pyramid</div>
     <h3>표준 τ = τ<sub>ff</sub> + τ<sub>pd</sub> <span class="dim">(Bellicoso 2016, eq 17-19)</span></h3>
-    <div class="eq">모션 task = r̈<sub>des</sub>(FF) + K<sub>p</sub>·posErr + K<sub>d</sub>·velErr − J̇u &nbsp;<span class="lbl">(A의 WBIC와 동일 구성)</span></div>
+    <div class="eq">모션 task = r<sup style="font-size:.72em;vertical-align:.35em">¨</sup><sub>des</sub>(FF) + K<sub>p</sub>·posErr + K<sub>d</sub>·velErr − J<sup style="font-size:.72em;vertical-align:.35em">˙</sup>u &nbsp;<span class="lbl">(A의 WBIC와 동일 구성)</span></div>
     <p class="dim">솔버=qpOASES 3.2(legged와 동일) 또는 eiquadprog. 널스페이스 <b>posture task</b>(w<sub>post</sub>=0.5)=능동 발목 redundancy 표류 억제(A의 whip 억제와 동종).</p>
   </div>
   <div class="card d1">

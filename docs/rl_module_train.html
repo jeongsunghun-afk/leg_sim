@@ -246,7 +246,7 @@
       <div class="scol s3"><div class="st" style="color:#0e9f6e">③ 지도·계획층</div><div class="shz">10–30 Hz</div>
         <ul><li><b>TerrainMap</b> (heightmap)<span class="ptag">→CNN 흡수</span></li><li><b>TO</b> 발판·타이밍(TOWR/TAMOLS)<span class="ptag">→정책 흡수</span></li><li><b>STGN A*</b> → cmd_vel</li></ul></div>
       <div class="scol s4"><div class="st" style="color:#db2777">④ 제어층 ★본 문서</div><div class="shz">정책 50 Hz · PD ~1 kHz</div>
-        <ul><li><b>통합 정책 π</b> (actor)</li><li><b>Estimator</b> (v̂ · RMA)</li><li>out: τ ∈ R¹⁷ (다리16+허리1)</li></ul></div>
+        <ul><li><b>통합 정책 π</b> (actor)</li><li><b>Estimator</b> (v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup> · RMA)</li><li>out: τ ∈ R¹⁷ (다리16+허리1)</li></ul></div>
     </div>
   </div>
 
@@ -330,6 +330,16 @@
     </ul>
   </div>
 
+  <div class="callout" style="border-color:var(--dist);background:var(--okbg);margin-top:14px">
+    <b style="color:var(--dist)">★실증(quad17 DTC 트랙, 2026-08) — DTC 발판참조 = <u>task-dependent 샘플효율 레버</u>(점근성능 아님)</b><br>
+    위 게이팅 철학을 17-DOF quad에서 통제실험으로 검증했다. <b>DTC-ON</b>=offline TAMOLS 캐시(full-TAMOLS 발판·base·접촉을 롤아웃서 조회) vs <b>DTC-OFF</b>=heightmap-RL(같은 지형관측, 발판참조만 제거), 동일 3D 지형·명령균등·2-seed.
+    <ul class="plain" style="margin-top:8px">
+      <li><b>정밀지형(계단)</b> — DTC가 <b>학습을 크게 가속</b>: 동일 <span class="mono">iter4000</span>서 지형레벨 <span class="mono">base 1.15 → DTC 4.99</span>(≈2–3배 빠른 난이도 도달). <b>단 끝까지(iter10000) 학습하면 둘 다 ~6.4로 수렴</b> — 최종성능은 동률. → DTC 이득은 <b>샘플효율</b>이지 최종 capability가 아님.</li>
+      <li><b>관용지형(평지 갭)</b> — <b>반대로 캐시가 방해</b>: 고정 발판참조보다 RL 창발(capture-point 반응)이 이긴다.</li>
+    </ul>
+    <b>결론</b> — 모델기반 발판유도는 <b>정밀지형서 "빠르게 배우는" 레버</b>(점근성능 향상 아님)이고, <b>관용지형선 오히려 해</b>가 될 수 있다. 이것이 §03 국면별 게이팅(정밀=ON·관용/soft=OFF)의 실측 근거다. 상세=<code>DTC_개발리포트.md §P2.7</code>.
+  </div>
+
   <p class="cap" style="margin-top:8px">참조: APT(Kang 2026)·Raibo(Kim/Hwangbo 2025, 2506.02835)·PUMA(2601.15995)·DTC(Jenelten 2024, 2309.15462)·PLANC(2601.06286). 상세 서지는 <code>foothold_3axis_framework.md</code>.</p>
 
   <!-- ============ 3. 학습 3단계 ============ -->
@@ -388,7 +398,7 @@
       <tr>
         <td class="mod">Estimator<small>concurrent SE</small></td>
         <td>MLP hidden [128, 64]</td>
-        <td>proprio 이력 → <b>v̂</b> (base 속도)·상태</td>
+        <td>proprio 이력 → <b>v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup></b> (base 속도)·상태</td>
         <td>참 상태 대비 <b>회귀</b>; <code>train_with_estimated_states</code></td>
         <td><span class="pill p-dep">배포</span></td>
       </tr>
@@ -527,7 +537,7 @@
     </div>
     <div class="mlgroup g-sl">
       <div class="gh">지도학습 <span class="gt">회귀 / 증류 — 교사출력·참값 모방</span></div>
-      <div class="mcard"><div class="mh"><span class="mn">Estimator (v̂)</span><span class="mtype">MLP/GRU</span></div><div class="mio">in: proprio+prev_act <b>→</b> base속도 v̂ · <i>label=참속도</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
+      <div class="mcard"><div class="mh"><span class="mn">Estimator (v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup>)</span><span class="mtype">MLP/GRU</span></div><div class="mio">in: proprio+prev_act <b>→</b> base속도 v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup> · <i>label=참속도</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
       <div class="mcard"><div class="mh"><span class="mn">history_encoder (RMA학생)</span><span class="mtype">1D-Conv</span></div><div class="mio">in: 관측이력10 <b>→</b> priv잠재 · <i>label=priv_encoder z</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-have">HAVE</span></div></div>
       <div class="mcard"><div class="mh"><span class="mn">Boundary estimator</span><span class="mtype">MLP</span></div><div class="mio">in: 발판→발판 벡터 <b>→</b> 충돌 최저경계 · <i>label=기하</i></div><div class="mbadges"><span class="mbadge mb-dep">배포(planner)</span><span class="mbadge mb-build">BUILD</span></div></div>
       <div class="mcard"><div class="mh"><span class="mn">Depth CNN (지형학생)</span><span class="mtype">CNN</span></div><div class="mio">in: raw depth <b>→</b> 지형잠재 · <i>label=Elev.Enc z</i></div><div class="mbadges"><span class="mbadge mb-dep">배포</span><span class="mbadge mb-build">BUILD</span></div></div>
@@ -677,7 +687,7 @@
   <div class="tbl-scroll"><table>
     <thead><tr><th>태스크</th><th>내용</th></tr></thead>
     <tbody>
-      <tr><td class="mod" style="color:var(--plan)">quad17/</td><td><b>★17-DOF quad — DTC 트랙</b>(Quad17-Velocity-Direct-v0). P1 워커→P2 tracker</td></tr>
+      <tr><td class="mod" style="color:var(--plan)">quad17/</td><td><b>★17-DOF quad — DTC 트랙</b>(Quad17-Velocity-Direct-v0). P1 워커→P2 tracker. <b>DTC 가치 통제검증 완료</b>(§03 실증: task-dependent 샘플효율)</td></tr>
       <tr><td class="mod" style="color:var(--plan)">hind_leg/</td><td><b>★2족 biped</b>(HindLeg-Direct/Flat — 점발·평발 RL)</td></tr>
       <tr><td class="mod">parkour/ · parkour_imitation/</td><td>Go2 파쿠어 (DTC 알고리즘 참조 — ActorCriticRMA·terrain)</td></tr>
       <tr><td class="mod">go2/ · go2_amp/ · go2_imitation(_tracking)/ · go2_recovery/</td><td>Unitree Go2 (속도·AMP·모방·낙상복구)</td></tr>

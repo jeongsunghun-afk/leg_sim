@@ -316,7 +316,7 @@
     <div class="bx">
       <h4>행동·토크 합성 <span class="s">APT Methods 원식</span></h4>
       <ul><li>정책 출력 <b>R²⁹</b> = <i>a</i><sub>latent</sub>(16, 100 Hz) + <i>a</i><sub>aux</sub>(12, 100 Hz) + gait logit(σ, <b>2 Hz 선택·0.5 s 유지</b>)</li></ul>
-      <span class="eq2"><i>τ</i><sub>input</sub> = <i>τ</i><sub>dec</sub>(<i>a</i><sub>latent</sub>) + <i>k</i><sub>p</sub> (<i>q</i><sub>default</sub> − <i>q</i> + 0.2 <i>a</i><sub>aux</sub>) − <i>k</i><sub>d</sub> <i><span style="font-family:'DejaVu Sans',sans-serif">q̇</span></i><span class="c">(<i>k</i><sub>p</sub>=80, <i>k</i><sub>d</sub>=2)</span></span>
+      <span class="eq2"><i>τ</i><sub>input</sub> = <i>τ</i><sub>dec</sub>(<i>a</i><sub>latent</sub>) + <i>k</i><sub>p</sub> (<i>q</i><sub>default</sub> − <i>q</i> + 0.2 <i>a</i><sub>aux</sub>) − <i>k</i><sub>d</sub> <i><span style="font-family:'DejaVu Sans',sans-serif">q<sup style="font-size:.72em;vertical-align:.35em">˙</sup></span></i><span class="c">(<i>k</i><sub>p</sub>=80, <i>k</i><sub>d</sub>=2)</span></span>
       <ul>
         <li>사전학습 FF 토크 + RL 피드백 하이브리드 — <i>a</i><sub>aux</sub>가 3D·미지 지형·데이터 공백 보정</li>
         <li><i>a</i><sub>latent</sub>에 KL(𝒩(0,I)) 소프트 정규화 + 탐색 보너스 감쇠</li>
@@ -338,7 +338,7 @@
       <h4>S1 — 행동 사전학습 <span class="s">RL 없음</span></h4>
       <ul>
         <li>TVAE 인코더: s(69차×3프레임 — 몸 속도·높이·발높이·접촉·중력·관절 이력) → z∈R¹⁶, 손실 <i>L</i><sub>recon</sub> + 0.1·<i>L</i><sub>KL</sub></li>
-        <li>게이트별 토크 디코더(지도학습): latent → <i><span style="font-family:'DejaVu Sans',sans-serif">τ̂</span></i> ∈ R¹⁶ <span style="color:#E8551E">(우리 로봇 16-DOF·발목 포함, +허리 R¹⁷)</span> — ★토크 주석 덕에 <b>참조추종 RL 단계 불요</b></li>
+        <li>게이트별 토크 디코더(지도학습): latent → <i><span style="font-family:'DejaVu Sans',sans-serif">τ<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup></span></i> ∈ R¹⁶ <span style="color:#E8551E">(우리 로봇 16-DOF·발목 포함, +허리 R¹⁷)</span> — ★토크 주석 덕에 <b>참조추종 RL 단계 불요</b></li>
       </ul>
     </div>
     <div class="bx">
@@ -380,7 +380,7 @@
     <text x="51" y="78" font-size="8" text-anchor="middle" fill="#5A6577">외부 지각</text>
     <rect x="8" y="120" width="86" height="34" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.3"/>
     <text x="51" y="134" font-size="9" text-anchor="middle" font-weight="bold">IMU · 관절 센서</text>
-    <text x="51" y="146" font-size="8" text-anchor="middle" fill="#5A6577">q, <tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan>, 접촉, ω</text>
+    <text x="51" y="146" font-size="8" text-anchor="middle" fill="#5A6577">q, <tspan font-family="'DejaVu Sans',sans-serif">q<sup style="font-size:.72em;vertical-align:.35em">˙</sup></tspan>, 접촉, ω</text>
     <!-- 인코더/추정기 -->
     <rect x="128" y="52" width="104" height="34" rx="4" fill="#fff" stroke="#1B2431" stroke-width="1.3"/>
     <text x="180" y="66" font-size="9" text-anchor="middle" font-weight="bold">학생 인코더</text>
@@ -402,7 +402,7 @@
     <rect x="286" y="44" width="128" height="118" rx="5" fill="#fff" stroke="#1B2431" stroke-width="1.8"/>
     <text x="350" y="62" font-size="10.5" text-anchor="middle" font-weight="bold">정책 π (100 Hz)</text>
     <text x="350" y="78" font-size="8" text-anchor="middle" fill="#5A6577">in: proprio(69)+heightmap</text>
-    <text x="350" y="89" font-size="8" text-anchor="middle" fill="#5A6577">+<tspan font-family="'DejaVu Sans',sans-serif">v̂</tspan>+[p_tgt·cs]</text>
+    <text x="350" y="89" font-size="8" text-anchor="middle" fill="#5A6577">+<tspan font-family="'DejaVu Sans',sans-serif">v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup></tspan>+[p_tgt·cs]</text>
     <text x="350" y="106" font-size="8.5" text-anchor="middle">out: R²⁹</text>
     <text x="350" y="119" font-size="8" text-anchor="middle" fill="#5A6577">a_latent∈R¹⁶</text>
     <text x="350" y="130" font-size="8" text-anchor="middle" fill="#5A6577">a_aux∈R¹⁶</text>
@@ -410,7 +410,7 @@
     <line x1="232" y1="69" x2="286" y2="69" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
     <text x="258" y="63" font-size="7.5" text-anchor="middle" fill="#5A6577">e_t</text>
     <line x1="232" y1="137" x2="286" y2="137" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
-    <text x="258" y="131" font-size="7.5" text-anchor="middle" fill="#5A6577"><tspan font-family="'DejaVu Sans',sans-serif">v̂</tspan></text>
+    <text x="258" y="131" font-size="7.5" text-anchor="middle" fill="#5A6577"><tspan font-family="'DejaVu Sans',sans-serif">v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup></tspan></text>
     <line x1="278" y1="19" x2="340" y2="44" stroke="#E8551E" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ao)"/>
     <!-- APT 모듈 -->
     <path d="M446 24 L446 20 L650 20 L650 24" fill="none" stroke="#E8551E" stroke-width="1.1"/>
@@ -435,7 +435,7 @@
     <line x1="578" y1="138" x2="608" y2="138" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
     <text x="592" y="132" font-size="7.5" fill="#5A6577">τ_dec</text>
     <line x1="414" y1="152" x2="608" y2="188 " stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)" transform="translate(0,-38)"/>
-    <text x="500" y="176" font-size="7.5" fill="#5A6577" transform="translate(0,-6)">k_p(q_def−q+0.2·a_aux)−k_d·<tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan></text>
+    <text x="500" y="176" font-size="7.5" fill="#5A6577" transform="translate(0,-6)">k_p(q_def−q+0.2·a_aux)−k_d·<tspan font-family="'DejaVu Sans',sans-serif">q<sup style="font-size:.72em;vertical-align:.35em">˙</sup></tspan></text>
     <!-- 로봇 -->
     <rect x="662" y="112" width="108" height="52" rx="4" fill="#F7F8FA" stroke="#1B2431" stroke-width="1.6"/>
     <text x="716" y="132" font-size="10" text-anchor="middle" font-weight="bold">로봇 / 시뮬</text>
@@ -444,7 +444,7 @@
     <text x="649" y="131" font-size="7.5" fill="#5A6577">τ_input</text>
     <!-- 피드백 -->
     <path d="M716 164 L716 214 L51 214 L51 154" fill="none" stroke="#1B2431" stroke-width="1.2" marker-end="url(#a)"/>
-    <text x="384" y="209" font-size="8" text-anchor="middle" fill="#5A6577">피드백: q, <tspan font-family="'DejaVu Sans',sans-serif">q̇</tspan>, 접촉, IMU (proprio 이력 69차 구성)</text>
+    <text x="384" y="209" font-size="8" text-anchor="middle" fill="#5A6577">피드백: q, <tspan font-family="'DejaVu Sans',sans-serif">q<sup style="font-size:.72em;vertical-align:.35em">˙</sup></tspan>, 접촉, IMU (proprio 이력 69차 구성)</text>
     <!-- 훈련 전용 -->
     <rect x="286" y="222" width="292" height="1" fill="none"/>
     <rect x="600" y="4" width="172" height="88" rx="4" fill="#fff" stroke="#8A93A3" stroke-width="1.1" stroke-dasharray="4 3"/>
@@ -622,7 +622,7 @@
     <!-- STGN → π : ⑤ cmd_vel (하단 → 좌측 진입 y192) -->
     <path d="M522 360 L548 360 L548 230.4 L560 230.4" fill="none" stroke="#1B2431" stroke-width="1.3" marker-end="url(#g)"/>
     <text x="540" y="223.2" font-size="6.4" text-anchor="middle" font-weight="bold" fill="#1B2431">⑤ cmd_vel</text>
-    <!-- Estimator → π : ① proprio + ③ v̂ (하단 진입 y262) -->
+    <!-- Estimator → π : ① proprio + ③ v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup> (하단 진입 y262) -->
     <line x1="598" y1="355.2" x2="598" y2="314.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
     <text x="594" y="338.4" font-size="6.6" text-anchor="end" font-weight="bold" fill="#1B2431">① proprio</text>
     <line x1="660" y1="355.2" x2="660" y2="314.4" stroke="#1B2431" stroke-width="1.4" marker-end="url(#g)"/>
@@ -792,7 +792,7 @@
   <div class="g2">
     <div class="bx"><h4>네트워크 (MLP·비순환)</h4><ul>
       <li><b>actor</b>=MLP[512,256,128] ELU, 입력 100 → <b>a∈R¹² (위치 잔차)</b> · q_tgt=0.25·a+q_def · PD(Kp25·Kd0.5·τclip23.5) 200Hz.</li>
-      <li><b>RMA teacher→student</b>: 교사=priv_latent(37)→20 · 학생=이력 CNN→20 · distill <span class="mono">‖priv−hist.detach()‖</span> · estimator=proprio→<span style="font-family:'DejaVu Sans',sans-serif">v̂</span>.</li>
+      <li><b>RMA teacher→student</b>: 교사=priv_latent(37)→20 · 학생=이력 CNN→20 · distill <span class="mono">‖priv−hist.detach()‖</span> · estimator=proprio→<span style="font-family:'DejaVu Sans',sans-serif">v<sup style="font-size:.72em;vertical-align:.35em">ˆ</sup></span>.</li>
       <li>★baseline=<b>Go2 12-DOF·ActorCriticRMA</b>(RobotSW_IsaacLab 파쿠르 포크). 우리 목표는 <b>APT(page 2)</b>로 진화, 02_Leg는 <b>R¹⁶</b>(발목 포함).</li></ul></div>
     <div class="bx"><h4>RL vs A(MPC+WBIC) vs B·C(OCP)</h4>
       <div class="scroll" style="margin-top:2mm"><table style="min-width:0;font-size:7.4pt;margin:0">

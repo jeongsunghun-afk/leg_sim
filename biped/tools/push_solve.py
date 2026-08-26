@@ -44,6 +44,8 @@ def jz(m, d, q8deg, geom, off_v):
 
 def analyze_sweep(rows, leg):
     """→ dict(point, T, sigT, w, n_used, flags) 또는 None(사용불가)."""
+    rows = [r for r in rows if r.get('scale_g') is not None]   # 빈 기입(null) 제거
+    if len(rows) < 5: return None
     q0 = np.array(rows[0]['q_leg_deg'])
     q4 = q0[:4] if leg == 'HL' else q0[4:]
     flat = q4[3] < -30
@@ -110,8 +112,15 @@ def main():
     ap.add_argument('--dir', default=os.path.join(BIPED, 'data', 'push'))
     args = ap.parse_args()
 
+    # ★격리 목록 — 측정으로 쓸 수 없음이 판명된 스윕
+    #   185036: 뒤꿈치밀기인데 밑창 두 점이 모두 저울 위 = 닫힌 사슬의 수평 힘고리가
+    #           수직 총합을 깎음(T 0.648, 재시도 한점접촉 0.835 로 실증). 08-26 판별.
+    EXCLUDE = {'push_scale_HL_20260826-185036.json'}
     per_leg = {'HL': [], 'HR': []}
     for f in sorted(glob.glob(os.path.join(args.dir, 'push_scale_*.json'))):
+        if os.path.basename(f) in EXCLUDE:
+            print(f"  ⛔ {os.path.basename(f)[11:-5]}: 격리(두점 힘고리 — 스크립트 주석 참조)")
+            continue
         D = json.load(open(f)); leg = D['leg']
         r = analyze_sweep(D['rows'], leg)
         tag = os.path.basename(f)[11:-5]

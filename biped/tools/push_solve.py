@@ -115,7 +115,8 @@ def main():
     # ★격리 목록 — 측정으로 쓸 수 없음이 판명된 스윕
     #   185036: 뒤꿈치밀기인데 밑창 두 점이 모두 저울 위 = 닫힌 사슬의 수평 힘고리가
     #           수직 총합을 깎음(T 0.648, 재시도 한점접촉 0.835 로 실증). 08-26 판별.
-    EXCLUDE = {'push_scale_HL_20260826-185036.json'}
+    EXCLUDE = {'push_scale_HL_20260826-185036.json',   # 두점 힘고리 (T 0.648)
+               'push_scale_HR_20260826-192147.json'}   # 발끝이 저울 테두리 접촉 = 힘 누설 (T 0.55, 사용자 확인)
     per_leg = {'HL': [], 'HR': []}
     for f in sorted(glob.glob(os.path.join(args.dir, 'push_scale_*.json'))):
         if os.path.basename(f) in EXCLUDE:

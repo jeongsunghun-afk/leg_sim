@@ -183,6 +183,20 @@ class BipedWBIC:
             m.dof_damping[dof] = JDAMP[j % 4]          # ★kind 별(2026-08-14 PACE 최종)
             m.dof_frictionloss[dof] = JFRIC[j % 4]
         self._foot_rotor_to_tendon()
+        # ★α(토크스케일) 주입 — 실기 저울 실측(2026-08-25): 명령의 ~0.80 만 나간다.
+        #   자리는 actuator_gear (적용토크 = gear·ctrl) — 제어기(WBIC·마찰보상)는 α 를
+        #   모른 채 두는 것이 핵심이다: 실기와 같은 "약한 로봇" 을 재현해야
+        #   보상 전략(STAND_TAU 등)을 sim 에서 검증할 수 있다.
+        #   ALPHA_AXIS="0.80,0.80,0.80,0.80"(kind 별 4개) 또는 8개(축별). 기본 1=끔.
+        #   ⚠C++ 파리티: biped_control.hpp 쪽도 같이 고칠 것(추후).
+        a = [float(x) for x in os.environ.get('ALPHA_AXIS', '1').split(',')]
+        if len(a) == 1: a = a * 4
+        self.ALPHA = np.array(a * 2 if len(a) == 4 else a)
+        assert len(self.ALPHA) == self.nu, "ALPHA_AXIS 는 1·4·8개"
+        if np.any(self.ALPHA != 1.0):
+            for j in range(self.nu):
+                m.actuator_gear[j, 0] *= self.ALPHA[j]
+            print(f"  ★α 주입: actuator_gear ×{a}  (실기 재현 모드)")
 
     def _foot_rotor_to_tendon(self):
         """★foot 로터 반사관성을 dof_armature 에서 **tendon 으로 옮긴다**(calf→foot 커플링).

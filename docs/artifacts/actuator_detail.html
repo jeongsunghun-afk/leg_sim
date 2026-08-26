@@ -1,0 +1,1763 @@
+<title>액추에이터 식별과 브링업</title>
+<style>
+:root{
+  --ground:#f4f6f8; --surf:#ffffff; --surf2:#eef2f6;
+  --rule:#dde3e9;  --rule2:#c9d2da;
+  --ink:#12171c;   --ink2:#48535d;  --mut:#79848e;
+  --acc:#1a5a94;   --acc-soft:#dceaf6; --acc-line:#9cc0dd;
+  --flag:#b3541e;  --flag-soft:#f8e8dc;
+  --hatch:rgba(179,84,30,.10);
+  --shadow:0 1px 2px rgba(18,23,28,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#101317; --surf:#181c21; --surf2:#1f242a;
+    --rule:#272d34;  --rule2:#3a424a;
+    --ink:#e9edf1;   --ink2:#aab5bf;  --mut:#77828c;
+    --acc:#4a8fce;   --acc-soft:#16283a; --acc-line:#2d4a66;
+    --flag:#cf7a2e;  --flag-soft:#2c1f14;
+    --hatch:rgba(207,122,46,.13); --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101317; --surf:#181c21; --surf2:#1f242a;
+  --rule:#272d34;  --rule2:#3a424a;
+  --ink:#e9edf1;   --ink2:#aab5bf;  --mut:#77828c;
+  --acc:#4a8fce;   --acc-soft:#16283a; --acc-line:#2d4a66;
+  --flag:#cf7a2e;  --flag-soft:#2c1f14;
+  --hatch:rgba(207,122,46,.13); --shadow:none;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15.5px/1.75 'Pretendard Variable',Pretendard,'Noto Sans KR',-apple-system,
+       BlinkMacSystemFont,'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+code,pre,.mono,.num,th,.chip,.eyebrow,.pill,.badge,.sym{
+  font-family:ui-monospace,'SFMono-Regular','JetBrains Mono','Cascadia Mono',
+              Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:980px;margin:0 auto;padding:44px 24px 96px}
+
+.mast{display:flex;flex-direction:column;gap:9px;margin-bottom:30px}
+.eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+h1{font-size:31px;line-height:1.22;letter-spacing:-.028em;font-weight:750;margin:0;
+   text-wrap:balance}
+.deck{color:var(--ink2);font-size:15px;margin:0;max-width:66ch}
+.deck b{color:var(--ink)}
+
+section{margin-top:54px}
+.shead{display:flex;align-items:baseline;gap:14px;padding-bottom:11px;
+  border-bottom:1px solid var(--rule2);margin-bottom:18px}
+.shead .n{font-size:12px;letter-spacing:.1em;color:var(--acc);font-weight:600;
+  font-family:ui-monospace,Menlo,monospace}
+h2{font-size:20.5px;letter-spacing:-.018em;font-weight:650;margin:0;text-wrap:balance}
+.shead .tag{margin-left:auto;font-size:11.5px;letter-spacing:.08em;color:var(--mut);
+  text-transform:uppercase;white-space:nowrap;font-family:ui-monospace,Menlo,monospace}
+h3{font-size:15px;font-weight:650;letter-spacing:.005em;color:var(--ink);margin:30px 0 10px;
+  padding-left:11px;border-left:3px solid var(--acc-line)}
+p{margin:14px 0;max-width:70ch}
+b,strong{font-weight:650}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:2px}
+
+/* ── 용어 정의 — 이 문서의 핵심 장치 ── */
+.gloss{background:var(--surf);border:1px solid var(--rule);border-left:3px solid var(--acc);
+  border-radius:0 9px 9px 0;padding:13px 17px;margin:16px 0;box-shadow:var(--shadow)}
+.gloss .t{font:600 14px ui-monospace,Menlo,monospace;color:var(--acc);
+  display:block;margin-bottom:3px}
+.gloss .d{font-size:14.5px;line-height:1.7;color:var(--ink2)}
+.gloss .d b{color:var(--ink)}
+.gloss .why{display:block;margin-top:7px;padding-top:7px;border-top:1px dashed var(--rule2);
+  font-size:13.5px;color:var(--mut)}
+.gloss .why b{color:var(--ink2)}
+
+.note{background:var(--surf);border:1px solid var(--rule);border-radius:8px;
+  padding:13px 16px;margin:16px 0;font-size:14.5px;line-height:1.7;color:var(--ink2)}
+.note b{color:var(--ink)}
+.note.key{border-color:var(--acc-line);background:var(--acc-soft)}
+.note.flag{border-color:color-mix(in srgb,var(--flag) 40%,var(--rule));background:var(--flag-soft)}
+.note .lead{color:var(--ink);font-weight:650}
+.src{font-size:11.5px;color:var(--mut);letter-spacing:.02em;
+  font-family:ui-monospace,Menlo,monospace}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:10px;
+  margin:24px 0 4px}
+.tile{background:var(--surf);border:1px solid var(--rule);border-radius:9px;
+  padding:13px 15px 12px;box-shadow:var(--shadow)}
+.tile.hi{border-color:var(--acc-line);background:var(--acc-soft)}
+.tile .k{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  font-family:ui-monospace,Menlo,monospace}
+.tile .v{font-size:23px;font-weight:650;letter-spacing:-.03em;margin-top:5px;line-height:1.1;
+  font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.tile .v small{font-size:13.5px;font-weight:500;letter-spacing:0}
+.tile .s{font-size:12px;color:var(--mut);margin-top:5px;line-height:1.45}
+
+.tw{overflow-x:auto;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:min(100%,520px)}
+th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  font-weight:600;text-align:left;white-space:nowrap;padding:0 12px 8px;
+  border-bottom:1px solid var(--rule2)}
+td{padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.62}
+tbody tr:last-child td{border-bottom:none}
+.n,th.n{text-align:right;font-family:ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.sym{white-space:nowrap;color:var(--acc);font-weight:600}
+.ax{color:var(--ink2);white-space:nowrap;font-family:ui-monospace,Menlo,monospace}
+td.strong{font-weight:650;color:var(--ink)}
+tr.rand td{background:repeating-linear-gradient(135deg,transparent 0 5px,var(--hatch) 5px 10px)}
+tr.pick td{background:var(--acc-soft)}
+.pill{display:inline-block;font-size:10.5px;letter-spacing:.06em;padding:2px 7px;
+  border-radius:4px;border:1px solid currentColor;white-space:nowrap}
+.pill.rnd{color:var(--flag)} .pill.wall{color:var(--mut)} .pill.ok{color:var(--acc)}
+
+.eq{display:flex;flex-wrap:wrap;align-items:flex-start;gap:5px 11px;padding:8px 0 4px;
+  overflow-x:auto}
+.term{display:flex;flex-direction:column;align-items:center;gap:7px;padding-bottom:2px}
+.chip{display:inline-flex;align-items:center;justify-content:center;min-width:21px;height:20px;
+  padding:0 6px;border-radius:5px;background:var(--acc-soft);color:var(--acc);font-size:12px;
+  font-weight:600;border:1px solid var(--acc-line)}
+.chip.ghost{visibility:hidden}
+.term .t{font-size:16px;color:var(--ink);white-space:nowrap;background:none;border:none;padding:0}
+.term .sub{font-size:10.5px;letter-spacing:.04em;color:var(--mut);white-space:nowrap;
+  font-family:ui-monospace,Menlo,monospace}
+.eq2{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:18px;padding-top:16px;
+  border-top:1px dashed var(--rule2);font-size:14.5px}
+.eq2 .row{display:flex;align-items:center;gap:9px}
+.eq2 .lbl{font-size:11.5px;letter-spacing:.06em;color:var(--mut);white-space:nowrap;
+  font-family:ui-monospace,Menlo,monospace}
+
+figure{margin:22px 0;background:var(--surf);border:1px solid var(--rule);border-radius:10px;
+  padding:18px 20px 14px;box-shadow:var(--shadow)}
+figure .fx{overflow-x:auto}
+svg{display:block;width:100%;height:auto;overflow:visible}
+figcaption{font-size:13px;line-height:1.65;color:var(--mut);margin-top:12px;padding-top:11px;
+  border-top:1px solid var(--rule);max-width:74ch}
+figcaption b{color:var(--ink2)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin-top:12px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+.legend i.dot{border-radius:50%}
+
+pre{background:var(--surf2);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;
+  overflow-x:auto;font-size:12.5px;line-height:1.8;color:var(--ink2);margin:16px 0}
+pre b{color:var(--ink)}
+p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--surf2);
+  border:1px solid var(--rule);border-radius:4px;padding:1px 5px;font-size:13px}
+
+.foot{margin-top:64px;padding-top:18px;border-top:1px solid var(--rule2);font-size:12px;
+  line-height:1.75;color:var(--mut)}
+.foot code{font-size:11.5px}
+@media (max-width:600px){
+  h1{font-size:25px}
+  .wrap{padding:32px 16px 72px}
+  .shead{flex-wrap:wrap}
+  .shead .tag{margin-left:0;flex-basis:100%}
+}
+</style>
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">emb / pace · fit_A_tendon · 커밋 38207d2 · 2026-08-14 <span style="color:var(--flag)">· 용어 갱신 2026-08-24</span></div>
+  <h1>액추에이터 식별과 브링업</h1>
+  <p class="deck"><b>상세판.</b> MJCF·제어기에 넣는 값과 그 근거, 그리고 그 값으로 로봇을 세우는 절차까지.
+  <b>파라미터 · 지연 · 게인 · CAD 대조 · 검증 RMS · 브링업 29단계 · 무중력 α 측정</b>.
+  전개 과정과 폐기된 가설은 원문 <code>RESULTS.md</code> 에 있다.
+  <br><b>→ 요약만 필요하면 축약판을 볼 것.</b></p>
+  <div class="note flag" style="margin-top:14px"><b>★2026-08-24 용어 갱신 — 숫자는 하나도 안 바뀌었다.</b>
+  종전에 <code>kp_ch·gear_k²</code> 를 <b><code>kp_joint</code>(관절 게인)</b> 이라 불렀는데
+  <b>이름이 틀렸다.</b> 채널각은 <code>q_ch = sign·gear_k·q_raw + offset</code> 이라
+  <b>raw각의 함수</b>지 모델각의 함수가 아니다 ⇒ 올바른 이름은 <b><code>kp_raw</code></b> 다.
+  <b>스칼라 "관절 게인" 은 애초에 존재하지 않는다</b> — 발목 커플링 때문에 모델각 강성은
+  행렬이다(§0). <code>kp_leg</code> 도 폐기됐다(한 이름이 세 가지였다).
+  <span class="src">emb/README.md §"게인 이름 규칙" · 커밋 f20238c</span></div>
+  <div class="note key" style="margin-top:10px"><b>★★2026-08-24 오후 — α 절(§0)과 무중력 절(§I)에 실측 결과가 붙었다.</b>
+  ①영점 재캘리브레이션(옛 영점은 hip 이 7.8°/10.9° 틀려 있었다 — §I 결과표의 전제)
+  ②<b>브래킷 판독</b>으로 hip·thigh 의 <code>1/g*</code> 축별 확정 — 종전 "α≈0.87 단일값" 은
+  영교차 보간이 마찰 데드밴드를 관통해 만든 허구로 <b>폐기</b>
+  ③thigh 좌우차 — <b>08-25 확정: 기하</b>(g* 가 자세를 탄다 1.17→1.36 · α 배제 · 케이블 유력 · §I 말미)
+  ④EtherCAT 동결 원인 확정: <b>물리 링크 단절</b>(dmesg 18분 13회 · 마스터 기동 전에도 끊김).
+  ⑤<b>08-25 오후 — push(발밀기) 저울 시험</b>: calf 경로 전달비 <b>0.82±0.02</b>(외부 기준·좌우 동일)
+  → 세 경로(hip 0.84·calf 0.82·thigh 0.95)가 모여 최단 해석이
+  <b>α ≈ 0.83 공통 + thigh 모델중력 ~13% 과대</b> 로 갱신됨(§I 말미).
+  ⑥<b>★08-26 — E3(뒤꿈치밀기)·E4(Qhome8) 완주로 최종 갱신: 전달비는 자세를 탄다.</b>
+  평발·0° 계열(9스윕·양다리) <b>0.80±0.02</b> vs Qhome8(양다리 재현) <b>0.68±0.05</b> —
+  고정 축별 r 도, "α 0.83 공통 단일값" 도 이 표를 동시에 못 만든다(§0 α 표 최상단 행).
+  E3(hip+calf) 0.84~0.86 = hip·calf 건강 ⇒ 결손 국소화 = thigh(HL 케이블) +
+  <b>foot 발목각 의존 손실 의심</b>(0° 부근 ~0.4~0.5 vs −55° ~0.8 — E2 정합).
+  확증 수단 = 발목각별 foot 단독 토크시험. 운용: 평발 힘제어 0.80(현행 유지) ·
+  Qhome8 힘제어 <b>×1.47 보정 필요</b>(walk 시점 결정).
+  운용값은 <code>run_deploy_hw.sh</code> 와 현장카드가 단일 출처다.</div>
+</header>
+
+<div class="tiles" style="margin-top:22px">
+  <div class="tile"><div class="k">§0~§1</div><div class="v" style="font-size:15px">두 수식 · MJCF 값</div>
+    <div class="s">플랜트·제어법칙(★α 포함) · 좌표 · 게인 이름 규칙</div></div>
+  <div class="tile"><div class="k">§2~§3</div><div class="v" style="font-size:15px">지연 · 게인</div>
+    <div class="s">T_d 8.39ms · f_n·ζ · 보행 속도요구</div></div>
+  <div class="tile"><div class="k">§4~§6</div><div class="v" style="font-size:15px">CAD 대조 · 검증</div>
+    <div class="s">관성 · 검증 RMS · 미해결</div></div>
+  <div class="tile hi"><div class="k">§7~§I</div><div class="v" style="font-size:15px">브링업 · α 측정</div>
+    <div class="s">29단계 · 무중력 중립점</div></div>
+</div>
+
+
+<section>
+<div class="shead"><span class="n">§0</span><h2>두 수식</h2>
+  <span class="tag">이 문서 전체의 뼈대</span></div>
+
+<p><b>① 플랜트</b> — 한 축이 따르는 운동방정식. 식별이란 이 항들을 숫자로 채우는 일이다.</p>
+
+<figure>
+<div class="fx">
+<div class="eq" role="img" aria-label="운동방정식: 지연된 토크명령 = 관성항 + 점성항 + 쿨롱마찰항 + 중력항">
+  <div class="term"><span class="chip" style="background:var(--flag-soft);color:var(--flag);border-color:var(--flag)">α</span><code class="t">α·τ_cmd(t − T_d)</code><span class="sub">토크 스케일 · delay</span></div>
+  <div class="term"><span class="chip ghost">·</span><code class="t">=</code><span class="sub">&nbsp;</span></div>
+  <div class="term"><span class="chip">①②</span><code class="t">[ I_link + I_rot·N² ]·q̈</code><span class="sub">dof_armature</span></div>
+  <div class="term"><span class="chip ghost">·</span><code class="t">+</code><span class="sub">&nbsp;</span></div>
+  <div class="term"><span class="chip">③</span><code class="t">b·q̇</code><span class="sub">dof_damping</span></div>
+  <div class="term"><span class="chip ghost">·</span><code class="t">+</code><span class="sub">&nbsp;</span></div>
+  <div class="term"><span class="chip">④</span><code class="t">τ_c·sgn(q̇)</code><span class="sub">dof_frictionloss</span></div>
+  <div class="term"><span class="chip ghost">·</span><code class="t">+</code><span class="sub">&nbsp;</span></div>
+  <div class="term"><span class="chip">⑤</span><code class="t">g(q)</code><span class="sub">CAD 계산</span></div>
+</div>
+<div class="eq2">
+  <div class="row"><span class="lbl">발목만</span>
+    <code class="t">q_raw = q_foot + coef·q_calf</code><span class="chip">⑦</span></div>
+  <div class="row"><span class="lbl">관측</span>
+    <code class="t">q_enc = q_true + q̃_b</code><span class="chip">⑧</span></div>
+</div>
+</div>
+<figcaption>다축 PACE 는 <b>대각항이 아니라 <code>M(q)·q̈ + C(q,q̇)·q̇ + g(q)</code> 전체</b>를
+시뮬레이터가 들고 푼다. 위 식은 <b>한 축을 떼어 본 형태</b>이고 각축 해석회귀가 쓰는 모델이다.
+<b>발목만 식이 하나 더 붙는 이유</b>는 무릎과 벨트로 묶여 모터가 도는 좌표
+(<code>q_raw</code>)와 관절이 꺾이는 좌표(<code>q_foot</code>)가 다르기 때문이다.</figcaption>
+</figure>
+
+<div class="note flag"><span class="lead">★★2026-08-24 — <b>α(토크 스케일)를 식에 넣었다. 이게 빠져 있어서
+이 문서의 모든 식별값을 잘못 읽고 있었다.</b></span>
+<b>α = 실제 출력토크 / 명령토크.</b> kt 오차·전류루프 오차·기어 효율·감속비 오설정이 전부 여기로 모인다.
+드라이버는 우리가 시킨 값이 아니라 <b>α 배</b>를 낸다. 그런데 종전 식은 <code>τ_cmd</code> 를
+그대로 좌변에 뒀다 — 즉 <b>암묵적으로 α ≡ 1 을 가정</b>하고 있었다.
+<pre style="margin:11px 0">참값:      <b>α</b>·τ_cmd = I·q̈ + b·q̇ + τ_c·sgn(q̇) + g(q)
+회귀가 보는 것:  τ_cmd = <b>(I/α)</b>·q̈ + <b>(b/α)</b>·q̇ + <b>(τ_c/α)</b>·sgn(q̇) + <b>g(q)/α</b>
+                        └──── α 가 **모든 항에 똑같이** 나뉘어 들어간다 ────┘</pre>
+⇒ <b>§1 의 채택값은 전부 <code>X/α</code> 다.</b> <code>ROTOR_I 7.327e−4</code> 는 참 로터관성이 아니라
+<code>I_rot/α</code> 이고, <code>JDAMP</code>·<code>JFRIC</code> 도 마찬가지다.
+<b>α=1 이면 그대로 참값이고, α≠1 이면 전부 그만큼 어긋나 있다.</b>
+<span class="why"><b>★그리고 이것이 §4 의 미해결과 같은 사건이다.</b> 데이터시트 로터관성 <b>5.29e−4</b> vs
+실측 <b>7.327e−4</b> 의 +38% 차이를 "감속기 입력단 관성" 으로 귀속해 뒀는데,
+<code>α = 5.29/7.327 = <b>0.722</b></code> 여도 <b>같은 데이터가 나온다.</b> 회귀는 α 와 I 를
+<b>원리적으로 못 가른다</b>(완전축퇴) — 둘의 몫만 본다.
+<b>불편할 만큼 잘 맞는다: 0.722 × 7.327e−4 = 5.29e−4 (데이터시트와 0.2% 일치).</b></span>
+<span class="why"><b>지금까지 잰 α</b> — 방법마다 갈리고, 그 폭이 하필 낙상 문턱과 같다:
+<div class="tw" style="margin:8px 0 2px"><table>
+<thead><tr><th>방법</th><th class="n">α</th><th>비고</th></tr></thead><tbody>
+<tr class="pick"><td class="ax strong">★★자세별 push 캠페인 (08-26 완주)</td>
+    <td class="n strong">평발·0° <b>0.80±0.02</b><br>Qhome8 <b>0.68±0.05</b></td>
+    <td><b>최종 — 전달비가 자세를 탄다</b>(양다리 재현 · 고정 축별 r 기각).
+        전기 α 는 자세 불변이므로 차이는 모델-실물 기하. HL 은 float g* 와
+        정량 교차검증(1/1.225=0.82↔0.80 · 1/1.50=0.67↔0.66). 아래 08-24·25 행들은
+        이 지도의 부분 측정이었다</td></tr>
+<tr class="pick"><td class="ax strong">★무중력 브래킷 (축별 · 2026-08-24)</td>
+    <td class="n strong">hip 0.83~0.85<br>thigh 0.91 / 0.67</td>
+    <td><b>마찰 소거 · 밴드가 τ_c/α 를 되돌려줘 자체 검증</b>(0.66~0.68 vs PACE 0.604).
+        축별로 다르다 = α 가 아니라 <b>CAD 질량분포 오차</b>(hip G_real +19%).
+        HL_thigh 0.67 은 <b>기하 오염</b>(케이블 의심 · 08-25 확정) — §I 말미</td></tr>
+<tr class="pick"><td class="ax strong">★저울 힘시험 (push · 08-25)</td>
+    <td class="n strong">calf 경로 0.82±0.02</td>
+    <td><b>유일한 외부 기준</b>(저울) — CAD 게이지 밖에서 잰 값. 좌우 동일 ·
+        마찰루프 동시적합(τ_c 0.70 Nm 4중 정합). 세 경로 종합 → <b>α ≈ 0.83 공통</b></td></tr>
+<tr class="rand"><td class="ax">궤적정합(pace_cmaes, τ 미사용)</td><td class="n">1.00 ± 0.03</td>
+    <td><b>반증됨</b> — 무중력 실측과 불일치. 저속 정지마찰 이력 의심</td></tr>
+<tr><td class="ax">토크회귀 thigh</td><td class="n">0.89 ~ 1.04</td><td>유일하게 쓸 만한 축</td></tr>
+<tr><td class="ax">등속 스윕 hip</td><td class="n">0.867 ~ 0.919</td><td>준정적</td></tr>
+<tr><td class="ax">순수토크 프로브 hip</td><td class="n">0.904 / 0.874</td><td>준정적</td></tr>
+<tr class="rand"><td class="ax">로터관성 갭</td><td class="n strong">0.722</td><td>축퇴 — 감속기 관성일 수도</td></tr>
+</tbody></table></div>
+⚠<b>궤적정합 1.00 vs 준정적 0.87~0.92 — 10~13% 갈린다.</b> 그런데 MuJoCo 가 낸
+<b>2점 stand 낙상 문턱이 α ≈ 0.92~0.95</b> 다. 즉 <b>한 방법은 "여유 있음", 다른 방법은
+"이미 넘어짐" 을 가리킨다.</b> 저속 정지마찰 이력이 유력하다(|q̇|&lt;0.05 표본을 버리면
+hip α 가 0.727→1.095 로 올라간다).</span>
+<span class="why">⚠<b>그리고 α 는 CAD 게이지에 갇혀 있다.</b> 위 값들은 전부
+<code>α_추정 = α_참 × (G_CAD / G_real)</code> 이다. 플랜트 질량을 ±10% 흔들면 α 가 1:1 로 따라온다
+(0.907 / 1.085, RMS 는 9% 밖에 안 나빠진다) — <b>데이터가 "질량 10% 과소 + α 10% 과대" 와
+"둘 다 정확" 을 구분 못 한다.</b> 저장소의 유일한 저울 기록은 "실기 약 15 kg,
+모델이 8% 가볍다" 뿐이고 <b>다리 링크 질량은 한 번도 검증된 적이 없다.</b>
+⇒ 게이지를 깨는 유일한 길은 <b>외부 기준</b>이다: 다리 링크 저울 + hip 롤축 y_com 실측,
+또는 <b>무중력 모드 중립점</b>(아래 브링업 §I).</span></div>
+
+<p><b>② 제어법칙</b> — 실기 드라이버가 도는 식. <b>적합도 시뮬 안에서 같은 식을 돌린다.</b></p>
+
+<figure>
+<pre style="font-size:14px;line-height:2;margin:0"><b>τ_cmd = kp·( q_cmd(t − T_d) − q(t) )  +  kd·( q̇_cmd(t − T_d) − q̇(t) )  +  τ_ff</b>
+          └────── 위치오차 ──────┘        └────── 속도오차 ──────┘
+        └─────────────── 드라이버가 **계산**하는 것 = τ_cmd ───────────────┘
+
+ 실제 출력 = <b><span style="color:var(--flag)">α</span> · τ_cmd</b>      ← ①의 좌변이 바로 이것이다. 두 식이 여기서 만난다.
+
+지연을 1차로 펴면    q_cmd(t − T_d) ≈  q_cmd(t) − T_d·q̇_cmd
+                   q̇_cmd(t − T_d) ≈ q̇_cmd(t) − T_d·q̈_cmd
+
+ ⇒ τ ≈ kp(q_cmd − q) + kd(q̇_cmd − q̇)  <b>−  kp·T_d·q̇_cmd</b>  −  kd·T_d·q̈_cmd
+                                         └ 지연이 만든 속도항 ┘   └ 2차 · 작다 ┘</pre>
+<figcaption><b>★<code>q̇_cmd = 0</code> 은 "정지" 가 아니다</b> — <b>속도 목표를 안 준다</b>는 뜻이다.
+<code>q_cmd(t)</code> 는 얼마든지 움직인다(home 40dps · jog 20dps · stand 블렌드).
+그러면 <code>kd</code> 항이 <code>kd·(0 − q̇)</code> = <b>움직임을 거스르는 순수 감쇠</b>가 되고,
+<code>kp</code> 가 그걸 이기려면 그만큼 벌어져야 한다 ⇒ <b>추종지연 = kd·q̇ / kp</b>:
+<code>home 40dps</code> 에서 hip 2.40° · <b>thigh 3.20°</b> · calf 1.75° · foot 2.67°.
+정지(hold·float·stand 정착)에서는 <code>q̇=0</code> 이라 <b>끌림이 0</b> 이다.
+⚠보행 스윙(738 dps)에서는 이 항이 <b>트립의 2.1배</b>가 되어 감내 불가다 — §3 참조.<br>
+<b>★α 가 게인에도 그대로 붙는다</b>(2026-08-24 추가) — 실효 게인은
+<code>α·kp</code>·<code>α·kd</code> 다. ⇒ §3 의 <code>f_n</code>·<code>ζ</code> 표도
+<b>α 로 스케일된다</b>: <code>f_n ∝ √(α·kp_raw)</code> · <code>ζ ∝ √α</code>.
+α=0.9 면 <code>f_n</code> 이 5% 낮고 ζ 도 5% 낮다. 표의 판정(전 축 ✅)을 뒤집을 크기는
+아니지만, <b>절대값으로 인용할 때는 α 를 달아야 한다.</b><br>
+<b>이 전개가 §2·§3 의 근거다.</b> 계수 <code>kp·T_d</code> 의 단위가
+<code>N·m·s/rad</code> 로 <code>b</code>(<code>JDAMP</code>)와 같다 —
+<b>적합에게 지연과 점성은 구별되지 않는다.</b> 그리고 이 항은 <code>q̇_cmd</code> 에
+붙으므로 <b>명령이 움직일 때만</b> 생긴다 — stand 와 추종의 ζ 가 갈리는 이유다(§3).<br>
+⚠<code>kp</code> 는 하나다. 새 게인이 생긴 게 아니라 <code>kp</code> 가 곱해지는 대상
+안의 시간지연이 <b>속도 성분을 뱉어낸</b> 것이다.</figcaption>
+</figure>
+
+<div class="note flag"><b>⚠ 위가 드라이버의 일반형(MIT 모드)이고, 경로마다 쓰는 부분이 다르다.</b>
+<b>이 문서의 숫자는 전부 가운데 줄</b>(식별 조건)에서 나왔다.
+<div class="tw" style="margin:10px 0 2px">
+<table>
+<thead><tr><th>경로</th><th>호출</th><th class="n">q̇_cmd</th><th>실제로 도는 식</th></tr></thead>
+<tbody>
+<tr><td class="ax">드라이버 일반형</td><td><code>write_mit(q, dq, τ_ff, kp, kd)</code></td>
+    <td class="n">임의</td><td>위 전체 형태 <b>+ τ_ff</b></td></tr>
+<tr class="pick"><td class="ax strong">식별 (PACE)</td>
+    <td><code>write_pos(q, kp, kd)</code> · <code>write_mit(…, <b>0</b>, …)</code></td>
+    <td class="n strong">≡ 0</td>
+    <td><code>τ = kp·(q_cmd(t−T_d) − q) <b>− kd·q̇</b></code></td></tr>
+<tr><td class="ax">배포 (MPC+WBIC)</td><td><code>write_torque(…, kp_scale=<b>0</b>, kd_scale=<b>3.5</b>)</code></td>
+    <td class="n">—</td><td><code>kp</code> 만 0 · <b><code>kd</code> 는 남긴다</b> ★</td></tr>
+</tbody>
+</table>
+</div>
+<b>식별에서 <code>q̇_cmd ≡ 0</code> 인 것이 오히려 유리하다</b> — 속도 되먹임이 순수
+<code>−kd·q̇</code> 로 고정되므로 <code>kd</code> 와 <code>q̇_cmd</code> 가 섞이지 않는다.
+<span class="src">hwio.py:724 · :1076 (dq_des 자리에 0 배열) · hw_interface.py:144 · :201</span><br>
+⚠<b>만약 q̇_cmd 를 함께 보내면</b> <code>q̇_cmd</code> 계수가
+<code>−kp·T_d</code> 에서 <code>+(kd − kp·T_d)</code> 로 <b>부호가 뒤집힌다</b>
+(<code>kd≈4</code> vs <code>kp·T_d≈0.42</code>). 그러면 §3 의 <b>"추종" 열은 다시
+계산해야 한다.</b> 지금 배포경로는 <code>q̇_cmd</code> 를 안 쓴다.</div>
+
+<div class="note key"><span class="lead">★<b>배포에서 <code>kd</code> 를 0 으로 보내면 안 된다</b> — 실기가 그렇게 말했다.</span>
+2026-08-20 실기 stand 에서 <b>블렌드 후반(게인이 35% 아래로 내려간 뒤)에 발산</b>했다:
+<code>|q̇| 6 → 12 → 19 → 44 → <b>196 → 322 dps</b></code>. 지연·마찰보상을 꺼봐도
+<b>더 나빠지거나 그대로</b>라 둘 다 범인이 아니었다.<br>
+원인은 <b>순수 토크(<code>kp=kd=0</code>)로는 잡을 수 없는 대역</b>이다 —
+<b>30~65 Hz</b> 에서 <code>T_d = 8.4 ms</code> 가 만드는 위상지연이 <b>90~150°</b> 다
+(§3 의 <code>f_n</code> 에서 8~19° 였던 그 계산을 그 대역까지 밀면 나온다).
+<b>시뮬은 강체라 이 모드가 없어 안 드러났다</b> — 기구 유연성·백래시·엔코더 잡음이 만든다.<br>
+⇒ 조치: <b><code>kp</code> 는 0 으로 보내되 <code>kd</code> 는 유지</b>한다.
+<code>kp</code> 를 남기면 WBIC 와 싸우지만(정지한 hold 자세로 되당긴다),
+<code>kd</code> 는 <b>속도만</b> 억제하므로 목표와 싸우지 않고 진동 대역만 먹는다.
+calf 기준 <code>kd_ch 3.5</code> = 관절 <b>7.9 N·m·s/rad</b> 로 물리 감쇠(<code>JDAMP=0</code>)를
+압도한다. <span class="src">커밋 a117c44 — 실기 3설정 비교</span></div>
+
+<div class="gloss"><span class="t">★ 위 식의 kp · kd 는 어느 좌표의 값인가</span>
+<span class="d"><b>식 자체는 좌표에 무관하다</b> — 같은 법칙을 채널각에서도 관절각에서도
+쓸 수 있고, <b>짝이 맞는 게인</b>을 쓰면 된다. 그런데 <b>두 값은 <code>gear_k²</code> 만큼
+다르다</b>:
+<pre style="margin:9px 0">Δq_ch  = s·Δq_raw          (각도가 <b>들어갈</b> 때 ×s · s = sign·gear_k)
+τ_ch   = kp_ch · Δq_ch
+τ_raw  = s·τ_ch            (토크가 <b>나올</b> 때 ×s · 일률보존)
+
+⇒ τ_raw = kp_ch · s² · Δq_raw  ⇒  <b>kp_raw = kp_ch · gear_k²</b>   (부호는 제곱에서 상쇄)</pre>
+<code>kd</code> 도 같다. <b>단위는 둘 다 <code>N·m/rad</code></b> — SHM 은 각도를 <b>도</b>로
+보내지만 드라이버가 내부에서 라디안으로 바꾼다(실측 예: hip 오차 4.03° → 명령 7.03 N·m
+= <code>100 × 4.03 × π/180</code> ✓).
+<pre style="margin:11px 0"><b>N</b> — <b>실제</b> 감속비 (모터축 회전각 : 관절 회전각). <code>armature = ROTOR_I·N²</code> 의 그 N 이다.
+
+      hip · thigh    N = 7 × 1.0 = <b>7</b>
+      calf           N = 7 × 1.5 = <b>10.5</b>
+      foot           N = 7 × 1.2 = <b>8.4</b>
+                         └gear_k┘</pre>
+<span class="why"><b>★<code>gear_k</code> 는 감속비가 아니라 <b>드라이버 오설정을 되돌리는
+보정값</b>이다.</b> 드라이버가 <b>전 축을 7:1 로 착각</b>하고 있다 — 실제는 calf 10.5:1 ·
+foot 8.4:1 이다. <code>gear_k = N_실제 / 7</code> 이 그 착각의 크기이고, 그것이
+<b>각도(입구)와 토크(출구) 두 번</b> 곱해져 <code>gear_k²</code> 가 된다.<br>
+⇒ <b>그래서 효율 <code>η</code> 가 안 들어간다.</b> 기어박스가 하나 더 달린 게 아니라
+<b>같은 기어박스를 잘못 세고 있는 것</b>이므로, <code>kp_raw = η·kp_ch·N²</code> 가 아니라
+<code>kp_ch·gear_k²</code> 다.<br>
+⇒ <b>드라이버가 고쳐지면 <code>gear_k</code> 를 1.0 으로 되돌린다.</b> 그러면 calf·foot 이
+<b>갑자기 약해진다</b> — 값을 미리 낮춰 두지 말 것(§3 ζ 하한).
+<span class="src">biped_emb.yaml §"감속비 오설정의 파급" · emb/README.md §"게인 이름 규칙"</span></span>
+<span class="why"><b>이 문서의 규약</b> — §2 의 <code>kp·T_d</code> 표는 <b>raw</b> 기준이다
+(<code>JDAMP</code> 도 모터축에 붙는 양이라 그래야 비교가 성립한다). §3 게인표는 배포값이라
+<b>채널</b> 기준으로 적었다. <b>calf 는 2.25배, foot 은 1.44배</b> 차이 나므로 섞으면 그 두 축만
+틀린다 — hip·thigh 는 <code>gear_k=1</code> 이라 같아서 <b>오래 안 보일 수 있다.</b><br>
+★<b>외우는 규칙</b>: <code>_ch</code>/<code>_raw</code> 는 <b>좌표</b>, <code>_leg</code> 는
+<b>8축 다리순 배열</b>(좌표 아님). 그리고 <b>모터에 달린 것은 전부 모터축(raw)에서 작용한다</b> —
+반사관성·점성·마찰·드라이버 PD 게인. <code>kp_joint</code>·<code>kp_leg</code> 는 <b>폐기됐다.</b></span></span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>kind</th><th class="n">gear_k</th><th class="n">k²</th>
+  <th class="n">kp_ch (배포)</th><th class="n">kp_raw</th>
+  <th class="n">kd_ch</th><th class="n">kd_raw</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">1.0</td><td class="n">1.00</td>
+    <td class="n">100</td><td class="n">100</td><td class="n">6.0</td><td class="n">6.00</td></tr>
+<tr><td class="ax">thigh</td><td class="n">1.0</td><td class="n">1.00</td>
+    <td class="n">50</td><td class="n">50</td><td class="n">4.0</td><td class="n">4.00</td></tr>
+<tr class="pick"><td class="ax">calf</td><td class="n strong">1.5</td><td class="n strong">2.25</td>
+    <td class="n">80</td><td class="n strong">180</td><td class="n">3.5</td><td class="n strong">7.88</td></tr>
+<tr class="pick"><td class="ax">foot</td><td class="n strong">1.2</td><td class="n strong">1.44</td>
+    <td class="n">30</td><td class="n strong">43.2</td><td class="n">2.0</td><td class="n strong">2.88</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note flag">⚠<b>위는 배포 게인이고, 식별은 그보다 낮은 게인에서 했다.</b>
+<code>kp_raw[calf]</code> 가 식별 <b>56.25</b> · 검증(게인 2배) <b>112.5</b> · 배포
+<b>180</b> 이다. ⇒ <b>"게인 2배에서도 통과" 가 배포 조건까지 덮지는 못한다</b> —
+배포는 검증한 것보다 <b>1.6배 더 세다.</b>
+<span class="src">식별 npz kp_raw · biped_emb.yaml joints: HL_calf (kp 80 · gear_k 1.5)</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>어디서</th><th>어느 좌표의 값을 쓰나</th></tr></thead>
+<tbody>
+<tr><td class="ax">spec.yaml · SHM · 드라이버</td><td><b>채널</b> <code>kp_ch</code></td></tr>
+<tr><td class="ax">MuJoCo 롤아웃 · 데드밴드 · 트립각 · 상태 JSON</td><td><b>raw</b> <code>kp_raw</code></td></tr>
+<tr><td class="ax">collect_multichirp 가 저장하는 npz</td><td><b>raw</b> <code>kp_raw</code>·<code>kd_raw</code></td></tr>
+<tr><td class="ax">WBIC</td><td><b>안 쓴다</b> — <code>τ = h − Jᵀλ</code> 에 관절 PD 게인이 없다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag"><b>★2026-08-21 정정 — 종전에 이 값을 <code>kp_joint</code>(관절 게인)라 불렀는데 틀렸다.</b>
+채널각은 <code>q_ch = sign·gear_k·q_raw + offset</code> 이므로 <b>raw각의 함수지 모델각의 함수가 아니다.</b>
+⇒ <code>kp_ch·gear_k²</code> 가 곱해지는 상대는 <b>raw 오차</b>다. 값은 하나도 안 바뀌고 <b>이름만 틀렸다.</b><br>
+⇒ <b>네 축 전부 raw 게인이다.</b> hip·thigh·calf 는 커플링이 없어 <b>raw ≡ 모델각</b>이라 값이 같고,
+<b>발목에서만</b> raw(<code>q_foot + coef·q_calf</code>) ≠ 모델각으로 갈린다.
+그래서 이 오류가 오래 안 보였다. 데드밴드도 <b>raw각 기준</b>으로 읽어야 한다.<br>
+★<b>그리고 스칼라 "관절 게인" 은 존재하지 않는다.</b> 발목 커플링 때문에 모델각 좌표의
+강성은 행렬이 된다 — <code>K_joint = Aᵀ·diag(kp_raw)·A</code>:
+<pre style="margin:9px 0">K_raw   = diag(180.0, 43.2)                  ← 축별 스칼라로 쓸 수 있다
+K_joint = [[223.2, 43.2], [43.2, 43.2]]      ← <b>비대각이 있다</b>   (calf, foot)</pre>
+무릎만 1° 어긋나고 발목이 0° 여도 <b>발목 관절토크가 0.754 N·m</b> 나온다. 반작용으로 calf
+모델각 강성은 180 → <b>223.2 (+24%)</b>. ⇒ <b>축별로 숫자 하나를 적는 이 문서의 표 형식 자체가
+raw 좌표에서만 성립한다.</b>
+<span class="src">emb/README.md §"게인 이름 규칙" (커밋 f20238c) · pace_cmaes.py:295 는 이미 옳게 적고 있었다</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>기호</th><th>무엇을 뜻하는 값인가</th><th>채택값 · 출처</th></tr></thead>
+<tbody>
+<tr><td><span class="chip">①</span></td><td class="sym">I_link</td>
+    <td><b>링크 관성</b> — 모터 바깥, 뼈대의 회전관성</td>
+    <td>CAD. 각축 관성시험이 검증 (§4)</td></tr>
+<tr><td><span class="chip">②</span></td><td class="sym">I_rot·N²</td>
+    <td><b>반사관성</b> — 회전자가 감속기 <b>너머</b>에서 느껴지는 관성. <code>N²</code> 이 곱해진다</td>
+    <td><b>ROTOR_I 7.327e−4</b> · 각축 4곳 ±10%</td></tr>
+<tr><td><span class="chip">③</span></td><td class="sym">b</td>
+    <td><b>점성감쇠</b> — 속도에 <b>비례</b>하는 손실</td>
+    <td>calf·foot·thigh <b>0</b> · hip 0.090 ⚠</td></tr>
+<tr><td><span class="chip">④</span></td><td class="sym">τ_c</td>
+    <td><b>쿨롱마찰</b> — 속도와 <b>무관</b>, 부호만 따라가는 일정 손실</td>
+    <td>0.604 / 0.871 / 0.639 / 0.724</td></tr>
+<tr><td><span class="chip">⑤</span></td><td class="sym">g(q)</td>
+    <td><b>중력토크</b> — 자세만으로 정해진다</td><td>MJCF 는 CAD 가 계산</td></tr>
+<tr><td><span class="chip">⑥</span></td><td class="sym">T_d</td>
+    <td><b>왕복지연</b> — 명령이 모터에 도달하기까지</td>
+    <td><b>8.39 ± 0.79 ms</b> · 직접 실측 (§2)</td></tr>
+<tr><td><span class="chip">⑦</span></td><td class="sym">coef</td>
+    <td><b>커플링 계수</b> — 무릎 1° 당 발목 <b>관절각</b>이 도는 양(부호 반대)</td>
+    <td><b>1.0</b> · 경사계 실측, |1−c| ≲ 0.04</td></tr>
+<tr><td><span class="chip">⑧</span></td><td class="sym">q̃_b</td>
+    <td><b>엔코더 영점 오차</b></td><td>PACE 축별 8개, 최대 0.52°</td></tr>
+<tr class="rand"><td><span class="chip" style="background:var(--flag-soft);color:var(--flag);border-color:var(--flag)">α</span></td>
+    <td class="sym">α</td>
+    <td><b>토크 스케일</b> — 실제출력/명령. kt·전류루프·효율·감속비 오설정이 전부 여기로</td>
+    <td><b>★자세별(08-26 최종)</b>: 평발·0° <b>0.80±0.02</b> · Qhome8 <b>0.68±0.05</b>
+    (양다리 재현 · 고정 단일값/축별 r 기각). 전기 공통 + 자세의존 기하손실(foot 발목각 의심 ·
+    HL 은 케이블 가산). Qhome8 힘제어 ×1.47 보정 필요 · 로터갭 0.722 는 관성 축퇴(별개)</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§1</span><h2>MJCF 에 넣을 값</h2>
+  <span class="tag">fit_A_tendon</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>kind</th><th class="n">dof_armature<br><span class="src">ROTOR_I·N²</span></th>
+  <th class="n">dof_damping<br><span class="src">b</span></th>
+  <th class="n">dof_frictionloss<br><span class="src">τ_c</span></th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">0.0359</td>
+    <td class="n">0.090 <span class="pill wall">⚠ 고정</span></td>
+    <td class="n">0.724 <span class="pill ok">◇ 보정</span></td></tr>
+<tr><td class="ax">thigh</td><td class="n">0.0359</td>
+    <td class="n strong">0 <span class="pill rnd">★ 잠정</span></td><td class="n">0.604</td></tr>
+<tr><td class="ax">calf</td><td class="n">0.0808</td>
+    <td class="n strong">0 <span class="pill ok">✓ 확정</span></td><td class="n strong">0.871</td></tr>
+<tr class="pick"><td class="ax strong">foot</td><td class="n strong">0 → tendon</td>
+    <td class="n strong">0 → tendon</td><td class="n strong">0 → tendon</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">foot 의 세 손실항은 전부 tendon(모터축) 좌표.</span>
+<code>tendon_armature</code> <b>0.0517</b> · <code>tendon_damping</code> <b>0.110</b> ·
+<code>tendon_frictionloss</code> <b>0.639</b><br>
+<code>delay</code> <b>8.39 ms</b>(실측 고정) · <code>coef</code> <b>1.0</b>(경사계 실측) ·
+<code>ROTOR_I</code> <b>7.327e−4</b>(각축 4곳 ±10%)<br>
+<span class="src">armature = ROTOR_I · N² · N = 7 · gear_k (calf 1.5 · foot 1.2)</span></div>
+
+<div class="note key"><b>★2026-08-25 교차검증 — 이 표는 여전히 채택값이고, hip 마찰은 독립 실험이 확인했다.</b>
+무중력 브래킷의 밴드에서 나온 hip <code>τ_c/α</code> 가 HL 0.53 · HR 0.92 — 좌우 평균
+<b>0.73 ≈ 채택값 0.724</b> (전혀 다른 실험·조립 상태에서 일치). 좌우가 갈리는 이유도
+확인됨: HR hip 은 <b>양단지지</b>(베어링 추가·+150 g 축상 부품 · 레버암≈0 라 중력엔 무해).
+⚠단 셋은 새로 알게 됐다: ①전부 X/α 이며 α ≈ 0.90~0.95 로 좁혀짐(§0) — MJCF 는
+τ_cmd 규약과의 자기일관을 위해 <b>일부러 X/α 로 둔다</b> ②hip 마찰 좌우차는 kind 단일값이라
+모델에 없다 ③thigh 마찰은 조립 상태에서 0.67~0.72 로 벤치(0.604)보다 ~10% 높게 읽힘(갱신 후보).</div>
+
+<div class="note flag"><b>셋 다 옮기는 것이지 더하는 게 아니다</b> —
+<code>dof_*[foot]</code> 을 0 으로 안 두면 <b>이중 계상</b>.<br>
+⚠<code>thigh</code>·<code>calf</code> 의 <code>τ_c</code> 는 <code>b</code>=0 과 <b>짝</b>이라
+같은 판에서 와야 한다. 다른 판 값을 섞지 말 것.<br>
+◇<code>frictionloss.hip</code> 0.724 = 스윕 실측 0.827 × <b>계통 보정 0.876</b>(세 축의
+PACE/스윕 비 평균을 외삽). <code>--pin JFRIC.hip=0.724</code> 로 검증 RMS
+0.1874 → <b>0.1864</b>, 통과했다.</div>
+
+<div class="gloss"><span class="t">dof_ · jnt_ · tendon_ — 왜 이름이 셋인가</span>
+<span class="d">MuJoCo 는 값을 <b>세 배열</b>에 나눠 담는다. 손실 셋은
+<b><code>dof_</code> 에만 있다</b> — <code>jnt_damping</code> 은 <b>존재하지 않는다.</b>
+<pre style="margin:9px 0"><b>jnt_*</b>     관절마다 하나    njnt = 9    stiffness · range · axis
+<b>dof_*</b>     자유도마다 하나  nv   = 14   armature · damping · frictionloss
+<b>tendon_*</b>  힘줄마다 하나                foot 의 손실 셋이 여기로 옮겨 갔다</pre>
+<span class="why">감쇠·마찰·반사관성은 <b>자유도</b>에 붙는 양이다 — 볼조인트는 3개,
+freejoint 는 6개를 갖는다. 이 모델은 <code>njnt=9</code> 인데 <code>nv=14</code> 라
+<b>색인이 6칸 어긋난다.</b> 관절 질량행렬을 뽑을 때 <code>M[6:, 6:]</code> 로 자르는 게
+그래서다 — <code>jnt</code> 로 색인하면 조용히 <b>다른 축</b>을 건드린다.</span></span></div>
+
+<div class="gloss"><span class="t">τ — 어느 좌표의 토크인가</span>
+<span class="d"><b>액추에이터가 어디에 붙어 있느냐</b>가 정한다. MJCF 한 줄이면 답이 나온다:
+<pre style="margin:9px 0">&lt;motor <b>joint</b> ="HL_calf_joint"  ctrlrange="-126   126"  /&gt;   → <b>관절토크</b>
+&lt;motor <b>tendon</b>="HL_foot_rotor" ctrlrange="-100.8 100.8"/&gt;   → <b>tendon 토크</b></pre>
+⇒ §0 두 수식의 <code>τ</code> 는 <b>네 축 전부 raw(모터축) 토크</b>다 —
+hip·thigh·calf 는 raw ≡ 관절이라 <code>τ_joint</code> 와 같고, foot 만 tendon 이라 갈린다.
+<b><code>τ_ch</code> 가 아니다</b> — 식에 들어가는 게 <code>kp_raw</code>·raw각이므로
+나오는 것도 raw 계여야 한다. 환산은 <code>τ_raw = gear_k · τ_ch</code>.
+<span class="why"><b>각 · 게인 · 토크는 한 몸으로 움직인다.</b> 하나만 채널계로 쓸 수 없다 —
+<code>kp_ch·q_ch → τ_ch</code> 이거나 <code>kp_raw·q_raw → τ_raw</code> 이거나
+<b>둘 중 하나</b>다. 이 문서는 후자다. 그래서 <b>손실 셋도 같은 좌표에 있어야</b> §0 의
+①③④ 와 이어 붙는다 — <b>foot 만 tendon 인 것이 바로 그 정합</b>이다.<br>
+⚠foot 의 tendon 은 <code>coef=(1,1)</code> 이라 그 토크 <b>하나가 calf·foot 두 관절에
+동시에</b> 걸린다. calf 의 <code>actuatorfrcrange</code> 가 <b>226.8 = 126 + 100.8</b> 인 게
+그 때문이다 — calf 관절은 무릎·발목 <b>두 드라이브</b>의 힘을 받는다.
+<span class="src">biped_from_quad.mjcf:65 · :155-156 · pace_cmaes.py:292 · :387</span></span></span></div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§2</span><h2>지연 <code>T_d</code></h2>
+  <span class="tag">실측 고정</span></div>
+
+<div class="tw">
+<table>
+<tbody>
+<tr class="pick"><td class="k" style="white-space:nowrap"><b>채택값</b></td>
+    <td class="n strong">8.39 ± 0.79 ms</td>
+    <td><code>act_measure_latency.py</code> 직접 실측 — <b>적합에서 고정</b></td></tr>
+<tr><td class="k">적합에 맡기면</td><td class="n">7.42 ~ 12.83 ms</td>
+    <td>판마다 크게 갈린다. 넓게 열면 실측 범위 <b>밖</b>으로 나가며 <code>JFRIC</code> 을
+    −13~−63% 로 끌고 갔다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="gloss"><span class="t">왜 자유변수로 두면 안 되나</span>
+<span class="d">식별 조건의 제어법칙(<code>q̇_cmd ≡ 0</code>) <code>τ = kp·(q_cmd(t−T_d) − q) − kd·q̇</code> 에서 지연을 1차로 펴면
+<b>속도항이 튀어나온다</b>:
+<pre style="margin:9px 0">τ ≈ kp(q_cmd − q) − kd·q̇  <b>−  kp·T_d·q̇_cmd</b></pre>
+계수 <code>kp·T_d</code> 의 단위가 <code>N·m·s/rad</code> 로 <code>JDAMP</code> 와 같다 —
+즉 <b>지연과 점성이 적합에게는 같은 것으로 보인다.</b>
+<span class="why"><b>결과</b> — 적합이 실제로 정하는 건 <b>합 <code>b + kp·T_d</code></b> 뿐이다.
+세 판에서 <code>b</code> 가 0~0.070 으로 갈리고 <code>T_d</code> 가 25% 갈려도 그 합은
+<b>6.5% 안</b>이었다. ⇒ <b>지연은 실측값에 못박는다.</b></span></span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">kp [관절]</th><th class="n">kp·T_d</th>
+  <th class="n">JDAMP (진짜 b)</th><th class="n">비</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">100</td><td class="n strong">0.839</td>
+    <td class="n">0.090</td><td class="n">9.3배</td></tr>
+<tr><td class="ax">thigh</td><td class="n">50</td><td class="n strong">0.420</td>
+    <td class="n">0</td><td class="n">∞</td></tr>
+<tr><td class="ax">calf</td><td class="n">56.2</td><td class="n strong">0.472</td>
+    <td class="n">0</td><td class="n">∞</td></tr>
+<tr><td class="ax">foot</td><td class="n">31.7</td><td class="n strong">0.266</td>
+    <td class="n">0.110</td><td class="n">2.4배</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note flag"><b>이 <code>kp</code> 는 배포 게인이 아니다</b> — <b>식별 처프</b> 게인의
+<b>관절 환산</b>값이다(채널 <code>[100, 50, 25, 22]</code> × <code>gear_k²</code>).
+배포 게인은 §3 의 채널 <code>[100, 50, 80, 30]</code> 이다.<br>
+⚠지연 <b>실측오차 ±0.79 ms 만으로도</b> <code>JDAMP</code> 범위를 덮는다 — hip 은
+<code>100 × 0.79 ms = ±0.079</code> 로 그 축 감쇠(0.090)의 <b>±88%</b>.
+<b>hip 이 자유변수였는데도 안 움직인 이유</b>가 이것이다.</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§3</span><h2>모터 게인 <code>kp</code> · <code>kd</code></h2>
+  <span class="tag">바꿀 필요 없다</span></div>
+
+<p>배포 게인을 식별값으로 재평가했다(<code>fit_A_hipcorr</code>).
+<code>JFRIC</code> 이 크게 바뀌고(foot 0.241→0.639) <code>JDAMP</code> 가 0 이 됐지만
+<b>결론은 그대로</b>다.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>kind</th><th class="n">kp [채널]</th><th class="n">kd [채널]</th>
+  <th class="n">f_n</th><th class="n">ζ (stand)</th><th class="n">ζ (추종)</th>
+  <th class="n">데드밴드</th><th>판정</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n strong">100</td><td class="n strong">6.0</td>
+    <td class="n">3.49 Hz</td><td class="n">0.66</td><td class="n">0.76</td>
+    <td class="n">0.41°</td><td>✅</td></tr>
+<tr><td class="ax">thigh</td><td class="n strong">50</td><td class="n strong">4.0</td>
+    <td class="n">2.74 Hz</td><td class="n">0.69</td><td class="n">0.76</td>
+    <td class="n">0.69°</td><td>✅</td></tr>
+<tr><td class="ax">calf</td><td class="n strong">80</td><td class="n strong">3.5</td>
+    <td class="n">6.39 Hz</td><td class="n">0.88</td><td class="n">1.05</td>
+    <td class="n">0.28°</td><td>✅</td></tr>
+<tr class="pick"><td class="ax">foot</td><td class="n strong">30</td><td class="n strong">2.0</td>
+    <td class="n">4.51 Hz</td><td class="n">0.94</td><td class="n">1.10</td>
+    <td class="n strong">0.85°</td><td>✅</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="gloss"><span class="t">f_n — 폐루프 고유진동수 [Hz]</span>
+<span class="d">그 축이 <b>스스로 진동하려는 주파수</b>. 관절 기준 강성과 유효관성으로 정해진다:
+<pre style="margin:9px 0">f_n = (1 / 2π) · √( kp_raw / I_eff )     kp_raw = kp_채널 · gear_k²</pre>
+<span class="why"><b>왜 보나</b> — 제어 대역의 상한이고, <b>가진 주파수를 어디까지 올릴 수
+있나</b>를 정한다. 처프 <code>f_end</code> 가 이 값에 가까워지면 공진에 걸린다.
+calf 가 6.39 Hz 로 가장 높은 건 <code>gear_k²</code> = 2.25 가 곱해져
+<code>kp_raw</code> 가 180 이 되기 때문이다.<br>
+⚠<b><code>f_n</code> 은 "낼 수 있는 최대 속도" 가 아니다.</b> 식에 속도 한계가 안 들어
+있다 — <code>kp</code> 와 <code>I</code> 뿐이다. 게인을 4배 올리면 <code>f_n</code> 은
+2배가 되지만 모터가 낼 수 있는 속도는 <b>그대로</b>다. 아래에서 갈라 본다.</span></span></div>
+
+<h3>그럼 각 축은 얼마나 빠를 수 있나 — <b>한계가 세 층이다</b></h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>층</th><th>무엇이 정하나</th><th class="n">hip·thigh</th>
+  <th class="n">calf</th><th class="n">foot</th></tr></thead>
+<tbody>
+<tr><td class="ax">① 물리 상한</td><td>모터 <b>무부하 속도</b> = <code>207/N</code> [rad/s]</td>
+    <td class="n"><b>1694</b> dps<br><span class="src">29.6 rad/s</span></td>
+    <td class="n"><b>1130</b> dps<br><span class="src">19.7 rad/s</span></td>
+    <td class="n"><b>1412</b> dps<br><span class="src">24.6 rad/s</span></td></tr>
+<tr class="pick"><td class="ax strong">② 안전 트립</td>
+    <td><code>vel_trip_dps 200</code>(채널) ÷ <code>gear_k</code> — <b>실제로 걸리는 벽</b>.
+    ⚠배포는 <b>디바운스 없이 즉시</b> 끊는다(아래 ★)</td>
+    <td class="n strong">200 dps</td><td class="n strong">133 dps</td><td class="n strong">167 dps</td></tr>
+<tr><td class="ax">③ 운용 설정</td><td>jog <code>20</code> · 궤적 <code>15</code> dps
+    <span class="src">max_acc 30 dps²</span></td>
+    <td class="n" colspan="3">전 축 <b>15~20 dps</b> — 안전 우선</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag">⚠<b>무부하는 토크가 0 일 때의 값이다.</b> 다리를 실제로 움직이면
+중력·마찰에 토크를 쓰므로 토크-속도 곡선을 따라 내려간다 — <b>①을 "낼 수 있는 속도" 로
+읽으면 안 된다.</b> 실측 최고는 <b>처프 151 dps</b> 로 무부하의 <b>12%</b> 였고,
+<code>vel_trip</code> 200 은 그걸 수용하려고 잡은 값이다.
+<span class="src">spec.yaml:56 · :134 · biped_emb.yaml:238 · :326-327</span></div>
+
+<h3>Hz 로 답하려면 <b>진폭을 정해야</b> 한다</h3>
+
+<p>정현파는 첨두속도가 <code>2π·f·A</code> 라, 같은 속도라도 <b>진폭이 크면 주파수가
+낮아진다.</b> 그래서 "몇 Hz" 는 단독으로 정해지지 않는다 — 그리고 실제로는
+<b>속도가 아니라 <code>f_n</code> 이 먼저 걸린다</b>:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">f_n <span class="src">제어 대역</span></th>
+  <th class="n">속도한계 f <span class="src">A=10° 일 때</span></th>
+  <th class="n">두 한계가 만나는 진폭</th><th class="n">실제 가동범위</th><th>먼저 걸리는 것</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n strong">3.49 Hz</td><td class="n">27.0 Hz</td>
+    <td class="n">77°</td><td class="n">29.8°</td><td><b>f_n</b> — 범위가 좁아 <b>언제나</b></td></tr>
+<tr><td class="ax">thigh</td><td class="n strong">2.74 Hz</td><td class="n">27.0 Hz</td>
+    <td class="n">98°</td><td class="n">199.9°</td><td><b>f_n</b> (진폭 98° 미만이면)</td></tr>
+<tr class="pick"><td class="ax">calf</td><td class="n strong">6.39 Hz</td><td class="n">18.0 Hz</td>
+    <td class="n strong">28°</td><td class="n">117.8°</td><td><b>속도</b> — 28° 넘으면 뒤바뀐다</td></tr>
+<tr><td class="ax">foot</td><td class="n strong">4.51 Hz</td><td class="n">22.5 Hz</td>
+    <td class="n">50°</td><td class="n">151.8°</td><td><b>f_n</b> (진폭 50° 미만이면)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">⇒ 답은 f_n 이다 — <b>2.7 ~ 6.4 Hz</b>. 병목은 모터가 아니다.</span>
+모터의 속도 여력이 <b>4~8배</b> 남아 있는데도 못 올리는 것은 <b>위치 게인이 만든
+폐루프 대역</b> 때문이다. ⇒ 더 빠르게 하고 싶으면 모터를 바꾸는 게 아니라
+<code>kp</code> 를 올려야 하고(<code>f_n ∝ √kp</code>), 그러면 §0 의
+<code>kp·T_d</code> 항이 같이 커져 <b>지연이 새 제약이 된다</b>(지금은 f_n 에서
+8~19° 로 여유).</div>
+
+<div class="note flag">⚠<b>위는 전부 jog·hold 의 PD 루프 기준이다.</b> 배포는 <code>kp = 0</code> 이라
+<b>위치 스프링이 없고 ⇒ <code>f_n</code> 도 없다.</b> 그때 속도를 정하는 것은
+<b>토크 한계</b>(<code>tau_peak</code> 84 / 84 / 126 / 100.8 N·m)와 트립이다.<br>
+⚠<b>단 <code>kd</code> 는 살아 있다</b>(§0 경로 표 ★) — 2026-08-20 실기에서
+<code>kd</code> 까지 0 으로 보내면 stand 가 발산했다. 그래서 배포에도 <b>감쇠는 있고
+강성만 없다.</b> <span class="src">§0 경로 표 · biped_emb.yaml:117 · 커밋 a117c44</span></div>
+
+<h3>그럼 <b>걸을 때</b> 실제로 얼마가 필요한가 <span class="src">MuJoCo 20 s · 좌우 중 큰 쪽 · p95</span></h3>
+
+<figure>
+<div class="fx">
+<svg viewBox="0 0 780 244" role="img"
+  aria-label="전진속도별 관절속도 p95. 네 축 모두 전진속도를 0에서 0.25 m/s 로 올려도 거의 평평하다. foot 이 약 730 dps 로 가장 높고 calf 350, thigh 180, hip 139 이다.">
+  <defs><style>
+    .wgl{stroke:var(--rule);stroke-width:1}
+    .wax{stroke:var(--rule2);stroke-width:1.5}
+    .wtk{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
+    .wlb{font:11.5px ui-monospace,Menlo,monospace;font-weight:600}
+    .wln{fill:none;stroke-width:2.2;stroke-linejoin:round}
+  </style></defs>
+  <line class="wgl" x1="90" y1="30"  x2="700" y2="30"/>
+  <line class="wgl" x1="90" y1="72.5" x2="700" y2="72.5"/>
+  <line class="wgl" x1="90" y1="115" x2="700" y2="115"/>
+  <line class="wgl" x1="90" y1="157.5" x2="700" y2="157.5"/>
+  <line class="wax" x1="90" y1="200" x2="700" y2="200"/>
+  <text class="wtk" x="80" y="34"  text-anchor="end">800</text>
+  <text class="wtk" x="80" y="76"  text-anchor="end">600</text>
+  <text class="wtk" x="80" y="119" text-anchor="end">400</text>
+  <text class="wtk" x="80" y="161" text-anchor="end">200</text>
+  <text class="wtk" x="80" y="204" text-anchor="end">0</text>
+  <text class="wtk" x="30" y="119" text-anchor="middle">dps</text>
+  <text class="wtk" x="90"  y="218" text-anchor="middle">0.00</text>
+  <text class="wtk" x="212" y="218" text-anchor="middle">0.05</text>
+  <text class="wtk" x="334" y="218" text-anchor="middle">0.10</text>
+  <text class="wtk" x="456" y="218" text-anchor="middle">0.15</text>
+  <text class="wtk" x="578" y="218" text-anchor="middle">0.20</text>
+  <text class="wtk" x="700" y="218" text-anchor="middle">0.25</text>
+  <text class="wtk" x="395" y="238" text-anchor="middle">전진속도 vx [m/s]</text>
+
+  <polyline class="wln" stroke="var(--flag)"
+    points="90,48.3 212,45.5 334,45.1 456,44.7 578,43.2 700,44.7"/>
+  <text class="wlb" x="708" y="48" fill="var(--flag)">foot 738</text>
+  <polyline class="wln" stroke="var(--acc)"
+    points="90,130.3 212,129.0 334,127.8 456,126.5 578,125.8 700,125.6"/>
+  <text class="wlb" x="708" y="129" fill="var(--acc)">calf 350</text>
+  <polyline class="wln" stroke="var(--ink2)"
+    points="90,160.9 212,161.5 334,161.3 456,161.9 578,162.4 700,162.2"/>
+  <text class="wlb" x="708" y="158" fill="var(--ink2)">thigh 178</text>
+  <polyline class="wln" stroke="var(--mut)"
+    points="90,171.5 212,171.1 334,170.7 456,170.5 578,170.5 700,170.5"/>
+  <text class="wlb" x="708" y="178" fill="var(--mut)">hip 139</text>
+</svg>
+</div>
+<div class="legend">
+  <span><i style="background:var(--flag)"></i>foot — 무부하의 <b>70%</b></span>
+  <span><i style="background:var(--acc)"></i>calf 40%</span>
+  <span><i style="background:var(--ink2)"></i>thigh 17%</span>
+  <span><i style="background:var(--mut)"></i>hip 12%</span>
+</div>
+<figcaption><b>네 선이 전부 평평하다.</b> vx 를 0 → 0.25 m/s 로 올려도 관절속도는
+<b>−3 ~ +7%</b> 밖에 안 변한다.</figcaption>
+</figure>
+
+<div class="note key"><span class="lead">★관절속도를 정하는 것은 전진속도가 아니라 <b>스텝 주기</b>다.</span>
+제자리에서도 발은 <b>들었다 놓아야</b> 한다 — 그 왕복이 <code>T_STEP = 0.30 s</code> 안에
+끝나야 하므로, 전진하든 안 하든 <b>거의 같은 속도가 필요하다.</b> 전진속도는
+<b>보폭</b>만 바꾼다. ⇒ <b>더 빨리 걷고 싶다고 더 빠른 모터가 필요한 게 아니다.</b>
+필요해지는 건 <code>T_STEP</code> 을 줄일 때다.</div>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">필요 p95</th><th class="n">필요 최대</th>
+  <th class="n">무부하</th><th class="n">여유</th>
+  <th class="n">채널 p95</th><th class="n">트립 200 대비</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">139</td><td class="n">198</td><td class="n">1694</td>
+    <td class="n strong">12%</td><td class="n">112</td><td class="n">56% ✅</td></tr>
+<tr><td class="ax">thigh</td><td class="n">177</td><td class="n">281</td><td class="n">1694</td>
+    <td class="n strong">17%</td><td class="n">156</td><td class="n">78% ✅</td></tr>
+<tr class="rand"><td class="ax">calf</td><td class="n">349</td><td class="n">457</td><td class="n">1130</td>
+    <td class="n strong">40%</td><td class="n">431</td><td class="n strong">215% ❌</td></tr>
+<tr class="rand"><td class="ax strong">foot</td><td class="n strong">738</td><td class="n strong">982</td>
+    <td class="n">1412</td><td class="n strong">70%</td><td class="n">364</td>
+    <td class="n strong">182% ❌</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag"><b>⚠ 두 가지가 걸린다 — 둘 다 foot·calf 다.</b><br>
+① <b>안전 트립을 넘는다.</b> <code>vel_trip_dps 200</code>(채널)을 calf 는 <b>2.2배</b>,
+foot tendon 은 <b>1.8배</b> 초과한다. ⇒ <b>이 보행을 지금 실기에 올리면 즉시 limp 로 떨어진다.</b>
+트립을 올리든 <code>T_STEP</code> 을 늘리든 <b>결정이 필요하다.</b><br>
+② <b>foot 이 무부하의 70% 다.</b> 무부하는 <b>토크 0 일 때</b> 값이라 실제로는 그보다
+낮으므로, foot 은 <b>속도 여력이 사실상 없다.</b> hip(12%)·thigh(17%)와 대조된다.<br>
+<span class="src">첨두는 착지 충격이 지배한다 — foot 중앙값은 153 dps 로 p95(590)의 26% 다.
+각도 진폭은 26.8° 뿐이다. ⇒ 지속 속도가 아니라 <b>순간 첨두</b>가 트립을 건드린다.</span><br>
+⚠<b>★그런데 배포에는 디바운스가 없다</b>(2026-08-24 확인). <code>vel_trip_ms 20</code> 은
+<code>biped_emb.py</code> <b>에만</b> 있고 <code>biped_deploy</code> 는 이 키를 <b>파싱조차 안 한다</b> —
+<code>if(vel_pk &gt; vel_trip_dps){ estop; }</code> 로 <b>즉시</b> 끊는다
+(*"속도는 즉시 트립 — 폭주를 지연시킬 이유가 없다"*).<br>
+⇒ <b>순간 첨두를 걸러 줄 20 ms 가 배포에는 없다.</b> 위 "순간 첨두" 각주가 기대는 여유가
+실기 배포에서는 성립하지 않는다. 토크는 반대다 — <code>tau_trip_ms 50</code> 은 C++ 에도 있어
+착지 충격을 살린다. <b>속도만 무방비다.</b>
+<span class="src">biped_deploy.cpp:933 · deploy_hw.hpp:179-184(파싱하는 safety 키 6개) ·
+biped_emb.py:555</span></div>
+
+<h3>★왜 <code>vx</code> 를 올려도 안 변하나 — <b>두 성분이 RMS 로 합쳐진다</b></h3>
+
+<p>"평평하다" 는 것이 "전진속도가 무관하다" 는 뜻은 아니다. 필요속도는 <b>두 성분의
+합</b>이고, 그 둘이 직교해서 <b>제곱합</b>으로 붙기 때문이다:</p>
+
+<figure>
+<pre style="font-size:14px;line-height:2;margin:0"><b>ω(vx) = √( a²  +  (b·vx)² )</b>
+
+  <b>a</b>  주기 성분 — 발을 <b>들었다 놓는</b> 왕복. <code>T_STEP</code> 이 정한다. <b>vx 와 무관.</b>
+  <b>b</b>  전진 성분 — 스윙발이 <b>앞으로 나가는</b> 거리. <b>vx 에 비례.</b></pre>
+<figcaption>측정 6점(vx 0 ~ 0.25)에 맞춘 결과 <b>적합오차 1 ~ 3%</b> 다.
+그리고 <code>b_thigh</code> 가 기구학 예측
+<code>(π/2)·(T_STEP/T_sw)/r = 286</code>(<code>r = 0.35 m</code>)과 <b>12% 안에서 맞는다</b> —
+곡선맞춤이 아니라 <b>물리가 맞는 모델</b>이다.</figcaption>
+</figure>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">a <span class="src">주기</span></th>
+  <th class="n">b <span class="src">전진</span></th>
+  <th class="n">교차 <code>vx = a/b</code></th><th>읽는 법</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">110</td><td class="n">91</td>
+    <td class="n">1.22 m/s</td><td>거의 전부 주기</td></tr>
+<tr class="pick"><td class="ax strong">thigh</td><td class="n">141</td><td class="n strong">321</td>
+    <td class="n strong">0.44 m/s</td><td><b>전진에 가장 민감</b> — 다리를 앞으로 내는 축</td></tr>
+<tr><td class="ax">calf</td><td class="n">271</td><td class="n">426</td>
+    <td class="n">0.64 m/s</td><td>스윙 도달거리</td></tr>
+<tr><td class="ax">foot</td><td class="n strong">579</td><td class="n">≈ 0</td>
+    <td class="n">—</td><td><b>vx 의존이 검출 안 된다</b> — 순수 주기</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">⇒ 이 로봇은 <b>교차점에 도달하지 못한다.</b></span>
+thigh 의 교차점이 <b>0.44 m/s</b> 인데 <b>이 이족은 0.25 m/s 까지밖에 못 걷는다</b>
+(0.30 부터 넘어진다 — 생존 2.9 s). ⇒ <b>쓸 수 있는 전 구간이 "주기 지배" 영역</b>이라
+vx 를 올려도 필요속도가 안 변하는 것처럼 보인다. <b>vx 가 무관해서가 아니라
+아직 못 가봐서다.</b></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>필요 p95 [dps]</th><th class="n">0.25 <span class="src">실측</span></th>
+  <th class="n">0.50</th><th class="n">1.00</th><th class="n">1.50</th>
+  <th class="n">무부하 대비 @1.5</th></tr></thead>
+<tbody>
+<tr><td class="ax">hip</td><td class="n">113</td><td class="n">119</td><td class="n">143</td>
+    <td class="n">175</td><td class="n">10%</td></tr>
+<tr><td class="ax">thigh</td><td class="n">163</td><td class="n">214</td><td class="n">351</td>
+    <td class="n strong">502</td><td class="n">30%</td></tr>
+<tr><td class="ax">calf</td><td class="n">291</td><td class="n">344</td><td class="n">505</td>
+    <td class="n strong">694</td><td class="n strong">61%</td></tr>
+<tr class="pick"><td class="ax">foot</td><td class="n">591</td><td class="n">624</td><td class="n">743</td>
+    <td class="n strong">908</td><td class="n strong">64%</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag">⚠<b>0.25 초과는 전부 외삽이다 — 이 컨트롤러는 그 영역에서 못 걷는다.</b>
+생존시간이 <b>0.30 → 2.9 s · 0.50 → 1.8 s · 1.00 → 1.1 s · 1.50 → 1.0 s</b> 다.
+표는 <b>"만약 걷는다면 모터에 무엇을 요구하는가"</b> 이지 <b>"이만큼 걸을 수 있다"</b> 가
+아니다. <b>지금 병목은 모터가 아니라 보행 제어</b>다 — 1.5 m/s 에서도 hip·thigh 는
+무부하의 10~30% 뿐이다.</div>
+
+<div class="gloss"><span class="t">ζ — 감쇠비 · <b>점이 아니라 밴드로 본다</b></span>
+<span class="d"><pre style="margin:9px 0"><b>ζ (stand)</b> = ( kd_raw + b )                  / (2√(kp_raw·I_eff))
+<b>ζ (추종)</b>  = ( kd_raw + b + <b>kp_raw·T_d</b> ) / (2√(kp_raw·I_eff))</pre>
+둘이 갈리는 이유는 §0 의 <code>−kp·T_d·q̇_cmd</code> 항이 <b>명령이 움직일 때만</b>
+생기기 때문이다. <b>넘어지느냐를 정하는 것은 stand</b> 다 — 서서 외란을 받을 때는
+<code>q̇_cmd = 0</code> 이라 <code>kd</code> 만 버틴다.
+<span class="why"><b>특정 값에 맞추려 애쓸 필요는 없다.</b> 설계 때
+<code>kd = 2ζ√(kp·I) − JDAMP</code> 로 ζ≈0.7~0.8 을 겨냥해 역산했지만
+(<code>biped_emb.yaml:153</code>), <b>ζ 자체의 불확실이 그 목표 폭보다 크다.</b>
+⇒ <b>점을 맞추는 문제가 아니라 밴드를 보장하는 문제</b>다.</span></span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>ζ 가 흔들리는 요인</th><th class="n">크기</th><th>비고</th></tr></thead>
+<tbody>
+<tr class="pick"><td class="ax">자세 (무릎 굽힘)</td><td class="n strong">−7%</td>
+    <td>hip·thigh 관성 +15~16% · <code>ζ ∝ 1/√I</code> ⇒ 0.80 → 0.74</td></tr>
+<tr><td class="ax">gear_k 오설정</td><td class="n strong">×1.2~1.5</td>
+    <td>calf·foot 이 설계보다 세게 물려 있다 — <b>알려진 편차</b>이지 불확실은 아니다</td></tr>
+<tr><td class="ax">JDAMP 불확실</td><td class="n">+4.5%</td>
+    <td>thigh <code>b</code> 가 0~0.18 로 흔들렸던 폭</td></tr>
+<tr><td class="ax">T_d ±0.79 ms</td><td class="n">±1%</td><td>추종 ζ 에만 들어간다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="tw">
+<table>
+<thead><tr><th>ζ</th><th class="n">스텝 오버슈트</th><th>실질</th></tr></thead>
+<tbody>
+<tr><td class="ax">0.60</td><td class="n">9.5%</td><td>이 아래면 진동이 눈에 띈다 — <b>하한</b></td></tr>
+<tr class="pick"><td class="ax">0.66 ~ 0.94</td><td class="n strong">6.3% → 0.03%</td>
+    <td><b>지금 stand 범위 전체</b></td></tr>
+<tr><td class="ax">1.00 ~ 1.10</td><td class="n">0%</td>
+    <td>지금 추종 상단 — 안 넘치고 <b>조금 느릴 뿐</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">판정은 밴드로 한다 — 네 축·두 상황 전부 안이다.</span>
+stand <b>0.66~0.94</b> · 추종 <b>0.76~1.10</b>. <b>0.7 이든 1.1 이든 응답 차이는 오버슈트
+몇 %p 와 정정시간 몇 % 수준</b>이고, 위 표의 자세 의존(−7%) 하나만으로도 그만큼 움직인다.
+⇒ <b>ζ 를 0.707 에 맞추려 게인을 손대는 것은 얻는 게 없다.</b> 지켜야 할 것은
+<b>하한(진동)</b>과 <b>상한(느려짐)</b>뿐이고 지금은 둘 다 여유가 있다.</div>
+
+<div class="note flag">⚠<b>드라이버의 <code>gear_k</code> 오설정이 고쳐지면 calf·foot 이
+갑자기 약해진다</b>(ζ 가 설계값 쪽으로 내려온다). 그때는 <b>하한</b>이 문제가 될 수 있으므로
+재튜닝이 필요하다. 값을 미리 낮춰 두지는 말 것 — 지금은 그 강성으로 실제 동작 중이고
+문제도 없다. <span class="src">biped_emb.yaml §"감속비 오설정의 파급"</span></div>
+
+<div class="gloss"><span class="t">데드밴드 = τ_c / kp_raw</span>
+<span class="d"><b>마찰을 못 이겨 아무 일도 안 일어나는 각도 오차</b>의 크기.
+<span class="why">이번에 <b>실제로 바뀐 건 ζ 가 아니라 이쪽</b>이다 —
+<code>JFRIC.foot</code> 0.241 → 0.639 로 foot 데드밴드가 <b>0.32° → 0.85°</b>.
+문서 하한 기준 <b>1.4°</b> 아래라 <b>배포 게인 그대로 괜찮다.</b>
+⚠단 point foot 보행에서 발목은 <b>유일한 피치 권한</b>이라 지켜볼 값이다 —
+줄이려면 <code>kp</code> 30 → 45 면 0.57°.</span></span></div>
+
+<div class="note key"><b>시험용 게인은 별도다</b> — 식별 처프는 <code>kp</code> 를
+<b>일부러 낮춘다</b>(궤적이 명령에 붙으면 파라미터 정보가 사라진다). 채널
+<code>[100, 50, 25, 22]</code>, 검증셋은 그 2배(hip 제외). <b>홈복귀는 배포 게인</b>을 쓴다.</div>
+</section>
+<section>
+<div class="shead"><span class="n">§4</span><h2>축별 CAD 관성 대조</h2>
+  <span class="tag">강체 전제 검증</span></div>
+
+<p>각축 관성시험 실측을 <b>그 자세의 다물체 예측</b>과 비교한 것이다.
+PACE 는 <b>강체(질량·관성)가 맞다는 걸 전제</b>하므로 — 틀리면 CMA-ES 가 그 오차를
+<code>armature</code>·마찰로 흡수해 "잘 맞는데 물리적으로 틀린" 값을 낸다 — 이 대조가
+<b>적합 전체가 의미 있는지</b>를 정한다.</p>
+
+<figure>
+<div class="fx">
+<svg viewBox="0 0 780 176" role="img"
+  aria-label="유효한 네 축의 실측 관성이 예측 대비 얼마나 다른가. HL_calf +8.3%, HR_calf +5.5%, HL_foot −8.3%, HR_foot +2.2%. 모두 ±8.3% 안이고 부호가 갈린다.">
+  <defs>
+    <style>
+      .gl{stroke:var(--rule);stroke-width:1}
+      .zl{stroke:var(--rule2);stroke-width:1.5}
+      .tk{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
+      .rl{fill:var(--ink2);font:12px ui-monospace,Menlo,monospace}
+      .vl{fill:var(--ink);font:11.5px ui-monospace,Menlo,monospace;font-weight:600}
+      .bar{fill:var(--acc)}
+    </style>
+  </defs>
+  <g>
+    <line class="gl" x1="195" y1="14" x2="195" y2="128"/>
+    <line class="zl" x1="300" y1="10" x2="300" y2="132"/>
+    <line class="gl" x1="405" y1="14" x2="405" y2="128"/>
+    <line class="gl" x1="510" y1="14" x2="510" y2="128"/>
+    <text class="tk" x="195" y="148" text-anchor="middle">−15%</text>
+    <text class="tk" x="300" y="148" text-anchor="middle">0</text>
+    <text class="tk" x="405" y="148" text-anchor="middle">+15%</text>
+    <text class="tk" x="510" y="148" text-anchor="middle">+30%</text>
+    <text class="tk" x="300" y="166" text-anchor="middle">(실측 − 예측) / 예측</text>
+  </g>
+  <text class="rl" x="176" y="30" text-anchor="end">HL_calf</text>
+  <rect class="bar" x="300" y="20" width="58.1" height="14" rx="4">
+    <title>예측 0.0991 → 실측 0.1073</title></rect>
+  <text class="vl" x="366" y="31">+8.3%</text>
+  <text class="rl" x="176" y="59" text-anchor="end">HR_calf</text>
+  <rect class="bar" x="300" y="49" width="38.5" height="14" rx="4">
+    <title>예측 0.0991 → 실측 0.1046</title></rect>
+  <text class="vl" x="346" y="60">+5.5%</text>
+  <text class="rl" x="176" y="88" text-anchor="end">HL_foot</text>
+  <rect class="bar" x="241.9" y="78" width="58.1" height="14" rx="4">
+    <title>예측 0.0533 → 실측 0.0489</title></rect>
+  <text class="vl" x="234" y="89" text-anchor="end">−8.3%</text>
+  <text class="rl" x="176" y="117" text-anchor="end">HR_foot</text>
+  <rect class="bar" x="300" y="107" width="15.4" height="14" rx="4">
+    <title>예측 0.0533 → 실측 0.0545</title></rect>
+  <text class="vl" x="323" y="118">+2.2%</text>
+</svg>
+</div>
+<div class="legend">
+  <span><i style="background:var(--acc)"></i>유효 — 부호는 막대 방향</span>
+  <span><i style="background:var(--rule2)"></i>thigh 는 좌우 넷 다 무효 → 아래 그림</span>
+</div>
+<figcaption><b>calf·foot 넷이 ±8.3% 안이고 부호가 갈린다</b> ⇒ 계통오차가 아니라 <b>산포</b>다.
+⇒ <b>CAD 질량·관성은 맞다</b> — 강체 전제가 성립한다.</figcaption>
+</figure>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">예측 [kg·m²]</th><th class="n">실측</th><th class="n">오차</th></tr></thead>
+<tbody>
+<tr><td class="ax">HL_calf</td><td class="n">0.0991</td><td class="n">0.1073</td><td class="n strong">+8.3%</td></tr>
+<tr><td class="ax">HR_calf</td><td class="n">0.0991</td><td class="n">0.1046</td><td class="n strong">+5.5%</td></tr>
+<tr><td class="ax">HL_foot</td><td class="n">0.0533</td><td class="n">0.0489</td><td class="n strong">−8.3%</td></tr>
+<tr><td class="ax">HR_foot</td><td class="n">0.0533</td><td class="n">0.0545</td><td class="n strong">+2.2%</td></tr>
+<tr class="rand"><td class="ax">HL_thigh</td><td class="n">0.1887</td><td class="n">0.2479</td>
+    <td class="n">+31% · <b>무효</b></td></tr>
+<tr class="rand"><td class="ax">HR_thigh</td><td class="n">0.1887</td><td class="n">−0.157</td>
+    <td class="n"><b>음수 · 무효</b></td></tr>
+<tr class="rand"><td class="ax">HL/HR_hip</td><td class="n">—</td><td class="n">—</td><td class="n">미측정</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>thigh — 무효인 이유는 값이 아니라 <b>방향에 따라 갈린다</b>는 것</h3>
+
+<p>같은 축을 같은 조건에서 재는데 <b>미는 방향만 바꾸면 관성이 달라진다면 그건 관성이 아니다.</b>
+아래는 좌우 두 다리를 방향별로 푼 것이다 — <b>넷 다 같은 CAD 값(0.1887) 을 재고 있어야 한다.</b></p>
+
+<figure>
+<div class="fx">
+<svg viewBox="0 0 780 196" role="img"
+  aria-label="thigh 관성을 방향별로 나눈 값. CAD 는 0.1887. HL 플러스방향 0.186 으로 CAD 와 1.5% 차이지만 HL 마이너스방향은 0.337 로 플러스 79 퍼센트. HR 은 플러스방향 0.422 로 플러스 124 퍼센트, 마이너스방향 0.084 로 마이너스 55 퍼센트. 좌우에서 무거운 방향이 서로 반대다.">
+  <defs>
+    <pattern id="hxT" width="7" height="7" patternTransform="rotate(135)" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" fill="var(--surf2)"/>
+      <line x1="0" y1="0" x2="0" y2="7" stroke="var(--rule2)" stroke-width="2.5"/>
+    </pattern>
+    <style>
+      .tgl{stroke:var(--rule);stroke-width:1}
+      .tax{stroke:var(--rule2);stroke-width:1.5}
+      .tcd{stroke:var(--acc);stroke-width:1.6;stroke-dasharray:5 4}
+      .ttk{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
+      .trl{fill:var(--ink2);font:12px ui-monospace,Menlo,monospace}
+      .tvl{fill:var(--ink);font:11.5px ui-monospace,Menlo,monospace;font-weight:600}
+      .twh{stroke:var(--ink2);stroke-width:1.4}
+      .tbr{fill:url(#hxT);stroke:var(--rule2);stroke-width:1}
+    </style>
+  </defs>
+  <g>
+    <line class="tgl" x1="270" y1="18" x2="270" y2="142"/>
+    <line class="tgl" x1="390" y1="18" x2="390" y2="142"/>
+    <line class="tgl" x1="510" y1="18" x2="510" y2="142"/>
+    <line class="tgl" x1="630" y1="18" x2="630" y2="142"/>
+    <line class="tax" x1="150" y1="14" x2="150" y2="142"/>
+    <text class="ttk" x="150" y="158" text-anchor="middle">0</text>
+    <text class="ttk" x="270" y="158" text-anchor="middle">0.1</text>
+    <text class="ttk" x="390" y="158" text-anchor="middle">0.2</text>
+    <text class="ttk" x="510" y="158" text-anchor="middle">0.3</text>
+    <text class="ttk" x="630" y="158" text-anchor="middle">0.4</text>
+    <text class="ttk" x="390" y="178" text-anchor="middle">유효관성 I [kg·m²]</text>
+  </g>
+  <line class="tcd" x1="376.4" y1="16" x2="376.4" y2="142"/>
+  <text class="tvl" x="376.4" y="11" text-anchor="middle" fill="var(--acc)">CAD 0.1887</text>
+
+  <text class="trl" x="140" y="36" text-anchor="end">HL +방향</text>
+  <rect class="tbr" x="150" y="24" width="222.9" height="16" rx="4">
+    <title>0.1858 ± 0.034 · n=12</title></rect>
+  <line class="twh" x1="332.2" y1="32" x2="413.8" y2="32"/>
+  <line class="twh" x1="332.2" y1="27" x2="332.2" y2="37"/>
+  <line class="twh" x1="413.8" y1="27" x2="413.8" y2="37"/>
+  <text class="tvl" x="422" y="36">0.186  CAD −1.5%</text>
+
+  <text class="trl" x="140" y="64" text-anchor="end">HL −방향</text>
+  <rect class="tbr" x="150" y="52" width="404.4" height="16" rx="4">
+    <title>0.3370 ± 0.091 · n=10</title></rect>
+  <line class="twh" x1="445.2" y1="60" x2="663.6" y2="60"/>
+  <line class="twh" x1="445.2" y1="55" x2="445.2" y2="65"/>
+  <line class="twh" x1="663.6" y1="55" x2="663.6" y2="65"/>
+  <text class="tvl" x="672" y="64">0.337  +79%</text>
+
+  <text class="trl" x="140" y="100" text-anchor="end">HR +방향</text>
+  <rect class="tbr" x="150" y="88" width="506.4" height="16" rx="4">
+    <title>≈0.422 · R² 0.84</title></rect>
+  <text class="tvl" x="664" y="100">0.422  +124%</text>
+
+  <text class="trl" x="140" y="128" text-anchor="end">HR −방향</text>
+  <rect class="tbr" x="150" y="116" width="100.8" height="16" rx="4">
+    <title>≈0.084 · R² 0.02</title></rect>
+  <text class="tvl" x="259" y="128">0.084  −55%</text>
+</svg>
+</div>
+<div class="legend">
+  <span><i style="background:var(--surf2);border:1px solid var(--rule2);
+    background-image:repeating-linear-gradient(135deg,transparent 0 3px,var(--rule2) 3px 5px)"></i>측정 무효 — 넷 다</span>
+  <span><i style="background:var(--acc);height:2px;border-radius:0"></i>CAD 0.1887 (써야 할 값)</span>
+  <span><i style="background:var(--ink2);height:2px;border-radius:0"></i>±1σ — HL 만 (n=12 / 10)</span>
+</div>
+<figcaption><b>넷이 0.084 부터 0.422 까지 5배로 흩어진다.</b> 같은 부품·같은 CAD 인데
+<b>미는 방향</b>과 <b>어느 다리냐</b>에 따라 값이 달라진다 ⇒ 이 숫자들은 관성이 아니라
+<b>매달린 아래 링크가 같이 흔들린 결과</b>다.</figcaption>
+</figure>
+
+<div class="tw">
+<table>
+<thead><tr><th>방향</th><th class="n">HL_thigh</th><th class="n">HR_thigh</th><th>판정</th></tr></thead>
+<tbody>
+<tr><td class="ax">+ 방향</td><td class="n">0.1858 ±0.034 <small>(n=12)</small></td>
+    <td class="n">≈0.422 <small>(R² 0.84)</small></td><td>HL 만 CAD 근처</td></tr>
+<tr><td class="ax">− 방향</td><td class="n">0.3370 ±0.091 <small>(n=10)</small></td>
+    <td class="n">≈0.084 <small>(R² 0.02)</small></td><td>HR 은 회귀 자체가 무의미</td></tr>
+<tr><td class="ax">합침</td><td class="n">0.2479 <small>(+31%)</small></td>
+    <td class="n">−0.157 <small>(음수)</small></td><td>HR 은 부호가 뒤집힘</td></tr>
+<tr class="rand"><td class="ax strong">방향간 편차</td><td class="n strong">58%</td>
+    <td class="n strong">446%</td><td>게이트 <b>15%</b> — <b>둘 다 ✗</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">★좌우가 서로를 확인해 주지 않는다 — 그래서 더 확실히 무효다.</span>
+두 다리의 thigh 관절은 MJCF 에서 <b>둘 다 <code>axis="0 1 0"</code></b> 이다 —
+거울상이 아니라 <b><code>+방향</code> 이 좌우 같은 물리 방향</b>이다. 그런데
+<b>무거운 쪽이 반대로 나온다</b>: HL 은 <b>−방향</b>이 무겁고(0.337) HR 은 <b>+방향</b>이
+무겁다(0.422). ⇒ 이 갈림은 기구 구조에서 오는 <b>재현되는 편향이 아니다.</b>
+그때그때 아래 링크가 어떻게 매달려 있었느냐에서 온다 — <b>보정으로 걷어낼 수 있는
+종류가 아니라는 뜻</b>이다. <span class="src">biped_from_quad.mjcf:50 · :75</span></div>
+
+<h3>★원인이 잡혔다 — <b>무릎이 접힌다</b> <span class="src">현장 관찰 + MuJoCo 로 확인</span></h3>
+
+<p>시험 중 관찰: <b><code>--solo</code> 로 thigh 를 들면 calf 가 접혔다.</b>
+자료가 이걸 뒷받침한다 — 저장된 측정 자세가 이미 <b><code>calf −61°</code></b> 인데
+MJCF 의 가동한계가 <b><code>−62°</code></b> 다. <b>1° 밖에 안 남았다.</b>
+즉 한쪽 방향으로는 곧바로 <b>스토퍼</b>에 닿고, 반대쪽으로는 <b>62° 가 비어 있다.</b>
+<span class="src">q_pose_ch: calf 채널 91.6° ÷ gear_k 1.5 = 관절 61° · MJCF range −1.0821 rad</span></p>
+
+<div class="tw">
+<table>
+<thead><tr><th>calf 각도</th><th class="n">자유 (아래 놓음)</th><th class="n">고정 (아래 잠금)</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td class="ax">0° <small>(중립)</small></td><td class="n">0.1484</td><td class="n">0.1653</td>
+    <td>홈자세</td></tr>
+<tr><td class="ax">−31°</td><td class="n">0.1671</td><td class="n">0.1988</td><td></td></tr>
+<tr class="pick"><td class="ax strong">−61° <small>(측정 자세)</small></td>
+    <td class="n strong">0.1761</td><td class="n strong">0.2203</td>
+    <td>접힘이 관성을 <b>+19%</b> 올린다</td></tr>
+<tr><td class="ax">−62° <small>(스토퍼)</small></td><td class="n">0.1764</td><td class="n">0.2255</td>
+    <td>여기서 <b>더 못 간다</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">그래서 판정이 뚜렷해진다 — 허용 띠가 정해진다.</span>
+아래 링크가 <b>완전히 자유면 0.176</b>, <b>완전히 잠기면 0.226</b> 이다. 실제 시험은
+그 사이 어딘가이므로 <b>유효관성은 어떤 구속 상태든 <code>[0.176, 0.226]</code> 안에
+있어야 한다</b> — 자세를 아무리 바꿔도 마찬가지다(무릎 전 가동범위에서 자유값은
+0.124~0.182).</div>
+
+<figure>
+<div class="fx">
+<svg viewBox="0 0 780 148" role="img"
+  aria-label="유효관성 수직선. 허용 띠는 자유 0.176 부터 고정 0.226 까지. 플러스방향 실측 0.186 은 띠 안에 들어오고, 마이너스방향 실측 0.337 은 띠 밖으로 고정 극한의 1.5배다.">
+  <defs><style>
+    .btk{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
+    .bcm{fill:var(--mut);font:11.5px ui-monospace,Menlo,monospace}
+    .bin{fill:var(--acc);font:11.5px ui-monospace,Menlo,monospace;font-weight:700}
+    .bout{fill:var(--flag);font:11.5px ui-monospace,Menlo,monospace;font-weight:700}
+    .lead2{stroke:var(--rule2);stroke-width:1}
+  </style></defs>
+  <rect x="277.1" y="48" width="121.8" height="30" rx="5"
+    fill="var(--acc-soft)" stroke="var(--acc-line)" stroke-width="1.4">
+    <title>허용 띠 — 자유 0.176 ~ 고정 0.226</title></rect>
+  <line x1="90" y1="92" x2="730" y2="92" stroke="var(--rule2)" stroke-width="1.5"/>
+  <text class="btk" x="90" y="108" text-anchor="middle">0.10</text>
+  <text class="btk" x="213.1" y="108" text-anchor="middle">0.15</text>
+  <text class="btk" x="336.2" y="108" text-anchor="middle">0.20</text>
+  <text class="btk" x="459.2" y="108" text-anchor="middle">0.25</text>
+  <text class="btk" x="582.3" y="108" text-anchor="middle">0.30</text>
+  <text class="btk" x="705.4" y="108" text-anchor="middle">0.35</text>
+  <text class="btk" x="410" y="130" text-anchor="middle">thigh 유효관성 [kg·m²]</text>
+
+  <line class="lead2" x1="277.1" y1="26" x2="277.1" y2="92"/>
+  <text class="bcm" x="277.1" y="20" text-anchor="middle">자유 0.176</text>
+  <line class="lead2" x1="398.9" y1="26" x2="398.9" y2="92"/>
+  <text class="bcm" x="398.9" y="20" text-anchor="middle">고정 0.226</text>
+  <line x1="673.4" y1="26" x2="673.4" y2="92" stroke="var(--flag)" stroke-width="1.6"/>
+  <text class="bout" x="673.4" y="20" text-anchor="middle">−방향 0.337 ✗</text>
+
+  <line class="lead2" x1="208.2" y1="42" x2="208.2" y2="92"/>
+  <text class="bcm" x="208.2" y="36" text-anchor="middle">중립 0.148</text>
+  <line x1="301.2" y1="42" x2="301.2" y2="92" stroke="var(--acc)" stroke-width="1.6"/>
+  <text class="bin" x="301.2" y="36" text-anchor="middle">+방향 0.186 ✓</text>
+  <line class="lead2" x1="454.1" y1="42" x2="454.1" y2="92"/>
+  <text class="bcm" x="454.1" y="36" text-anchor="middle">합침 0.248</text>
+
+  <circle cx="301.2" cy="63" r="4.5" fill="var(--acc)"/>
+  <circle cx="673.4" cy="63" r="4.5" fill="var(--flag)"/>
+</svg>
+</div>
+<div class="legend">
+  <span><i style="background:var(--acc-soft);border:1px solid var(--acc-line)"></i>허용 띠 — 자유~고정</span>
+  <span><i class="dot" style="background:var(--acc)"></i>실측 · 띠 안</span>
+  <span><i class="dot" style="background:var(--flag)"></i>실측 · 띠 밖</span>
+</div>
+<figcaption><b>+방향은 띠 안이고 −방향은 띠 밖이다.</b> 0.337 은 <b>완전 고정 극한의
+1.50배</b> — 아래를 아무리 잠가도 그 값은 안 나온다.</figcaption>
+</figure>
+
+<div class="note key"><span class="lead">⇒ 두 방향의 지위가 다르다.</span>
+<b>+방향 0.186 은 "틀린 값" 이 아니다</b> — 무릎이 접힌 채 아래가 반쯤 딸려온 다리의
+<b>실제 유효관성</b>이고, 띠 안에 정확히 들어온다. <b>−방향 0.337 은 관성이 아니다</b> —
+어떤 자세·어떤 구속으로도 도달할 수 없으므로, <code>I = u/q̈</code> 의 <code>q̈</code> 가
+<b>다른 이유로 깎인 것</b>이다(스토퍼 충돌로 운동량을 잃었거나 중력보상 잔차가 섞였다).
+<b>둘을 평균한 0.248 에는 물리적 의미가 없다.</b></div>
+
+<div class="note flag">⚠<b>그래도 "CAD 가 검증됐다" 는 뜻은 아니다.</b>
++방향이 맞춘 것은 <b>접힌 자세의 유효관성</b>(0.176~0.182)이지 MJCF 가 쓰는
+<b>홈자세 링크관성</b>이 아니다. 그리고 §2 표의 기준값 <b>0.1887</b> 은 이 계산의
+자유(0.176)도 고정(0.220)도 아니다 — <b>어느 자세·어느 구속의 값인지 문서에 없다.</b>
+<span class="src">확인한 것: 고정 0.2203(문서 0.221 ✓) · 자유 0.1816 = calf+foot 만 자유(문서 0.185 ✓)</span></div>
+
+<h3><code>t_ref→0</code> 외삽도 이걸 못 고친다 <span class="src">HL 기준</span></h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>처리</th><th class="n">I_thigh</th><th class="n">CAD 0.1887 대비</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td class="ax">준위 평균</td><td class="n">0.2545</td><td class="n">+35%</td><td>날것</td></tr>
+<tr class="pick"><td class="ax">합쳐서 외삽</td><td class="n strong">0.2003</td><td class="n strong">+6%</td>
+    <td>종전에 <b>이 값을 성과로 적었다</b></td></tr>
+<tr class="rand"><td class="ax">+ 방향만</td><td class="n">0.1584</td><td class="n">−16%</td>
+    <td rowspan="2">방향별로 <b>28% 갈린다</b></td></tr>
+<tr class="rand"><td class="ax">− 방향만</td><td class="n">0.2102</td><td class="n">+11%</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">외삽은 <b>산포는 줄인다</b>(+35% → +6%). 하지만 <b>방향 편차는 못 없앤다.</b>
+게다가 −방향이 +방향보다 <code>t_ref</code> 가 <b>체계적으로 길다</b>(0.159~0.403 vs
+0.114~0.319) ⇒ 외삽이 맞춘 것이 <code>t_ref</code> 의존인지 <b>방향 차이인지 가릴 수 없다.</b>
++6% 는 두 방향의 평균이 <b>우연히</b> CAD 근처에 온 것이다.</div>
+
+<div class="note flag"><b>원인 — <code>--solo</code> 는 아래 링크를 놓는다.</b>
+나머지 7축이 <code>kp=kd=0</code> 이라 calf+foot 이 thigh 가속에 따라 같이 흔들린다.
+<b>매달린 진자</b>(주기 0.90 s)인데 런이 0.21~0.48 s 로 <b>주기의 39%</b> 다.
+<code>M⁻¹</code> 예측이 전제하는 <code>t→0</code> 극한이 깨져
+자유(0.189)와 고정(0.221) <b>사이 어디도 아닌 값</b>이 나온다.
+<code>run_leg_*.sh</code> 헤더가 <i>"하위 관절이 무여자라 I_link 강체가정이 깨진다 —
+inertia 에 쓰지 말 것"</i> 이라 적어 둔 그대로였다.<br>
+⇒ 재려면 아래 링크를 <b>기구적으로 고정</b>해야 한다. 모터 홀드는 유한 강성이라 안 되고,
+2026-08-12 에 그 방식으로 드라이버 파워단을 <b>5회</b> 죽였다.</div>
+
+<div class="note key"><span class="lead">⇒ thigh·hip 관성은 CAD 를 쓴다.</span>
+calf·foot <b>넷이 ±8.3% 로 CAD 를 검증</b>했고 thigh 의 CAD 도 <b>같은 URDF</b> 에서 왔다.
+★간접 검증도 있다 — PACE 가 실기 자료로 모델을 맞추는데 <b>thigh 잔차가 제곱오차의
+9% 뿐</b>이다(§5). CAD 가 크게 틀렸다면 그 축 잔차가 컸을 것이다.
+⇒ 직접 측정은 <b>확인일 뿐 새 정보가 아닐 가능성이 크다.</b>
+<span class="src">부수 성과 — 기동토크는 유효하다: HR_thigh 0.566 Nm (4시행)</span></div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§5</span><h2>검증 RMS</h2>
+  <span class="tag">세 조건</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>지표</th><th class="n">RMS</th><th>무엇을 바꿨나 · 무엇을 뜻하나</th></tr></thead>
+<tbody>
+<tr><td class="ax">적합</td><td class="n">0.280°</td>
+    <td>파라미터를 찾는 데 쓴 48창 — <b>기준선</b>이지 성능이 아니다</td></tr>
+<tr><td class="ax">따로 뺀 구간</td><td class="n">0.304°</td>
+    <td>같은 녹화의 안 쓴 12창 — <b>과적합</b> 여부만 본다</td></tr>
+<tr class="pick"><td class="ax strong">검증 ① 게인 2배</td><td class="n strong">0.187°</td>
+    <td><code>kp</code> ×2 로 <b>따로 수집</b> — 구조 오류를 가르는 가장 강한 시험</td></tr>
+<tr><td class="ax">검증 ② 다른 궤적</td><td class="n">0.306°</td>
+    <td><code>--f-scale 0.6</code> (148 → 89 dps) — 본 적 없는 속도대</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag"><b>①과 ②의 절대값을 서로 비교하면 안 된다</b> — 게인 2배 쪽이 낮은 건
+추종이 조여진 탓도 크다.<br>
+⚠<b>따로 뺀 구간이 적합보다 나쁜 건 빠른 자료에서 처음</b> 나타났다(속도 2.6배로
+고주파 끝 모델오차 증가). <b>검증 RMS 는 그대로</b>라 예측력은 안 나빠졌다.</div>
+
+<h3>축별 RMS — foot 이 오차의 78% 를 진다</h3>
+<p>전체 RMS 는 <b>어느 축이 남았는지를 숨긴다.</b> 최종값(<code>fit_A_hipcorr</code>)으로
+갈라 보면 남은 개선 여지가 어디인지 분명해진다.</p>
+
+<figure>
+<div class="fx">
+<svg viewBox="0 0 660 252" role="img"
+  aria-label="축별 적합 RMS. HL_foot 0.476 HR_foot 0.513 으로 발목이 압도적이고 hip 은 0.086에서 0.094 로 가장 작다. 전체는 0.280.">
+  <defs><style>
+    .gr{stroke:var(--rule);stroke-width:1}
+    .axr{stroke:var(--rule2);stroke-width:1.5}
+    .tkr{fill:var(--mut);font:10.5px ui-monospace,Menlo,monospace}
+    .rlr{fill:var(--ink2);font:11.5px ui-monospace,Menlo,monospace}
+    .vr{font:600 11px ui-monospace,Menlo,monospace}
+    .tot{stroke:var(--flag);stroke-width:1.5;stroke-dasharray:4 3}
+  </style></defs>
+  <g>
+    <line class="gr" x1="233.6" y1="26" x2="233.6" y2="202"/>
+    <line class="gr" x1="317.3" y1="26" x2="317.3" y2="202"/>
+    <line class="gr" x1="400.9" y1="26" x2="400.9" y2="202"/>
+    <line class="gr" x1="484.6" y1="26" x2="484.6" y2="202"/>
+    <line class="gr" x1="568.2" y1="26" x2="568.2" y2="202"/>
+    <line class="axr" x1="150" y1="26" x2="150" y2="208"/>
+    <text class="tkr" x="233.6" y="224" text-anchor="middle">0.1</text>
+    <text class="tkr" x="317.3" y="224" text-anchor="middle">0.2</text>
+    <text class="tkr" x="400.9" y="224" text-anchor="middle">0.3</text>
+    <text class="tkr" x="484.6" y="224" text-anchor="middle">0.4</text>
+    <text class="tkr" x="568.2" y="224" text-anchor="middle">0.5</text>
+    <text class="tkr" x="380" y="244" text-anchor="middle">적합 RMS [°]</text>
+  </g>
+  <line class="tot" x1="384" y1="22" x2="384" y2="206"/>
+  <text class="vr" x="390" y="20" fill="var(--flag)">전체 0.280</text>
+
+  <text class="rlr" x="142" y="43" text-anchor="end">HL_hip</text>
+  <rect x="150" y="32" width="71.9" height="14" rx="3" fill="var(--acc)" opacity=".4"><title>0.0860</title></rect>
+  <text class="vr" x="230" y="43" fill="var(--ink2)">0.086</text>
+  <text class="rlr" x="142" y="65" text-anchor="end">HR_hip</text>
+  <rect x="150" y="54" width="78.4" height="14" rx="3" fill="var(--acc)" opacity=".4"><title>0.0937</title></rect>
+  <text class="vr" x="237" y="65" fill="var(--ink2)">0.094</text>
+  <text class="rlr" x="142" y="87" text-anchor="end">HL_thigh</text>
+  <rect x="150" y="76" width="195.8" height="14" rx="3" fill="var(--acc)" opacity=".6"><title>0.2341</title></rect>
+  <text class="vr" x="354" y="87" fill="var(--ink2)">0.234</text>
+  <text class="rlr" x="142" y="109" text-anchor="end">HR_thigh</text>
+  <rect x="150" y="98" width="148.3" height="14" rx="3" fill="var(--acc)" opacity=".6"><title>0.1773</title></rect>
+  <text class="vr" x="307" y="109" fill="var(--ink2)">0.177</text>
+  <text class="rlr" x="142" y="131" text-anchor="end">HL_calf</text>
+  <rect x="150" y="120" width="86.2" height="14" rx="3" fill="var(--acc)" opacity=".5"><title>0.1030</title></rect>
+  <text class="vr" x="245" y="131" fill="var(--ink2)">0.103</text>
+  <text class="rlr" x="142" y="153" text-anchor="end">HR_calf</text>
+  <rect x="150" y="142" width="126.4" height="14" rx="3" fill="var(--acc)" opacity=".5"><title>0.1511</title></rect>
+  <text class="vr" x="285" y="153" fill="var(--ink2)">0.151</text>
+  <text class="rlr" x="142" y="175" text-anchor="end">HL_foot</text>
+  <rect x="150" y="164" width="398.4" height="14" rx="3" fill="var(--acc)"><title>0.4764</title></rect>
+  <text class="vr" x="557" y="175" fill="var(--acc)">0.476</text>
+  <text class="rlr" x="142" y="197" text-anchor="end">HR_foot</text>
+  <rect x="150" y="186" width="429.2" height="14" rx="3" fill="var(--acc)"><title>0.5132</title></rect>
+  <text class="vr" x="588" y="197" fill="var(--acc)">0.513</text>
+</svg>
+</div>
+<div class="legend">
+  <span><i style="background:var(--acc)"></i>foot — 제곱오차의 <b>78%</b></span>
+  <span><i style="background:var(--acc);opacity:.6"></i>thigh 9%</span>
+  <span><i style="background:var(--acc);opacity:.4"></i>hip — 가장 작다</span>
+  <span><i style="background:var(--flag)"></i>전체 RMS 0.280</span>
+</div>
+<figcaption><b>남은 개선 여지는 사실상 foot 하나다.</b> hip 이 가장 작다(0.086~0.094) —
+<b>"hip 은 걱정할 값이 아니다"</b> 라는 §6 의 민감도 판정과 <b>독립적으로 일치</b>한다.</figcaption>
+</figure>
+
+<div class="tw">
+<table>
+<thead><tr><th>조건</th><th class="n">전체</th><th class="n">foot 지분</th><th class="n">thigh 지분</th></tr></thead>
+<tbody>
+<tr><td class="ax">적합</td><td class="n">0.2798</td><td class="n strong">78%</td><td class="n">9%</td></tr>
+<tr><td class="ax">따로 뺀 구간</td><td class="n">0.3033</td><td class="n strong">87%</td><td class="n">—</td></tr>
+<tr class="pick"><td class="ax">게인 2배</td><td class="n">0.1864</td><td class="n strong">57%</td><td class="n">21%</td></tr>
+<tr><td class="ax">다른 궤적</td><td class="n">0.3058</td><td class="n strong">79%</td><td class="n">—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note key"><span class="lead">★ 게인을 2배로 하면 foot 잔차가 절반으로 준다</span>
+(0.476 / 0.513 → <b>0.273 / 0.287</b>). <b>추종이 조여지면 사라지는 성분</b>이라는 뜻이다 —
+모델의 <b>정적</b> 오차라기보다 <b>동적 추종</b> 쪽에 남은 것이 있다는 신호다.</div>
+
+<h3>★ foot 잔차의 정체 — 마찰 모델링 오차다</h3>
+<p>게인을 2배로 하면 마찰 데드밴드(<code>τ_c / kp</code>)가 절반이 된다.
+그때 <b>잔차가 데드밴드를 따라가는지</b>를 보면 원인이 갈린다.</p>
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">RMS / 데드밴드 (식별)</th><th class="n">(게인 2배)</th><th></th></tr></thead>
+<tbody>
+<tr><td class="ax">thigh</td><td class="n">0.30</td><td class="n">0.53</td>
+    <td>비가 2배 — 데드밴드와 <b>무관</b></td></tr>
+<tr><td class="ax">calf</td><td class="n">0.14</td><td class="n">0.27</td><td>비가 2배 — 무관</td></tr>
+<tr class="pick"><td class="ax strong">foot</td><td class="n strong">0.43</td>
+    <td class="n strong">0.48</td><td><b>거의 같다</b> ← 데드밴드에 <b>비례한다</b></td></tr>
+</tbody>
+</table>
+</div>
+<div class="note key"><b>foot 만 RMS 가 데드밴드를 따라 반으로 줄었다</b>(0.495 → 0.280).
+다른 축은 게인을 올려도 RMS 가 거의 안 준다. ⇒ <b>foot 잔차는 마찰/제어권한 비에
+비례한다 = 마찰 모델링 오차의 서명이다.</b><br>
+MuJoCo 의 <code>frictionloss</code> 는 구속 기반이라 실제 <b>stick-slip</b> 을 그대로
+재현하지 못하고, 그 오차가 데드밴드 크기에 비례해 나타난다. foot 이 그 비가 가장 큰
+축이다(데드밴드 1.15° vs 나머지 0.41~0.89° · <b>식별 게인 기준</b>).<br>
+⇒ <b>미측정 Stribeck 을 정확히 가리킨다</b> — 모델에 없는 유일한 큰 마찰 항이다.</div>
+<div class="note flag"><b>좌표 탓이 아니다</b> — 잔차를 raw각에서 재도 안 줄어든다
+(0.4764 → 0.4847 · 0.5132 → 0.5465). calf 에서 넘어온 것도 아니다
+(foot↔calf 잔차 상관 −0.03 / +0.08). <b>foot 자신의 오차</b>다.<br>
+<b>배제된 것</b> — 백래시(1/12 크기) · 감속기 유연성(공진 19.8 Hz, 대역 밖) ·
+<code>coef</code>(경사계로 1.0 확정) · 손실 좌표(§6 에서 고침) · 좌표 변환(위).</div>
+
+<div class="note flag">⚠손실공간 수정 <b>전에는</b> foot 지분이 63~72% 였다. 수정으로 전체가
+−33% 줄었는데 foot 비중은 <b>오히려 늘었다</b> — <b>다른 축이 더 많이 좋아졌다</b>는 뜻이다.</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§6</span><h2>값의 근거 — 세 줄</h2>
+  <span class="tag">왜 이 숫자인가</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>무엇이 정해졌나</th><th>근거</th></tr></thead>
+<tbody>
+<tr class="pick"><td class="k"><b>foot 손실 셋이 tendon 좌표</b></td>
+    <td>손실을 관절각 → <b>모터축</b>으로 옮기자 <b>네 지표 전부 −25~33%</b>.
+    그리고 <code>τ_c</code> 가 각축 스윕 실측 대비 <b>−9.9 / −13.0 / −14.3%</b> 로
+    <b>세 축이 한 계통 편차로 모였다</b>(옛 배치는 −9.9 / −46.5 / −73.5% 로 제각각).
+    <b>RMS 보다 이게 강한 근거다</b></td></tr>
+<tr class="pick"><td class="k"><b><code>b</code> = 0 (calf 확정 · thigh 잠정)</b></td>
+    <td>일정속도 스윕의 <b>기울기</b>가 전 축에서 0 이거나 음수(Stribeck).
+    calf 는 120 dps 까지 가서 <b>평탄</b>함을 확인해 <b>0 확정</b>,
+    thigh 는 40° 스트로크라 <b>내리막에서 멈춰</b> 잠정.
+    PACE 도 같은 말을 한다 — calf 5판 산포 2%, thigh 8.1배 요동</td></tr>
+<tr class="pick"><td class="k"><b><code>T_d</code> 실측 고정</b></td>
+    <td>적합에게는 <code>b</code> 와 <b>구별되지 않는다</b>(§2). 자유로 두면 실측 밖으로
+    달아나며 <code>JFRIC</code> 을 −13~−63% 로 끌고 갔다.
+    묶자 <code>JFRIC.thigh</code> 가 스윕 대비 −26% → <b>−10%</b> 로 물리값에 붙었다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note flag"><b>남은 것 둘</b> — <b>HR_thigh 관성</b>(좌우 대조용, 실기 30분) ·
+<b>Stribeck 크기</b>(<code>--f-scale</code> 은 <code>f_end</code> 만 낮추고
+<code>f_start</code> 0.17 Hz 는 그대로라 저속 성분이 안 늘었다. 급하지 않음).<br>
+<b>hip 두 값은 종결</b> — 못 잰 건 맞지만 <code>damping.hip</code> 이 hip 총토크의
+<b>1.5%</b> 뿐이고 0~3배로 흔들어도 <b>−1.5% ~ +3.1%</b> 다. hip 은 중력(5.25 N·m)이
+지배한다. <b>측정 실패가 아니라 측정할 필요가 없음</b>이다.</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§7</span><h2>실기 브링업 — 매달기부터 자립까지</h2>
+  <span class="tag">RUNBOOK 통합 · 2026-08-24</span></div>
+
+<p>순서를 바꾸면 안 되는 자리는 <b>둘</b>이다: 자세를 만들기 <b>전에 내려놓지 않을 것</b>,
+하중을 다 넘긴 <b>뒤에</b> <code>stand</code> 를 켤 것.
+2026-08-21 부터 <b>배포 바이너리 하나로</b> 끝난다(<code>home</code>·<code>jog</code> 가 들어왔다).</p>
+
+<div class="note flag"><span class="lead">⚠ 이 세 가지를 알고 들어간다.</span>
+<b>① IMU 가 전부 0</b> → <code>tilt</code> E-stop 이 무력하다(tilt≡0 이라 임계에 도달 불가).
+<b>크레인이 유일한 안전장치다.</b> 복구는 Pi 앱 재컴파일 5줄(<code>emb/IMU_RECOVERY.md</code>).<br>
+<b>② 모터를 소프트로 못 끈다</b> — 벤더 미구현. <code>enable(0)</code> 은 <code>kp=kd=τ=0</code> 을
+보내는 것일 뿐이고(<code>shm_bridge.cpp:109-114</code>), 명령을 끊으면 드라이버는
+<b>마지막 명령을 계속 실행한다.</b> <b>물리 리셋이 유일한 해제.</b><br>
+<b>③ HOME(전축 0°) 자세로 바닥에 두면 즉시 전도</b> — 밑창이 14.4 cm 기울어 까치발이고 CoM 이 11 cm 앞이다.</div>
+
+<div class="tw">
+<table>
+<thead><tr><th class="n">#</th><th>무엇</th><th>확인 / 왜</th></tr></thead>
+<tbody>
+<tr class="rand"><td class="n">1</td><td><b>물리 리셋·모터전원 스위치를 손 닿는 곳에</b></td>
+    <td>소프트 해제 경로가 <b>없다</b></td></tr>
+<tr class="rand"><td class="n">2</td><td><b>크레인에 매단다 — 발이 뜬 상태로</b></td>
+    <td>IMU 사망 ⇒ <b>크레인이 유일한 안전장치</b></td></tr>
+<tr><td class="n">3</td><td>줄 장력 확인</td><td>비상시 즉시 들어올릴 수 있어야</td></tr>
+<tr class="sep"><td class="n">4</td><td><code>diag/emb_ctl.sh reset</code></td><td>터미널 1 에만. <code>reset</code> 은 Emb 도 죽인다</td></tr>
+<tr><td class="n">5</td><td><b>모터 전원 OFF → 3초 → ON</b></td><td>EtherCAT 이 OP 를 잃었으면 필수</td></tr>
+<tr><td class="n">6</td><td>5초 대기</td><td></td></tr>
+<tr class="pick"><td class="n">7</td><td><code>emb_ctl.sh start</code></td>
+    <td>✅ <code>MotorStatus16 신선</code> · ⚠<code>sudo</code> 금지(중복 writer 가 된다)</td></tr>
+<tr class="sep"><td class="n">8</td><td><code>./run_hw.sh</code></td>
+    <td>뷰어·GUI·값 모니터. 뷰어는 <b>아무것도 제어하지 않는다</b>.<br>
+        게인 열이 <code>kp_raw</code>(calf <b>180</b>)인지 볼 것 — <code>kp_leg</code> 면 옛 바이너리</td></tr>
+<tr class="sep"><td class="n">9~11</td><td>영점 캘리브레이션 <span class="pill wall">필요할 때만</span></td>
+    <td><code>biped_emb.py --start-mode off</code> → <code>calib_zero.py --apply</code> →
+        ★<b><code>gen_grav_table.py --apply</code></b> → 4번부터 다시<br>
+        ⚠<b>영점을 바꾸면 중력표를 반드시 재생성.</b> 2026-08-21 에 안 해서 8축 전부
+        자기 <code>offset</code> 만큼(HR_calf <b>13.05°</b>) 밀린 표를 썼다</td></tr>
+<tr class="rand"><td class="n">12</td><td><b><code>biped_emb.py</code> 를 끈다</b></td>
+    <td>writer 는 하나만. 2026-08-24 부터 <b>배포가 exit 4 로 거부</b>한다(종전엔 경고만)</td></tr>
+<tr><td class="n">13</td><td><code>./build/biped_deploy --mjcf ../biped_flatfoot.mjcf</code></td>
+    <td><code>--mjcf</code> 를 빼면 점발(<code>cmode=0</code>)이라 <b>stand 가 아니다</b></td></tr>
+<tr class="pick"><td class="n">14</td><td><b>기동 배너 — 하나라도 다르면 중단</b></td>
+    <td><code>cmode=1 2점 평발</code> · <code>SCHED_FIFO</code> · <code>지연보상 ON 8.40ms</code> ·
+        게인 <code>calf 80→180.0</code> · 트립각 <b>7.16°</b> · <code>home 40dps</code> · <code>jog 20dps</code><br>
+        ⚠트립각이 <b>4.77°</b> 면 옛 바이너리다(<code>gear_k</code> 2승 버그, 2026-08-21 수정)</td></tr>
+<tr class="sep"><td class="n">15</td><td><code>mode=hold</code></td><td>자세 유지 · <code>loop_hz</code> 500 근처</td></tr>
+<tr class="rand"><td class="n">16</td><td><b><code>mode=home</code></b> — 약 3.8초 S-curve</td>
+    <td>평발 목표 <code>thigh +3.68° · calf −23.87° · foot −59.81°</code><br>
+        ⚠<code>stand</code> 는 램프가 없다 — 바로 누르면 발목이 채널 100.4° 를 한꺼번에 요구해 속도트립</td></tr>
+<tr class="pick"><td class="n">17</td><td><b>발바닥이 지면과 평행한가</b></td>
+    <td>화면이 정말 <code>foot −59.8°</code> 인가. <code>gear_k</code> 는 <b>정량 검증 전</b>이고
+        회귀는 <b>foot 실효 1.60</b>(설정 1.2)을 가리킨다. 아니면 <b>중단</b></td></tr>
+<tr class="sep"><td class="n">18</td><td>천천히 내려 발바닥 전체 접지</td><td>하중은 아직 크레인이</td></tr>
+<tr class="rand"><td class="n">19</td><td><b>하중을 서서히 로봇으로 — <code>hold</code> 상태로</b></td>
+    <td>⚠<b>19↔21 순서를 뒤집지 말 것.</b> 살짝 닿은 채 stand 를 켜면 QP 가 매 틱 실패하고,
+        그 상태로 크레인을 내리면 <b>폐루프가 죽은 채 하중이 실린다</b>. 다 내리지 말 것(hold 는 체중을 못 버틴다)</td></tr>
+<tr><td class="n">20</td><td>처짐을 읽는다</td>
+    <td>hip ±3.00° · thigh −2.6° · calf +0.29° · foot −0.36° (채널각 예상)<br>
+        ⚠<b>이건 α 측정이 아니다</b> — 얻는 것은 <code>α×(G_CAD/G_real)</code> 다. <b>hip 으로 판단</b>
+        (foot 은 중력 0.19Nm 가 마찰 0.63~0.71 에 완전히 묻힌다)</td></tr>
+<tr class="sep"><td class="n">21</td><td><code>mode=stand</code> — 줄은 <b>느슨하게 남긴 채</b></td><td>2.5초 블렌드</td></tr>
+<tr class="pick"><td class="n">22</td><td>거부되면 로그를 읽는다 — <b>이유가 둘</b></td>
+    <td><code>⛔ 접지가 안 됐다</code> → 크레인을 더 내린다 · <code>⛔ 자세가 목표에서 멀다</code> → <b>home 먼저</b><br>
+        거부는 <b>래치</b>다 — <code>off/hold/home/jog</code> 중 하나를 눌러야 재시도된다</td></tr>
+<tr class="pick"><td class="n">23</td><td><b>접지 판정의 유일한 지표는 QP 실패율</b></td>
+    <td>정상 <code>K=4 · 실패 ~0% · com_err 6mm(줄어든다)</code> ·
+        발뜸 <code>K≤3 · ~95% · 127mm 고정</code><br>
+        ⚠접촉 부족이면 중력보상 폴백으로 떨어지는데 <b>겉보기엔 안정돼 보인다</b>.
+        <code>com_err</code> 이 <b>안 줄고 고정</b>되는 것이 구분점</td></tr>
+<tr><td class="n">24</td><td>30초 이상 유지되는지</td>
+    <td>주저앉으면 <code>STAND_KI</code>(CoM 적분, <b>기본 꺼짐</b>)를 켤 수 있다.
+        ⚠원인 규명 전에 켜면 α·질량·<code>gear_k</code> 가 셋 다 조용히 보상돼 <b>원인을 못 찾는다</b>.
+        sim 에서 <b>KI 2~10 구간이 오히려 더 나빴다</b>(tilt 45°) — 단조롭지 않다</td></tr>
+<tr><td class="n">25</td><td>줄을 풀기 전 <b>최소 한 번 외란</b></td><td>살짝 민다. 통과하면 줄을 푼다</td></tr>
+<tr class="sep"><td class="n">26~27</td><td><code>mode=off</code> → <code>Ctrl+C</code></td>
+    <td><code>safe_shutdown</code> 이 <code>Kp=Kd=τ=0</code> 을 25회 덮어쓴다.
+        <b>그게 "모터를 끈다" 가 아니다</b></td></tr>
+<tr class="rand"><td class="n">28</td><td><b>물리 리셋 버튼으로 MCU 를 껐다 켠다</b></td>
+    <td>손으로 축을 돌려 진단: <b>밀어내면 제자리로</b> = 능동 홀드 · <b>저항만</b> = 제동(권선 단락)</td></tr>
+<tr><td class="n">29</td><td>들어올린다</td><td>다리가 저항할 수 있다. 뻑뻑하면 손으로 이기지 말고 리셋</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§I</span><h2>무중력 모드 — α 를 재는 절차</h2>
+  <span class="tag">2026-08-24 신설 · 검증됨</span></div>
+
+<div class="note key"><span class="lead">★중립점 <code>g*</code> 가 곧 "제어기가 몇 % 모자라나" 다.</span>
+<pre style="margin:9px 0">τ_cmd = <b>g</b> · G_model(q)   ·  kp=0 · kd=FLOAT_KD(0.30)
+
+  g 를 올려 다리가 <b>뜨기 시작</b>  →  α·g⁺·G_CAD = G_real + τ_c
+  g 를 내려 다리가 <b>지기 시작</b>  →  α·g⁻·G_CAD = G_real − τ_c
+  ────────────────────────────────────────────  더하면 마찰이 소거된다
+  g* = (g⁺+g⁻)/2   ⇒   <b>1/g* = α·(G_CAD/G_real)</b>
+  덤:  (g⁺−g⁻)/2 · G_CAD = τ_c/α   ← 마찰도 같이 나온다(실측 0.60~0.87 과 대조)</pre>
+<b>물리 백엔드(<code>--sim</code>)로 검증했다</b> — α 를 주입하면 중립점이 되돌린다:
+α 1.00 → g* <b>1.000</b> · α 0.85 → g* 1.168(<code>1/g*</code> = <b>0.857</b>, 오차 0.8%).</div>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">중력[Nm]</th><th class="n">마찰[Nm]</th><th class="n">비</th><th>판정</th></tr></thead>
+<tbody>
+<tr class="pick"><td class="ax">hip</td><td class="n">5.25</td><td class="n">0.72</td><td class="n strong">7.3</td><td>✅ 잘 보인다 — 다만 <code>gear_k=1.0</code></td></tr>
+<tr class="pick"><td class="ax">thigh</td><td class="n">5.58</td><td class="n">0.60</td><td class="n strong">9.3</td><td>✅ 잘 보인다 — <code>gear_k=1.0</code></td></tr>
+<tr class="rand"><td class="ax">calf</td><td class="n">0.85</td><td class="n">0.87</td><td class="n">0.98</td><td>⚠ 마찰이 중력만큼</td></tr>
+<tr class="rand"><td class="ax">foot</td><td class="n">0.15</td><td class="n">0.64</td><td class="n">0.24</td><td>❌ 완전히 묻힌다</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note flag">⚠<b><code>gear_k</code> 가 의심스러운 축이 정확히 신호가 없는 축이다.</b>
+이 시험은 <b>공통 α 는 잘 재지만 <code>gear_k</code> 는 못 가린다</b> — calf·foot 을 보려면
+<b>추를 달아</b> 중력 신호를 키워야 한다(단축 벤치).</div>
+
+<div class="tw">
+<table>
+<thead><tr><th class="n">#</th><th>무엇</th><th>확인</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td>브링업 1~17 (매단 채 <code>home</code> 까지)</td><td>발바닥 수평 · <code>foot −59.8°</code></td></tr>
+<tr class="pick"><td class="n">2</td><td>GUI → <b>무중력</b></td>
+    <td>로그 <code>매달림 확인 — 비 0.00 (상한 1.25)</code><br>
+        ⚠<b>접지 중이면 거부한다</b> — 지면 반력을 모르는 채 밀어 올리면 튀어오른다</td></tr>
+<tr><td class="n">3</td><td>손으로 <b>thigh 를 살짝</b> 민다</td>
+    <td>놓은 자리에 서 있으면 성공. ⚠<b>마찰은 안 지워진다</b> — 뻑뻑한 게 정상</td></tr>
+<tr class="pick"><td class="n">4</td><td>배율을 올려 <b>뜨기 시작</b>하는 <code>g⁺</code></td><td>×1.00 → ×1.05 → …</td></tr>
+<tr class="pick"><td class="n">5</td><td>내려 <b>지기 시작</b>하는 <code>g⁻</code></td><td>×1.00 → ×0.95 → …</td></tr>
+<tr><td class="n">6</td><td><code>g* = (g⁺+g⁻)/2</code></td><td><b>1/g\*</b> 가 α·(G_CAD/G_real)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note"><b>기본은 전 축이다</b> — 다리 전체를 무게 없이 만드는 것이 목적이다.
+축이 서로 커플링돼 있어(hip 이 처지면 thigh 의 중력이 바뀐다) 전 축을 같이 놓아야 실제 상황이고,
+한 축씩은 나머지가 잡아 주므로 인위적이다.<br>
+★<code>τ_ff = G_model(q_meas)</code> 를 <b>매 틱 다시 계산</b>하므로 모델을 통한 폐루프가 된다 —
+α 가 모자라 처져도 접히면서 필요 중력이 줄어 <b>어딘가에서 평형을 찾는다</b>(무한낙하가 아니다).
+그 <b>평형 처짐 자체가 부족분의 척도</b>다.<br>
+<code>FLOAT_AXES=1,5</code> 는 <b>1회용 디버그</b>다 — 전 축을 놓기 전에 <b>부호를 확인</b>할 때,
+그리고 좌우 α 를 따로 잴 때(<code>=0</code>/<code>=4</code> 로 hip 좌우) 쓴다.<br>
+실기 없이 미리 보려면: <code>SIM_HANG=1 SIM_Q0='0,3.68,-23.87,-59.81,0,3.68,-23.87,-59.81'
+./build/biped_deploy --sim --mjcf ../biped_flatfoot.mjcf</code></div>
+
+<h3>★실측 결과 (2026-08-24) — 브래킷 판독으로 확정</h3>
+
+<div class="note key"><span class="lead">★판독을 고쳐야 했다 — <b>양방향 스윕이 필요 없다.</b></span>
+정지마찰이 만드는 데드밴드 <code>|α·g·G_CAD − G_real| ≤ τ_c</code> 안에서는 어떤 배율에서도
+안 움직인다. <b>올라가는 한 번의 스윕에 두 경계가 이미 들어 있다</b>:
+<pre style="margin:9px 0">g_lo = 마지막으로 <b>지고 있던</b> 배율 (v ≥ +0.10°/s)     = (G_real − τ_c)/(α·G_CAD)
+g_hi = 처음으로 <b>뜨는</b> 배율     (v ≤ −0.10°/s)     = (G_real + τ_c)/(α·G_CAD)
+g*  = (g_lo + g_hi)/2      밴드 = g_hi − g_lo = 2τ_c/(α·G_CAD)</pre>
+⚠종전의 <b>영교차 보간은 이 밴드를 관통해 잡음에서 교차를 만들었다</b> — 그렇게 나온
+"α ≈ 0.87 단일값" 은 폐기했다. 도구는 <code>float_gstar.py --axis</code>(축별 스윕 —
+전축 동시는 가장 약한 축이 폭주해 관측창을 무너뜨린다) + E-stop 래치 감지
+(래치 후 전 구간 무여자 = "넓은 밴드" 오독) + 포화점 방향 증거 포함.</div>
+
+<div class="tw">
+<table>
+<thead><tr><th>축</th><th class="n">g_lo</th><th class="n">g_hi</th><th class="n">g*</th>
+  <th class="n">1/g*</th><th class="n">밴드</th><th class="n">τ_c/α [Nm]</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td class="ax">HL_hip</td><td class="n">1.10</td><td class="n">1.30</td><td class="n strong">1.20</td>
+    <td class="n">0.833</td><td class="n">0.20</td><td class="n">0.53</td><td>좌우차 2% — 영점 교정 효과</td></tr>
+<tr><td class="ax">HR_hip</td><td class="n">1.00</td><td class="n">1.35</td><td class="n strong">1.18</td>
+    <td class="n">0.851</td><td class="n">0.35</td><td class="n">0.92</td><td></td></tr>
+<tr class="rand"><td class="ax">HL_thigh</td><td class="n">1.10</td><td class="n">1.90</td><td class="n strong">1.50</td>
+    <td class="n">0.667</td><td class="n">0.80</td><td class="n">0.68</td><td><b>⚠무릎 미끄러짐 흡수값</b></td></tr>
+<tr class="pick"><td class="ax">HR_thigh</td><td class="n">0.70</td><td class="n">1.50</td><td class="n strong">1.10</td>
+    <td class="n">0.909</td><td class="n">0.80</td><td class="n">0.66</td><td>PACE 0.604 와 ±10%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note">측정 자세: thigh = 점발 <b>Qhome8</b>(G_thigh 1.705/1.649 Nm) ·
+hip = 평발 스윕이나 <b>hip 중력은 자세무관</b>(5.25 Nm 동일)이라 이관 유효.
+영점은 2026-08-24 재캘리브레이션 값 기준.</div>
+
+<div class="note flag"><span class="lead">★★밴드가 좌우 동일하고 g* 만 밀려 있다 — 이게 원인을 가른다.</span>
+<pre style="margin:9px 0">밴드 = 2τ_c/(α·G_CAD)   좌우 0.80 = 0.80   ⇒ <b>α 도 마찰도 좌우 대칭</b>
+g*  = G_real/(α·G_CAD)  좌우 1.50 vs 1.10  ⇒ 남는 미지수는 <b>G_real 하나</b>:
+                                              <b>왼다리 실제 중력토크가 36% 크다</b></pre>
+질량이 좌우 36% 다를 수 없으니 <b>기하</b>다 — ∂G_thigh/∂q_calf ≈ 0.023 Nm/° 로 환산하면
+<b>무릎 25~30° 어긋남</b>. 육안 관찰("초기자세 좌우 다름") · HL_calf 영점이 캘리브 사이
+4.25° 이동 · 커플링 잔차 −3.11° 미설명 · 2026-08-11 풀리 재조임 이력이 전부 같은 곳을
+가리킨다 ⇒ <b>왼무릎 벨트 미끄러짐. 수리 전 walk 금지.</b>
+수리 후 g* 재측정이 곧 수리 검증이다(1.10 근처 복귀 = 성공).</div>
+
+<div class="note"><b>축 종류별 차이가 남는다</b> — hip <code>1/g*</code> 0.84 vs thigh 0.91.
+α 가 드라이버 특성이면 전 축이 같아야 하므로, 이 차이는 <b>G_CAD/G_real 이 축마다 다르다</b>
+= CAD 질량분포 오차다. α=1 로 두면 <code>G_real/G_CAD</code> = hip <b>1.19</b> · thigh 1.05~1.10.
+hip(roll) 토크는 <code>m_leg·g·y_com</code> 이라 <b>y_com 실측</b>이 다음 수다.
+α 단독 분리는 여전히 <b>다리 링크 저울</b>만이 한다 — 제어에는 곱(= g*)이면 충분해서
+<code>STAND_TAU_SCALE_JOINT = g*</code> 로 이미 쓴다(<code>run_deploy_hw.sh</code>).</div>
+
+<h3>★실측 2일차 (2026-08-25) — 원인 확정: 기하. α·벨트 배제</h3>
+
+<div class="note key"><span class="lead">측정 자세를 <b>영점자세(전축 0°)</b>로 옮겼다.</span>
+전 축이 영점을 잡은 그 지점이라 <b>gear_k 불확실성이 각도오차를 만들 수 없고</b>,
+thigh 중력도 1.705 → 2.062 Nm 로 커진다(밴드 0.71 → 0.59). 그리고 <b>자세 2점 비교</b>가
+그대로 판별 실험이 된다 — α(전기)는 자세 무관, 기하는 자세 의존.</div>
+
+<div class="tw"><table>
+<thead><tr><th>축</th><th class="n">0° 자세 g* (밴드)</th><th class="n">Qhome8 g* (밴드)</th><th>판정</th></tr></thead>
+<tbody>
+<tr class="rand"><td class="ax">HL_thigh</td><td class="n">1.225 (0.65)</td><td class="n">1.50 (0.80)</td>
+    <td><b>★자세 의존 +22%</b> — 기하</td></tr>
+<tr class="pick"><td class="ax">HR_thigh</td><td class="n">1.05 (0.70)</td><td class="n">1.10 (0.80)</td>
+    <td>+5% · 이틀 완전 재현 — 기준축</td></tr>
+</tbody></table></div>
+
+<div class="note flag"><span class="lead">★결정타 — float 에서 HL 만 모델 평형각(+35.3°)을 <b>지나서도</b> 상승한다.</span>
+그 구간은 보상(부호 반전)도 모델 중력도 둘 다 내리누른다 — 그런데도 오른다 =
+<b>모델에 없는 + 토크 ~1 Nm 이 실재</b>한다(HR 은 정지). 밴드는 1/G 스케일 그대로
+(0.70×2.062/1.705 = 0.85 ≈ 0.80)라 마찰·측정 체계는 정합.<br>
+소거 사슬: 질량(원위 좌우 동일 실측) → 무릎 벨트(육안 대칭·마킹 불변) → 영점(화면=눈 일치) →
+외부 간섭(수색 결과 없음) → α(자세 의존이 배제) → 스테이터 유격(로터 회전으로 철회).
+⇒ 남은 실체: <b>다리 위 케이블 다발</b>(관절을 가로지르는 루프의 강성 또는 질량 위치).</div>
+
+<div class="note"><b>운용 원칙이 여기서 나왔다 — "한 점 중립" 이 아니라 "전 자세 밴드 안".</b>
+기하 오차가 있는 한 단일 배율은 전 자세 중립일 수 없다. 0° 중립(1.225)을 쓰면 +27° 이상
+(중력→0 구간)에서 절대 초과분이 마찰을 넘어 떠오른다(실기). ⇒ <b>운용 thigh 1.10 좌우 공통</b>
+(<code>run_deploy_hw.sh</code>).<br>
+⚠<b>walk 함의</b>: 보행 스윙이 thigh +30~40° 를 지난다 — 정확히 이상 구간이라 <b>HL 케이블
+정리가 walk 게이트에 추가</b>됐다(EtherCAT 케이블 교체와 함께).<br>
+남은 판별: 무여자 +40° 릴리스 시험(HL/HR 대조 + 그 자세에서 루프 관찰) → 케이블타이
+재배치(좌우 같은 여유) → 재스윕. <b>성공 판정 = 좌우 수렴 + 자세 의존성 소멸.</b></div>
+
+<h3>★저울 힘시험 (push · 2026-08-25 오후) — α 를 외부 기준으로</h3>
+
+<div class="note key"><span class="lead">발밑 저울이 CAD 게이지를 깬다 (사용자 제안).</span>
+push 모드: <code>τ = g*축별·G_model(q) + Jᵀ(q_측정)·(0,0,−F)</code> (kp=0 · F 는 5 N/s 램프만).
+중력 몫은 이미 아는 g* 가 중화하므로 <b>저울 눈금/명령힘 = 경로별 전달비</b> 가
+질량·CoM 오차와 분리되어 나온다. 0° 자세는 calf 가중 65~75% — <b>g* 로는 원리적으로
+못 재던 calf 토크 경로를 처음으로 외부 기준 검증</b>한 것.
+구현: mj_jacGeom(수식 복사 없음) · 도구 <code>tools/push_scale.py</code>(자동 스윕 ·
+점별 q·τ_cmd·저울값 짝기록 · 정착=엔코더 정지 · 원자료 <code>data/push/*.json</code>).</div>
+
+<div class="tw"><table>
+<thead><tr><th>세션(0° 자세)</th><th class="n">전달비 a</th><th class="n">마찰 c[kg]</th><th class="n">잔차RMS</th></tr></thead>
+<tbody>
+<tr class="rand"><td class="ax">HL 수동(판독규칙 이전)</td><td class="n">0.932</td><td class="n">0.10</td><td class="n">321 g — 제외</td></tr>
+<tr><td class="ax">HL 10N 계단</td><td class="n">0.801</td><td class="n">0.485</td><td class="n">133 g</td></tr>
+<tr><td class="ax">HR 10N 계단</td><td class="n">0.820</td><td class="n">0.451</td><td class="n">144 g</td></tr>
+<tr class="pick"><td class="ax">HR 5N 계단</td><td class="n">0.832</td><td class="n">0.466</td><td class="n">61 g</td></tr>
+<tr><td class="ax">HL 5N 계단</td><td class="n">0.811</td><td class="n">0.448</td><td class="n">80 g</td></tr>
+</tbody></table></div>
+<div class="note">판독은 <b>마찰 루프 동시적합</b>(올림 y=ax−c · 내림 y=ax+c · 정점에서 2c/a
+이내의 내림 전이구간 제외)으로 — 혼합 회귀는 전이 오염으로 0.60~0.67 의 허상을 낸다.
+⇒ <b>calf 경로 0.82±0.02 · 좌우 동일 · 조립 마찰 τ_c ≈ 0.70 Nm</b>(c×g÷레버 0.155 m —
+PACE 0.87 · g* 밴드와 4중 정합). ⚠철회 둘: "3.3 kg 드라이버 포화"(전이를 평균에 섞은
+허상 — 50 N 까지 상승 지속) · "30N 판독 이상치"(두 세션 자세·값 일치).</div>
+
+<div class="note flag"><span class="lead">★세 경로가 모여 해석이 갱신됐다 — 가정 2개 → 1개.</span>
+<pre style="margin:9px 0">경로별 전달 곱(전부 실측):   hip 0.84 (g*) · <b>calf 0.82 (저울·외부기준)</b> · thigh 0.95 (g*)
+
+종전:  α=0.93 공통 + hip y_com +14%                 (오차 가정 2개)
+★현행: <b>α ≈ 0.83 공통 + thigh 모델중력 ~13% 과대</b>   (오차 가정 1개)
+       hip·calf 가 독립 실험으로 같은 0.84/0.82 — 우연으로 보기 어렵다</pre>
+α ≈ 0.83 은 시뮬 낙상 문턱(0.92~0.95) <b>아래</b>다 — 축별 보정이 부족분을 메우는 것이
+stand 성립의 전제가 된다. 잔여: 벤치 ROTOR_I 참값 ≈ 0.83×7.327e−4 = 6.1e−4
+(데이터시트 5.29e−4 와의 차 = 기어박스 입력관성 — 관성 축퇴는 그대로).<br>
+<b>★08-26 완주 — 위 "α 0.83 공통" 은 자세별 지도로 대체됐다.</b> 평발 스윕(E2)·뒤꿈치밀기(E3)·
+Qhome8 발끝(E4)을 양다리로 완주한 결과: <b>평발·0° 0.80±0.02 / Qhome8 0.68±0.05</b>.
+각도 시험은 커플링 상쇄(비)+평발 밑창 실수평(절대)으로 종결 — calf·foot <b>각도배율 = 설계값</b>,
+'실효 1.6' 은 각도영역에서 사망. E3(hip+calf) 0.84~0.86 로 hip·calf 는 건강 ⇒ Qhome8 결손의
+유력 국소화 = <b>foot 전동의 발목각 의존 손실</b>(0° 부근 ~0.4~0.5 vs −55° ~0.8 — foot 최대가중인
+E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: 접촉오염 3종(두점 힘고리 0.65 ·
+저울테두리 누설 0.55 · 꼭짓점 발끝착지) · 크레인 스트랩 부양 13 mm · 발기하 모델오차 ~3.4°.
+확증 실험 = <b>발목각별 foot 단독 토크시험</b>. 해석·격리는 <code>tools/push_solve.py</code>.</div>
+</section>
+
+
+<section>
+<div class="shead"><span class="n">§8</span><h2>실패하면 어디를 보나 · 미해결</h2>
+  <span class="tag">2026-08-24</span></div>
+
+<div class="tw">
+<table>
+<thead><tr><th>증상</th><th>의심</th><th>다음</th></tr></thead>
+<tbody>
+<tr><td>앞/뒤로 서서히 기운다</td><td>CoM 이 밑창중심 밖</td><td><code>flat_home</code> 재확인 · 실기 링크질량</td></tr>
+<tr><td>무릎이 처진다 · 주저앉는다</td><td>중력보상 부족</td><td>모델이 <b>8% 가볍다</b> · <b>다리 링크 저울 먼저</b> · <code>gear_k</code></td></tr>
+<tr><td>발목만 어긋난다</td><td><code>coef</code> · <code>gear_k</code></td><td><code>couple_check.py</code> 를 <b>무여자로</b> · 실효 1.60 단서</td></tr>
+<tr class="rand"><td><b>한쪽으로 기운다</b></td><td>좌우 구동계 비대칭</td><td><b>무부하 측정이 HL_hip 을 가리킨다</b> — ROTOR_I 7.652e−4 vs HR 7.121e−4(<b>7.5%</b>) · 강성 6.5~14.0 vs 10.3~15.2 Nm/deg · 마찰 0.711 vs 0.632. ⇒ <code>FLOAT_AXES=0</code>/<code>=4</code> 로 hip 좌우 <code>g*</code> 를 따로 잴 것</td></tr>
+<tr><td>채널이 죽는다</td><td>왼다리 FDCAN</td><td><b>배선으로 판결</b>(2026-08-21) · 지연도 만들었을 수 있다</td></tr>
+<tr><td>모니터 게인이 이상하다</td><td>발행자 버전 불일치</td><td>키가 <code>kp_raw</code> 인지 — <code>kp_leg</code> 면 옛 바이너리</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>미해결 — 알고 들어갈 것</h3>
+<div class="tw">
+<table>
+<thead><tr><th>항목</th><th>상태</th></tr></thead>
+<tbody>
+<tr class="pick"><td><b>α</b> ≈ 0.83</td><td><b>세 경로 일치로 갱신</b>(08-25 오후 · hip g* 0.84 ·
+    calf 저울 0.82 · thigh g* 0.95 → α 공통 0.83 + thigh 모델중력 +13%).
+    낙상 문턱(0.92~0.95) **아래** — 축별 보정(STAND_TAU_SCALE_JOINT)이 그 부족분을 메우는 것이
+    stand 성립의 전제가 된다. 확정 수단 = 평발 스윕 · 분해 시 정강이+발 저울</td></tr>
+<tr class="rand"><td><b>좌우 α 비대칭</b></td><td>무부하 ROTOR_I 가 <b>HL 7.652e−4 vs HR 7.121e−4 (7.5%)</b> ⇒ α 0.691 vs 0.743. 조립 후 미검증 — <code>FLOAT_AXES</code> 로 좌우 <code>g*</code> 를 따로 재면 갈린다</td></tr>
+<tr class="rand"><td><b>IMU 전부 0</b></td><td>tilt E-stop 무력 · CoM 적분 xy 차단 · 크레인이 유일한 안전장치</td></tr>
+<tr><td><code>gear_k</code> foot</td><td>회귀 <b>1.60</b> vs 설정 1.2. 각도로 재야 한다(토크로는 상쇄)</td></tr>
+<tr><td>다리 링크 질량</td><td><b>저울 미검증</b>. 전체 15kg 만 쟀다(모델 13.898 = 8% 가벼움)</td></tr>
+<tr><td>바닥 마찰 μ</td><td>시뮬 1.6 · WBIC 계획 0.566 · 실기 미상</td></tr>
+<tr><td>보행 <code>q̇_cmd</code></td><td>C++ 은 0, Python 은 보낸다. <b>walk 에서만 문제</b> — 감쇠토크가 트립의 2.1배</td></tr>
+<tr><td>배포경로 감사 HIGH 5건</td><td>NaN 가드 · 1점 점발 stand 영구거부 · <code>--start-mode hold</code> 워치독 · home 램프 중 hold 계단 · 프리즈 감지</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+
+<div class="foot">
+원문 <code>emb/pace/RESULTS.md</code> (fit_A_tendon, 커밋 38207d2) —
+전개 과정·폐기된 가설·교훈은 그쪽에 있다.<br>
+⚠<b>이 페이지의 숫자를 다른 문서로 복사하지 말 것.</b> 파라미터의 단일 출처는
+<code>RESULTS.md</code>, 실측 원본의 단일 출처는 <code>spec.yaml</code> 의
+<code>friction.measured_*</code> 다.<br>
+⚠<b>원문과 다르게 적은 곳</b> — §2 의 <code>kp·T_d</code> 표는 원문이
+<code>T_d</code> = 9.75 ms(<code>fit_v8</code> 시절 자유값)로 계산했으나
+<b>채택값 8.39 로 다시 계산</b>했다(결론 동일: hip 9.3배 vs 10.8배).
+원문 §0-b 의 "각축 = 나머지는 지그 고정" 은 <code>actuator_test.py:511</code>
+("kp=kd=0 으로 완전히 놓는다")과 어긋나 <b>무여자</b>로 적었다.<br>
+차트 색은 dataviz <code>validate_palette.js</code> 로 검증했다 — light·dark 양쪽 통과.
+색에 기대지 않도록 무효값은 <b>빗금</b>, 값은 전부 <b>직접 라벨</b>.
+</div>
+
+</div>

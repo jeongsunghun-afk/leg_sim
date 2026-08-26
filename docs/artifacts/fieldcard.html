@@ -1,0 +1,544 @@
+<title>이족 실기 현장카드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+
+<style>
+  /* 현장카드 — 로봇 옆 노트북에서 읽는다. 라이트/다크 완전 지원. */
+  :root{
+    --ground:#F2F3F1; --card:#FFFFFF; --sunk:#E7E9E5;
+    --ink:#15181A; --ink2:#4C5358; --faint:#7C858B;
+    --line:#D3D7D2; --line2:#BCC2BC;
+    --acc:#9A5B12;  --acc-bg:#F7EEDF;
+    --hot:#A62A2A;  --hot-bg:#FAEAE8;
+    --go:#1F5C43;   --go-bg:#E4EFE9;
+    --shadow:0 1px 0 rgba(21,24,26,.05), 0 4px 14px rgba(21,24,26,.05);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#101315; --card:#181C1F; --sunk:#212629;
+      --ink:#E8ECEA;   --ink2:#A5AFB2; --faint:#78838A;
+      --line:#2A3034;  --line2:#3B444A;
+      --acc:#E8A33D;   --acc-bg:#2A2013;
+      --hot:#EC7C78;   --hot-bg:#2B1717;
+      --go:#6FC49B;    --go-bg:#132622;
+      --shadow:none;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#101315; --card:#181C1F; --sunk:#212629;
+    --ink:#E8ECEA;   --ink2:#A5AFB2; --faint:#78838A;
+    --line:#2A3034;  --line2:#3B444A;
+    --acc:#E8A33D;   --acc-bg:#2A2013;
+    --hot:#EC7C78;   --hot-bg:#2B1717;
+    --go:#6FC49B;    --go-bg:#132622;
+    --shadow:none;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font:15px/1.6 "Noto Sans KR",system-ui,-apple-system,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,.m,th,.num,.k,.big{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    font-variant-numeric:tabular-nums}
+  .wrap{max-width:1000px;margin:0 auto;padding:34px 18px 72px}
+
+  header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;
+    padding-bottom:14px;border-bottom:2px solid var(--ink)}
+  h1{margin:0;font-size:clamp(1.5rem,4vw,2rem);font-weight:700;letter-spacing:-.02em;line-height:1.1}
+  .sub{margin:0;color:var(--ink2);font-size:.9rem;flex:1;min-width:15rem}
+  .sub b{color:var(--ink)}
+  .lnk{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--faint);
+    letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));
+    gap:14px;margin-top:22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
+    padding:15px 17px 17px;box-shadow:var(--shadow)}
+  .card.wide{grid-column:1/-1}
+  .card.hot{border-color:color-mix(in srgb,var(--hot) 45%,var(--line));background:var(--hot-bg)}
+  .card.go{border-color:color-mix(in srgb,var(--go) 40%,var(--line));background:var(--go-bg)}
+  .card h2{margin:0 0 3px;font-size:1rem;font-weight:700;letter-spacing:-.01em}
+  .card .lead{margin:0 0 11px;font-size:.78rem;color:var(--faint);
+    font-family:"JetBrains Mono",monospace;letter-spacing:.05em;text-transform:uppercase}
+  .card p{margin:9px 0 0;font-size:.875rem;color:var(--ink2)}
+  .card p b{color:var(--ink)}
+  .card p:first-of-type{margin-top:0}
+
+  .tw{overflow-x:auto;margin:2px -3px 0}
+  table{border-collapse:collapse;width:100%;font-size:.83rem}
+  th{font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;text-align:left;padding:0 8px 6px;border-bottom:1px solid var(--line2);
+    white-space:nowrap}
+  td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.5}
+  tbody tr:last-child td{border-bottom:0}
+  td.num,th.num{text-align:right;font-family:"JetBrains Mono",monospace;white-space:nowrap}
+  td.m{font-family:"JetBrains Mono",monospace;white-space:nowrap}
+  tr.hi td{background:var(--acc-bg)}
+  tr.bad td{background:var(--hot-bg)}
+  td strong{color:var(--ink);font-weight:700}
+
+  .big{font-size:1.6rem;font-weight:700;letter-spacing:-.03em;line-height:1.15;color:var(--acc)}
+  .big.hotv{color:var(--hot)} .big.gov{color:var(--go)}
+  .cap{font-size:.76rem;color:var(--faint);margin-top:2px}
+
+  pre{background:var(--sunk);border:1px solid var(--line);border-radius:6px;
+    padding:10px 12px;margin:10px 0 0;overflow-x:auto;
+    font:.76rem/1.7 "JetBrains Mono",monospace;color:var(--ink2)}
+  pre b{color:var(--ink)}
+  code{background:var(--sunk);border:1px solid var(--line);border-radius:4px;
+    padding:1px 4px;font-size:.84em}
+
+  .flag{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:.62rem;
+    font-weight:700;letter-spacing:.08em;padding:1px 5px;border-radius:3px;
+    border:1px solid currentColor;vertical-align:.1em;margin-right:5px}
+  .f-hot{color:var(--hot)} .f-go{color:var(--go)} .f-acc{color:var(--acc)}
+
+  ol.steps{margin:8px 0 0;padding-left:0;list-style:none;counter-reset:s}
+  ol.steps li{counter-increment:s;position:relative;padding-left:2rem;margin-bottom:8px;
+    font-size:.875rem;line-height:1.5;color:var(--ink2)}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;
+    font-family:"JetBrains Mono",monospace;font-size:.78rem;font-weight:700;color:var(--acc)}
+  ol.steps li b{color:var(--ink)}
+  ol.steps li small{display:block;color:var(--faint);font-size:.8rem;margin-top:1px}
+
+  footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line2);
+    font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--faint);line-height:1.7}
+  a{color:var(--acc)}
+  :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <h1>이족 실기 현장카드</h1>
+  <p class="sub"><b>축약판.</b> 헷갈리면 반드시 틀리는 것, 실기 전에 확인할 것, 아직 모르는 것.
+     근거·전개는 상세판에 있다.</p>
+  <span class="lnk">2026-08-26 · E3·E4 완주 — 전달 0.80(평발) / 0.68(Qhome8) ★자세의존</span>
+</header>
+
+<div class="grid">
+
+  <!-- ── 확정 파라미터 ─────────────────────────────── -->
+  <div class="card go wide">
+    <h2>★확정 파라미터 + 측정 행렬 — g* 는 자세를 탄다</h2>
+    <p class="lead">2026-08-25 확정 · 브래킷 판독(마찰 소거) · 축별 스윕</p>
+    <div class="tw"><table>
+      <thead><tr><th>축</th><th class="num">0° 자세 g* (밴드)</th>
+        <th class="num">Qhome8 g* (밴드)</th><th class="num">자세 의존</th>
+        <th class="num">운용값</th></tr></thead>
+      <tbody>
+        <tr><td>HL_hip</td><td class="num">1.20 (0.20)</td><td class="num">—</td>
+            <td class="num">—</td><td class="num"><strong>1.20</strong></td></tr>
+        <tr><td>HR_hip</td><td class="num">1.18 (0.35)</td><td class="num">—</td>
+            <td class="num">—</td><td class="num"><strong>1.18</strong></td></tr>
+        <tr class="bad"><td>HL_thigh</td><td class="num">1.225 (0.65)</td>
+            <td class="num">1.50 (0.80)</td><td class="num"><strong>★+22%</strong></td>
+            <td class="num"><strong>1.10</strong></td></tr>
+        <tr><td>HR_thigh</td><td class="num">1.05 (0.70)</td>
+            <td class="num">1.10 (0.80)</td><td class="num">+5%</td>
+            <td class="num"><strong>1.10</strong></td></tr>
+        <tr class="hi"><td>calf</td><td class="num" colspan="3">g* 측정 불가 → ★저울 힘시험으로 r=0.82 실측</td>
+            <td class="num"><strong>1.22</strong></td></tr>
+        <tr><td>foot</td><td class="num" colspan="3">미측정 (평발 스윕 대기 · 1점 walk 발목토크 ~0)</td>
+            <td class="num">1.00</td></tr>
+      </tbody>
+    </table></div>
+    <pre>GRAV_SCALE_JOINT = STAND_TAU_SCALE_JOINT = "1.20,1.10,★1.22,1.00,1.18,1.10,★1.22,1.00"
+실행: <b>./run_deploy_hw.sh</b>   (home 은 측정용 0° 상태 — walk 전 Qhome8 원복)</pre>
+    <p><span class="flag f-acc">운용 원칙</span><b>"한 점 중립"이 아니라 "전 자세 밴드 안".</b>
+       기하 오차가 있는 한 단일 배율은 전 자세 중립일 수 없다. 0° 중립값(1.225)을 쓰면
+       +27° 이상(중력→0 구간)에서 절대 초과분이 마찰을 넘어 <b>다리가 떠오른다</b>(실기 관측).
+       1.10 은 0° 밴드(0.90~1.55) 안 + 고각 유지 — 실사용 확인.</p>
+    <p><span class="flag f-hot">★원인 확정</span><b>HL_thigh 초과는 기하다 — α(구동기)가 아니다.</b>
+       g* 비가 자세를 탄다(1.17 → 1.36) — 전기 특성은 자세를 모른다. 결정타:
+       float 에서 <b>HL 만 모델 평형각(+35°)을 지나서도 계속 상승</b>(HR 정지) =
+       모델에 없는 +토크 <b>~1 Nm</b> 실재. 유력 실체는 <b>다리 위 케이블 다발</b>(강성/질량 위치).
+       소거 완료: 질량 · 무릎 벨트(육안 대칭) · 영점 · 외부 간섭 · α(자세 의존이 배제) ·
+       스테이터 유격(로터 회전으로 철회).</p>
+    <p><span class="flag f-hot">walk 게이트</span>①EtherCAT 케이블 교체
+       ②<b>HL 케이블 정리</b> — 보행 스윙이 thigh +30~40° 를 지난다 = 바로 그 이상 구간,
+       매 걸음 ~1 Nm 외란 ③home 을 Qhome8 로 원복.
+       수리 검증 = 무여자 +40° 릴리스 시험 + g* 재스윕(좌우 수렴 · 자세 의존성 소멸).</p>
+  </div>
+
+  <!-- ── 파라미터 검증 현황 ────────────────────── -->
+  <div class="card wide">
+    <h2>파라미터 검증 현황</h2>
+    <p class="lead">2026-08-25 저녁 기준 · 틀리면 무슨 일이 나는지와 함께</p>
+    <div class="tw"><table>
+      <thead><tr><th>파라미터</th><th>상태</th><th>틀리면</th></tr></thead>
+      <tbody>
+        <tr><td class="m">sign</td><td>✅ 2026-08-10 실측 확정</td>
+            <td><strong>치명적</strong> — 보상이 반대로 밀어 폭주</td></tr>
+        <tr><td class="m">offset_deg</td><td>✅ <strong>2026-08-24 재캘리브</strong> (hip 전용 지그 포함)</td>
+            <td><code>G(q)</code> 를 엉뚱한 자세에서 평가</td></tr>
+        <tr><td class="m">coef (발목 커플링)</td><td>✅ 경사계 =1 (≤4%) + 커플링 상쇄 실기 확인(08-25)</td>
+            <td>발목 보상이 무릎으로 새거나 그 반대</td></tr>
+        <tr><td class="m">커플링 전치</td><td>✅ <code>tau_ctrl_to_ch</code> 에 있음</td>
+            <td>calf/foot 보상이 서로 섞인다</td></tr>
+        <tr><td class="m">τ_c (마찰)</td><td>✅ 벤치 0.60~0.87 + <strong>조립 0.70 Nm</strong> (저울 4중 정합)</td>
+            <td>데드밴드 폭 예측만 틀림 — 측정은 브래킷·루프적합이 해결</td></tr>
+        <tr><td class="m">gear_k (각도 경로)</td><td>✅ <strong>설계값(1.5/1.2) 정합 확정(08-25)</strong> —
+            비(커플링 상쇄) + 절대(평발 밑창 실수평). "foot 실효 1.60" 은 각도영역에서 사망</td>
+            <td>그 축 g* 가 통째로 밀린다 — 이제 그 걱정 없음</td></tr>
+        <tr class="hi"><td class="m">G_CAD (다리 질량)</td><td>◑ 부분 — HL 총질량 <strong>5,395 g</strong> 실측
+            (CAD −2.6%) · HR +150 g 축상부품. <strong>링크별 CoM 미확정</strong>(thigh ~13% 과대 의심)</td>
+            <td>게이지 오차가 α 에 섞인다 — E3·E4 가 남은 분리</td></tr>
+        <tr class="hi"><td class="m">α (토크스케일)</td><td>◑ <strong>자세별 확정(08-26)</strong> —
+            평발·0° <strong>0.80±0.02</strong> · Qhome8 <strong>0.68±0.05</strong> (양다리 재현 ·
+            고정 축별 r 기각). 전기 공통 + 자세의존 기하손실(foot 발목각 의심)</td>
+            <td>모든 토크가 그 비율로 약하게 나간다 — Qhome8 힘제어는 ×1.47 보정 필요</td></tr>
+        <tr><td class="m">FLOAT_KD</td><td>✅ 0.30 실사용 확인 (무중력 유지 양호 · 08-25)</td>
+            <td>크면 뻑뻑, 작으면 30~65 Hz 발산</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- ── push 저울 시험 ────────────────────────────── -->
+  <div class="card wide">
+    <h2>★발밀기(push) 저울 시험 — α 를 외부 기준으로 재다</h2>
+    <p class="lead">2026-08-25 · τ = g*·G(q) + Jᵀ(0,0,−F) · 저울 눈금 = 전달비 × 명령힘</p>
+    <div class="tw"><table>
+      <thead><tr><th>확정</th><th>값</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td><strong>calf 경로 전달비</strong></td><td class="num"><strong>0.82 ± 0.02</strong> · 좌우 동일</td>
+            <td>0° 자세(calf 가중 65~75%) · 4세션 · 마찰루프 동시적합 y=a·x∓c</td></tr>
+        <tr><td><strong>조립 calf 마찰</strong></td><td class="num"><strong>τ_c ≈ 0.70 Nm</strong></td>
+            <td>루프폭 c=0.46 kg · 4세션 ±4% · PACE·g* 밴드와 4중 정합</td></tr>
+        <tr class="bad"><td>철회 둘</td><td colspan="2">"3.3 kg 드라이버 포화"(마찰루프 전이를 평균에 섞은 허상 —
+            50N 까지 상승 지속 확인) · "30N 판독 이상치"(두 세션 자세·값 일치)</td></tr>
+      </tbody>
+    </table></div>
+    <pre>도구: tools/push_scale.py --leg HL --max 30 --step 5     (GUI 끄고 · 배포기 켠 채)
+  home 정렬 → [엔터 대기 중 심(shim)으로 저울 100~300 g 창] → 자동 왕복 스윕
+  점마다 q·τ_cmd·저울값 짝기록(JSON) · 정착 = 엔코더 정지(1s·0.1°) · 기입 = 저울 5초 ±10 g 안정
+판독: 혼합 회귀 금지 — <b>마찰 루프 동시적합</b>(올림 y=ax−c · 내림 y=ax+c · 전이구간 제외)</pre>
+    <p><span class="flag f-hot">한계</span>한 자세에선 축별 분리가 원리적으로 불가
+       (τ_cmd 는 모델에서 계산한 값 · 실측 토크 없음 = fCurrent 에코).
+       축별은 <b>자세 다양성</b>으로: 0°=calf 지배 · 평발=thigh 37%+foot 38%.</p>
+    <p><span class="flag f-go">★최종(08-26)</span><b>전달비는 자세를 탄다</b> —
+       평발·0° 계열(발끝·뒤꿈치·양다리 9스윕) <b>0.80±0.02</b> vs Qhome8(E4·양다리)
+       <b>0.68±0.05</b>. 고정 축별 r 로는 동시 설명 불가(모델 기각). E3(hip+calf) 0.84~0.86
+       = hip·calf 건강 ⇒ 결손 국소화 = thigh(HL 케이블 확정분) +
+       <b>foot 의 발목각 의존 손실 의심</b>(0° 부근 ~0.4~0.5 vs −55° 에서 ~0.8).
+       접촉 오염 3종(두점 힘고리 0.65 · 테두리 누설 0.55 · 꼭짓점 발끝착지) 실증·격리 —
+       판독·격리는 tools/push_solve.py 가 자동.</p>
+  </div>
+
+  <!-- ── EtherCAT ─────────────────────────────────── -->
+  <div class="card hot wide">
+    <h2>★EtherCAT 동결 — 원인 확정: 물리 링크 단절</h2>
+    <p class="lead">여덟 번 넘게 겪은 그 동결 · dmesg 가 답을 줬다</p>
+    <div class="tw"><table>
+      <tbody>
+        <tr><td class="m">실측</td><td><b>18분에 링크 Down/Up 13회</b> · <code>carrier_changes=27</code> ·
+            매번 1~4초 만에 자체 복구</td></tr>
+        <tr><td class="m">결정타</td><td><code>16:40:02 Down → 16:40:20 promiscuous mode</code> —
+            <b>EtherCAT 마스터가 뜨기도 전에</b> 끊겼다 ⇒ 소프트웨어 무관</td></tr>
+        <tr><td class="m">배제</td><td>회생 과전압 ✗ (<code>off</code>·0.66A 에서 동결) ·
+            연산 스로틀링 ✗ (87.5°C 인데 <b>2.40/2.40GHz</b> 그대로) ·
+            전기 노이즈 ✗ (<code>rx_crc +0</code> — 프레임이 깨진 적 없음)</td></tr>
+        <tr><td class="m">왜 영구</td><td>링크는 돌아오지만 <b>EtherCAT OP 는 영영 안 돌아온다</b>
+            (commEtherCATm.cpp:520 조기 return) ⇒ <b>1초 깜빡임 = 영구 동결.</b>
+            "무중력에서만 죽는다" 는 관찰은 착시였다 — 무작위로 끊긴다</td></tr>
+        <tr><td class="m">감시</td><td>모니터·GUI 상태줄에 상시:
+            <code>링크eth0 ⛔+2회(누적29)</code> — <b>세션 증가분</b>이 판단 기준.
+            케이블 흔들기 시험을 이 숫자로 한다</td></tr>
+        <tr class="bad"><td class="m">남은 일</td><td><b>방치시험 30분</b>(안 만지고 카운터 관찰):
+            늘면 <b>MCU 리셋</b>(1~4s = 부팅시간과 일치 · 1점 home "구동 안 됨"도 설명됨) ·
+            안 늘면 <b>커넥터 접촉</b> → 흔들기로 지점 특정 → 케이블 교체</td></tr>
+      </tbody>
+    </table></div>
+    <p><span class="flag f-hot">토폴로지</span>EtherCAT 은 <b>Pi(Emb) ↔ MCU</b> 구간뿐이다.
+       MCU ↔ 드라이버는 <b>FDCAN</b>. 8축 전부 동결 = EtherCAT · 일부만 = FDCAN.</p>
+  </div>
+
+  <!-- ── 좌표·게인 ─────────────────────────────────── -->
+  <div class="card wide">
+    <h2>좌표가 셋이다 — 헷갈리면 반드시 틀린다</h2>
+    <p class="lead">hip·thigh 는 gear_k=1 이라 셋이 같은 값 · calf·foot 에서만 갈린다</p>
+    <div class="tw"><table>
+      <thead><tr><th>좌표</th><th>정의</th><th>어디서</th><th>붙는 것</th></tr></thead>
+      <tbody>
+        <tr><td class="m"><strong>모델각</strong> q_joint</td><td class="m">MJCF qpos (커플링 해제)</td>
+            <td>제어기 <b>각도입력</b>·시뮬</td>
+            <td class="m">dof_armature/damping/friction<br><span style="color:var(--acc)">★hip·thigh·calf 만</span></td></tr>
+        <tr class="hi"><td class="m"><strong>raw각</strong> q_raw</td>
+            <td class="m">= 모델각 + coef·모델각_src<br><span style="color:var(--acc)">★발목만</span> (foot←calf, coef=+1)</td>
+            <td>모터축이 도는 좌표<br>= <b>엔코더가 앉은 곳</b></td>
+            <td class="m">Actuator · d→ctrl<br>tendon_armature <span style="color:var(--acc)">★foot 만</span><br><strong>kp,kd_raw = kp_ch·gear_k²</strong></td></tr>
+        <tr><td class="m"><strong>채널각</strong> q_ch</td><td class="m">= sign·gear_k·q_raw + offset</td>
+            <td>SHM·드라이버 <b>PD 가 닫히는 곳</b></td>
+            <td class="m">ch · <strong>kp_ch, kd_ch</strong> (환산 없음)</td></tr>
+      </tbody>
+    </table></div>
+    <pre>각도:  채널각 ──(−offset, ÷sign·gear_k)──▶ raw각 ──(커플링 풀기)──▶ 모델각
+토크:  모델각 ──(u_calf = τ_calf − τ_foot)──▶ 드라이브 ──(÷gear_k, ×sign)──▶ 채널
+
+<b>★각도가 어긋나는 축(foot)과 토크가 어긋나는 축(calf)이 서로 다르다.</b></pre>
+    <p><span class="flag f-hot">폐기</span><code>kp_joint</code> — <b>스칼라 관절게인은 존재하지 않는다.</b>
+       발목 커플링 때문에 모델각 강성은 행렬이다:
+       <code>K_raw = diag(180, 43.2)</code> vs <code>K_joint = [[223.2, 43.2],[43.2, 43.2]]</code>.
+       무릎만 1° 어긋나도 <b>발목 토크가 0.754 Nm</b> 나온다.</p>
+    <p><span class="flag f-hot">폐기</span><code>kp_leg</code> — 한 이름이 셋이었다.
+       → <code>kp_ch_leg</code>(배열) · <code>kp_scale</code>(배율) · <code>kp_raw</code>(JSON 키).</p>
+    <p><span class="flag f-acc">규칙</span><code>_ch</code>/<code>_raw</code> 는 <b>좌표</b>,
+       <code>_leg</code> 는 <b>8축 다리순 배열</b>. 외우는 한 줄:
+       <b>모터에 달린 것은 전부 모터축(raw)에서 작용한다</b> — 반사관성·점성·마찰·드라이버 PD 게인.</p>
+  </div>
+
+  <!-- ── 축별 설정 ─────────────────────────────────── -->
+  <div class="card wide">
+    <h2>축별 설정</h2>
+    <p class="lead">biped_emb.yaml · ★offset 은 2026-08-24 재캘리브레이션 값</p>
+    <div class="tw"><table>
+      <thead><tr><th>축</th><th class="num">ch</th><th class="num">sign</th><th class="num">gear_k</th>
+        <th class="num">offset°</th><th class="num">모델각 한계°</th>
+        <th class="num">kp_ch</th><th class="num">kp_raw</th><th class="num">kd_ch</th>
+        <th class="num">트립각/배율</th></tr></thead>
+      <tbody>
+        <tr><td>HL_hip</td><td class="num">0</td><td class="num">−1</td><td class="num">1.0</td>
+            <td class="num"><strong>−0.63</strong></td><td class="num">−14.9 ~ +14.9</td>
+            <td class="num">100</td><td class="num">100</td><td class="num">6.0</td><td class="num">8.59°</td></tr>
+        <tr><td>HL_thigh</td><td class="num">1</td><td class="num">+1</td><td class="num">1.0</td>
+            <td class="num"><strong>+0.33</strong></td><td class="num">−64.7 ~ +135.2</td>
+            <td class="num">50</td><td class="num">50</td><td class="num">4.0</td><td class="num">17.19°</td></tr>
+        <tr class="hi"><td>HL_calf</td><td class="num">2</td><td class="num">−1</td><td class="num"><strong>1.5</strong></td>
+            <td class="num"><strong>−3.07</strong></td><td class="num">−68.0 ~ +49.8</td>
+            <td class="num">80</td><td class="num"><strong>180</strong></td><td class="num">3.5</td>
+            <td class="num"><strong>7.16°</strong></td></tr>
+        <tr class="hi"><td>HL_foot</td><td class="num">3</td><td class="num">−1</td><td class="num"><strong>1.2</strong></td>
+            <td class="num"><strong>−3.02</strong></td><td class="num">−84.8 ~ +67.0</td>
+            <td class="num">30</td><td class="num"><strong>43.2</strong></td><td class="num">2.0</td>
+            <td class="num">23.87°</td></tr>
+        <tr><td>HR_hip</td><td class="num">4</td><td class="num">−1</td><td class="num">1.0</td>
+            <td class="num"><strong>+1.06</strong></td><td class="num">−14.9 ~ +14.9</td>
+            <td class="num">100</td><td class="num">100</td><td class="num">6.0</td><td class="num">8.59°</td></tr>
+        <tr><td>HR_thigh</td><td class="num">5</td><td class="num">−1</td><td class="num">1.0</td>
+            <td class="num"><strong>−2.65</strong></td><td class="num">−64.7 ~ +135.2</td>
+            <td class="num">50</td><td class="num">50</td><td class="num">4.0</td><td class="num">17.19°</td></tr>
+        <tr class="hi"><td>HR_calf</td><td class="num">6</td><td class="num">+1</td><td class="num"><strong>1.5</strong></td>
+            <td class="num"><strong>−12.66</strong></td><td class="num">−68.0 ~ +49.8</td>
+            <td class="num">80</td><td class="num"><strong>180</strong></td><td class="num">3.5</td>
+            <td class="num"><strong>7.16°</strong></td></tr>
+        <tr class="hi"><td>HR_foot</td><td class="num">7</td><td class="num">+1</td><td class="num"><strong>1.2</strong></td>
+            <td class="num"><strong>+0.35</strong></td><td class="num">−84.8 ~ +67.0</td>
+            <td class="num">30</td><td class="num"><strong>43.2</strong></td><td class="num">2.0</td>
+            <td class="num">23.87°</td></tr>
+      </tbody>
+    </table></div>
+    <p><span class="flag f-go">영점 이력</span><b>2026-08-24 재캘리브레이션.</b>
+       옛 영점(cc321fc, --force 강행)은 <b>hip 이 7.8°/10.9° 틀려 있었다</b> — 지그에서 hip 이
+       안 물린 채 처진 자세가 박혀 있었다. 전축 지그 재측정(연속 2회 0.01° 재현) 후
+       hip 만 hip 전용 지그로 따로 잡았다. <b>영점을 바꾸면 중력표 재생성이 필수</b>
+       (<code>gen_grav_table.py --apply</code> — 표가 채널각으로 색인된다). GUI [영점] 버튼이
+       셋을 한 번에 한다(계산→적용→중력표. --force 는 없다).</p>
+    <p><span class="flag f-acc">호름</span>1점 home = <b>Qhome8</b>
+       <code>[0, 11.634, −38.454, 0]×2</code> — 전축 0° 로는 walk 자세가드(15°)에
+       <b>57.7° 로 영구 거부</b>됐다. 2점 평발은 이 값을 안 읽는다(내부 Qflat8).</p>
+    <p><span class="flag f-acc">safety</span><code>tau_trip 15Nm/50ms</code> ·
+       <code>vel_trip 200dps/20ms</code> · <code>tilt_estop 40°</code>(IMU 사망으로 <b>무력</b>) ·
+       <code>watchdog 500ms</code>(<b>내용 변화</b>로 판단) · <code>tau_max_frac 0.6</code></p>
+  </div>
+
+  <!-- ── 모드 ──────────────────────────────────────── -->
+  <div class="card wide">
+    <h2>모드별 실제 명령</h2>
+    <p class="lead">write_pos 는 τ_ff·q̇_cmd 인자가 없다 — 브리지가 0 으로 채운다</p>
+    <div class="tw"><table>
+      <thead><tr><th>모드</th><th>호출</th><th>q_des</th><th class="num">q̇_cmd</th>
+        <th>kp</th><th>kd</th><th>τ_ff</th></tr></thead>
+      <tbody>
+        <tr><td class="m">off</td><td class="m">write_pos</td><td>측정각 (무영향)</td><td class="num">—</td>
+            <td class="m">0</td><td class="m">0</td><td>—</td></tr>
+        <tr><td class="m">hold</td><td class="m">write_pos</td><td>진입 시점 측정각</td><td class="num">—</td>
+            <td class="m">kp_ch × POS_KP</td><td class="m">kd_ch × POS_KD</td><td>—</td></tr>
+        <tr><td class="m">home</td><td class="m">write_pos</td><td>S-curve → Qflat8/Qhome8</td><td class="num">—</td>
+            <td class="m">kp_ch × POS_KP</td><td class="m">kd_ch × POS_KD</td><td>—</td></tr>
+        <tr><td class="m">jog</td><td class="m">write_pos</td><td>등속 램프 → GUI jog_deg</td><td class="num">—</td>
+            <td class="m">kp_ch × POS_KP</td><td class="m">kd_ch × POS_KD</td><td>—</td></tr>
+        <tr class="hi"><td class="m"><strong>float</strong><br>(무중력)</td><td class="m">write_mit</td>
+            <td>측정각 (추종 안 함)</td><td class="num">0</td>
+            <td class="m"><strong>0</strong></td><td class="m">kd_ch × <strong>0.30</strong></td>
+            <td class="m"><strong>g(축별) · G_model(q)</strong></td></tr>
+        <tr class="hi"><td class="m"><strong>stand·walk</strong></td><td class="m">write_mit</td>
+            <td class="m"><strong>stand_ref</strong><br>측정각 →(2.5s)→ 기하자세</td><td class="num">0</td>
+            <td class="m">kp_ch × [1.0→<strong>kpf</strong>]<br>0.30 평발 · 0.0 점발</td>
+            <td class="m">kd_ch × [1.0→kdf]<br>kdf = <strong>1.0</strong></td>
+            <td class="m"><strong>bs · τ_WBIC · 축별배율</strong><br>0 →(2.5s)→ 전량</td></tr>
+      </tbody>
+    </table></div>
+    <pre>드라이버가 계산: <b>τ_cmd = kp·(q_cmd−q) + kd·(q̇_cmd−q̇) + τ_ff</b>
+실제 출력       = <b>α · τ_cmd</b>     ← α 가 게인에도 그대로 붙는다</pre>
+    <p><b>kd 는 off 를 빼면 어느 모드에서도 0 이 아니다.</b> <code>POS_KD</code> 기본 = <code>√POS_KP</code>(ζ 보존).</p>
+    <p><span class="flag f-acc">오해주의</span><code>q̇_cmd = 0</code> 은 <b>"정지" 가 아니라 "속도 목표를 안 준다"</b> 는 뜻이다.
+       <code>q_cmd(t)</code> 는 얼마든지 움직인다(home 40dps · jog 20dps · stand 블렌드).
+       그러면 kd 가 <b>움직임을 거스르는 순수 감쇠</b>가 되고 <b>추종지연 = kd·q̇/kp</b> 가 생긴다.
+       정지(hold·float·stand 정착)에서는 <code>q̇=0</code> 이라 <b>끌림이 0</b> 이다.</p>
+    <p><span class="flag f-hot">walk 문제</span>스윙 p95 에서 감쇠토크가
+       <b>calf 32.0 · foot 30.9 Nm = 트립의 2.1배</b>.
+       ⇒ walk 은 <code>q̇_cmd</code> 를 보내야 한다. 단 <b>속도 자체가 이미 트립을 넘으므로</b>
+       <code>T_STEP</code>→트립값→<code>q̇_cmd</code> 를 <b>한 묶음으로</b> 정할 것.</p>
+  </div>
+
+  <!-- ── α ─────────────────────────────────────────── -->
+  <div class="card">
+    <h2>α — 토크 스케일</h2>
+    <p class="lead">세 경로가 모여 게이지가 절반 붕괴 (08-25)</p>
+    <div class="big">0.80 / 0.68</div>
+    <div class="cap">자세불변 공통 (≤30 N) · E3·E4 로 확정</div>
+    <pre>자세별 전달 blend (상승가지 · 오염 격리 · 08-26 완주):
+  평발·0°  HL 0.79~0.84 · HR 0.78~0.86  → <b>0.80±0.02</b>
+  Qhome8   HL 0.66      · HR 0.69       → <b>0.68±0.05</b> ★양다리 재현
+─────────────────────────
+전기 α 는 자세 불변 → 차이는 <b>모델-실물 기하</b>
+HL 교차검증: float 1/1.225=0.82 ↔ 0.80 ·
+             1/1.50=0.67 ↔ 0.66  (독립 2방법 일치)
+HR 은 thigh float 정상(1.10)인데 E4 0.69
+ ⇒ thigh 단독 아님 — foot 발목각 의존 유력</pre>
+    <p><span class="flag f-go">운용 함의</span>2점 평발 stand/walk(Qflat8) → 0.80,
+       현행 g*·STAND_TAU 유지 OK · <b>1점 Qhome8 힘제어(WBIC λ) → 0.68, ×1.47 보정 필요</b>
+       (walk 시점 적용 결정). 확증 실험 = <b>발목각별 foot 단독 토크시험</b>.</p>
+  </div>
+
+  <div class="card go">
+    <h2>g* 재는 법 — 브래킷 판독</h2>
+    <p class="lead">float_gstar.py --axis · 검증됨</p>
+    <pre>올라가는 스윕 <b>하나</b>에 두 경계가 있다:
+g_lo = 마지막 낙하점(v ≥ +0.10°/s)
+g_hi = 첫 상승점  (v ≤ −0.10°/s)
+──────────────────────────────
+g*  = (g_lo+g_hi)/2   ← 마찰 소거
+밴드 = g_hi−g_lo → <b>τ_c/α</b> 까지 덤
+
+검증: 밴드 마찰 0.66~0.68
+    = PACE 처프 식별 0.604 (±13%)</pre>
+    <p><b>축별로 잰다</b>(<code>--axis</code> + <code>--hold</code>) —
+       전축 동시는 가장 약한 축이 폭주해 관측창을 무너뜨린다.
+       <b>hip·thigh 만 가능</b>(calf/foot 은 중력≪마찰 — 원리적 불가).</p>
+    <p><span class="flag f-hot">당한 함정 3</span>
+       ①GUI 가 20ms 마다 명령을 덮는다(도구가 거부)
+       ②<b>E-stop 래치</b> 후엔 전 구간 무여자 = "넓은 밴드" 로 오독(감지 추가)
+       ③<b>git pull 은 소스만 바꾼다</b> — 재빌드 없인 옛 바이너리가
+       <code>grav_scale_joint</code> 를 조용히 무시한다(전 구간 +0.34°/s 일정이 그 서명).</p>
+  </div>
+
+  <!-- ── 브링업 게이트 ─────────────────────────────── -->
+  <div class="card wide">
+    <h2>브링업 — 멈춰야 하는 자리만</h2>
+    <p class="lead">전체 29단계는 상세판 §7</p>
+    <ol class="steps">
+      <li><b>크레인에 매단다. 발이 뜬 상태로.</b>
+        <small>IMU 가 전부 0 → tilt E-stop 무력. <b>크레인이 유일한 안전장치다.</b></small></li>
+      <li><b>git pull 뒤엔 반드시 재빌드.</b>
+        <small><code>cmake --build build --target biped_deploy -j4</code>.
+          옛 바이너리는 새 명령 필드를 <b>조용히 무시</b>한다 — 측정 하나가 통째로 날아갔다.</small></li>
+      <li><b>biped_emb.py 를 끈다.</b>
+        <small>writer 는 하나만. 배포가 <b>exit 4 로 거부</b>한다.</small></li>
+      <li><b>기동 배너 + 상태줄 — 하나라도 다르면 중단.</b>
+        <small><code>cmode</code> · <code>SCHED_FIFO 80</code> · 트립각 <b>7.16°</b> ·
+          <b><code>링크eth0 OK</code></b>(⛔+N 이면 그 세션은 언제 얼어도 이상하지 않다) ·
+          온도 <b>80°C 미만</b>.</small></li>
+      <li><b>home 뒤 실제 자세를 눈으로.</b>
+        <small>평발이면 밑창 수평계(<code>foot gear_k</code> 1.2/1.60 미해결 — 상태창으론 <b>안 보인다</b>) ·
+          점발이면 float 고각(+27°↑)에서 HL 이 떠오르는지(케이블 기하 — 수리 전 정상 증상).</small></li>
+      <li><b>하중 이양은 hold 로. stand 는 그 뒤.</b>
+        <small>접지 판정은 QP 실패율로: 정상 <code>K=4 · ~0%</code> · 발뜸 <code>K≤3 · ~95%</code>.
+          접촉 부족이면 중력보상 폴백인데 <b>겉보기엔 안정돼 보인다.</b></small></li>
+      <li><b>종료는 물리 리셋까지.</b>
+        <small><code>Ctrl+C</code> 는 <code>Kp=Kd=τ=0</code> 을 쓸 뿐 <b>모터를 끄는 게 아니다.</b>
+          명령을 끊으면 드라이버는 마지막 명령을 계속 실행한다.</small></li>
+    </ol>
+  </div>
+
+  <!-- ── 미해결 ────────────────────────────────────── -->
+  <div class="card wide hot">
+    <h2>아직 모르는 것 · 안 고친 것</h2>
+    <p class="lead">실기 판단에 직접 영향 · 위가 급하다</p>
+    <div class="tw"><table>
+      <thead><tr><th>항목</th><th>상태 · 다음 수</th></tr></thead>
+      <tbody>
+        <tr><td><strong>★HL 케이블/기하</strong></td><td>모델에 없는 자세의존 +토크(고각 ~1 Nm) —
+            float 에서 +35° 넘어도 상승(HR 정지). <b>무여자 +40° 릴리스 시험 → 케이블타이
+            재배치(좌우 같은 여유) → 재스윕</b>(성공 = 좌우 수렴·자세 의존 소멸). walk 전 필수.
+            HL_calf 영점 4.25° 크리프·커플링 잔차 3.11° 도 같은 뿌리 가능성</td></tr>
+        <tr><td><strong>★EtherCAT 링크</strong></td><td>원인 확정(물리 단절)·수리 미완.
+            <b>방치시험 30분</b>으로 커넥터 vs MCU 리셋 판별 → 케이블 교체/전원 점검</td></tr>
+        <tr><td><strong>thigh 모델중력 +13%</strong></td><td>α≈0.83 공통 해석의 유일한 모델 오차 —
+            CAD 원위 CoM 과대 의심. <b>평발 스윕 + 분해 시 정강이+발 저울</b>로 확정</td></tr>
+        <tr><td><strong>★foot 발목각 의존 손실</strong></td><td>Qhome8 결손(0.68)의 유력 원인 —
+            발목 0° 부근 foot 경로 ~0.4~0.5 의심(−55° 에선 ~0.8). <b>발목각별 foot 단독
+            토크시험</b>으로 확증 → Qhome8 힘제어 보정값 확정</td></tr>
+        <tr><td><strong>틱틱+토크 급변</strong></td><td>부하 시에만·드라이브 쪽(사용자 판별 완료) —
+            하강 회생→버스 과전압 가설. <b>다음 축사망 때 포렌식 배너의 OverVoltage 비트</b>가 심판</td></tr>
+        <tr><td>발기하 모델오차 ~3.4°</td><td>두점접촉 판정에서 실증(모델 뒤꿈치 +9mm 공중 vs 실물 접지)
+            — 발목영점 또는 발 링크 기하. walk 전 확인</td></tr>
+        <tr><td><strong>스윕 축사망 3회</strong></td><td>2연속 "하강 5 N" · 하강 중반부터 점진 약화
+            (순간 동결과 다른 서명 — FDCAN/드라이버?) — <b>다음 사망 시 포렌식 배너 복사</b>가 최우선</td></tr>
+        <tr><td><strong>IMU 전부 0</strong></td><td>tilt E-stop 무력 · CoM 적분 xy 차단. 복구는 Pi 앱 5줄</td></tr>
+        <tr><td>링크별 CoM</td><td>총질량은 실측됨(HL 5,395 g · CAD −2.6%) — <b>링크별 분포는 분해 시 저울</b>
+            (thigh 모델중력 ~13% 과대 의심의 최종 확인)</td></tr>
+        <tr><td>보행 <code>q̇_cmd</code></td><td>C++ 0 · 감쇠토크가 스윙에서 트립의 2.1배 —
+            <code>T_STEP</code>→트립→<code>q̇_cmd</code> 한 묶음</td></tr>
+        <tr><td>1차↔2차 스윕 불일치</td><td>같은 배율에서 표류가 다른 이상이 3회 재현 —
+            크레인 스트랩/접촉 의심. 무중력 전 HL_hip 자유 확인</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card go wide">
+    <h2>최근에 고친 것</h2>
+    <p class="lead">2026-08-24 · 옛 바이너리/옛 문서 판별에 쓸 것</p>
+    <div class="tw"><table>
+      <tbody>
+        <tr><td class="m">★08-26</td><td><b>E3·E4 완주 — 자세별 전달 지도 확정</b>(평발 0.80 /
+            Qhome8 0.68 · 양다리) · 접촉오염 3종 실증·자동격리(push_solve) · PUSH_POINT=heel ·
+            push_scale 점별 즉시저장 · Emb 8/26 업데이트 무죄(대조 0.79) · setcap 재부여 규칙 ·
+            크레인 스트랩 부양 13mm 실측</td></tr>
+        <tr><td class="m">★08-25c</td><td><b>평발 스윕 + 전 스윕 통일 재적합</b> —
+            발끝 T=0.80 공통(자세·다리 불문 → α 공통 + foot 건강) · 각도경로 종결 ·
+            PUSH_POINT=heel 신설 · home=Qhome8 원복 · E1~E4 연립 설계(PLAN_0826.md)</td></tr>
+        <tr><td class="m">★08-25b</td><td><b>push(발밀기) 신설 + 저울 실측</b> —
+            calf 경로 0.82±0.02(좌우 동일) · 조립마찰 0.70 Nm(4중 정합) ·
+            해석을 "α≈0.83 공통 + thigh 모델중력 +13%" 로 갱신(가정 1개).
+            도구 push_scale.py(자동 스윕·스냅샷 짝기록·엔코더 정지판정)</td></tr>
+        <tr><td class="m">★08-25b</td><td><b>GUI 콜백 버그</b> — dpg 가 user_data=None 을 3번째
+            인자로 넘겨 기본값을 덮음 → kp/kd/무중력배율/발밀기 버튼 전부 무동작이었다.
+            user_data 정석 패턴으로 수정("강성 안 먹힘" 미스터리의 진범)</td></tr>
+        <tr><td class="m">★08-25</td><td><b>HL_thigh 초과의 원인 확정 = 기하</b> —
+            자세 2점(0°/Qhome8) 측정으로 g* 비가 1.17→1.36 변함 = α 배제 ·
+            +35° 런어웨이(HL만) = 모델에 없는 +토크. 벨트·스테이터 소거 → 케이블 유력.
+            운용 원칙 "전 자세 밴드 안" 확립(thigh 1.10)</td></tr>
+        <tr><td class="m">08-25</td><td>측정 자세를 영점자세(0°)로(gear_k 오차 원리적 소거 · thigh G +21%) ·
+            모니터 프레임 잔상 제거 · --hold 숫자 검증을 로봇 구동 전으로</td></tr>
+        <tr><td class="m">영점</td><td><b>재캘리브레이션 완료</b> — 옛 영점은 hip 7.8°/10.9° 오차
+            (지그에서 hip 미구속 처짐이 박혀 있었다). "thigh 좌우 3.15° 영점차" 는
+            <b>sign 부호 착시</b>였다(모델각 0.03/0.14° 로 정확) + 중력표 재생성</td></tr>
+        <tr><td class="m">측정</td><td><b>g* 브래킷 판독</b> — 영교차 보간은 마찰 데드밴드를 관통해
+            허구의 교차를 만든다(α≈0.87 단일값 폐기). 한 방향 스윕에 두 경계가 다 있다</td></tr>
+        <tr><td class="m">진단</td><td><b>EtherCAT 동결 원인 확정</b>(물리 링크) ·
+            링크 카운터/CPU/온도(스로틀 검출)/모터 상태워드를 상시·동결증거에 추가</td></tr>
+        <tr><td class="m">모드</td><td>1점 home → <b>Qhome8</b>(walk 가드 57.7°→0.000°) ·
+            2점 평발 home 은 Qflat8 재산출값과 일치 확인(고칠 것 없었음)</td></tr>
+        <tr><td class="m">도구</td><td><code>float_gstar --axis</code>(축별) · E-stop 래치 감지 ·
+            포화점 방향 증거 포함 · GUI <b>[영점]</b> 버튼(계산→적용→중력표, --force 없음) ·
+            <code>run_deploy_hw.sh</code></td></tr>
+        <tr><td class="m">CRITICAL</td><td>stand 거부가 전 축 0° 계단 → hold 목표 래치(전 세션) ·
+            속도트립 디바운스 · 중복 writer 차단 · 트립각 표기 1승(7.16°)</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+</div>
+
+<footer>
+  단일 출처 — 파라미터 <code>run_deploy_hw.sh</code>(g*·실행) · <code>emb/pace/RESULTS.md</code> ·
+  실측 원본 <code>emb/pace/spec.yaml</code> · 좌표·게인 <code>emb/README.md</code> ·
+  절차 <code>emb/RUNBOOK.md</code><br>
+  ⚠이 카드의 숫자를 다른 문서로 복사하지 말 것. 절차가 바뀌면 원본을 고치고 이 페이지를 다시 뽑을 것.
+</footer>
+
+</div>

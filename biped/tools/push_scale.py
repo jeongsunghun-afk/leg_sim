@@ -151,6 +151,11 @@ def main() -> int:
         _cur['mode'] = 'push'
 
     rows = []
+    # ★점마다 즉시저장 — 축사망/터미널 사망 등 어떤 형태로 끊겨도 데이터가 남는다
+    #   (드라이버 과도→축사망 전조 확인 후 보강, 2026-08-26)
+    out = '/tmp/push_scale_%s_%s.json' % (a.leg, time.strftime('%Y%m%d-%H%M%S'))
+    def _save():
+        json.dump({'leg': a.leg, 'rows': rows}, open(out, 'w'), indent=1)
     try:
         for tgt in grid:
             _cur['push_fz'] = float(tgt)
@@ -205,6 +210,7 @@ def main() -> int:
                 'mode': s.get('mode'),
                 'settled': settled,
             })
+            _save()
     except KeyboardInterrupt:
         print('\n  (중단 — 지금까지 점으로 계산한다)')
     finally:
@@ -214,8 +220,7 @@ def main() -> int:
         time.sleep(0.3)
         _stop[0] = True
 
-    out = '/tmp/push_scale_%s_%s.json' % (a.leg, time.strftime('%Y%m%d-%H%M%S'))
-    json.dump({'leg': a.leg, 'rows': rows}, open(out, 'w'), indent=1)
+    _save()
     ok = [r for r in rows if r['scale_g'] is not None and r['q_leg_deg']]
     print('\n  원자료 → %s  (유효 %d/%d점 — 이 파일을 그대로 전달하면 된다)' % (out, len(ok), len(rows)))
     if len(ok) < 4:

@@ -304,7 +304,9 @@ def main():
     #       (m_fGaitCmd_PositionInit[] 에 생성값이 아직 남아 있지만 :627 이 매 부팅 덮어쓰므로
     #        **죽은 코드**다 ⇒ 그 배열을 패치하는 emb/diag/gen_emb_init_pose.py 는 현재 무효과.)
     #
-    #   ★램프 중에도 축을 잡는 게인은 halGait.cpp:804-820 에서 **매 틱 무조건** 설정된다.
+    #   ★램프 중에도 축을 잡는 게인은 halGait.cpp:804-820 에서 매 틱 설정된다.
+    #     ⚠단 **기동 최초 100틱(≈0.1초)은 무여자**다 — :611-612 가 그 구간엔
+    #       m_stSettingCmdInit(:403-404 Kp=0·Kd=0)로 덮어쓴다(2026-08-26 실측).
     #     값은 **채널 좌표**다(config 의 kp/kd 와 같은 좌표):
     #         hip (LtR/RtR)  Kp 100  Kd 6.0      thigh(LtP/RtP)  Kp 50  Kd 4.0
     #         knee(LkP/RkP)  Kp  80  Kd 3.5      ankle(LaP/RaP)  Kp 30  Kd 2.0

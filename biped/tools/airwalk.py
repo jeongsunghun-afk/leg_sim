@@ -192,13 +192,38 @@ def play(a):
     def _save():
         json.dump(dict(traj=os.path.basename(a.traj), speed=a.speed, rows=rows),
                   open(log_path, "w"))
+    # ── GUI 경쟁 검사 (float_gstar 규약) — 같이 뜨면 20ms 마다 명령을 서로 덮는다 ──
+    try:
+        r = subprocess.run(["pgrep", "-af", "teleop_gui_biped"],
+                           capture_output=True, text=True, timeout=3)
+        others = [l for l in r.stdout.splitlines() if "pgrep" not in l]
+    except Exception:
+        others = []
+    if others:
+        print("✗ teleop GUI 가 떠 있다 — 명령이 20ms 마다 덮인다. GUI 를 닫고 재실행:")
+        for l in others:
+            print("    " + l[:100])
+        return 1
     try:
         _QSTART[0] = q_now()
         if _QSTART[0] is None:
             print("✗ 관절각을 못 읽는다"); return 1
+        # ★off 선발행(2026-08-28 실기 1차 실패 반영) — 두 마리를 한 번에 잡는다:
+        #   ①E-stop 래치 해제 규약(float_gstar 와 동일) ②기동 잔류명령 잠금(boot_mode) 해소 —
+        #   배포기 기동 시 명령파일에 "jog" 가 남아 있었으면 jog 가 영구 무시된다(:1036 규약).
+        #   off 는 boot_mode 와 다른 모드라 잠금을 풀고, 그 다음 jog 가 정상 수신된다.
+        send(mode="off"); time.sleep(0.4)
+        hold("off", 0.6)
         print("  jog 진입(점프 방지: 현재각 시드) → 첫 프레임 정렬…")
         hold("jog", 1.0, jog_deg=list(_QSTART[0]))
+        # ★모드 에코 검사 — 배포기가 정말 jog 에 들어갔는지 상태로 확인(자가진단)
+        dm = state().get("mode")
+        if dm != "jog":
+            print(f"✗ 배포기 모드가 '{dm}' (jog 아님) — 명령이 안 먹힌다. 배포기 터미널에서")
+            print("  '명령 잠금'/'jog 진입' 출력을 확인할 것. (GUI 경쟁·estop·워치독 잠금 순으로 의심)")
+            return 1
         t0 = time.time()
+        cur = None
         while time.time() - t0 < 40.0:
             if estopped():
                 print("⛔ E-stop 래치 — 중단"); return 1
@@ -206,7 +231,14 @@ def play(a):
             if cur and max(abs(x - y) for x, y in zip(cur, fr[0])) < 2.0:
                 break
         else:
-            print("✗ 첫 프레임 정렬 실패(40s) — JOG_SPEED_DPS/트립 확인"); return 1
+            print("✗ 첫 프레임 정렬 실패(40s) — 축별 잔차(측정−목표):")
+            if cur:
+                for j in range(NJ):
+                    e = cur[j] - fr[0][j]
+                    print(f"    {NAMES[j]:9s} {cur[j]:+7.1f} → {fr[0][j]:+7.1f}  잔차 {e:+6.1f}°"
+                          + ("  ⚠" if abs(e) >= 2.0 else ""))
+            print(f"  배포기 모드: '{state().get('mode')}' · JOG_SPEED_DPS 로그·트립 여부를 확인할 것")
+            return 1
         print(f"  재생 시작 — {len(fr)/hz/a.speed:.1f}s × {a.loop}회. Ctrl+C = 안전 종료.")
         for lp in range(a.loop):
             tstart = time.time()

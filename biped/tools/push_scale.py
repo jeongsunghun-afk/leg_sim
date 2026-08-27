@@ -214,10 +214,28 @@ def main() -> int:
     except KeyboardInterrupt:
         print('\n  (중단 — 지금까지 점으로 계산한다)')
     finally:
+        # ★안전 종료(2026-08-27, 사용자 요구): 측정 자세로 세워둔 채 끝내면 배포기를
+        #   끄는 순간 limp 가 되어 자유낙하 충돌한다(무게추/부하 시 특히). 순서:
+        #   ①힘 0 램프 — 배포기 PUSH_RATE(5N/s) 만큼 기다린다. 종전 1s 고정은 30N 에서
+        #     램프 도중 float 전환 = 순간 하중해제였다
+        #   ②float 전환 ③중력배율 램프다운(~8s) — 마찰·FLOAT_KD 를 타고 평형까지 처짐
+        #   ④off(무여자) — 이후 언제 배포기를 꺼도 안전
         _cur['push_fz'] = 0.0
-        time.sleep(1.0)
-        _cur['mode'] = 'float'          # 끝나면 무중력으로 안전 대기
+        time.sleep(a.max / 5.0 + 1.0)
+        _cur['mode'] = 'float'
+        time.sleep(0.5)
+        BASE_G = [1.20, 1.10, 1.22, 1.00, 1.18, 1.10, 1.22, 1.00]   # run_deploy_hw.sh 와 동기
+        f = 1.0
+        while f > 0.0:
+            f = max(0.0, f - 0.08)
+            _cur['grav_scale_joint'] = [f * v for v in BASE_G]
+            time.sleep(0.6)
+        time.sleep(2.0)
+        _cur['mode'] = 'off'
+        time.sleep(0.5)
+        _cur['grav_scale_joint'] = list(BASE_G)   # 배율 원복(off 라 무영향·다음 세션 대비)
         time.sleep(0.3)
+        print('  ✅ 안전 처짐 완료(무여자) — 배포기를 종료해도 된다.')
         _stop[0] = True
 
     _save()

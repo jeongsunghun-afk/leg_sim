@@ -408,9 +408,29 @@ def main() -> int:
     finally:
         _bias[0] = None
         try:
-            hold("home", 1.5); send(mode="hold")
+            # ★안전 처짐 종료 (2026-08-27, 무게추 실험 대비 — 사용자 요구):
+            #   추/부하가 달린 채 자세를 잡고 끝내면 배포기를 끄는 순간 limp 가 되어
+            #   **자유낙하 충돌**한다. 중력배율을 ~8초에 걸쳐 0 으로 내려 마찰·FLOAT_KD 를
+            #   타고 매달림 평형까지 천천히 내려앉힌 뒤 off 로 끝낸다 — 이후 언제 꺼도 안전.
+            #   (hold() 가 20Hz 로 워치독을 먹이므로 램프 중 트립 없음)
+            base = [float(x) for x in a.hold.split(",")] if a.hold else [1.0] * NJ
+            print("\n  ■ 안전 처짐 — 중력배율 램프다운(~8s). 다리가 천천히 내려앉는다.")
+            hold("float", 0.6, grav_scale_joint=list(base))
+            f = 1.0
+            while f > 0.0:
+                f = max(0.0, f - 0.08)
+                hold("float", 0.6, grav_scale_joint=[f * v for v in base])
+            q0 = q(); t0 = time.time()          # 정지 대기(최대 8s)
+            while time.time() - t0 < 8.0:
+                q1 = hold("float", 0.5, grav_scale_joint=[0.0] * NJ)
+                if q0 and q1 and max(abs(x - y) for x, y in zip(q0, q1)) < 0.3:
+                    break
+                q0 = q1
+            send(mode="off")
+            send(mode="off", grav_scale_joint=list(base))   # 배율 원복(off 라 무영향)
+            print("  ✅ 안전 처짐 완료(무여자) — 이제 배포기·Emb 를 종료해도 된다.")
         except Exception as e:
-            print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI 로 직접 hold 를 눌러 둘 것")
+            print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI [무중력]에서 배율을 서서히 0 으로 내릴 것")
 
     # ── ★브래킷 판독 (2026-08-24) — 이쪽이 물리적으로 옳다 ────────────────
     #   ⚠아래 '영교차' 표와 **나란히** 낸다. 종전 표를 지우지 않는 이유:

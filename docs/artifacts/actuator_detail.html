@@ -1785,13 +1785,14 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
 <tr><td class="ax">관절한계 [°]</td><td class="n">±14.9</td><td class="n">−64.7~+135.2</td><td class="n">−68.0~+49.8</td><td class="n">−84.8~+67.0</td></tr>
 <tr><td class="ax">드라이브 피크 [Nm]</td><td class="n">84</td><td class="n">84</td><td class="n">126</td><td class="n">100.8</td></tr>
 </tbody></table></div>
-<div class="note"><b>트립각 ≠ 조인트 리미트</b>(가동범위는 "관절한계" 행). 트립각 = <b>명령각−실측각 추종오차</b>가
-토크트립(15 Nm)에 닿는 한계: 위치서보 토크 τ=kp·오차 라서 오차가 이 각을 넘으면 kp 항 혼자 15 Nm 명령이 되어
-드라이버가 트립(그 축 무여자·limp). 관절이 가동범위 어디에 있든 무관하고, 실제로는 kd·q̇와 중력보상토크가
-얹히므로 실효 여유는 표보다 작다. 계단 명령이 이 각을 넘으면 즉시 limp — "램프로만 움직인다" 규약의 근거.
-G_real/G_cad ≈ g*×r: 1이면 CAD 질량모델 정확·결손은 전달경로 몫(hip·calf). thigh 0.88 은 CAD ~12% 과대
-또는 r 측정(push 자세)과 float(전 자세) 맥락 차이 — 미분해. τ_c·b·armature 는 X/α 규약(§0) ·
-foot 셋은 tendon 좌표. 조립 마찰은 벤치 대비 foot +0.36(=FOOT_COMP·상수결손) · thigh ~+10%.</div>
+<div class="tw"><table>
+<thead><tr><th>용어</th><th>정의</th><th>함의</th></tr></thead>
+<tbody>
+<tr><td class="ax">트립각</td><td><b>추종오차</b>(명령각−실측각) 한계 = 15Nm/(kp_ch·gear_k) — <b>조인트 리미트 아님</b>(가동범위는 "관절한계" 행)</td><td>넘으면 kp 항 혼자 15 Nm → 트립(limp). kd·q̇·중력보상이 얹혀 실효 여유는 더 작다 → "램프로만 이동" 규약</td></tr>
+<tr><td class="ax">경로 전달 r = 토크스케일</td><td>명령토크 중 관절 도달 비율(실측)</td><td>sim 반영 = <code>ALPHA_AXIS 0.85</code></td></tr>
+<tr><td class="ax">G_real/G_cad</td><td>실제/CAD 중력토크 비 ≈ g*×r</td><td>hip·calf ≈1 → CAD 질량모델 정확, 결손은 전달경로 몫 · thigh 0.88 미분해</td></tr>
+<tr><td class="ax">τ_c·b·armature</td><td>X/α 규약(§0) · foot 셋은 tendon 좌표</td><td>조립 마찰 = 벤치 + foot 0.36(=FOOT_COMP·상수결손) · thigh ~+10%</td></tr>
+</tbody></table></div>
   <!-- ── 확정 파라미터 ─────────────────────────────── -->
   <div style="margin:26px 0">
     <h3>★확정 파라미터 + 측정 행렬 — g* 는 자세를 탄다</h3>

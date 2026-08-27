@@ -49,6 +49,12 @@ def send(**kw):
     if _bias[0] is not None:
         c["grav_scale_joint"] = list(_bias[0])
     c.update(kw)
+    # ★공통배율(grav_scale)은 축별배율이 설정된 배포기(run_deploy_hw.sh 의
+    #   GRAV_SCALE_JOINT env)에서 **무시**된다 — dispatch 가 grav_axis[j]>=0 이면
+    #   공통값을 안 본다. 공통 스윕이 조용히 죽지 않도록 축별 미지정 시
+    #   공통값을 8축 배열로도 함께 발행한다. (08-27 검토에서 발견)
+    if "grav_scale" in c and "grav_scale_joint" not in c:
+        c["grav_scale_joint"] = [float(c["grav_scale"])] * NJ
     # ★임시파일 이름에 **PID** 를 넣는다. GUI(teleop_gui_biped.py:128)도 `CMD + ".tmp"` 를
     #   쓰기 때문에, 같은 이름이면 GUI 의 os.replace 가 우리 tmp 를 먼저 가져가고
     #   우리 os.replace 는 FileNotFoundError 로 죽는다(2026-08-24 실기에서 실제로 그랬다).
@@ -76,8 +82,8 @@ def estopped():
     ⇒ 이건 데이터가 없는 것이지 넓은 밴드가 아니다. **구분해서 중단해야 한다.**
     """
     try:
-        st = json.load(open(STATE))
-    except Exception:
+        st = json.load(open(STT))       # ★버그픽스(08-27): STATE(미정의) NameError 가
+    except Exception:                    #   bare except 에 삼켜져 E-stop 감시가 사문화됐었다
         return None
     for k in ("estop", "estop_latched"):
         if st.get(k):

@@ -1,0 +1,85 @@
+{
+ "date": "2026-08-27",
+ "subject": "walk 묶음(모드 한정 트립 900/25 + WALK_KD_FLOOR 0.15) 검증 워크플로",
+ "agents": 16,
+ "confirmed": [
+  {
+   "title": "walk→stand 전이가 블렌드를 재시작해 kd 가 0.15→1.0 으로 한 틱 계단 — 잔류 속도에서 kd 제동 ~41Nm(tau_trip 15 의 2.7배)이 같은 순간 실린다",
+   "severity": "high",
+   "lens": "mode-transition",
+   "claim": "walk→stand 는 :1382 진입블록을 다시 타 stand_t0=lt(:1406)·stand_hold=측정각(:1383) → bs=0. kd_scale=(1-bs)+bs·kdf(:1865)는 walk 중 0.15(bs=1·kdf=WALK_KD_FLOOR)였다가 전이 틱에 1.0 으로 점프한다. 잔류 스윙 600~673dps 에 kd 전량이 걸리면 제동토크 ~37-41Nm(주석 :507,:514) — 같은 틱에 복원된 tau_trip 15Nm(50ms 디바운스)을 크게 초과하는 측정토크가 발생하고, F1 의 vel 트립과 결합해 이탈=트립 확률을 높인다. 동시에 tau_ch*=bs=0(:1868)으로 WBIC 지지토크가 한 틱에 소멸 — mid-gait 단일지지에서 전량 PD freeze 로 전환된다. walk→hold 는 더 급하다: :1558-1561 이 즉시 전량 POS_KP/POS_KD 위치클램프를 움직이는 다리에 건다(walk→push 도 :1056-1061 에서 hold 로 강제되어 동일). ③(WALK_KD_FLOOR)이 walk 중 제동을 없앤 만큼 이탈 순간의 잔류 속도는 커졌는데, 이탈 경계의 kd 복원은 계단이다.",
+   "evidence": "biped_deploy.cpp:1382-1383,1405-1406 (전이 시 블렌드 재시작·측정각 래치), :1852-1853+:1865 (kdf 선택과 kd_scale 블렌드), :1868 (tau_ch×bs), :1558-1561 (hold 전량 게인), :507,:514 (kd 제동 41Nm 실측 주석), biped_emb.yaml:534,536 (tau_trip 15Nm/50ms)"
+  },
+  {
+   "title": "stand→walk 전환이 stand 진입 블록 전체를 재실행 — WBIC 지지토크가 한 틱에 bs·τ=0 으로 붕괴하고 c.reset()/u_prev 초기화·kp_scale 1.0 점프",
+   "severity": "med",
+   "lens": "kd-path",
+   "claim": ":1382 블록은 :1283 접지가드와 달리 prev_mode!=\"stand\"/\"walk\" 를 거르지 않아, 이미 서 있는 stand(bs=1, WBIC 가 체중 전량 지지)에서 walk 로 바꾸는 순간에도 stand_hold←측정각(:1383), c.reset()(:1420), u_prev 전량 0(:1439), stand_t0 리셋(:1406)이 다시 돈다. 다음 틱 bs=0 이라 tau_ch[i]=bs*tau_ch[i] (:1868) 로 지지토크가 한 틱에 0 이 되고 kp_scale 은 kpf(0/0.30)→1.0 으로 점프(:1866) — 체중이 위치서보로 계단 이관된다(래치 err≈0 이라 보통 버티지만, 지연보상 롤아웃은 u_prev=0 으로 한동안 틀린 예측을 쓴다). kd 관점: STAND_KD_FLOOR 기본 1.0 이면 kd_scale 은 1.0 으로 연속이지만, STAND_KD_FLOOR<1 로 튜닝된 경우 stand 정착 kd_scale=kdf 에서 walk 진입 순간 1.0 으로 상향 점프한다. stand↔walk 를 토글할 때마다 2.5초 재블렌드가 반복되는 것도 finding 1 의 창을 매번 다시 연다. 이 블록 자체는 기존 설계지만, 오늘 변경으로 walk kd 목표가 이 경로에 새로 실리면서(walk 진입=블렌드 재시작) 결함이 하중을 받게 됐다.",
+   "evidence": "biped_deploy.cpp:1283 `if((mode==\"stand\"||mode==\"walk\") && prev_mode!=\"stand\" && prev_mode!=\"walk\" ...)` (가드는 재진입 배제) vs :1382 `if(mode==\"stand\" || mode==\"walk\"){` (배제 없음) · :1383 `stand_hold = hs.q_deg` · :1406 `stand_t0 = lt` · :1420 `c.reset()` · :1439 `std::fill(u_prev.begin(), u_prev.end(), 0.0)` · :1866 `kp_scale=(1.0-bs)+bs*kpf` · :1868 `tau_ch[i]=(float)(bs*(double)tau_ch[i])`"
+  },
+  {
+   "title": "walk 트립 env 파싱에 하한/유효성 가드 부재 — atof 실패=0 이면 walk 진입 즉시 limp, NaN 이면 트립 영구 무효",
+   "severity": "med",
+   "lens": "trip-logic",
+   "claim": "WALK_VEL_TRIP_DPS/WALK_TAU_TRIP_NM 은 atof 결과를 무검증으로 쓴다. 비수치 문자열('9OO', 빈 문자열 등)이면 atof=0.0 → walk 모드에서 vel_pk>0 이 상시 참이 되어 vel_trip_ms(20ms) 뒤 E-STOP limp — 보행/보행진입 중 다리가 풀려 낙하한다. atof(\"nan\")이면 NaN 과의 > 비교가 항상 false 라 walk 중 과속·과토크 보호가 통째로 사라진다(반대 방향 실패). 이 env 는 '실기 현장 조절' 용도로 명시돼 있어(:515) 오타 노출면이 크고, 같은 파일이 다른 곳에선 std::max(1e-3, ...) 가드 관용구를 쓰고 있다(:500). '0 이하 또는 비유한이면 cfg 값 폴백 + 경고 출력' 가드가 필요하다.",
+   "evidence": "biped_deploy.cpp:516-518 `const double WALK_VEL_TRIP = getenv(\"WALK_VEL_TRIP_DPS\") ? atof(...) : 900.0;` (하한 없음) → :1486-1487 tau_trip_eff/vel_trip_eff → :1489 `if(tau_pk > tau_trip_eff)`, :1506 `if(!estop && vel_pk > vel_trip_eff)`. 가드 관용구 대비: :500 `std::max(1e-3, FOOT_COMP_T0 / FJ.gear_k)`. cfg 경로 값은 config 파일 파싱(deploy_hw.hpp:182-185)이라 동급 위험이 없음 — env 만 무가드."
+  },
+  {
+   "title": "WALK_TAU_TRIP(25) 과 WALK_KD_FLOOR 의 숨은 결합 — KD_FLOOR 를 ≈0.61 이상으로 올리면 정상 스윙이 walk 토크트립을 발화",
+   "severity": "med",
+   "lens": "trip-logic",
+   "claim": "tau 트립은 hs.tau_nm(드라이브 MIT 법칙 전체의 명령 에코 — kd·dq 제동 포함, mock 이 '실기와 동일'로 재현)을 보므로, 25 Nm 기본값은 kd 제동이 floor 0.15 로 41→~6 Nm 로 줄어든 상태에서만 성립한다. 그런데 코드 스스로 '지연 안정화 감쇠 필요량은 실기에서 판가름 — env 로 현장 조절'(:515)이라 KD_FLOOR 상향을 예정하고 있고, calf 채널 kd_ch 3.5 × 673 dps ⇒ 41 Nm 이므로 WALK_KD_FLOOR > 25/41 ≈ 0.61 이면 정상 스윙 제동만으로 25 Nm 를 넘어 tau_trip_ms(50ms, 스윙 150ms 안에 충족) 뒤 보행 중 limp 가 난다. 두 env 사이 정합 검사·경고가 없고 기동 printf(:519)도 이 제약을 알리지 않는다. 또한 25 의 여유는 kd·dq 만 잰 도구 기준이다 — walk_demand_check.py 는 WBIC ff 토크를 측정하지 않으므로(tau_kd 만 계산) 에코 = kd·(−dq)+τ_ff 합산 기준의 실제 여유는 미검증이다.",
+   "evidence": "biped_deploy.cpp:1489 (tau_pk vs tau_trip_eff, tau_pk 는 hs.tau_nm), :508 '|dq| max 610~673 dps · kd 감쇠토크 max 37~41 Nm', :1850 '스윙 제동 max 41 Nm(트립 2.7×)' — 41/15=2.7 로 팀 스스로 kd 제동이 트립에 보인다고 모델링. sim_hw.hpp:203-210 `tcmd[i] = kp·e + kd·de + tau_ff; tau_rep = tcmd; // 보고는 명령 되울림(실기와 동일)`. kd_ch=3.5(calf): tools/walk_demand_check.py:31 KD_CH=[6.0,4.0,3.5,2.0], biped_deploy.cpp:1848. ff 미측정: walk_demand_check.py:54 (tau_kd = |dq|·kd 만)."
+  },
+  {
+   "title": "STAND_KP_FLOOR env 가 walk 에 비게이트로 새어 들어감 — 오늘 kdf 만 walk 게이트한 비대칭",
+   "severity": "low",
+   "lens": "trip-logic",
+   "claim": "오늘 diff 는 kdf 를 walk 에서 WALK_KD_FLOOR 로 게이트했지만 바로 아래 kpf 는 그대로다: STAND_KP_FLOOR 가 설정돼 있으면 모드 불문 적용된다. stand 처짐 튜닝용으로 이 env 를 켠 채(문서화된 용도, :1854-1859) walk 를 걸면 kp floor 가 정적 블렌드 목표 stand_ref(:1874-1876, Qflat8/Qhome8 고정 자세)로 다리를 되당겨 gait 와 싸운다 — diff 주석의 전제 'walk 는 kpf=0 순수토크'(:510)가 env 하나로 조용히 깨진다. 줄 자체는 기존 코드지만, walk 한정 게인 정비를 오늘 kd 에만 반쪽 적용한 비대칭이라 이번 묶음에서 같이 닫는 것이 맞다.",
+   "evidence": "biped_deploy.cpp:1863-1864 `const double kpf = getenv(\"STAND_KP_FLOOR\") ? atof(getenv(\"STAND_KP_FLOOR\")) : (c.cmode==1 ? 0.30 : 0.0);` (mode 무관) vs :1852-1853 (kdf 는 mode==\"walk\" 게이트). 전제 문구: :510 'walk 는 kp≈0 순수토크(kpf=0)'. PD 목표가 정적 자세인 근거: :1869-1876."
+  }
+ ],
+ "refuted": [
+  {
+   "title": "walk 이탈 즉시 cfg 트립 복원 — 잔류 스윙속도(≤673dps)에 유예가 20ms뿐이고, 디바운스 이월 시 그보다 짧다",
+   "why": "코드 구조 주장은 전부 사실이나(모드 전환이 :1045-1046 에서 같은 틱 ④트립검사 :1479/1487 보다 선행, 임계는 현재 mode 로만 결정, 디바운스 타이머 모드전환 리셋 없음 :1506-1513), 결함 자체는 재현되지 않는다. 실측 플랜트 sim(발견의 673dps/41Nm 근거와 동일한 ALPHA 0.85·FOOT_FRIC_EXTRA 0.36 플랜트)으로 walk→stand/hold 이탈을 배포기 코드 그대로 재현했다: 이탈 틱에 stand 재진입 블록(:1382-1406)이 stand_hold=측정각 래치 + 블렌드 재시작(bs=0)을 실행해 kp_ch/kd_ch 전량(calf 80/3.5)·WBIC토크 0·dq_des=0 의 PD 래치(:1837-1877, 드라이브한계×0.6, α 0"
+  },
+  {
+   "title": "walk 진입측 비대칭 — WALK_TAU_TRIP 25 는 진입 즉시, WALK_KD_FLOOR 0.15 는 블렌드 2.5s 후에야 유효",
+   "why": "정적 독해는 정확하다(트립 임계는 mode==\"walk\" 즉시 전환 :1486-1490, kdf 는 kd_scale=(1-bs)+bs·kdf 로 블렌드 경유 :1867, 블렌드는 if(nm!=mode) :1045 안의 진입 블록에서 매번 재시작 :1405-1406). 그러나 주장된 결함 — 진입 창에서 kd 제동만으로 WALK_TAU_TRIP 25Nm 초과 — 은 재현 불가능한 정적 곱셈이다. kd_scale>0.61 이 성립하는 bs≈0.46 시점에는 같은 bs 가 스윙을 만드는 쪽도 전부 깎는다: WBIC 토크 ×bs≤46% (:1870 tau_ch[i]=bs·tau_ch[i]), walk(cmode=0→kpf=0)에서 kp_scale=(1-bs)≈54% 의 위치 서보가 stand_ref 로 되당김(ca"
+  },
+  {
+   "title": "①+③ 결합 — 감쇠를 15%로 줄인 바로 그 모드에서 속도 안전망을 200→900dps 로 올렸다",
+   "why": "사실관계는 정확하나(:1840-1848 의 322dps·τ7.4~16.1Nm 발산 기록, :516-518 의 900/25/0.15 기본값, walk 시 322dps 발산 패턴이 vel·tau 양쪽 망을 통과한다는 산술 모두 코드와 일치 확인) 재현 가능한 결함이 아니라 조건부 위험에 대한 운용 권고다. 반박 근거 3가지. ① '종전보다 4.5배' 비교의 기준선(200dps)은 walk 가 아예 돌 수 없는 설정이다 — :508-509 와 walk_demand_check.py 가 정량화한 정상 스윙 요구가 calf 채널 max 610~673dps 라서, 기록된 발산 궤적 전체(최대 322dps)보다 정상 보행 속도가 이미 크다. 즉 어떤 walk 가능 임계값(>673dps 필수)에서도 322dps 급 발산은 "
+  },
+  {
+   "title": "stand→walk 진입이 진행 중인 cfg 디바운스를 무효화한다 (미발 방향, 설계 의도 범위)",
+   "why": "Mechanism confirmed but it is documented design intent, not a defect. The timer reset at biped_deploy.cpp:1513/:1496 when vel_trip_eff/tau_trip_eff switches to walk values on stand→walk is exactly the stateless mode-scoped-threshold semantics the diff comment at :1485 declares (\"상태 없이 모드로만 고르므로 이탈 즉시 cfg 복원\") — walk entry is an explicit operator act that by design legalizes speeds up to 900dps/25N"
+  },
+  {
+   "title": "WALK_KD_FLOOR 는 walk 진입 후 2.5초(블렌드) 동안 무효 — 첫 스텝은 여전히 전량 kd 제동을 받고, 41Nm 제동은 상향 트립 25Nm 마저 초과",
+   "why": "반박됨. 발견의 구조적 사실관계는 정확하다 — walk 진입은 :1382 분기로 매번 stand_t0=lt·stand_T=2.5 를 재시작하고(:1405-1406), :1865 kd_scale=(1-bs)+bs*kdf 라 진입 순간 kd_scale=1.0 이며 WALK_KD_FLOOR 는 2.5초 뒤에야 완전 적용된다. 그러나 결정적으로 :1868 `tau_ch[i]=bs*tau_ch[i]` — WBIC/gait 구동토크가 **같은 bs 로 공동 스케일**된다는 사실을 누락했다. bs=0(전량 kd)일 땐 스윙 구동토크가 0 이고 kp_scale=(1-bs)≈1(walk 는 kpf=0, :1863-1864)로 느리게 움직이는 stand_ref 에 서보홀드되므로 673dps 스윙 자체가 발생할 수 없다. 제동"
+  },
+  {
+   "title": "2점 walk(cmode=1): kd 는 0.15 로 깎이는데 kpf=0.30 은 고정 Qflat8 목표째 남는다 — kp 스윙 제동 미제거 + 저감쇠 kp 서보(8.4ms 지연)",
+   "why": "Finding's code citations are textually accurate (kdf mode-only at :1852, kpf cmode-only at :1863-1864, fixed Qflat8 stand_to at :1395-1400/:1869-1874), but the failure scenario is not reproducible in any reachable configuration. In cmode=1, mode==\"walk\" does NOT step: biped_control.hpp:777-786 gates 2-point walking behind the experimental FLAT_WALK env (default off, \"2점=서기 전용(기본)\" — walking deferr"
+  },
+  {
+   "title": "WALK_KD_FLOOR 0.15 가 스윙만이 아니라 지지다리(stance) kd 까지 전 채널 일괄 축소 — 같은 파일의 발산 실측 기록과 충돌",
+   "why": "기계적 사실관계는 맞다 — kd_scale 은 스칼라라 stance 포함 전 채널이 0.15 로 내려가고(deploy_hw.hpp:420-423, biped_deploy.cpp:1852/1865/1867), cts 도 루프에 존재한다(:1732-1734). 그러나 '재현 가능한 결함' 판정은 성립하지 않는다. ①인용된 2026-08-20 기록(:1840-1848)은 stand 정적 홀드에서 kp·kd 를 **함께 0 으로** 램프하던 다른 레짐의 기록이고, 그 기록 자체가 **지연OFF(48.8Hz)·마찰OFF(31.3Hz)에서도 발산**했다고 적고 있어 '8.4ms 지연+접촉+게인<35%'라는 발견의 인과 구성이 기록과 안 맞는다. 35% 는 kp+kd 합산 램프가 0 으로 가던 도중의 지점이지 kd 단독"
+  },
+  {
+   "title": "vel 트립 20ms 디바운스의 안전예산 주석(4°<7.16°)이 walk 900dps 에선 18°+ 로 확장 — 근거 주석 미갱신",
+   "why": "반박한다. 발견의 핵심 전제 — \":1504-1505 의 '4°<7.16°' 가 :510 의 서보 트립각 논리와 별개인 '폭주가 limp 전까지 물리적으로 얼마나 진행하나(관절한계·기구간섭)' 여유 논리다\" — 가 사실과 다르다. 7.16° 의 출처는 biped/emb/README.md:146 과 biped_deploy.cpp:437/:575-577 의 트립각 = tau_trip/(kp_ch·gear_k·배율) = 15/(80·1.5) = 7.16°(calf) 로, 정확히 '오차×kp 가 토크트립에 닿는 각' 즉 서보 트립각 그 자체다. 관절한계/기구간섭 여유가 아니다. 따라서 :1504-1505 의 논리는 \"디바운스 20ms 동안 오차가 4° 만 자라 토크트립 백스톱(7.16°)이 계속 유효하다\"는 것이고"
+  }
+ ],
+ "fixes": [
+  "stand↔walk 상호 전이 진입블록 재실행 금지(prev_mode 배제)",
+  "kdf 2.0/s 램프(한 틱 계단 제거)",
+  "walk 이탈 0.5s 트립 유예(walk_win)",
+  "env_gd 가드(무효값 폴백+경고)",
+  "KD_FLOOR×41Nm vs TAU_TRIP 결합 경고",
+  "1점 walk 에서 STAND_KP_FLOOR 차단"
+ ],
+ "mock": "6/6 (무트립/cfg트립/walk트립/env덮기/이탈유예/env오타폴백)"
+}

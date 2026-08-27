@@ -504,6 +504,36 @@ int main(int argc, char** argv){
   if(FOOT_COMP_NM > 0.0)
     std::printf("[deploy] ★foot 상수결손 보상 ON — k=%.2f Nm(관절측)·τ0=%.2f · r_foot(G) 법칙\n",
                 FOOT_COMP_NM, FOOT_COMP_T0);
+  // ★walk 묶음 (2026-08-27 설계 · sim 정량화 tools/walk_demand_check.py):
+  //   실측 플랜트 1점 walk 요구 = calf 채널 |dq| max 610~673 dps · kd 감쇠토크 max 37~41 Nm.
+  //   고정 트립(200 dps/15 Nm)은 스윙 자체를 즉살한다 → **walk 모드 한정** 상향, 이탈 시 자동 복원.
+  //   (walk 는 kp≈0 순수토크(kpf=0)라 "트립각 = 오차×kp" 논리가 성립하지 않음 — 각 여유 무관)
+  //   ⚠원안 "q̇_cmd 전송"은 기각: dq_ch 는 **측정**속도다(ch_to_dq_ctrl 역변환 — 명령이 아님).
+  //     측정속도를 dq_des 로 보내면 err≡0 + 센서지연 = 음의 감쇠 — stand_ref 주석의 위치 목표와
+  //     같은 함정. 목표 관절속도는 존재하지 않는다(토크 WBIC — 스윙 감쇠는 SW_KD 가 task 공간 담당).
+  //     ⇒ 같은 목적(스윙 제동 제거)을 WALK_KD_FLOOR(kd 축소)로 이룬다: 41 Nm × 0.15 ≈ 6 Nm.
+  //     지연 안정화용 감쇠가 어느 정도 필요한지는 실기에서만 판가름 — env 로 현장 조절.
+  // ⚠env 는 무가드 atof 금지(08-27 검증 확정): 오타→0 이면 walk 진입 즉시 limp,
+  //   "nan" 이면 > 비교가 전부 false 라 보호가 통째로 사라진다. 무효값은 기본값 폴백+경고.
+  auto env_gd = [&](const char* k, double dv, double lo, double hi)->double{
+    const char* e = getenv(k); if(!e) return dv;
+    const double v = atof(e);
+    if(!std::isfinite(v) || v < lo || v > hi){
+      std::printf("[deploy] ⚠%s='%s' 무효(허용 %g~%g) — 기본 %g 사용\n", k, e, lo, hi, dv);
+      return dv; }
+    return v; };
+  const double WALK_VEL_TRIP = env_gd("WALK_VEL_TRIP_DPS", 900.0, 300.0, 3000.0);
+  const double WALK_TAU_TRIP = env_gd("WALK_TAU_TRIP_NM",   25.0,   5.0,   80.0);
+  const double WALK_KD_FLOOR = env_gd("WALK_KD_FLOOR",       0.15,  0.0,    1.0);
+  // ⚠숨은 결합(08-27 검증 확정): 토크트립은 kd 제동이 포함된 명령 에코를 본다 —
+  //   calf kd_ch 3.5 × 스윙 673dps ⇒ 전량 41 Nm. WALK_KD_FLOOR > TAU_TRIP/41 이면
+  //   **정상 스윙 제동만으로** walk 토크트립이 발화한다. 현장에서 kd 를 올릴 때 같이 볼 것.
+  if(WALK_KD_FLOOR * 41.0 > 0.8 * WALK_TAU_TRIP)
+    std::printf("[deploy] ⚠WALK_KD_FLOOR %.2f → 스윙 kd 제동 ≈%.0fNm — WALK_TAU_TRIP %.0fNm 근접/초과."
+                " kd 를 올리면 트립도 같이 올릴 것 (한계비 %.2f)\n",
+                WALK_KD_FLOOR, WALK_KD_FLOOR*41.0, WALK_TAU_TRIP, WALK_TAU_TRIP/41.0);
+  std::printf("[deploy] walk 한정: 트립 %.0fdps/%.1fNm · kd×%.2f (타 모드 %.0fdps/%.1fNm·kd 유지)\n",
+              WALK_VEL_TRIP, WALK_TAU_TRIP, WALK_KD_FLOOR, cfg.vel_trip_dps, cfg.tau_trip_nm);
   const double FLOAT_KD = getenv("FLOAT_KD") ? atof(getenv("FLOAT_KD")) : 0.30;
   //   ★**기본은 전 축이다.** 무중력은 다리 전체를 무게 없이 만드는 것이 목적이다 —
   //     축이 서로 커플링돼 있어(hip 이 처지면 thigh 의 중력이 바뀐다) 전 축을 같이 놓아야
@@ -1365,7 +1395,12 @@ int main(int argc, char** argv){
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
           }
-          if(mode=="stand" || mode=="walk"){
+          // ★stand↔walk 상호 전이는 진입 재실행 **금지** (08-27 검증 워크플로 확정 HIGH):
+          //   재실행하면 블렌드 재시작(bs 1→0)으로 WBIC 지지토크가 한 틱에 소멸하고
+          //   kd/kp 가 계단 점프, c.reset()·u_prev=0 이 지연보상 예측까지 오염한다.
+          //   접지가드(위)와 같은 prev_mode 배제. 1점 gait 는 stand 도 제자리 스텝핑이라
+          //   컨트롤러 연속이 곧 올바른 의미고, 2점 정적지지는 매 틱 자체 재무장한다.
+          if((mode=="stand" || mode=="walk") && prev_mode!="stand" && prev_mode!="walk"){
             stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
             // ★★2026-08-21 블렌드 목표를 **측정각에 얼리지 않는다** — 기하 자세로 램프한다.
             //   종전엔 진입 순간 측정각(`stand_hold`)을 블렌드 내내 목표로 썼다. 그런데 그 값은
@@ -1468,12 +1503,21 @@ int main(int argc, char** argv){
         if(std::fabs(hs.tau_nm[i])>tau_pk){ tau_pk=std::fabs(hs.tau_nm[i]); tch=i; }
         if(std::fabs(hs.dq_dps[i])>vel_pk){ vel_pk=std::fabs(hs.dq_dps[i]); vch=i; }
       }
+      // ★walk 한정 상향 트립(08-27 묶음) + **이탈 0.5s 유예**(08-27 검증 확정 HIGH):
+      //   이탈 틱에 잔류 스윙속도(≤673dps)와 kd 복원 제동이 남아 있는데 cfg 200dps/15Nm 로
+      //   즉시 복원하면 "walk 끄기 = limp 낙하" 가 된다. 유예 동안 감쇠가 속도를 죽인다
+      //   (τ=kd·q̇ 자기제한 — 수십 ms 면 붕괴). off/estop 은 이 블록 자체를 안 탄다.
+      static double walk_last_t = -1e9;
+      if(mode=="walk") walk_last_t = lt;
+      const bool walk_win = (mode=="walk") || (lt - walk_last_t < 0.5);
+      const double tau_trip_eff = walk_win ? WALK_TAU_TRIP : cfg.tau_trip_nm;
+      const double vel_trip_eff = walk_win ? WALK_VEL_TRIP : cfg.vel_trip_dps;
       // 토크는 **연속 초과**만 트립(착지 충격 같은 순간 스파이크를 살린다)
-      if(tau_pk > cfg.tau_trip_nm){
+      if(tau_pk > tau_trip_eff){
         if(tau_over_t0 < 0) tau_over_t0 = lt;
         else if((lt-tau_over_t0)*1000.0 >= cfg.tau_trip_ms){
-          std::printf("[deploy] ⛔ E-STOP: ch%d 토크 %.2fNm > %.2fNm 가 %.0fms 연속 → limp·래치\n",
-                      tch, tau_pk, cfg.tau_trip_nm, cfg.tau_trip_ms);
+          std::printf("[deploy] ⛔ E-STOP: ch%d 토크 %.2fNm > %.2fNm(%s) 가 %.0fms 연속 → limp·래치\n",
+                      tch, tau_pk, tau_trip_eff, walk_win?"walk":"cfg", cfg.tau_trip_ms);
           estop = true; mode="off"; hw->enable(0);
         }
       } else tau_over_t0 = -1;
@@ -1486,11 +1530,11 @@ int main(int argc, char** argv){
       //     그 결과가 limp = **다리가 떨어진다.** 잡아 주려던 장치가 떨어뜨리는 셈이다.
       //   ⚠그래도 20ms 는 짧게 둔다 — 진짜 폭주를 지연시키면 안 된다.
       //     20ms 면 200dps 에서 4° 이동이고, 트립각 7.16°(calf) 안이다.
-      if(!estop && vel_pk > cfg.vel_trip_dps){
+      if(!estop && vel_pk > vel_trip_eff){
         if(vel_over_t0 < 0) vel_over_t0 = lt;
         else if((lt-vel_over_t0)*1000.0 >= cfg.vel_trip_ms){
-          std::printf("[deploy] ⛔ E-STOP: ch%d 속도 %.0fdps > %.0fdps 가 %.0fms 연속 → limp·래치\n",
-                      vch, vel_pk, cfg.vel_trip_dps, cfg.vel_trip_ms);
+          std::printf("[deploy] ⛔ E-STOP: ch%d 속도 %.0fdps > %.0fdps(%s) 가 %.0fms 연속 → limp·래치\n",
+                      vch, vel_pk, vel_trip_eff, walk_win?"walk":"cfg", cfg.vel_trip_ms);
           estop = true; mode="off"; hw->enable(0);
         }
       } else vel_over_t0 = -1;
@@ -1830,7 +1874,18 @@ int main(int argc, char** argv){
       //     억제하므로 목표와 싸우지 않고 그 대역만 먹는다. 그래서 kd 만 남긴다.
       //   calf 기준 kd_ch 3.5 = 관절 7.9 Nm·s/rad — 물리 감쇠(0)보다 압도적이다.
       //   STAND_KD_FLOOR 로 조절(0=종전 순수토크 · 1=설정 kd 전량).
-      const double kdf = getenv("STAND_KD_FLOOR") ? atof(getenv("STAND_KD_FLOOR")) : 1.0;
+      // ★walk 는 kd 를 낮춘다(08-27 묶음): dq_des=0 + kd 전량 = 스윙 제동 max 41 Nm(트립 2.7×).
+      //   sim 검증 배터리(8/8)는 드라이버 kd 제동이 없는 플랜트 — 실기를 sim 정합 쪽으로 옮기는 조치.
+      //   ★계단 금지(08-27 검증 확정 HIGH): walk↔stand 에서 kdf 를 한 틱에 0.15↔1.0 점프시키면
+      //     잔류 스윙속도에 kd 제동 ~41Nm 이 같은 순간 실린다 → 2.0/s 램프(0.15↔1.0 에 ~0.43s).
+      //     이탈 방향은 속도 붕괴(수십 ms)가 램프보다 훨씬 빨라 제동 스파이크가 없다.
+      const double kdf_tgt = (mode=="walk") ? WALK_KD_FLOOR
+                       : (getenv("STAND_KD_FLOOR") ? atof(getenv("STAND_KD_FLOOR")) : 1.0);
+      static double kdf_cur = -1.0;
+      if(kdf_cur < 0.0) kdf_cur = kdf_tgt;
+      { const double stp = 2.0 * dt;
+        kdf_cur += std::max(-stp, std::min(stp, kdf_tgt - kdf_cur)); }
+      const double kdf = kdf_cur;
       // ★★**kp 도 남긴다** (2026-08-20 실기: home 은 버티는데 stand 에서 처졌다).
       //   kd 는 **속도만** 잡으므로 처짐(정적 오차)에는 아무 도움이 안 된다.
       //   stand 는 kp=0 이라 관절 복원력이 **하나도 없고**, 자세를 잡는 건 모델 토크뿐이다:
@@ -1840,8 +1895,12 @@ int main(int argc, char** argv){
       //   ⇒ feedforward 토크 + 관절 PD. 표준 구성이고, 2점 stand 는 PD 목표(stand_ref)와
       //     WBIC 목표가 **같은 자세**라 서로 싸우지 않는다.
       //   ⚠1점 보행(cmode=0)은 기본 0 이다 — 거기선 목표가 매 스텝 바뀌어 PD 가 방해한다.
-      const double kpf = getenv("STAND_KP_FLOOR") ? atof(getenv("STAND_KP_FLOOR"))
-                                                  : (c.cmode==1 ? 0.30 : 0.0);
+      // ★1점 walk 는 kp 서보를 env 로도 못 켠다(08-27 검증 확정): 목표(stand_ref)가 진입 시점
+      //   자세로 굳어 있어 매 스텝 움직이는 gait 와 kp 가 정면으로 싸운다. 2점(cmode=1)은
+      //   목표=Qflat8=WBIC 자세라 유지(정적지지 전용 — FLAT_WALK 프리뷰 완성 시 재설계).
+      const double kpf = (mode=="walk" && c.cmode!=1) ? 0.0
+                       : (getenv("STAND_KP_FLOOR") ? atof(getenv("STAND_KP_FLOOR"))
+                                                   : (c.cmode==1 ? 0.30 : 0.0));
       const double kd_scale = (1.0-bs) + bs*kdf;      // 블렌드 끝에서 kdf 로 수렴
       const double kp_scale = (1.0-bs) + bs*kpf;      // 블렌드 끝에서 kpf 로 수렴
       jm.kp_ch(kp_ch.data(), kp_scale); jm.kd_ch(kd_ch.data(), kd_scale);

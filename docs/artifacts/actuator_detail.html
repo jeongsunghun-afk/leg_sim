@@ -256,6 +256,8 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
 실측 <b>7.327e−4</b> 의 +38% 차이를 "감속기 입력단 관성" 으로 귀속해 뒀는데,
 <code>α = 5.29/7.327 = <b>0.722</b></code> 여도 <b>같은 데이터가 나온다.</b> 회귀는 α 와 I 를
 <b>원리적으로 못 가른다</b>(완전축퇴) — 둘의 몫만 본다.
+<b>★08-27 부분 해소</b>: 무게추·push 외부기준으로 α ≈ 0.85 확정 → 참 반사관성 ≈ 0.85×7.327e−4 ≈ <b>6.2e−4</b>.
+데이터시트 5.29e−4 와의 잔여 <b>+18%</b> 가 감속기 입력단 관성 몫 — "전부 α(0.722)" 서사는 기각.
 <b>불편할 만큼 잘 맞는다: 0.722 × 7.327e−4 = 5.29e−4 (데이터시트와 0.2% 일치).</b></span>
 <span class="why"><b>지금까지 잰 α</b> — 방법마다 갈리고, 그 폭이 하필 낙상 문턱과 같다:
 <div class="tw" style="margin:8px 0 2px"><table>
@@ -279,7 +281,7 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
 <tr><td class="ax">토크회귀 thigh</td><td class="n">0.89 ~ 1.04</td><td>유일하게 쓸 만한 축</td></tr>
 <tr><td class="ax">등속 스윕 hip</td><td class="n">0.867 ~ 0.919</td><td>준정적</td></tr>
 <tr><td class="ax">순수토크 프로브 hip</td><td class="n">0.904 / 0.874</td><td>준정적</td></tr>
-<tr class="rand"><td class="ax">로터관성 갭</td><td class="n strong">0.722</td><td>축퇴 — 감속기 관성일 수도</td></tr>
+<tr class="rand"><td class="ax">로터관성 갭</td><td class="n strong">0.722</td><td>★08-27 해소 — α 0.85 몫 + 잔여 +18% = 감속기 입력단 관성</td></tr>
 </tbody></table></div>
 ⚠<b>궤적정합 1.00 vs 준정적 0.87~0.92 — 10~13% 갈린다.</b> 그런데 MuJoCo 가 낸
 <b>2점 stand 낙상 문턱이 α ≈ 0.92~0.95</b> 다. 즉 <b>한 방법은 "여유 있음", 다른 방법은
@@ -291,7 +293,10 @@ hip α 가 0.727→1.095 로 올라간다).</span>
 "둘 다 정확" 을 구분 못 한다.</b> 저장소의 유일한 저울 기록은 "실기 약 15 kg,
 모델이 8% 가볍다" 뿐이고 <b>다리 링크 질량은 한 번도 검증된 적이 없다.</b>
 ⇒ 게이지를 깨는 유일한 길은 <b>외부 기준</b>이다: 다리 링크 저울 + hip 롤축 y_com 실측,
-또는 <b>무중력 모드 중립점</b>(아래 브링업 §I).</span></div>
+또는 <b>무중력 모드 중립점</b>(아래 브링업 §I).
+<b>★08-27 실행 완료</b>: push 저울 + 무게추 브래킷이 그 외부 기준이 됐다 — 결과
+<code>G_real/G_cad ≈ g*×r</code> = hip <b>≈1.01</b> · calf <b>≈1.00</b>(질량모델 정확 — 결손은 전부 전달경로 몫) ·
+thigh ≈0.88 미분해. <b>y_com 실측·다리 링크 저울은 불필요로 강등</b>(§A.0 마스터 표).</span></div>
 
 <p><b>② 제어법칙</b> — 실기 드라이버가 도는 식. <b>적합도 시뮬 안에서 같은 식을 돌린다.</b></p>
 
@@ -1492,8 +1497,9 @@ MuJoCo 의 <code>frictionloss</code> 는 구속 기반이라 실제 <b>stick-sli
     <td>평발 목표 <code>thigh +3.68° · calf −23.87° · foot −59.81°</code><br>
         ⚠<code>stand</code> 는 램프가 없다 — 바로 누르면 발목이 채널 100.4° 를 한꺼번에 요구해 속도트립</td></tr>
 <tr class="pick"><td class="n">17</td><td><b>발바닥이 지면과 평행한가</b></td>
-    <td>화면이 정말 <code>foot −59.8°</code> 인가. <code>gear_k</code> 는 <b>정량 검증 전</b>이고
-        회귀는 <b>foot 실효 1.60</b>(설정 1.2)을 가리킨다. 아니면 <b>중단</b></td></tr>
+    <td>화면이 정말 <code>foot −59.8°</code> 인가. 아니면 <b>중단</b>.
+        ★08-27 종결: 각도배율 = 설계값(커플링 상쇄+밑창 수평 검증) — "실효 1.60" 의 실체는
+        <b>상수결손 k 0.36 Nm</b>(r(G) 법칙 · FOOT_COMP 보상 중)</td></tr>
 <tr class="sep"><td class="n">18</td><td>천천히 내려 발바닥 전체 접지</td><td>하중은 아직 크레인이</td></tr>
 <tr class="rand"><td class="n">19</td><td><b>하중을 서서히 로봇으로 — <code>hold</code> 상태로</b></td>
     <td>⚠<b>19↔21 순서를 뒤집지 말 것.</b> 살짝 닿은 채 stand 를 켜면 QP 가 매 틱 실패하고,
@@ -1633,7 +1639,9 @@ g*  = G_real/(α·G_CAD)  좌우 1.50 vs 1.10  ⇒ 남는 미지수는 <b>G_real
 = CAD 질량분포 오차다. α=1 로 두면 <code>G_real/G_CAD</code> = hip <b>1.19</b> · thigh 1.05~1.10.
 hip(roll) 토크는 <code>m_leg·g·y_com</code> 이라 <b>y_com 실측</b>이 다음 수다.
 α 단독 분리는 여전히 <b>다리 링크 저울</b>만이 한다 — 제어에는 곱(= g*)이면 충분해서
-<code>STAND_TAU_SCALE_JOINT = g*</code> 로 이미 쓴다(<code>run_deploy_hw.sh</code>).</div>
+<code>STAND_TAU_SCALE_JOINT = g*</code> 로 이미 쓴다(<code>run_deploy_hw.sh</code>).<br>
+<b>★08-27 대체</b>: α 확정 후 <code>G_real/G_cad</code> = hip <b>≈1.01</b> — "CAD 질량분포 오차·y_com 실측" 가설 <b>기각</b>.
+hip 1/g* 0.84 vs thigh 0.91 차이의 실체 = <b>전달경로 r 이 축마다 다른 것</b>(실측 hip 0.84 · thigh ~0.8 · calf 0.82 · §A.0).</div>
 
 <h3>★실측 2일차 (2026-08-25) — 원인 확정: 기하. α·벨트 배제</h3>
 
@@ -1700,8 +1708,8 @@ PACE 0.87 · g* 밴드와 4중 정합). ⚠철회 둘: "3.3 kg 드라이버 포�
 ★현행: <b>α ≈ 0.83 공통 + thigh 모델중력 ~13% 과대</b>   (오차 가정 1개)
        hip·calf 가 독립 실험으로 같은 0.84/0.82 — 우연으로 보기 어렵다</pre>
 α ≈ 0.83 은 시뮬 낙상 문턱(0.92~0.95) <b>아래</b>다 — 축별 보정이 부족분을 메우는 것이
-stand 성립의 전제가 된다. 잔여: 벤치 ROTOR_I 참값 ≈ 0.83×7.327e−4 = 6.1e−4
-(데이터시트 5.29e−4 와의 차 = 기어박스 입력관성 — 관성 축퇴는 그대로).<br>
+stand 성립의 전제가 된다. 잔여: 벤치 ROTOR_I 참값 ≈ <b>0.85×7.327e−4 ≈ 6.2e−4</b>(α 08-27 확정 —
+데이터시트 5.29e−4 와의 잔여 +18% = 기어박스 입력관성. 관성 축퇴는 α 확정으로 해소).<br>
 <b>★08-26 완주 — 위 "α 0.83 공통" 은 자세별 지도로 대체됐다.</b> 평발 스윕(E2)·뒤꿈치밀기(E3)·
 Qhome8 발끝(E4)을 양다리로 완주한 결과: <b>평발·0° 0.80±0.02 / Qhome8 0.68±0.05</b>.
 각도 시험은 커플링 상쇄(비)+평발 밑창 실수평(절대)으로 종결 — calf·foot <b>각도배율 = 설계값</b>,
@@ -1727,8 +1735,8 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
 <thead><tr><th>증상</th><th>의심</th><th>다음</th></tr></thead>
 <tbody>
 <tr><td>앞/뒤로 서서히 기운다</td><td>CoM 이 밑창중심 밖</td><td><code>flat_home</code> 재확인 · 실기 링크질량</td></tr>
-<tr><td>무릎이 처진다 · 주저앉는다</td><td>중력보상 부족</td><td>모델이 <b>8% 가볍다</b> · <b>다리 링크 저울 먼저</b> · <code>gear_k</code></td></tr>
-<tr><td>발목만 어긋난다</td><td><code>coef</code> · <code>gear_k</code></td><td><code>couple_check.py</code> 를 <b>무여자로</b> · 실효 1.60 단서</td></tr>
+<tr><td>무릎이 처진다 · 주저앉는다</td><td>중력보상 부족</td><td>g*·FOOT_COMP 적용 여부 확인(★08-27: 질량모델 정확 판명 — 링크 저울 불필요)</td></tr>
+<tr><td>발목만 어긋난다</td><td><code>coef</code> · <code>gear_k</code></td><td><code>couple_check.py</code> 를 <b>무여자로</b> · ★08-27: "실효 1.60" 아님 — 상수결손 0.36 Nm(FOOT_COMP)</td></tr>
 <tr class="rand"><td><b>한쪽으로 기운다</b></td><td>좌우 구동계 비대칭</td><td><b>무부하 측정이 HL_hip 을 가리킨다</b> — ROTOR_I 7.652e−4 vs HR 7.121e−4(<b>7.5%</b>) · 강성 6.5~14.0 vs 10.3~15.2 Nm/deg · 마찰 0.711 vs 0.632. ⇒ <code>FLOAT_AXES=0</code>/<code>=4</code> 로 hip 좌우 <code>g*</code> 를 따로 잴 것</td></tr>
 <tr><td>채널이 죽는다</td><td>왼다리 FDCAN</td><td><b>배선으로 판결</b>(2026-08-21) · 지연도 만들었을 수 있다</td></tr>
 <tr><td>모니터 게인이 이상하다</td><td>발행자 버전 불일치</td><td>키가 <code>kp_raw</code> 인지 — <code>kp_leg</code> 면 옛 바이너리</td></tr>

@@ -44,7 +44,7 @@ class WbcLegged {
     inputLast_ = vector_t::Zero(info_.inputDim);
     perLeg_ = nJ_ / nc_;  // 다리당 관절수: 3(point-foot) or 4(발목포함)
     torqueLimits_ = vector_t(perLeg_);
-    if (perLeg_ == 4) torqueLimits_ << 84.0, 84.0, 126.0, 168.0;  // hip,thigh,calf,ankle peak Nm
+    if (perLeg_ == 4) torqueLimits_ << 84.0, 84.0, 126.0, 100.8;  // hip,thigh,calf,ankle peak Nm (★ankle=재기어 8.4:1 실값 100.8, 구 168=14:1 stale)
     else torqueLimits_ << 84.0, 84.0, 126.0;                       // hip,thigh,calf
   }
 
@@ -259,9 +259,16 @@ class WbcLegged {
     return {a, vector_t::Zero(3 * ns)};
   }
   std::pair<matrix_t, vector_t> torqueLimitTask() {  // -τlim ≤ τ ≤ τlim  → [I;-I]τ ≤ [lim;lim]
+    // ★calf-foot 기구커플(실기 PACE c=1: 발목모터가 q_foot+q_calf 좌표 구동 → τ_calf=τ_km+τ_am·τ_foot=τ_am):
+    //   16-DOF(perLeg=4)면 calf 행을 모터공간으로 교체 — |τ_calf−τ_foot|≤126(무릎모터)·|τ_foot|≤100.8(발목모터).
+    //   독립박스는 실기 불가능한 코너(τ_calf=126,τ_foot=−100.8→무릎모터226.8) 허용=sim2real 갭.
     matrix_t d = matrix_t::Zero(2 * nJ_, nx_); int off = nv_ + 3 * nc_;
     d.block(0, off, nJ_, nJ_).setIdentity(); d.block(nJ_, off, nJ_, nJ_) = -matrix_t::Identity(nJ_, nJ_);
     vector_t f(2 * nJ_); for (int l = 0; l < 2 * nJ_ / perLeg_; ++l) f.segment(perLeg_ * l, perLeg_) = torqueLimits_;
+    if (perLeg_ == 4) for (int lg = 0; lg < nJ_ / perLeg_; ++lg) {
+      int c = lg * perLeg_ + 2, ft = lg * perLeg_ + 3;                 // calf·foot 관절 인덱스
+      d(c, off + ft) = -1.0; d(nJ_ + c, off + ft) = 1.0;              // ±(τ_calf − τ_foot) ≤ 126
+    }
     return {d, f};
   }
   std::pair<matrix_t, vector_t> jointLimitTask() {  // ★조인트 각도한계(MJCF range): q̈에 PD-wall 부등식(d·x≤f). 중앙=완화·한계근접=강함

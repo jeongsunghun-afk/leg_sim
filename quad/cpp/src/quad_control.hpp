@@ -40,12 +40,21 @@ struct QuadControl {
   double gm_zi=0, gm_ri=0, gm_pi=0; void gm_reset(){ gm_zi=gm_ri=gm_pi=0; }
   double swing_w_r=0.1, swing_w_f=0.1;                    // 스윙다리 여유도 posture(앞/뒤 별도, ↑=whip 억제)
   double SW_TRACK_W=90.0;                                 // ★swing 발 task 가중(발이 목표 정확추종·↑=착지정확). horizon-shift 안정화
-  std::vector<char> is_front;                             // actuator별 앞다리(FL/FR) 여부
+  std::vector<char> is_front;
+  // ★calf-foot 커플 모터공간 사영: 실기 관절토크 τ_calf=τ_km+τ_am·τ_foot=τ_am(발목모터, 이미 ±peak_foot 클램프).
+  //   τ_km=clip(τ_calf−τ_am,±peak_calf) 후 재조합 → 독립박스가 허용하던 실기불가 코너(|τ_calf−τ_foot|>126) 제거.
+  //   물리적 사영(드라이브가 실제 하는 것)=비물리 캡 아님. 한계: MOTOR_CURVE의 속도의존 감소는 미커플(후속).
+  void couple_clamp(mjData* dd){ if(!couple_on) return;
+    for(int a2=0;a2<nu;a2++){ int c=cpl_calf_of[a2]; if(c<0) continue;
+      double am=dd->ctrl[a2], km=std::max(-tau_peak[c],std::min(tau_peak[c],dd->ctrl[c]-am));
+      dd->ctrl[c]=km+am; } }
+                             // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)
   int waist_idx=-1;                                       // ★허리(FB_waist) nu-index(없으면 -1=16DOF). 큰 몸통DOF라 전용 강홀드
   double waist_ref=0.0, WAIST_W=80.0, WAIST_KP=150.0, WAIST_KD=20.0;  // 요각목표(조향시 갱신)·홀드가중·PD
   VectorXd q_home, q_sit; Vector3d com_ref;   // q_sit=앉기 자세(뒷다리 접고 앞다리 편)
   VectorXd tau_peak, qmin, qmax, w_limit; std::vector<char> is_ankle;   // w_limit=관절속도한계[rad/s]=207/N
+  std::vector<int> cpl_calf_of; bool couple_on=true;     // ★calf-foot 기구커플(foot액추에이터→같은다리 calf 인덱스, -1=없음). COUPLE=0로 끔
   bool motor_curve=false;                                 // ★MOTOR_CURVE: 가용토크=tau_peak·max(0,1−|ω|/w_limit) (고속서↓=실모터)
   std::array<Vector2d,4> foot_hip_off; std::array<double,4> foot_gz0;
   MpcCfg mpc; double _body_terr=0.0;
@@ -82,6 +91,10 @@ struct QuadControl {
       if(m->jnt_limited[j]){ qmin[a]=m->jnt_range[j*2]; qmax[a]=m->jnt_range[j*2+1]; } else { qmin[a]=-1e9; qmax[a]=1e9; }
       a++; }
     for(int i=0;i<4;i++) if(leg_dof[i]==4) is_ankle[legqv[i][3]-6]=1;
+    // ★calf-foot 기구커플 페어맵(biped PACE 실측 c=1: 발목모터가 raw=q_foot+q_calf 좌표 구동)
+    cpl_calf_of.assign(nu,-1);
+    for(int i=0;i<4;i++) if(leg_dof[i]==4) cpl_calf_of[legqv[i][3]-6]=legqv[i][2]-6;
+    couple_on = !(getenv("COUPLE")&&!strcmp(getenv("COUPLE"),"0"));
     is_front.assign(nu,0);   // FL/FR 다리의 actuator = 앞다리
     for(int i=0;i<4;i++){ bool fr=(std::string(legs[i])=="FL"||std::string(legs[i])=="FR");
       for(int t=0;t<leg_dof[i];t++){ int a=legqv[i][t]-6; if(a>=0&&a<nu) is_front[a]=fr; } }
@@ -364,6 +377,7 @@ struct QuadControl {
     for(int i=0;i<nu;i++){ double lim=tau_peak[i];
       if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);  // ★고속서 가용토크↓(실모터 토크-속도곡선)
       d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    couple_clamp(d);
     return true;
   }
   // ── wbic_track (검증3과 동일: 기본경로) ──
@@ -486,6 +500,7 @@ struct QuadControl {
     for(int i=0;i<nu;i++){ double lim=tau_peak[i];
       if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);
       d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    couple_clamp(d);
     return true;
   }
 
@@ -579,6 +594,7 @@ struct QuadControl {
     for(int i=0;i<nu;i++){ double lim=tau_peak[i];
       if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);  // ★고속서 가용토크↓(실모터 토크-속도곡선)
       d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    couple_clamp(d);
     return true;
   }
 
@@ -653,6 +669,7 @@ struct QuadControl {
     for(int i=0;i<nu;i++){ double lim=tau_peak[i];
       if(motor_curve && w_limit[i]<1e7) lim=tau_peak[i]*std::max(0.0,1.0-std::abs(d->qvel[6+i])/w_limit[i]);
       d->ctrl[i]=std::max(-lim,std::min(lim,tau[i])); }
+    couple_clamp(d);
     return true;
   }
 };

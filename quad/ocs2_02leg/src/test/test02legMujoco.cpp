@@ -436,6 +436,7 @@ int main(int argc, char** argv) {
   int falls = 0; double t = 0;
   double swingErrPk = 0;   // ★스윙 추종오차 피크(SWING_DBG)
   double tdErrMax = 0, tdErrSum = 0; int tdErrN = 0;   // ★착지오차(TD_DBG): 실제 발 vs 커밋 발판
+  double kmPk = 0, amPk = 0; long kmViol = 0, coupleN = 0;   // ★COUPLE_DBG: 실기 커플토크(무릎모터=τ_calf−τ_foot·발목모터=τ_foot) 피크/위반
   double frontJvPk = 0, frontTauPk = 0; vector_t tauPrev = vector_t::Zero(nJ);  // 앞다리 떨림 계측(관절속도·토크변화 피크)
   for (int step = 0; view ? !glfwWindowShouldClose(win) : (t < simTime); ++step, t += dt) {
     if (cmdfile && step % 20 == 0) {            // ★GUI: 50Hz로 명령 갱신(v/vy/w)
@@ -657,6 +658,11 @@ int main(int argc, char** argv) {
       auto tw0 = std::chrono::steady_clock::now();
       vector_t tauJ = wbcL.update(xDes, uDes, rbd_s, md, dt);
       if (getenv("SWING_DBG") && wbcL.swingErrCur_ > swingErrPk) swingErrPk = wbcL.swingErrCur_;
+      // ★COUPLE_DBG: calf-foot 기구커플(실기 q_raw=q_foot+q_calf, PACE c=1) → 무릎모터 필요토크=τ_calf−τ_foot(한계126)·발목모터=τ_foot(100.8)
+      if (getenv("COUPLE_DBG")) { const int pl = nJ / 4;
+        for (int lg = 0; lg < 4 && pl == 4; ++lg) {
+          double tc = tauJ(lg * pl + 2), tf = tauJ(lg * pl + 3), km = std::fabs(tc - tf), am = std::fabs(tf);
+          if (km > kmPk) kmPk = km; if (am > amPk) amPk = am; if (km > 126.0) ++kmViol; ++coupleN; } }
       wbcTsum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw0).count(); wbcN++;
       if (getenv("WBC_TIME") && wbcN % 3000 == 0) fprintf(stderr, "[WBCT] WBC avg=%.3f ms (n=%ld, 1kHz budget=1ms)\n", wbcTsum / wbcN, wbcN);
       // ★표준 저수준(Bellicoso2016·legged_control): τ = τ_ff + τ_pd
@@ -916,6 +922,7 @@ int main(int argc, char** argv) {
   std::cerr << "  최종 base_z : " << d->qpos[2] << " m\n";
   if (getenv("SWING_DBG")) std::cerr << "  스윙 추종오차 피크 : " << swingErrPk * 1000 << " mm\n";
   if (getenv("SNAP_DBG") && region) std::cerr << "  SDF 발판스냅 : " << region->snapCount_ << "회, 최대이동 " << region->snapDistMax_ * 1000 << " mm\n";
+  if (getenv("COUPLE_DBG") && coupleN) std::cerr << "  커플토크(실기환산) : 무릎모터 피크 " << kmPk << " Nm(한계126, 위반 " << kmViol << "/" << coupleN << ") · 발목모터 피크 " << amPk << " Nm(한계100.8)\n";
   if (getenv("TD_DBG")) std::cerr << "  착지오차(실제발-발판) : 평균 " << (tdErrN ? tdErrSum / tdErrN * 1000 : 0) << " mm · 최대 " << tdErrMax * 1000 << " mm (" << tdErrN << "착지)\n";
   std::cerr << "  낙상 스텝수 : " << falls << (falls == 0 ? "  ✅ falls=0" : "  ✗") << "\n";
   if (useWbc) std::cerr << "  WBC QP 실패수 : " << wbc.qpFail_ << "\n";

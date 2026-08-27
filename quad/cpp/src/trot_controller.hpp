@@ -549,7 +549,7 @@ struct TrotCtrl {
         was_sit=false; sit_getup_t0=-1; from_sit=false; haunch_ready=false; haunch_fold=0; jphase=-1; armed=false;
         if(off_settled || bzo<=GROUND_Z+0.04){   // 바닥 근처 → damp(전원차단 등가)
           off_settled=true; have_qref=false;
-          for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); return; }
+          for(int j=0;j<nu;j++) d->ctrl[j]=tc_clip(-REST_KD*d->qvel[6+j],-q.tau_peak[j],q.tau_peak[j]); q.couple_clamp(d); return; }
         // 아직 높음 → GROUND_Z까지 완만 하강(PD fold): 서 있으면 눕히고, 눕는 중이면 계속
         if(ht_cur>bzo+0.06 || ht_cur<0.06) ht_cur=bzo;   // 진입 시 현재높이 동기화
         ht_cur+=tc_clip(GROUND_Z-ht_cur,-GETUP_RATE*dt,GETUP_RATE*dt);
@@ -558,6 +558,7 @@ struct TrotCtrl {
         for(int j=0;j<nu;j++) q_ref[j]+=tc_clip(q.q_home[j]-q_ref[j],-JOINT_SLEW*dt,JOINT_SLEW*dt);
         for(int j=0;j<nu;j++){ double tau=d->qfrc_bias[6+j]+GETUP_KP*(q_ref[j]-d->qpos[7+j])-GETUP_KD*d->qvel[6+j];
           d->ctrl[j]=tc_clip(tau,-q.tau_peak[j],q.tau_peak[j]); }
+        q.couple_clamp(d);
         return; }
       if(mode=="jump"){   // ★★J2 통합 점프: crouch(wbic)→OCP궤적 재생(thrust/flight τ_ff+PD)→touchdown→wbic_stance 착지.
         double bz=d->qpos[2];

@@ -1,0 +1,353 @@
+{
+ "confirmed": [
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1358,
+   "title": "워치독 해제 시 무가드 자동 재무장 — 정지·접지·자세 검사 전부 우회",
+   "severity": "high",
+   "claim": "워치독 트립은 `hw->enable(0)` 로 limp 를 만들지만 mode 를 바꾸지 않는다. 명령이 복귀하면(fresh 한 내용 한 번) 같은 줄이 즉시 `enable(1)` 을 호출하고, 그 틱의 디스패치가 트립 이전 모드의 명령을 전 게인으로 그대로 내보낸다. 무장 경로에 있는 정지 확인(:977, off→X 에만 적용)·접지 확인(:1200)·자세거리 가드(:1250)·stand 블렌드 재시작·c.reset() 이 전부 우회된다. shm_bridge.cpp:109-113 확인 결과 enable(0) 중에도 write 는 통과하며 게인만 0 이 되므로, enable(1) 복귀 즉시 다음 write 가 전 게인·전 토크로 나간다.",
+   "scenario": "접지 stand 중 GUI/네트워크가 0.6초 멈춤 → 워치독 트립, 브리지가 kp=kd=τ=0 기록 → 로봇이 수 cm 주저앉으며 낙하 시작 → GUI 재개(seq++ 한 번) → 같은 틱에 enable(1) + bs=1 완성된 WBIC 토크·kd 플로어가 무너진 자세에 계단으로 인가. CoM 기준은 트립 전 c.reset() 값 그대로라 수 cm 오차의 보정력이 즉시 걸린다 → 낙하 중 재무장(코드 자신이 :968 에서 '움직이는 걸 잡으려 한 것이 트립의 원인' 이라 명시한 바로 그 상황) → 속도/토크 트립 → limp → 완전 낙상. GUI 가 스톨을 반복하면 무장/limp 를 주기적으로 오간다. hold 모드도 동일: limp 중 처진 각도만큼 hold_ch 와 벌어진 채 kp_ch 100 이 계단으로 걸린다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드 재확인 결과 주장 전부 성립. biped_deploy.cpp:1350-1358에서 워치독 트립은 enable(0)만 호출하고 mode를 바꾸지 않으며, 명령 내용이 한 번 바뀌면(:909-911 fresh→last_cmd_t 갱신) 같은 틱에 :1358이 enable(1)을 호출한다. 정지검사(:977, mode==\"off\"→X 전이 전용)·접지검사(:1200)·자세거리 가드(:1250)·stand 블렌드 재시작(stand_t0=lt :1305)·측정자세 주입+c.reset()(:1314-1319)·u_prev 클리어(:1338)는 전부 `if(nm!=mode)` 전이 블록(:991-1342) 안에 있어 워치독 해제 시 하나도 재실행되지 않는다. stand 디스패치는 stale stand_t0로 bs=1(:1717-1745)이라 재무장 즉시 완성 WBIC 토크+kp/kd 플로어가 계단 인가되고, CoM 기준은 트립 전 reset 값이라 limp 중 처진 수 cm가 즉시 보정력이 된다. shm_bridge.cpp:109-113 확인: enable(0) 중에도 write는 통과하며 kp/kd/tau만 0(limp), bridge_enable(1)(:128)엔 램프가 없어 다음 write가 전 게인·전 토크로 나간다. hold도 :1441-1444에서 트립 전 hold_ch를 POS_KP로 그대로 내보낸다. 해제 경로 어디에도 완화 장치(램프·재검사·기준 재래치) 없음. 낙하 중 자동 재무장→속도/토크 트립→limp 반복이라는 시나리오는 코드 자신의 :968-973 주석이 지적한 트립 메커니즘과 정확히 일치하는 실기 안전 결함.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1237,
+   "title": "stand/walk 거부 래치가 home 램프 도중에도 도착점(home_to)을 hold 목표로 래치 — 잔여 이동량 전부가 계단 명령",
+   "severity": "high",
+   "claim": "접지 거부(:1237)와 자세거리 거부(:1276)의 hold_ch 래치는 `prev_mode==\"home\"` 만 보고 `home_done` 을 확인하지 않는다. hold 정상 진입 경로는 2026-08-24 실기 사고 후 램프 도중이면 현재 지령각(q_ch)을 래치하도록 고쳐졌는데(:1056-1071, 실측 HL_foot +60.22° → 31.5Nm → 365dps → 속도트립 limp), 두 거부 경로에는 같은 수정이 이식되지 않았다. 즉 '고쳤다고 기록된 바로 그 결함'이 다른 진입 경로에 그대로 살아 있다.",
+   "scenario": "off→home 으로 램프 시작(예: 발목 채널 100° 이동, 진행 20%), 운전자가 크레인에 매달린 채 stand 를 누름 → 접지 확인이 당연히 실패 → :1237 이 hold_ch=home_to(도착점) 를 래치하고 hold 로 전환 → 남은 80°(≈1.4rad)가 그 틱에 계단 명령이 됨 → kp_ch 30 기준 ≈42Nm 채널 토크(τ_trip 15Nm 의 2.8배) → 수 ms 내 속도트립 → estop 래치 → limp. 매달린 상태면 다리가 요동, 부분 접지 상태면 그대로 주저앉는다. 자세거리 가드(:1276)도 같은 조건에서 같은 래치를 한다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드를 직접 읽어 주장의 모든 요소를 확인했고 반박에 실패했다. (1) biped_deploy.cpp:1237 과 :1276 은 정확히 `hold_ch = (prev_mode==\"home\" && home_to.size()==NCH) ? home_to : hs.q_deg` 로, home_done 을 확인하지 않는다. 반면 hold 정상 진입(:1068-1071)은 `inherit = from_home && home_done` 과 `if(from_home && !home_done){ hold_ch = q_ch; }` 로 2026-08-24 램프 도중 수정이 들어가 있다 — 같은 수정이 두 거부 경로에는 없다. (2) 전이 블록(:991-1342)은 순차 실행이라 home→stand 전이 틱에 hold 진입(:1044)은 건너뛰고 가드가 직접 mode=\"hold\" 를 세팅하며(:1239/:1278), 이후 ground_refused 래치와 :967 의 stand→hold 강제 매핑 때문에 nm==mode 가 되어 hold 진입 블록이 다시 실행되지 않는다 — 래치를 교정할 경로가 없다. (3) home_done 은 :1180 에서 false 로 초기화되고 :1456-1457 에서 u>=1.0 일 때만 true — 램프 도중엔 확실히 false. home→stand 전이를 막는 별도 가드도 없다(:947 은 stand 를 항상 수용, \"움직임 중 무장거부\" :974-989 는 mode==\"off\" 에서만 작동). (4) hold 실행부(:1441-1444)는 hold_ch 를 슬루 없이 전체 POS_KP/POS_KD 로 write_pos 하므로 잔여 이동량이 그대로 한 틱 계단 명령이 된다. (5) 수치도 파일 자체 기록과 일치: foot kp_ch 30(:1107), τ_trip 15Nm(:1232), 2026-08-24 실측 사고(HL_foot +60.22° → 31.5Nm → 365dps → 속도트립 limp, :1060-1061). 유일한 반박 후보였던 fallback(hs.q_deg 래치)은 램프 도중이면 오히려 계단이 거의 0 인데, 코드가 prev_mode==\"home\" 이면 일부러 home_to 를 고르는 것이 바로 결함이다.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 864,
+   "title": "무장 중 통신 동결(EtherCAT/FDCAN) 감지 시 아무 안전조치가 없다 — 경고·증거수집뿐",
+   "severity": "high",
+   "claim": "동결 감지는 off 상태의 무장만 막고(:974), 이미 무장된 상태에서 동결이 나면 `if(nfz && mode==\"off\"){ /* 동결 중에는 무장을 막는다 */ }` 빈 블록(:864)이 보여주듯 아무 행동도 하지 않는다. 배너 1회와 증거수집이 전부다. 트립 계통(tau/vel/tilt)은 전부 동결된 측정값을 입력으로 쓰므로, 얼어붙은 값이 임계 아래면(2026-08-20 의 227dps 처럼 우연히 큰 값이 아니면) 어떤 트립도 발화하지 않는다. 브리지가 0.5초 후 connected=0 으로 보고하는 신호(:1845)도 상태 JSON 발행에만 쓰이고 제어 판단에는 쓰이지 않는다. 배경지식대로 EtherCAT 링크 플랩은 OP 영구 이탈이고 IMU 도 전멸 상태라 tilt 백업도 없다.",
+   "scenario": "접지 stand 중 왼다리 FDCAN 이 끊김(실측 재현된 고장 유형) → 그 4채널의 q/dq/τ 가 마지막 값으로 동결, dq 는 정지값이라 속도트립 미발화 → 추정기는 동결된 왼다리 각도로 접촉 운동학을 풀어 CoM 을 오추정 → WBIC 가 살아 있는 오른다리에 '보정' 토크를 계속 증가시켜 로봇을 실제로 옆으로 밈 → IMU 전멸이라 tilt E-stop 도 침묵 → 실제 기울어짐이 커진 뒤에야(또는 전혀 트립 없이) 낙상. 동결 순간 estop 래치 + limp 시도(살아 있는 다리만이라도 무여자)로 넘어가는 경로가 존재하지 않는다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드를 직접 확인한 결과 주장 그대로다. (1) biped_deploy.cpp:864 는 정확히 `if(nfz && mode==\"off\"){ /* 동결 중에는 무장을 막는다 */ }` 빈 블록이며 아무 동작도 없다. (2) `frozen_now` 의 소비처는 :974 하나뿐이고 `mode==\"off\"` 조건이라 off→무장 전이만 막는다 — 무장 중 동결에는 estop 래치·mode 변경·hw->enable(0) 어느 것도 없고, :754–862 는 배너 1회+증거수집(freeze_forensics)뿐이며 write_pos/write_mit 디스패치(:1440~:1753)는 동결값 위에서 계속 돈다. (3) 트립 계통(:1361–1398)은 전부 hs.rpy/hs.tau_nm/hs.dq_dps 를 입력으로 쓰므로 정지 중 동결(dq≈0, tau<8Nm)이면 발화 불가, IMU 전멸이면 tilt≡0 이라 tilt E-stop 도 불가. (4) hs.connected 의 유일한 사용처는 :1845 상태 JSON health 라벨이고, 브리지(shm_bridge.cpp:30–32,72–75, CONN_WINDOW=250≈0.5s)는 보고만 할 뿐 안전조치가 없으며, FDCAN 다리 동결에서는 MCU 가 stale 값을 계속 올려 connected=1 로 남는다(:757–758 주석) — 이 신호로도 못 잡는다. 반박 가능한 각도(워치독·브리지 자체 limp·다른 파일의 핸들러)를 모두 확인했으나 전부 부재. 코드 주석 자체가 이 고장 유형(FDCAN 다리 동결)이 실기에서 반복 재현됐음을 기록하고 있어(\"여덟 번\", :776) 시나리오는 실증된 고장 모드 위의 실질 안전 공백이다.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1753,
+   "title": "walk 에서 dq_des=0 + STAND_KD_FLOOR 기본 1.0 — 스윙 다리에 트립 2.1배의 kd 제동토크",
+   "severity": "high",
+   "claim": "stand/walk 디스패치의 write_mit 는 속도명령으로 항상 `zero` 를 보낸다(:1753). 한편 kd 는 STAND_KD_FLOOR 기본 1.0(:1730) 때문에 블렌드 후에도 설정 kd 전량이 유지된다(kd_scale=(1-bs)+bs·1.0≡1). 따라서 walk 스윙 중 드라이버가 τ=kd·(0−q̇) 의 제동토크를 내고, 실측상 이 감쇠토크는 트립 임계의 2.1배다. :1712 의 주석 '위치/속도는 참고값(kp=kd=0 이라 무영향)' 은 2026-08-20 kd 플로어 도입 이전의 낡은 전제이며, 계산해 둔 dq_ch(:1713)는 전송되지 않는다. 발목 채널은 (q̇_foot+q̇_calf)×1.2 로 두 관절 속도가 합산되어(:1301-1303) 가장 먼저 걸린다.",
+   "scenario": "2점 평발에서 접지·자세 가드를 통과해 walk 를 누름 → 첫 스윙에서 발목/무릎 채널 속도에 비례한 kd 제동토크가 τ_trip 의 2배를 넘김 → 스윙 도중 토크트립 또는 속도트립 → estop 래치·limp → 한 발 지지 중 전신 무여자 → 즉시 낙상. 트립 임계를 올려 피하면 이번엔 스윙 궤적 자체가 제동으로 붕괴해 발끝 걸림(trip)으로 넘어진다. walk 버튼이 GUI 에 노출되어 있는 한 실기에서 재현되는 결함이다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드 재독으로 주장 전부 확인됨. (1) :1609 else 분기가 stand/walk 를 함께 처리하고 :1753 write_mit 가 속도명령으로 zero 를 보낸다 — 실기 경로(deploy_hw.hpp:253 ShmHw)는 dq/kd 를 브리지에 그대로 전달하므로 드라이버가 τ=kd·(0−q̇) 제동토크를 낸다. (2) :1730 STAND_KD_FLOOR 기본 1.0, :1742 kd_scale=(1−bs)+bs·1.0≡1 로 블렌드 후에도 설정 kd 전량 유지(calf kd_ch 3.5 = 관절 7.9 Nm·s/rad, :1728 자체 주석). (3) :1712 주석 'kp=kd=0 이라 무영향'은 :1720 의 2026-08-20 kd 플로어 도입과 모순되는 낡은 전제이고, :1713 의 dq_ch 는 계산만 되고 전송되지 않는다. (4) :1301-1303 주석이 발목 채널속도=(q̇_foot+q̇_calf)×1.2 합산을 확인. (5) walk 는 GUI 버튼(teleop_gui_biped.py:901)과 조이스틱 자동전환(:117-124)으로 도달 가능하며 :947 에서 유효 모드로 수용, kd 문제를 막는 가드는 없다. (6) WBIC 는 순수토크 인터페이스를 가정해 드라이브측 kd 를 보상하지 않는다. 유일한 부정확: GUI 가 walk 진입 시 1점 점발로 자동 전환(teleop_gui_biped.py:711-712)하므로 '2점 평발에서 walk' 시나리오는 접촉모드 전환을 거친다 — 그러나 평발 보행도 컨트롤러에 존재하고(biped_control.hpp:777-779) kd 제동 메커니즘은 양쪽에서 동일하므로 결함 자체는 그대로 성립. 스윙 감쇠토크 2.1×트립은 검토 배경의 실측 확정치와 일치.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 934,
+   "title": "grav_scale_joint 명령 경로가 무클램프·무램프 — 스칼라 grav_scale 의 [0,3] 클램프를 우회",
+   "severity": "high",
+   "claim": "공통 배율은 명령 수신 시 [0,3] 으로 클램프되지만(:941), 축별 배율 grav_scale_joint 는 아무 검증 없이 그대로 대입된다(:930-938, 파서는 deploy_hw.hpp:504). float 디스패치는 τ=grav_axis[j]·qfrc_bias 를 토크 상한 없이 그대로 내보내며(:1518-1522, push 경로의 PUSH_TAU_MAX 같은 클램프가 없다), 배율 변경도 램프 없이 계단으로 적용된다. 이 값은 tools/float_gstar.py 가 스윕 그리드에서 자동 발행하는 값이라 사람 손을 거치지 않고 파일로 주입된다.",
+   "scenario": "g* 스윕 설정 실수 또는 스크립트 버그로 grid 값 1.15 가 11.5 로 발행됨 → 매달린 로봇의 float 모드에서 hip 채널에 즉시 ≈5Nm×11.5≈57Nm 급 토크 계단 → 토크트립 디바운스 50ms·속도트립 20ms 가 지나기 전에 다리가 격렬하게 차오름 → float 는 사람이 손으로 다리를 만지며 쓰는 모드라(g* 브래킷 절차) 작업자 타격 위험. 음수/NaN 은 우연히 공통값 폴백으로 무해하지만 큰 양수는 그대로 통과한다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "모든 주장이 코드로 확인됨. (1) biped_deploy.cpp:934 는 무검증 대입 — 바로 아래 스칼라 경로(:941)의 [0,3] 클램프·kp 경로(:918-927)의 램프와 대조적. (2) 파서 deploy_hw.hpp:504 는 stod 원시 파싱, 범위검사 없음. (3) float 디스패치(:1518-1522)는 push 의 PUSH_TAU_MAX(:1588-1589)·stand/walk 의 tau_max_frac(:1673-1683) 같은 클램프가 없고, ShmHw::write_mit(deploy_hw.hpp:253)→shm_bridge.cpp:111 의 fTorque=tau_ff float16 캐스트까지 어디에도 토크 상한이 없다. (4) float_gstar.py 는 line 50/219/333 에서 grid·--hold 문자열(무검증 split) 값을 grav_scale_joint 로 자동 발행 — 오타가 사람 확인 없이 하드웨어에 도달. (5) 트립은 측정토크 8Nm·50ms 연속 / 속도 200dps·20ms 연속(deploy_hw.hpp:58)이라 계단 토크가 최소 50ms 는 그대로 나간다. (6) float 는 코드 주석(:1385 부근) 스스로 \"사람이 손으로 다리를 민다\"고 명시한 접촉 모드. (7) 음수/NaN 은 :1519 의 >=0 삼항으로 공통값 폴백, 큰 양수만 통과 — 주장 그대로. 반박 근거를 찾지 못함.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1670,
+   "title": "stand 진입 시 '현재 높이 유지' 설계를 :1670 의 매 틱 body_h 대입이 무효화",
+   "severity": "high",
+   "claim": "stand 진입부는 cmode=1 이면 c.reset() 이 잡은 현재 CoM 높이를 유지하고 body_h 로 덮지 않도록 명시적으로 분기한다(:1320-1325, 'kp_z=200 으로 무장 즉시 수 cm 를 움직이려 든다'는 자체 경고 포함). 그러나 디스패치 루프의 :1670 이 `c.com_ref_z = body_h;` 를 cmode 무관하게 매 틱 실행해 첫 제어 틱부터 그 보존을 덮어쓴다. STAND_H env 오버라이드도 한 틱 만에 무효가 된다. biped_control.hpp:390 확인 결과 com_ref_z 는 cmode=1 정적 CoM 과제의 z 목표(kp_z=200)로 실사용된다.",
+   "scenario": "2점 평발 stand 진입, 실제 CoM 높이 0.37m, GUI body_h 기본 0.5 → 진입 코드는 0.37 유지를 선언하지만 첫 틱에 목표가 0.5(제어기 내부 클램프 후 0.42)로 바뀜 → 블렌드 종료 시점에 +5cm 의 상시 z 오차 × kp_z 200 이 걸려 로봇이 의도치 않게 몸을 밀어 올림 → 무릎 신전·발뒤꿈치 들림으로 지지다각 축소, g* 토크보정(×1.2급)과 겹치면 토크트립. 운전자는 '높이를 안 바꿨는데 로봇이 일어서려 한다'로 관측하며, 진입 로그가 찍는 CoM 목표(:1331)와 실제 거동이 다르다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "반박 실패 — 코드가 주장을 그대로 뒷받침한다. (1) 진입부 보존 분기 실재: biped_deploy.cpp:1320-1325 는 cmode==1 이면 c.reset() 이 잡은 com_ref_z 를 유지하고(`if(c.cmode!=1) c.com_ref_z = body_h; else if(getenv(\"STAND_H\")) ...`), 주석이 \"body_h 로 덮으면 무장 즉시 수 cm 를 움직이려 든다(kp_z=200)\" 고 직접 경고한다. (2) 매 틱 덮어쓰기 실재: :1609 `else { // stand / walk — 모델기반` 분기 안의 :1670 `c.com_ref_z = body_h;` 는 cmode 가드도 STAND_H 검사도 없이 :1671 `c.control(dt)` 직전에 매 제어 틱 실행된다 — stand 진입 후 첫 틱부터 보존값과 STAND_H 오버라이드가 모두 무효화된다. (3) body_h 는 보존값과 동기화되는 경로가 전혀 없다: 기본 0.5(:655, deploy_hw.hpp:444), ~50Hz 명령 폴링에서 GUI 값으로만 갱신(:912, deploy_hw.hpp:499 기본 0.5). (4) 소비 측 확인: biped_control.hpp:777-786 cmode==1 정지 경로가 :781 에서 [0.36,0.42] 클램프 후 wbic_stance() 호출, :390 에서 comref z=com_ref_z·kp_z=200 로 CoM task 에 실사용(:413-414, 오차 집계 :461) — 시나리오의 \"0.5→클램프 0.42\" 수치도 정확하다. 결과적으로 :1331 로그가 찍는 보존 목표와 실제 첫 틱 이후 목표(0.42)가 다르고, 2.5s 블렌드(:1717-1719)가 kp 를 빼는 종료 시점에 z 오차 × kp_z=200 이 온전히 걸린다. 부수 관찰: 진입부 주석(:1309)의 \"reset() 은 d->qpos 를 읽어 com_ref_z 를 잡는다\"는 것도 부정확하다 — biped_control.hpp:569-581 reset() 은 d->qpos 를 Qcur() 공칭자세로 덮은 뒤 그 CoM 을 잡으므로 측정 높이가 아니라 공칭 높이다. 다만 이는 주장의 핵심(진입 보존이 :1670 에 의해 사문화)을 약화시키지 않고, 어느 값이 보존되든 첫 틱에 body_h 로 덮인다는 결론은 동일하다. 심각도 근거: 코드 자신의 주석이 위험하다고 명시한 바로 그 동작(무장 순간 수 cm z 목표 점프)이 실제로 일어나고, 운전자 오버라이드(STAND_H)와 로그 표시가 모두 거짓이 되며, g* 토크배율(1.2급)·발목 전달손실 미해결 상태의 실기 무장 시퀀스에 직결되므로 high 유지.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1002,
+   "title": "push 진입에 상태 가드가 전혀 없다 — 하중을 받는 stand 에서 한 클릭에 지지력 상실",
+   "severity": "high",
+   "claim": "float 는 접지 중 진입을 실측 토크비로 거부하지만(:1013-1033), push 는 어떤 모드·어떤 하중 상태에서도 진입이 허용된다(:1002-1012, kp=0·kd=FLOAT_KD 스케일·τ=매달림 가정의 g*·G + 램프 힘). push 는 '크레인 팽팽 + 발밑 저울' 전제인데 그 전제를 코드가 전혀 확인하지 않는다. stand→push 전이는 접지 가드(:1200, prev_mode 조건)도 거치지 않는다.",
+   "scenario": "체중을 받는 stand 상태(크레인 느슨)에서 운전자가 GUI 의 push 를 잘못 누름 → 그 틱부터 WBIC 지지토크가 사라지고 매달림-모델 중력토크(체중 지지엔 태부족)+kp=0 만 남음 → 무릎이 즉시 접히며 낙하 → 속도트립 → estop·limp → 완전 낙상. 반대로 매달린 채 push_fz 목표가 남은 파일로 진입하면 저울 없는 허공에 힘 램프가 걸려 다리가 아래로 가속, 속도트립으로 limp. 최소한 float 와 동일한 접지/매달림 판정을 방향만 맞춰 걸어야 한다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드를 직접 확인한 결과 주장의 모든 요소가 사실이며 반박에 실패했다. (1) 진입 무가드 확인: biped_deploy.cpp:947-948 에서 \"push\" 는 유효 모드명으로 통과하고, :991 의 nm!=mode 전이에는 prev_mode·하중상태 제한이 전혀 없다. off 에서만 걸리는 동결/이동중 가드(:974-990)는 stand→push 경로에 적용되지 않고, 접지 가드(:1200)는 조건이 (mode==\"stand\"||mode==\"walk\") 라 push 는 통과한다. push 진입 블록(:1002-1012)은 주석으로 \"접지 거부를 안 건다\" 고 명시하며 push_fz_cur=0 램프 초기화만 한다 — '크레인 팽팽·발밑 저울' 전제를 검증하는 코드는 없다. float 는 :1013-1033 에서 실측/매달림 토크비>1.25 로 진입을 거부하는 것과 대조된다. (2) 지지력 상실 확인: push 루프(:1550-1608)는 kp_ch=0(:1592)·kd=FLOAT_KD 0.30×config(:1591, :486)·τ=축별 g*·매달림모델 중력(:1559-1560, 베이스를 :1554-1557 에서 공중 고정)+Jᵀ(0,0,−F) 이고 관절당 ±12Nm 클램프(:1588-1589)까지 걸린다. 저장소 자체 실측 주석(:1215-1219)이 매달림 16.21Nm vs 체중전부 25.72Nm 라 확인해 주므로, 하중 받는 stand 에서 push 진입 시 지지토크가 한 틱에 사라지고 매달림-모델 중력(클램프 12Nm)만 남아 무릎이 접힌다 — stand 진입 블렌드(:1743)는 stand/walk 분기 내부라 이 전이를 완화하지 못한다. (3) GUI 확인: teleop_gui_biped.py:866 의 push 는 확인창 없는 단일 클릭 버튼이고 모드에 따라 비활성화되지 않는다. 반대 방향 시나리오(매달림+잔류 push_fz)도 성립: GUI 가 pub.set(push_fz=...) 로 목표를 지속 발행하므로(:289-293) 잔류 목표가 있으면 저울 없는 허공에 5N/s 램프가 걸린다. 저장소 자신의 감사가 동일 계열(stand 거부 시 hold_ch 미래치)을 CRITICAL 로 분류했고(:1227), 모터를 소프트로 끌 수 없는 실기 특성상 낙상은 물리 리셋 전까지 회복 불가라 심각도는 high 를 유지한다.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 388,
+   "title": "IMU 생존확인이 기동 1회뿐 — 런타임 IMU 사망 시 tilt E-stop 이 침묵 속에 무력화",
+   "severity": "high",
+   "claim": "imu_dead 판정과 경고, c.imu_ok 설정은 기동 시 단 한 번의 read 로 끝난다(:383-404). 런타임에는 hw->read 의 IMU 유효비트(0x10, shm_bridge.cpp 의 '신선한 0' 방어)가 완전히 무시되고, 동결 감지도 모터 채널(q/dq/τ)만 본다(:734-738). IMU 가 세션 중 죽으면 hs.rpy 가 마지막 값에 얼어붙어 tilt 가 상수가 되고, tilt E-stop 은 임계에 영원히 도달하지 못하며, stand/walk 는 낡은 자세 쿼터니언으로 추정·제어를 계속한다. 기동 시 무력화는 배너로 알리면서 런타임 무력화는 어떤 표시도 없다.",
+   "scenario": "기동 시 IMU 정상 → stand 진입 후 IMU 케이블/버스가 끊김 → rpy 가 마지막 값(예: 수평)에 동결 → 로봇이 실제로 기울기 시작해도 tilt 는 상수라 40° E-stop 미발화, 추정기·WBIC 는 수평 가정으로 오제어를 지속 → 남은 방어는 토크/속도트립뿐인데 서서히 기우는 준정적 붕괴는 두 트립 모두 임계 아래로 진행 가능 → 무트립 낙상. 매 read 의 mask&0x10 소실을 몇 틱 누적하면 감지 가능한 정보가 이미 인터페이스에 있다.",
+   "src": "safety",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드로 전부 확인됨. (1) biped_deploy.cpp:383-404 — imu_dead 판정·경고·c.imu_ok 설정은 기동 시 1회 read 로만 수행되고 이후 재평가 없음(imu_dead/imu_ok 재할당 0건, :1959 의 tilt_estop_ok 발행도 이 기동값 사용). (2) shm_bridge.cpp:85-94 는 '신선한 0' 방어로 |a|>0.5 일 때만 mask|=0x10 을 세우며 주석에 \"상류가 IMU 없음을 인지하게 한다\"고 명시 — 그러나 biped_deploy 의 유일한 런타임 mask 소비처는 :872 의 `hs.mask != 0` (게다가 !have_state 무장 전 게이트 안이고, 모터비트 0x01 만 있어도 통과)이며, 무장 후 :693 의 hw->read(hs) 반환값·hs.mask 는 어디서도 검사 안 됨. (3) 동결 감지 :734-738 은 q/dq/tau 채널만 비교, rpy/acc/gyr 미포함. (4) hs 는 지속 HwState(:578)이고 shm_bridge.cpp:79-84 는 IsUpdatedIMU()&&GetIMU 성공 시에만 rpy 를 덮어쓰므로 IMU 스트림이 서면 hs.rpy 가 마지막 값에 동결('신선한 0' 모드면 0), tilt(:723) 가 상수화되어 :1361 tilt E-stop 은 실제 기울기로는 영원히 미발화 — 그동안 stand/walk 는 낡은 rpy/quat 로 추정·제어 지속. biped_control.hpp:399-401 의 xy 차단도 기동값 imu_ok 만 사용. 반박 근거 없음. 심각도 high 유지: 이 하드웨어에서 실측된 고장모드(SetIMU 가 0 배열에 갱신플래그를 세우는 '신선한 0')가 세션 중 발생 가능하고, 세션 중 버스 단절 이력(동결 8회·링크 플랩)이 있으며, 준정적 기움은 토크/속도 트립 임계 아래로 진행 가능하고, 감지 정보(mask&0x10)가 매 틱 전달되는데 버려지고 있어 몇 틱 debounce 만으로 폐쇄 가능한 무경고 안전장치 상실임.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1214,
+   "title": "접지/매달림 가드가 명령에코 토크를 전달비(α) 보정 없이 모델 중력과 비교 — 매달린 채 stand 무장 가능",
+   "severity": "medium",
+   "claim": "stand 진입 접지가드(:1207-1223)와 float 접지거부(:1023-1033)는 ratio = Σ|τ_echo_joint| / Σ|qfrc_bias_model| 을 임계 1.25 와 비교한다. 그런데 이 하드웨어의 tau_nm 은 실측이 아니라 드라이브 명령 에코(fCurrent=fTorque, :462 주석)이고, 실측 전달비가 평발 0.80 · Qhome8 0.68 로 확정된 이상 매달림 유지에 필요한 명령토크는 G_real/α 로 부풀려진다. 즉 매달림 ratio 가 α=1 가정의 1.0 이 아니라 최대 1/0.68=1.47(마찰 정지지지분만큼 감소, 대략 0.9~1.47 밴드)가 되어 임계 1.25 를 넘을 수 있다 — '접지됨' 오판. 임계 1.25 자체가 α=1 로 유도된 값(매달림 16.21 vs 체중 25.72 Nm, 비 1.00~1.59)이라 α<1 세계에서는 판별력이 무너진다. 역방향으로 float 쪽(gmax 1.25)은 매달렸는데도 '접지 중' 으로 거부해 운전자가 FLOAT_GROUND_MAX 를 올리는 습관을 만들고, 그 순간 진짜 접지 검출이 죽는다. 수정: 비교 전에 축별 α=1/g*(이미 STAND_TAU_SCALE_JOINT 로 주입돼 있음)를 τ_echo 에 곱해 실토크 추정으로 환산하거나, 임계를 자세별 α 로 재유도할 것.",
+   "scenario": "점발(Qhome8 부근) 자세로 크레인에 매달린 상태에서 hold → stand 를 누른다. 마찰 정지지지가 적은 상태라면 hold 유지 명령토크 에코 합이 16.21/0.68 ≈ 23.8 Nm, ratio ≈ 1.47 > 1.25 → 가드 통과 → 매달린 채 stand 무장 → QP 95% 실패 → 중력보상 폴백이 g* 배로 다리를 밀어 속도트립·limp — 가드가 막으려던 2026-08-20 사고가 그대로 재현된다.",
+   "src": "ctrl-math",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드 사실관계는 전부 확인됨: (1) stand 가드(biped_deploy.cpp:1207-1223)와 float 가드(:1023-1033) 모두 ratio=Σ|τ_echo_joint|/Σ|qfrc_bias_model| 을 1.25 와 비교한다. (2) tau_nm 은 명령 에코다(:462, emb/RUNBOOK.md:602). sim_hw.hpp:203-210 이 에코를 MIT 법칙 전체(kp·e+kd·de+tau_ff)로 재현하므로 매달림 hold 에서 에코는 중력유지 PD 토크를 포함하며 전달손실만큼 부풀려진다. (3) 에코 읽기 경로에 α/g* 보정이 전혀 없다 — tau_axis(STAND_TAU_SCALE_JOINT)는 :1698-1701 에서 나가는 명령에만 곱한다(tau_nm 사용처 7곳 전수 확인). (4) 임계 1.25 는 α=1 모델 수치(16.21/25.72)로 유도됐다(:1215-1219). 단 정량 수정 하나: 주장이 말단 힘 전달비 0.68 을 관절공간 매달림 토크합에 적용해 무마찰 ratio 1.47 을 얻었는데, 매달림 hold 의 축별 에코 부풀림은 정의상 정확히 g*(=1.20/1.10/1.22/1.00, run_deploy_hw.sh 주입값)이고 매달림 토크합은 hip 지배적(16.21 중 ~10.5Nm, foot g*=1.00 은 매달림 토크 ~0)이라 무마찰 매달림 ratio 는 ≈1.15~1.20 으로 1.25 미만이다 — 주장이 명명한 저마찰 시나리오에서는 가드가 올바르게 거부한다. 오통과는 역방향 마찰 적재(예: home 램프 직후, ratio ≈1.5 도달 가능)가 필요하다. 그러나 발견의 본질은 살아있다: 설계 여유 25%(α=1 가정)가 실제로는 g* 부풀림 대비 ~5-10% 로 줄어 마찰 밴드(±0.3~0.4) 안에 완전히 들어가므로, 매달림 오통과와 float 오거부 둘 다 도달 가능하고, τ_echo 에 1/g* 를 곱해 환산하라는 수정 제안도 타당하다. 반박 불가.",
+    "severity": "medium"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1700,
+   "title": "g*(STAND_TAU_SCALE_JOINT) 를 관절좌표에서 곱한 뒤 발목 전단 — 드라이브별 전달손실과 비가환, foot 드라이브(최악 축)는 무보정",
+   "severity": "high",
+   "claim": ":1700-1701 은 tj(관절토크)에 축별 배율을 곱한 뒤 tau_to_drive 로 전단한다(u_knee=τ_calf−τ_foot). 그러나 전달손실은 물리적으로 드라이브(채널) 단위다 — run_deploy_hw.sh 의 calf 1.22 도 push 저울로 잰 '경로(드라이브) 전달비 0.82' 다. calf 1.22 ≠ foot 1.00 이라 관절곱과 전단이 비가환이 된다: u_knee = 1.22·τ_calf − 1.00·τ_foot = 1.22(τ_calf−τ_foot) + 0.22·τ_foot. 즉 무릎 드라이브 명령에 발목토크에 비례하는 +0.22·τ_foot 오차가 매 틱 실린다. 동시에 foot 드라이브는 g*=1.00 인데 실측 유력 원인이 '발목각 의존 foot 전동 손실(0° 부근 ~0.45)' 이므로 발목 authority 가 절반 이하로 과대평가된다. float(:1518-1522)·push(:1559-1560) 도 같은 관절좌표 곱이라 브래킷된 g* 자체가 τ_foot≈0(매달림)에서만 유효한 값이다. 수정(정합적 위치): 배율을 tau_to_drive/tau_ctrl_to_ch 이후 드라이브(채널) 좌표에서 곱하고, foot 드라이브의 α 는 발목 raw 각의 함수(룩업)로 둘 것 — push heel/toe 쌍이 그 축의 유일한 외부기준 측정법이다.",
+   "scenario": "2점 평발 stand 에서 발목이 ZMP 를 잡느라 τ_foot ≈ −3 Nm 를 내는 순간, 무릎 드라이브에 −0.66 Nm 의 계통 오차(관절 마찰 0.87 Nm 와 같은 자릿수)가 실려 무릎이 발목 부하와 상관된 방향으로 처지거나 밀린다. 동시에 발목 자체는 명령의 ~0.45-0.68 만 나와 밑창이 수평을 못 지키고 heel/toe 가 들리는데, flat_contact_all=1 은 여전히 4점 접촉을 가정해 QP 가 존재하지 않는 지지다각형에 λ 를 분배 — CoM 이 밑창 모서리로 흐르며 전방 토플.",
+   "src": "ctrl-math",
+   "verdict": {
+    "refuted": false,
+    "reason": "코드 재독으로 주장의 모든 요소가 확인됨. (1) biped_deploy.cpp:1700-1702 는 관절토크 tj 에 축별 배율을 곱한 뒤 tau_to_drive 로 전단하고, 최종 출력 경로 jm.tau_ctrl_to_ch(deploy_hw.hpp:382-390)도 같은 전치 전단이라 무릎 채널 명령은 정확히 (1.22·τ_calf − 1.00·τ_foot)/gear_k. (2) biped_wbic.hpp:19-22 가 u_calf=τ_calf−τ_foot, 축순서 (hip,thigh,calf,foot)×다리를 확정 — STAND_TAU_SCALE_JOINT 파싱(biped_deploy.cpp:515-518)에서 calf=1.22, foot=1.00 이므로 +0.22·τ_foot 교차항 대수는 정확. (3) run_deploy_hw.sh:36-38 이 1.22 의 출처를 push 저울 실측 'calf 경로 전달비 0.82'(벨트/풀리 = 드라이브 경로)로 명시 — 손실은 물리적으로 드라이브 단위이고, :1693 의 '관절 좌표에서 곱한다' 주석 논리는 배율이 균일하거나 손실이 관절 단위일 때만 성립. (4) 브래킷 조건도 확인: float 는 매달림(foot 중력≪마찰, run_deploy_hw.sh:14), push 는 PUSH_POINT=heel 로 τ_foot=0 설계(biped_deploy.cpp:1570-1573) — 모든 교정점이 τ_foot≈0 이라 관절/드라이브 구분이 교정에서 보이지 않았다는 주장도 성립. (5) 시나리오 전제도 성립: flat_contact_all 기본 1·cmode=1 4점 접촉(biped_control.hpp:368,355-371), 평발 발목ZMP 사용(:616), foot 1.00 보류 근거가 '1점 walk 발목토크 ~0'(run_deploy_hw.sh:44)이라 평발 2점 stand 는 정확히 그 예외. 0.66 Nm 는 문서화된 관절 쿨롱마찰 0.60-0.87 Nm(:1507)와 같은 자릿수. 유일한 완화 요소는 cmode=1 에서 STAND_KP_FLOOR=0.30 기본(:1740-1741)의 관절 PD 가 무릎 처짐을 일부 상쇄하고, foot 무보정이 알려진 보류 항목이라는 점 — 그러나 +0.22·τ_foot 교차항은 코드 주석이 반대 논리를 적극 방어하는 미인지 계통오차이고, 발목 authority 과대평가(실측 유력 0.45-0.68 미보정)와 결합한 평발 stand 토플 메커니즘은 반박되지 않음.",
+    "severity": "high"
+   }
+  }
+ ],
+ "refuted": [],
+ "lows_unverified": [
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 351,
+   "title": "중복 writer 차단이 기동 시 1회 스캔뿐 — 락 부재로 동시 기동·후발 기동을 못 막는다",
+   "severity": "low",
+   "claim": "writer 배타(:349-362, find_other_writers :134)는 기동 시점의 /proc 스캔 한 번이 전부이고, 실행 중 유지되는 상호배제 장치(flock 등)가 없다. 후발 biped_emb.py 는 자기 쪽 가드로 막히지만, PATS 에 있는 mot_test/actuator_test.py 가 자체 가드 없이 나중에 뜨는 경우와 두 프로세스가 거의 동시에 기동해 서로의 스캔을 통과하는 TOCTOU 경합은 막지 못한다.",
+   "scenario": "두 셸에서 run_deploy_hw.sh 를 수백 ms 간격으로 이중 실행(원격 세션 끊김 후 재실행이 전형) → 두 프로세스 모두 스캔 시점에 상대가 아직 /proc 에 온전히 없어 통과 → 둘 다 SHM 에 서로 다른 명령을 번갈아 기록 → 2026-08-10 실기 사고(+18°↔−20° 관절 진동) 재발. SHM 명령 영역에 대한 파일락 하나로 스캔의 빈틈을 닫을 수 있다.",
+   "src": "safety"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1698,
+   "title": "STAND_TAU_SCALE_JOINT 활성 판정이 tau_axis[0]>0 만 검사 — 첫 축 미지정이면 나머지 축 보정 전체가 조용히 꺼짐",
+   "severity": "low",
+   "claim": "`bool any = (STAND_TAU_SCALE != 1.0) || (tau_axis[0] > 0);` 는 첫 원소만 본다. 파서(:516-518)는 빈 토큰을 건너뛰므로 \",,1.22,1.00,...\" 처럼 hip 을 비우고 calf 만 주면 tau_axis[0]=-1 로 남아 any=false — 지정한 calf 1.22 까지 통째로 무시되고 경고도 없다(기동 배너 :520 도 같은 조건이라 안 찍힌다). 수정: any 판정을 전 축 순회(any |= tau_axis[j]>0)로 바꿀 것.",
+   "scenario": "hip 은 무보정으로 두고 저울 실측된 calf 만 보정하려고 STAND_TAU_SCALE_JOINT=\",,1.22,,,,1.22,\" 로 기동 → 보정이 전혀 안 걸리는데 배너도 침묵 → '무릎 18% 누수' 가 고쳐졌다고 믿은 채 stand 운용, 처짐 원인 진단이 다시 미궁으로 돌아간다.",
+   "src": "ctrl-math"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1870,
+   "title": "tau_ctrl 스테일 발행 — hold/home/jog/off 에서 tau_cmd_nm 이 직전 float/push/stand 의 잔값",
+   "severity": "low",
+   "claim": "tau_ctrl(:561)은 float(:1518)·push(:1559)·stand/walk(:1711)에서만 갱신되는데 상태 발행(:1870)은 모드와 무관하게 매번 tau_cmd_nm 으로 내보낸다. hold/home/jog/off 에서는 직전 토크모드의 마지막 명령이 그대로 실려 나간다 — 위치모드는 τ_ff=0 이므로 참값은 0 이어야 한다. 수정: 위치모드 분기에서 tau_ctrl 을 0 으로 지우거나 모드별로 발행을 마스킹할 것.",
+   "scenario": "stand 트립 직후 hold 로 낮춰 놓고 모니터로 사후 분석 — tau_cmd_nm 에 수 Nm 의 유령 명령이 계속 보여 'hold 인데 토크를 내고 있다' 로 오독, 트립 원인을 명령 경로로 잘못 좁혀 실제 원인(기구·통신) 진단이 지연된다.",
+   "src": "ctrl-math"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_step.py",
+   "line": 261,
+   "title": "biped_step.py 가 MJCF 유래 self.drv_peak 대신 하드코딩 DRV_PEAK 상수·self.q_home 대신 Q_HOME 상수를 사용",
+   "severity": "low",
+   "claim": "wbic_track 의 토크한계 행(:252-253)과 클립(:261)이 모듈 상수 DRV_PEAK(84,84,126,100.8)를 쓴다 — biped_wbic.py:27-28 스스로 '폴백일 뿐, 실제는 MJCF 파생 self.drv_peak' 라 못박은 규약 위반(biped_mpc_wbic.py 는 self.drv_peak 로 올바름). posture 목표도 self.q_home 이 아닌 Q_HOME 상수(:216)라, heel 통합 모델에서 B2 를 단독 실행하면 스폰은 평발 home(Q_HOME_FLAT)인데 자세 task 는 점발 home 을 상시 당긴다.",
+   "scenario": "미해결 foot gear_k 1.2/1.6 문제로 MJCF ctrlrange 를 고치는 순간 biped_wbic/biped_mpc_wbic 는 따라가지만 B2 만 옛 100.8 한계로 QP 를 풀어 세 파일의 회귀 결과가 조용히 갈라짐 — 스텝핑 안정영역(T_STEP) 재스윕 비교가 무효화.",
+   "src": "sim-parity"
+  }
+ ],
+ "unverified_nonlow": [
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 79,
+   "title": "estopped() 가 미정의 변수 STATE 를 읽어 E-stop 감시가 통째로 사문화",
+   "severity": "high",
+   "claim": "전역은 STT(35행)인데 estopped() 는 json.load(open(STATE)) 를 호출한다(79행). NameError 가 바로 아래 except Exception 에 삼켜져 estopped() 는 항상 None 을 반환한다. 이 함수가 지키는 것이 바로 이 파일 docstring 이 '2026-08-24 실기에서 당함'이라 기록한 사고 — E-stop 래치 후 무여자 표류가 '넓은 마찰 밴드'로 오독되어 허구의 g* 가 나오는 것 — 인데, 그 방어가 236행(공통 스윕)과 351행(축별 스윕) 양쪽에서 전부 무력하다.",
+   "scenario": "축별 스윕 중 속도트립(200dps)으로 E-stop 래치 → estopped() 는 None 만 반환하므로 스윕이 끝까지 진행 → 무여자 상태의 일정한 중력 표류가 브래킷 판독에 들어가 g_lo/g_hi 가 허구로 잡힘 → 출력된 GRAV_SCALE_JOINT/1분 판독을 운전자가 run_deploy_hw.sh 의 GRAV_SCALE_JOINT·STAND_TAU_SCALE_JOINT 에 붙여넣음 → 다음 stand/walk 에서 WBIC 토크가 틀린 배율로 곱해져 실기에서 과소/과대 토크로 처짐·부상(浮上)이 재발한다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/run_deploy_hw.sh",
+   "line": 70,
+   "title": "GRAV_SCALE_JOINT 주입 시 공통 배율(GUI·float_gstar 1차 스윕)이 곱이 아니라 완전 무시됨 — 스크립트 주석과 코드가 정반대",
+   "severity": "high",
+   "claim": "run_deploy_hw.sh 68-70행 주석은 'GUI 배율은 이 위에 공통 계수로 곱해진다'고 단언하지만, biped_deploy.cpp:1519·1560 은 tau=(grav_axis[j]>=0 ? grav_axis[j] : GRAV_SCALE)·G 로 양자택일이다. env 로 8축 전부 주입되면 명령파일의 grav_scale(공통)은 float/push 어디에도 반영되지 않는다. 그런데 teleop_gui_biped.py:261 의 슬라이더도, float_gstar.py:226 의 1차 공통배율 스윕도 전부 이 grav_scale 로 보낸다 — deploy 는 940-943행에서 수신을 '중력보상 배율 → ×…'로 출력까지 하므로 운전자는 반영됐다고 믿는다.",
+   "scenario": "./run_deploy_hw.sh 로 띄운 배포기에서 python3 tools/float_gstar.py 기본 실행 → 1차 스윕 0.85~1.25 내내 로봇은 env 값(1.20,1.10,1.22,…)에 고정되어 전 축 표류≈0 → 전 축 '측정 불가—마찰 데드밴드' → 2차 bias 는 마지막 격자값 1.25 로 오염되고, 최종 붙여넣기 줄은 측정 안 된 축을 1.000 으로 채운다. 특히 calf 1.22 는 g* 로 원리적으로 못 재는 저울 실측값이라 이 줄을 그대로 붙이면 1.000 으로 지워져 — 무릎 토크 18% 결손이 소리 없이 복귀한 채 stand/walk 가 돈다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/run_deploy_hw.sh",
+   "line": 55,
+   "title": "home=Qhome8 원복으로 'walk 금지'의 구조적 차단이 소멸 — 스크립트 헤더는 여전히 '자세가드가 막는다'는 옛 상태를 서술",
+   "severity": "high",
+   "claim": "run_deploy_hw.sh:55 는 'walk 는 계속 금지. home 도 측정용 0° 상태다(yaml 주석)'라 적고, biped_emb.yaml:459 의 측정기 서술도 '이 상태에선 walk 자세가드(15°)가 의도적으로 걸린다(57.7°)'였다. 그러나 yaml:467 은 2026-08-25 저녁 Qhome8 로 원복됐고, biped_deploy.cpp:1252-1261 의 STAND_POSE_LIM 가드는 목표(Qhome8)와 home 이 일치하므로 어긋남≈0 으로 통과한다. walk 를 막던 유일한 소프트웨어 장벽이 사라졌는데 walk 금지 사유(왼무릎 벨트, foot 전달 0.45 미보정, 스윙 kd 감쇠토크=trip 2.1배, IMU 전부 0=tilt E-stop 무력, EtherCAT 플랩)는 하나도 해소되지 않았다.",
+   "scenario": "운전자가 GUI 에서 실수로 walk 를 누름 → 접지검사·자세가드(어긋남 0°) 모두 통과 → 1점 스텝핑 시작 → foot 경로 전달비 ~0.45 미보정 플랜트에서 sim 이 이미 실증한 즉시 낙상 경로로 진입, IMU=0 이라 tilt E-stop 도 안 걸리고 낙상 중 토크·속도트립 래치→limp 로 추가 낙하. 금지는 현재 주석으로만 존재한다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/push_scale.py",
+   "line": 196,
+   "title": "버클링(정착 실패) 검출 후에도 스윕이 더 높은 힘으로 계속 진행 — 하드스톱 스톨을 어떤 안전층도 못 끊는다",
+   "severity": "medium",
+   "claim": "settle_timeout(8s) 안에 정지가 안 되면 '버클링? 이 점은 참고용' 경고만 찍고(196-199행) 다음 격자점 — 상승 구간이면 더 큰 F — 로 진행한다. push 모드는 kp=0 순수토크라 위치한계가 명령 클램프로도 트립으로도 작동하지 않고, PUSH_TAU_MAX 12Nm(모델관절) 클램프는 calf 채널토크로 ~8Nm(12/1.5)라 tau_trip 15Nm 에 절대 닿지 않는다. 버클링 속도는 200dps 에 한참 못 미친다. 즉 무릎이 물리 하드스톱(-62°, soft min -68 이 하드스톱 밖)에 눌린 채 수 분간 스톨해도 배포기·yaml 트립 어느 것도 반응하지 않는다.",
+   "scenario": "--max 50 기본 스윕에서 30N 부근부터 버클링 시작 → 40N·50N 점에서도 경고만 찍고 계속 인가, 운전자는 저울값 입력에 몰두 → 무릎이 하드스톱에 밀착된 채 캘프 모터가 지속 스톨 전류 → 2026-08-12 hold_pose 스톨과 같은 경로로 드라이버 파워단 래치오프(당시 ch7·ch4 두 번 발생, 물리 리셋 필요) → 축 사망으로 세션 종료. 정착 실패 시 자동으로 F 를 낮추거나 중단하는 분기가 없다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 345,
+   "title": "축별 스윕의 abort 감시가 스윕축 하나뿐 + --hold 기본 1.0 이 home=Qhome8 자세와 불일치 — 비감시 축이 dwell 내내 무제한 표류",
+   "severity": "medium",
+   "claim": "축별 경로는 345행에서 |q1[ax]-q0[ax]| 만 abort_deg(25°) 검사한다(공통 스윕 231행은 전 축 max 검사). 한편 --hold 미지정 시 나머지 축 배율은 1.0 인데(325행), home 이 Qhome8 로 원복된 지금 이 자세의 실측 밴드는 hip g_lo 1.10·HL_thigh g_lo 1.10 이라 1.0 은 밴드 밖 — '다른 축은 자기 중립점에 묶어 둔다'는 이 경로의 전제(129행 주석)가 깨진다. float 모드는 kp=0 이라 배포기에도 위치한계 트립이 없다.",
+   "scenario": "float_gstar --axis HL_calf 를 --hold 없이 실행 → 매 점 dwell 3s 동안 HL_thigh·hip 이 1.0 배율로 처짐(과거 실측 thigh 급락 -11.7°/s 급이면 dwell 내 -35°) → 스윕축이 아니라 abort 도 안 걸리고 estopped() 는 죽어 있으며 위치트립도 없어, 처진 다리가 격자점마다 반복적으로 하드스톱에 얹힘 → 무릎 벨트(이미 미끄러짐 의심 축)에 반복 충격. 부수적으로 hip 처짐이 thigh·calf 의 중력항을 바꿔(코드 488행 주석의 커플링) 스윕축 판독 자체도 오염된다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_control.hpp",
+   "line": 513,
+   "title": "FRIC_COMP 코드 기본값 1.0(ON)이 주석 '기본 꺼짐'과 모순 — sim(꺼야 함)과 실기(켜야 함)가 같은 공유 기본값 하나에 얹혀 있고 run_deploy_hw.sh 는 고정하지 않음",
+   "severity": "medium",
+   "claim": "biped_control.hpp:513 은 FRIC_COMP=1.0(2점 cmode 에서 활성)인데 477행 주석은 '기본 꺼짐(FRIC_COMP=1 로 켠다)'라 정반대를 서술한다. sim2sim 실증으로 sim 에선 이 보상이 림보사이클을 유발해 꺼야 하고 실기 2점 stand 엔 필수(끄면 ~20s 낙상, biped_deploy.cpp:285)임이 확정됐는데, 같은 BipedControl 이 biped_sim 과 biped_deploy 에 그대로 들어가고, run_deploy_hw.sh 는 '측정값을 한 곳에 박는다'는 자기 원칙에도 불구하고 FRIC_COMP 를 주입하지 않아 실기 안전이 이 모순된 코드 기본값에만 매달려 있다.",
+   "scenario": "sim 림보사이클을 고치려는 사람이 '주석상 기본이 꺼짐이니 리터럴이 오타'라 판단해 513행을 0.0 으로 수정 → ./run_deploy_hw.sh flat 의 2점 stand 가 아무 경고 배너 차이 없이(285행 경고는 뜨지만 env 미주입이라 놓치기 쉬움) 마찰보상 없이 돌아 ~20초에 실기 낙상. 반대로 지금 상태로 sim 평발 회귀를 돌리면 기본 ON 이라 림보사이클이 재현되어 멀쩡한 변경이 회귀 실패로 오판된다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1030,
+   "title": "Qhome8 매달림에서 float 진입 접지판정 여유가 소진(비≈가중 g*≈1.2~1.3 vs 상한 1.25) — float_gstar 는 모드 미검증이라 거부를 데이터로 오독",
+   "severity": "medium",
+   "claim": "float 진입 검사(1023-1033행)는 보고토크합/모델중력합 비가 FLOAT_GROUND_MAX(기본 1.25)를 넘으면 접지로 보고 hold 에 머문다. 그런데 보고토크는 명령 에코라 hold 중 그 비는 곧 |G|-가중 평균 g* 다: Qhome8 실측(hip ~1.19, HL_thigh 1.50/HR 1.10, calf 1.22)로 가중하면 ~1.22 로 상한과 2~4% 차이뿐이며 과도·마찰이 겹치면 매달린 채로도 넘는다. float_gstar 는 매 격자점 home→float 재진입을 시키면서 상태파일의 mode 를 한 번도 확인하지 않으므로, 거부되어 hold 로 남은 점이 '표류 0'으로 그대로 기록된다.",
+   "scenario": "Qhome8 원복 상태에서 float_gstar 실행 → 일부 격자점에서 진입비가 1.25 를 넘어 float 거부·hold 유지(배포기 콘솔에만 출력) → 해당 점들이 표류 0 으로 섞여 브래킷의 g_lo/g_hi 가 안쪽으로 끌리거나 '전 구간 정지 — 마찰 밴드가 스윕보다 넓다'는 가짜 판독 → 잘못된 g* 가 run_deploy_hw.sh 로 유입. estopped() 사문화(별도 발견)와 겹치면 도구 쪽 교차검증 수단이 전무하다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_wbic.hpp",
+   "line": 113,
+   "title": "λ 는 모델 h 로 결정되므로 모델 질량·CoM 오차는 τ측 g* 스케일로 교정 불가 — 한 스칼라 g* 가 '중력모델 보정(β)' 과 '전달비 보정(1/α)' 을 묶어 힘항(Jᵀλ)에 잘못된 배율을 곱한다",
+   "severity": "high",
+   "claim": "WBIC 등식 bb.head(6)=−h.head(6) (biped_wbic.hpp:113, wbic_stance 는 biped_control.hpp:435)이 λ 총량을 모델 체중으로 고정한다. 모델 질량이 8% 가볍다고 확인된 상태(biped_control.hpp:72)에서 λz 합은 실체중보다 8% 작게 풀리고, 그 뒤 biped_deploy.cpp:1700 이 τ=h−Jᵀλ 전체에 g* 를 곱해도 λ 자체의 부족은 못 고친다 — 실현되는 지지력이 계통적으로 모자라 stand 처짐이 남는다. 게다가 run_deploy_hw.sh 스스로 thigh 1.10 은 '1/α(≈1.20) 와 모델중력 ~13% 과대의 상쇄값' 이라고 적었다: 그 값은 중력항(h)에는 맞지만, 전달비만 받아야 할 힘항(Jᵀλ)에는 1.20 이 필요한데 1.10 이 곱해져 thigh 의 GRF 실현이 ~8% 계통 부족이 된다. 실측 전달 0.68(Qhome8)과 결합하면 hip/thigh/calf 의 실현 토크는 모델 의도의 0.68×1.1~1.22 ≈ 0.75~0.83 배. 수정: ① 전달비 몫 1/α 는 드라이브 좌표에서 τ 전체에(위 발견), ② 중력모델 몫 β 는 컨트롤러 안에서 h 에만(τ 조립과 QP 등식의 h 양쪽에) 곱하거나 — 근본적으로는 MJCF 질량·CoM 을 저울 실측으로 고쳐 λ 부터 맞을 것. 두 보정을 한 스칼라로 τ 출구에서 곱하는 현 구조로는 어느 값을 넣어도 중력항과 힘항을 동시에 만족시킬 수 없다.",
+   "scenario": "flat stand 에서 QP 는 λz 합 = 모델체중(실체중의 0.92)을 풀고, thigh 힘항은 1.10 배(필요 1.20)로 나간다. 순 효과로 지지력이 ~10-15% 모자라 CoM 이 내려앉고, STAND_KP_FLOOR 0.30 의 PD(그것도 α 배로 약화)가 잔차를 떠안아 수 도의 정상상태 처짐 — hold 대비 stand 처짐으로 관측되는 바로 그 증상이 g* 를 켜도 완전히 사라지지 않고, 자세를 바꾸면(0°↔Qhome8, α 0.80↔0.68) 크기가 옮겨 다닌다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_control.hpp",
+   "line": 527,
+   "title": "FRIC_COMP 마찰 전방보상 항까지 g* 배로 재스케일 — PACE 파라미터의 단위(명령토크에 α 흡수) 증거와 결합하면 이중적용 = 음의 감쇠",
+   "severity": "medium",
+   "claim": "마찰보상은 set_ctrl_from_tau(biped_control.hpp:522-531)에서 τ 에 더해진 뒤 d->ctrl 로 나가고, biped_deploy.cpp:1700 이 그 전체를 g*(1.10~1.22)배 한다. 이 곱이 정합적이려면 JFRIC 이 '실토크 단위' 여야 한다(그 경우 전달 후 α·g*·JFRIC ≈ JFRIC 로 정확). 그러나 JFRIC·ROTOR_I 는 PACE 에서 명령토크를 입력으로 fit 한 값이라 α 가 흡수됐을 가능성이 크다: ROTOR_I 7.327e-4 vs CubeMars RO100 데이터시트 로터관성 5.29e-4, 비 1.385 ≈ 1/0.72 로 실측 전달비 밴드(0.68~0.80) 한가운데다. 그렇다면 실현 보상 = α·g*·(JFRIC_real/α) = g*·JFRIC_real, 즉 10~22% 과보상이다. 마찰 과보상은 코드 주석(:489)이 스스로 경고하듯 자기가진(음의 감쇠)이고, sim 실증에서 보상=마찰 '정확 일치' 조건조차 이미 림보사이클을 만들었으므로 과보상 여유는 사실상 0 이다. 수정: g* 곱을 마찰항 추가 이전(모델항 M q̈+h−Jᵀλ 에만) 위치로 옮기거나, push 저울 램프의 기울기-절편 분리로 JFRIC 단위를 먼저 판정할 것.",
+   "scenario": "flat stand 실기에서 hip 보상 0.827×1.20=0.99 Nm 가 나가는데 실마찰이 ~0.69 Nm(명령단위 가정)라면 매 속도 부호전환마다 +0.3 Nm 가 운동 방향으로 주입된다. 8.4ms 지연과 결합해 이미 발산 이력이 있는 30~65Hz 대역에서 채터링→림보사이클로 성장, |dq| 가 6→44→196 dps 패턴으로 커져 속도트립·limp — 접지 중이면 주저앉는다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_control.hpp",
+   "line": 524,
+   "title": "FRIC_STANCE_ONLY 가드가 cmode==1 보행(FLAT_WALK·ZMP_WALK)에서 스윙다리에 죽어 있다 — 스윙 과보상 = 에너지 주입",
+   "severity": "medium",
+   "claim": "스윙다리 제외 조건이 `if(FRIC_STANCE_ONLY && cmode!=1 && leg==swing) continue;` 로 cmode!=1 을 요구한다. '2점 평발은 양발이 스탠스' 라는 전제(:499)는 정적 stand 에만 참이고, FLAT_WALK/ZMP_WALK 로 평발 보행이 돌면 cmode 는 1 인 채 스윙다리가 실재한다 — 그 다리에 마찰 전량(tanh→1)이 운동 방향으로 더해진다. 이것은 1점 보행에서 실측으로 확인된 바로 그 실패 기전(보상 ON → vx0.20 낙상 2회, 전진 0.82→0.32)이며, 평발 보행 경로에서는 가드가 구조적으로 무효라 같은 사고가 예정돼 있다. 수정: 스윙 제외 조건을 cmode 와 무관하게 '보행 중(swing 유효) && leg==swing' 으로 걸 것.",
+   "scenario": "평발 ZMP 보행 실험(ZMP_WALK=1)에서 스윙 무릎이 3 rad/s 로 도는 구간에 calf 0.871 + foot(tendon) 0.639 Nm 가 운동 방향으로 가산 — 지연 8.4ms 와 결합한 음의 감쇠로 스윙이 목표를 지나쳐 착지점이 틀어지고, 1점 실측과 같은 양상으로 수 스텝 안에 낙상한다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_control.hpp",
+   "line": 513,
+   "title": "FRIC_COMP 기본 ON 이 sim 백엔드에도 동일 적용 — sim 림보사이클 실증과 정면 충돌, 백엔드 게이트 부재",
+   "severity": "medium",
+   "claim": "FRIC_COMP=1.0 기본값이 BipedControl 에 있어 실기(ShmHw)·--sim(SimHw)·biped_sim 이 같은 보상을 받는다. sim_hw.hpp:121 은 플랜트에도 같은 setup_gearbox(JFRIC)를 걸므로 --sim 은 '보상=플랜트마찰 정확 일치' 구성 — sim2sim 실증에서 림보사이클을 만들고 끄면 완벽했던 바로 그 조건이다. 실기엔 필요하고 sim 엔 해로운 항이 한 기본값을 공유하면, sim 검증 결과가 실기를 대표하지 못하고(위양성 진동) 운전자가 sim 을 위해 끈 env 가 실기 기동 스크립트에 새면 2점 stand 가 ~20s 낙상(FRIC_COMP=0 실측)한다. 수정: 백엔드가 SimHw/시뮬이면 기본 OFF, ShmHw(실기)면 기본 ON 으로 기동 시 결정하고 배너에 출처를 찍을 것 — run_deploy_hw.sh 에 명시 주입해도 된다.",
+   "scenario": "제어 변경을 ./biped_deploy --sim 으로 회귀검증 → stand 가 림보사이클로 흔들려 '변경이 회귀' 로 오판, 혹은 게인을 낮춰 sim 을 잠재움 → 그 게인이 실기에 배포되어 실기에서 정작 필요하던 마찰보상 여유·강성이 깎인 채 운용된다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1730,
+   "title": "walk 분기가 stand 용 kd/kp 플로어를 공유 — q̇_cmd=0 고정과 결합해 스윙 감쇠토크가 트립을 넘는 구조 (기지 미해결 문제의 코드 위치 확정)",
+   "severity": "medium",
+   "claim": "STAND_KD_FLOOR 기본 1.0(:1730)과 STAND_KP_FLOOR(cmode==1 이면 0.30, :1740-1741)는 stand 논리로 설계됐는데 디스패치 분기가 stand||walk 공용이다. write_mit(:1753)의 속도명령은 항상 zero 라 드라이브 kd 항이 −kd_ch·q̇_meas 로 스윙 운동 전체를 감쇠한다 — 발목 채널은 raw=(q̇_foot+q̇_calf)×1.2 로 두 관절 합이 잡혀 스윙 중 5~8 rad/s, kd_ch 2.0 이면 10~16 Nm(배경 실측: 트립 15 Nm 의 2.1배). 평발 보행에서는 kp 플로어 0.30 이 고정 stand_ref(Qflat8 수렴, :1750-1751)로 되당겨 스윙 task 와 직접 싸운다. 수정: walk 진입 시 kdf/kpf 를 별도 기본(스윙다리 0 또는 대폭 축소)으로 갈라내고, 최소한 q̇_cmd 에 WBIC 의 스윙 속도목표를 실을 것 — 이 구조가 남아 있는 한 walk 는 첫 스텝에서 토크/속도트립으로 limp 한다.",
+   "scenario": "수리 후 walk 를 재개하는 순간: 첫 스윙에서 발목 채널 감쇠토크가 15 Nm 임계를 50ms 이상 연속 초과 → E-stop limp → 보행 중 무여자는 낙상이다. 트립을 피해 kd 를 내리면 이번엔 stand 쪽 30~65Hz 안정화 근거(kd 플로어가 유일한 감쇠)가 사라지는 상충 — 분기 분리 없이는 둘 다 만족 불가."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_wbic.hpp",
+   "line": 141,
+   "title": "보행 WBIC QP 실패 시 C++는 전 드라이브 0Nm 명령 — Python 폴백(wbic_stance)과 갈라짐",
+   "severity": "high",
+   "claim": "bipedwbic::wbic_track 은 tau 를 Zero 로 초기화하고 EIQUADPROG_FAST_OPTIMAL 일 때만 채운다(:141-149). 실패 틱에는 중력항조차 없는 0 토크가 set_ctrl_from_tau 로 그대로 나간다(biped_control.hpp:706). 반면 Python 은 같은 실패에서 self.wbic_stance() 전체 QP 로 폴백(biped_mpc_wbic.py:234, biped_step.py:258)하고, C++ 도 wbic_stance 경로만은 중력보상 홀드 폴백(biped_control.hpp:470)이 있다. 보행 경로만 구멍이며 sim(Python) 검증으로는 이 실기 거동이 절대 안 보인다.",
+   "scenario": "실기 보행(향후 FLAT_WALK/점발 walk) 중 접촉 모델 불일치(매달림 실측에서 QP 실패율 95% 기록됨, biped_control.hpp:450-455)나 순간 발 뜸으로 QP 가 한 틱 실패 → 그 틱에 8개 드라이브 전부 0Nm(중력지지 소멸) → 하중 하 무릎이 순간 접힘, 실패가 간헐 반복되면 접힘-복귀 진동 후 낙상. 모터는 소프트로 못 끄고 물리 리셋만 가능한 기체라 복구 수단도 없다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_control.hpp",
+   "line": 524,
+   "title": "2점 평발 '보행'에서 마찰 전방보상이 스윙 다리에도 걸림 — 자체 실측이 낙상 원인으로 확정한 그 메커니즘",
+   "severity": "high",
+   "claim": "set_ctrl_from_tau 의 스윙 제외 조건이 `if(FRIC_STANCE_ONLY && cmode!=1 && leg==swing) continue;` 라서 cmode==1 이면 스윙 다리도 보상을 받는다. 주석 근거는 \"2점 평발은 양발이 스탠스\"(:499)인데, 그 뒤 추가된 FLAT_WALK(:778)·zmp_walk(:719) 는 cmode==1 인 채로 스윙 다리를 만든다. 스윙 중 q̇ 이 커서 tanh→1, 즉 hip 0.83/thigh 0.60/calf 0.87Nm 가 운동방향으로 전량 가산 — 이 파일 자신의 기록(:492-509)이 '스윙 보상 = 과보상 에너지 주입, vx0.15 낙상'으로 확정한 조합이다. Python 은 반대로 wbic_track(보행)에 보상이 아예 없어(biped_step.py/biped_mpc_wbic.py) 이 위험이 sim 파리티 검사에서 검출 불가능하다.",
+   "scenario": "FLAT_WALK=1 (또는 ZMP_WALK) 평발 보행을 실기에서 켜는 순간, 매 스윙마다 스윙 hip/thigh 에 ~0.6-0.8Nm 순방향 토크가 추가돼 스윙 과속·착지 오버슛 → 이미 미해결인 q̇_cmd=0 스윙 kd 감쇠토크(trip 의 2.1배) 문제와 중첩되어 trip 또는 착지 오배치 낙상. IMU 전부 0 이라 tilt E-stop 도 못 잡는다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_wbic.py",
+   "line": 152,
+   "title": "FRIC_COMP sim 림보사이클의 코드 수준 원인: 플랜트 주입 마찰의 전량 tanh 보상 + 기본값 ON, sim/실기 분리 장치 부재",
+   "severity": "high",
+   "claim": "같은 클래스가 플랜트에 JFRIC 을 주입하고(setup_gearbox :183-184, 텐던 :236-238) 동일 값을 전방보상으로 되돌린다(:364-373, 기본 FRIC_COMP=1.0 :152). sim 에서는 순마찰이 ~0 으로 상쇄되는데, 보상항 τ=JFRIC·tanh(q̇/V0) 는 q̇=0 부근 기울기 JFRIC/V0 = hip 4.14·calf 4.36·raw 3.20 Nm·s/rad 의 '양의 속도 되먹임'(JDAMP 0.09 의 ~46배)이다. MuJoCo frictionloss 는 스텝 말 속도에서 암시적으로 풀리는 반면 보상은 직전 틱 qvel 로 명시적(2ms ZOH) — 속도 부호반전마다 보상이 한 틱 늦게 구방향으로 밀어 매 반전 에너지를 주입한다. 정지 시엔 stiction(보상 0)이 잡았다가 PD 오차 축적→이탈→보상이 마찰 상쇄→과속→반전의 stick-slip 헌팅 = 림보사이클(8s 주기 낙상, tools/sim_stand_walk_check.py:35-37 실증과 부합). 실기는 실마찰이 물리에 있어 상쇄가 아닌 보상이라 필요하다. 그런데 sim/실기를 가르는 구조적 장치가 전혀 없고(env 관행뿐), 보호는 각 sim 스크립트가 FRIC_COMP=0 을 기억하는 것 하나다.",
+   "scenario": "① 새 sim 회귀/스윕 스크립트가 FRIC_COMP=0 지정을 빠뜨림 → 기준 2점 stand 부터 주기 낙상 → 게인/자세를 엉뚱하게 회귀시키고 그 결론이 실기로 이전됨. ② 반대로 sim 을 고치려 공용 기본값을 0 으로 내리면 실기 2점 stand 가 실측 그대로 20.7s 에 낙상(biped_control.hpp:483-485). 최소한 '플랜트를 자기가 스텝하는 프로세스(=sim)에서는 강제 OFF' 같은 모델 기반 게이트가 필요하다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_step.py",
+   "line": 80,
+   "title": "낙상 리셋 경로: reset() 이 liftoff(world 좌표)·yaw_hold·yaw_des 를 안 지움 — 리셋 직후 스윙 목표가 낙상 지점을 가리킴",
+   "severity": "high",
+   "claim": "BipedStep.reset()(:80-88) 은 stance/swing/t_ss 는 초기화하지만 self.liftoff 를 지우지 않고, BipedMPCWBIC.reset()(biped_mpc_wbic.py:239-243) 도 yaw_des/yaw_hold/lam 을 지우지 않는다. reset_stand 는 로봇을 원점으로 텔레포트하므로 liftoff 에는 낙상 전 world 발 위치(수 m 밖)가 남는다. 낙상 자동리셋 경로(deploy/biped_deploy.py:158, biped_view.py:19)에서 리셋 직후 첫 보행 틱에 `if self.liftoff[swing] is None` 가드가 통과되지 않아 swing_traj 의 p0 가 스테일 좌표가 된다. C++ reset() 은 have_liftoff=false·yaw_des=0·yaw_hold_set=false 로 전부 지운다(biped_control.hpp:582) — 파리티 갈림.",
+   "scenario": "x=2m 지점에서 낙상 → 자동 reset → 첫 틱 s≈0 에서 스윙 위치목표 p≈p0=구 위치(2m 밖) → SW_KP=800 × 2m = 1600 m/s² 가속 요구 → 드라이브 전축 포화·기체 요동·즉시 재낙상 → '낙상-리셋' 무한루프로 스윕 통계가 전부 오염. 동시에 yaw_hold 스테일로 리셋 후 heading 오차가 head_lead(0.15rad)로 상시 클램프되어 로봇이 구 heading 방향으로 계속 돌며 걷는다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_mpc_wbic.py",
+   "line": 250,
+   "title": "set_contact_mode 가 contact_mode 를 즉시 플립 — 발 기준점/보상 게이트가 자세 램프보다 먼저 바뀌고, C++ toe-pivot 전환과 알고리즘이 다름",
+   "severity": "medium",
+   "claim": "set_contact_mode(:245-252) 는 q_home/높이는 램프(0.9rad/s, ~1.2s)로 보내면서 self.contact_mode 는 즉시 바꾼다. 이 플래그 하나가 _ref_sph/foot_center/foot_jac_center(발기준=tip↔밑창중점, 수 cm 차이)·wbic_stance 의 FRIC_COMP 게이트·정적 stand 진입조건을 동시에 지배하므로, 1pt→2pt 전환 순간 heel 이 아직 공중인데 발 중심이 tip+heel 평균으로 점프 → DCM mid·스윙목표·MPC 모멘트암(frel)·liftoff 기준이 한 틱에 불연속. 2pt→1pt 는 발목이 눕혀진 채 즉시 동적 스텝핑에 진입한다(정적 분기 조건 `contact_mode=='2pt'` 탈락). C++ 는 transition_to/do_transition 의 toe-pivot 굴림(T_TRANS=1.4s) 동안 cmode 를 구모드로 유지하고 완료 시에만 확정(biped_control.hpp:539-558) — Python 에는 대응물이 없다.",
+   "scenario": "sim 에서 1pt 보행 중 '2pt' 명령 → 발기준점 수 cm 점프로 착지 오배치·낙상, 또는 2pt→1pt 시 heel 이 끌리는 채 첫 스윙 → trip. 이 경로로 얻은 sim2sim 전환 결론(앉기/서기 안전성)은 실기 제어기(C++ toe-pivot)와 알고리즘 자체가 달라 이전이 안 된다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_wbic.py",
+   "line": 320,
+   "title": "2점 stance QP 파리티 붕괴: thigh/calf posture 가중 1.0(Py) vs FLAT_WLEG 0.05(C++), 접촉판정 6mm/높이적응(Py) vs 12mm/전점강제(C++)",
+   "severity": "medium",
+   "claim": "같은 wbic_stance 인데 Python 은 thigh/calf posture 가중 W_POST=1.0(:319-321), C++ 는 FLAT_WLEG=0.05(biped_control.hpp:429, 20배 차이 — 높이 task 가 다리 신전으로 높이를 조절할 수 있게 한 의도적 변경이 Python 에 미이식). 접촉점도 Python 은 높이 6mm 적응 판정(:275), C++ 는 12mm + flat_contact_all=1 로 2점 평발에서 4점 강제(biped_control.hpp:368-374 — IMU 죽은 실기에서 K=1 붕괴를 막은 2026-08-20 수정). λ 정칙화 1e-3 vs 1e-2, STAND_KI 적분항 부재도 갈라져 있다.",
+   "scenario": "실기 재현 스윕(예: ALPHA_AXIS=Qhome8 실측 0.68)을 Python 으로 돌리면 20배 강한 다리 posture 서보가 무릎 처짐을 가려 'stand OK' 가 나오는데, 실기 C++(0.05)는 높이 task 지배라 같은 α 에서 주저앉는다 — g*/STAND_TAU_SCALE 보정 필요량을 sim 이 계통적으로 과소평가. 반대로 Python 의 6mm 적응 접촉은 발이 살짝 기울면 K 가 줄어 실기(4점 강제)에 없는 QP 성질 변화를 만든다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1701,
+   "title": "채널에서 실측한 전달비 보정(calf 1.22)을 관절좌표에서 곱함 — 발목 전단과 비가환이라 무릎 채널에 0.22·τ_foot 계통오차",
+   "severity": "medium",
+   "claim": "STAND_TAU_SCALE_JOINT 는 τ_joint 에 축별로 곱한 뒤 tau_to_drive 전단을 통과한다(:1698-1702). calf 1.22 는 저울 push 시험의 '무릎 채널 경로 전달비 r=0.82' 에서 온 드라이브(채널) 좌표 량인데, 관절좌표에서 calf=1.22·foot=1.00 으로 곱하면 무릎 드라이브 명령이 u=1.22τ_calf−1.00τ_foot 이 된다. 채널 손실 모델이 맞다면 옳은 명령은 (τ_calf−τ_foot)/0.82 = 1.22τ_calf−1.22τ_foot — 발목토크가 있는 한 무릎 채널이 0.22·τ_foot 만큼 어긋난다. 배경 규약('커플링 전치는 tau_ctrl_to_ch, 스칼라 관절게인은 존재하지 않음')이 경고하는 바로 그 비가환이다. 주석(:1693)은 '드라이브에서 곱하면 전단과 섞인다'며 관절좌표를 옹호하지만, 손실이 채널에 있으면 섞이는 쪽이 물리다.",
+   "scenario": "2점 평발 stand(현 운용 모드)에서 발목이 ZMP 토크 수 Nm 를 내는 동안 무릎 출력이 최대 ~2Nm 계통 오차 — 발목각(=τ_foot 크기·부호)에 따라 오차가 변하므로 '전달비가 자세를 탄다(평발 0.80 vs Qhome8 0.68)' 관측의 일부를 보정기 자신이 만들 수 있고, g* 재측정 값이 자세마다 흔들리는 순환을 유발한다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_wbic.py",
+   "line": 192,
+   "title": "ALPHA_AXIS 가 Python 전용 — C++ 제어기·회귀 배터리는 무시(스칼라 SIM_ALPHA 뿐), 축별/자세별 약화 플랜트 파리티 검증 불가",
+   "severity": "medium",
+   "claim": "검증 결과 주입 자체는 정합하다: MJCF 액추에이터 순서 = 관절 트리 순서(hip,thigh,calf,foot(tendon)×HL,HR, biped_from_quad.mjcf:153-160)라 j%4·dof=6+j 색인이 맞고, tendon 액추에이터 gear 에 α 를 곱하는 것도 '채널 손실'(α·u 가 raw 좌표로 들어가 coef(1,1)로 분배) 모델로 옳으며 drv_peak 을 스케일 전에 읽어 명령한계는 보존된다. 결함은 파리티다: C++ BipedControl::setup_gearbox(biped_control.hpp:280-296)에는 ALPHA_AXIS 가 없고(Python 주석 :191 이 '추후' 라 자인), sim_hw.hpp:217 의 SIM_ALPHA 는 전축 공통 스칼라뿐이다. 또 α 상수는 확정된 자세 의존 손실(발목 0° 부근 foot ~0.45, 평발 0.80/Qhome8 0.68)을 원리적으로 표현 못 한다.",
+   "scenario": "① dump/verify 파리티 비교나 C++ 스윕을 ALPHA_AXIS 환경에서 돌리면 Python 플랜트만 약해져 조용히 서로 다른 로봇을 비교 — '파리티 통과' 가 무의미해짐. ② foot 결손 시나리오(walk1_hypo α_foot=0.45)가 Python 에만 존재해 C++ 배포 제어기는 약화 플랜트에서 한 번도 검증되지 않음. ③ α_foot 상수 0.8 로 sim 이 통과해도 발목 0° 부근 실손실 0.45 에서는 낙상(1점 walk 즉시 낙상 실증) — 상수 α 통과를 실기 안전 근거로 쓰면 안 된다."
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_mpc_wbic.py",
+   "line": 47,
+   "title": "1점 CoM 목표높이 0.500(Py) vs 0.483(C++)·실측 스폰높이, FLAT_STATIC 노브는 사문 — 파라미터 파리티 어긋남",
+   "severity": "medium",
+   "claim": "CZ_1PT=0.500(:47)이 reset()에서 com_ref[2] 에 강제되는데(:243), C++ 는 reset 시 실측 CoM 높이(≈0.483)를 쓰고 전환 목표도 0.483 이다(biped_control.hpp:543). Python 은 스폰 즉시 ~1.7cm 신전을 명령해 초기 과도·토크 여유가 C++ 와 다르고, T_STEP=0.30 안정영역 스윕이 잡힌 crouch 높이와 어긋난다. 또 __init__ 의 static_stand(FLAT_STATIC env, :45)는 어디서도 참조되지 않아 FLAT_STATIC=0(연속스텝 실험)을 줘도 아무 일도 없다. 평발 보행 갈래 전체도 갈라져 있다: Python dcm_target 은 2pt 분기가 없어 K_CAP=1.0, C++ 는 FLAT_KCAP=0.6·FLAT_WANK=150·FLAT_WLAM=2·walk_init 체중이동·com_x_track(biped_control.hpp:616-623, 702-705) — Python sim 으로 평발 보행을 튜닝해도 배포 제어기와 무관하다.",
+   "scenario": "실기 배포 전 sim 검증(Python)에서 1pt stand/보행이 0.500 높이 기준으로 통과 → C++ 실기는 0.483 crouch 로 동작해 스윙 여유·토크 마진이 다른 지점에서 운용됨. FLAT_STATIC=0 실험은 조용히 무효라 '2점 연속스텝 검토' 결론이 사실은 정적 stand 데이터다."
+  }
+ ]
+}

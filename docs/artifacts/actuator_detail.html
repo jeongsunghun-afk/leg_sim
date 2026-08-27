@@ -191,6 +191,9 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
   push E2/E4 와 정합: 저부하일수록 상대손실 커짐 → E4 0.68·평발 0.80 이 이 사슬로 재구성됨.
   ⑥의 "×1.47 스케일" 은 <b>폐기</b> — 올바른 보정 = foot 드라이브 <b>sign(τ)·k 전방보상</b>
   (마찰보상과 같은 꼴 · 전 자세 일관). 구현: C++·sim 파리티 → 배터리 재검증 → 실기.
+  <b>→ 실기 검증 완료(같은 날): E4 blend 0.660→0.771 (±0.046) — FOOT_COMP_NM=0.36 이
+  run_deploy_hw.sh 기본값으로 편입.</b> sim 은 실물 플랜트(상수마찰 표현)에서 1점 walk 가
+  보상 없이도 완주 — foot 결손은 walk 차단기가 아니라 저부하 힘정확도 문제로 재분류.
   운용값은 <code>run_deploy_hw.sh</code> 와 현장카드가 단일 출처다.</div>
 </header>
 

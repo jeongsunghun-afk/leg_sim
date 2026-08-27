@@ -69,6 +69,10 @@ MJCF="$HERE/biped_from_quad.mjcf"                  # 1점 점발
 #   이 값이면 무중력에서 전 축이 중립이다(뜨지도 지지도 않음). GUI 배율은 이 위에
 #   공통 계수로 곱해진다(×1.00 이 이 값 그대로라는 뜻).
 export GRAV_SCALE_JOINT="1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
+# ★foot 상수결손 보상 (2026-08-27 무게추 캠페인 → 실기 검증: E4 blend 0.66→0.77)
+#   r_foot(G)=α−k/G 의 상수항 k 를 토크부호 기반 k·tanh(τ_ch/τ0) 로 전방보상.
+#   끄려면 FOOT_COMP_NM=0. 근거: data/push/PLAN_0826.md 최종표.
+export FOOT_COMP_NM="${FOOT_COMP_NM:-0.36}"
 
 # ── ②stand/walk 토크보정 — 같은 부족분을 WBIC 토크에 건다 ──────────────────
 #   1/g* = α·(G_CAD/G_real) 이므로 τ 에 g* 를 곱하면 실제 출력이 모델 의도값이 된다.

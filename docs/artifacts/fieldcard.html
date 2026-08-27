@@ -191,7 +191,7 @@
         <tr class="hi"><td class="m">α (토크스케일)</td><td>✅ <strong>법칙 확정(08-27)</strong> —
             foot: r(G)=0.77−0.36/G (좌우 동일·무게추 브래킷 6점). hip·calf ~0.8(E1·E3) ·
             thigh HL 케이블 별건. "자세의존"은 토크크기 의존으로 해소</td>
-            <td>저부하 힘명령이 상수 ~0.36 Nm 만큼 부족 — sign(τ)·k 보상으로 해소 예정</td></tr>
+            <td>✅해소 — sign(τ)·k 보상 <b>실기 검증 완료</b>(E4 0.66→0.77) · run_deploy_hw 기본 ON</td></tr>
         <tr><td class="m">FLOAT_KD</td><td>✅ 0.30 실사용 확인 (무중력 유지 양호 · 08-25)</td>
             <td>크면 뻑뻑, 작으면 30~65 Hz 발산</td></tr>
       </tbody>
@@ -472,9 +472,8 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
             <b>방치시험 30분</b>으로 커넥터 vs MCU 리셋 판별 → 케이블 교체/전원 점검</td></tr>
         <tr><td><strong>thigh 모델중력 +13%</strong></td><td>α≈0.83 공통 해석의 유일한 모델 오차 —
             CAD 원위 CoM 과대 의심. <b>평발 스윕 + 분해 시 정강이+발 저울</b>로 확정</td></tr>
-        <tr><td><strong>★foot 상수결손 보상항</strong></td><td>r(G) 법칙 확정됨 — 남은 일은 구현:
-            foot 드라이브 sign(τ)·k(0.36 Nm) 전방보상을 C++·sim 파리티로 넣고 배터리 재검증 → 실기.
-            물리 원인(벨트 프리로드/씰) 규명은 분해 시</td></tr>
+        <tr><td>foot 결손 물리원인</td><td>보상은 완료(FOOT_COMP 기본 ON · E4 0.66→0.77 검증) —
+            남은 건 실체 규명뿐: 분해 시 벨트 프리로드/씰 점검</td></tr>
         <tr><td><strong>틱틱+토크 급변</strong></td><td>부하 시에만·드라이브 쪽(사용자 판별 완료) —
             하강 회생→버스 과전압 가설. <b>다음 축사망 때 포렌식 배너의 OverVoltage 비트</b>가 심판</td></tr>
         <tr><td>발기하 모델오차 ~3.4°</td><td>두점접촉 판정에서 실증(모델 뒤꿈치 +9mm 공중 vs 실물 접지)
@@ -497,6 +496,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
     <p class="lead">2026-08-24 · 옛 바이너리/옛 문서 판별에 쓸 것</p>
     <div class="tw"><table>
       <tbody>
+        <tr><td class="m">★08-27b</td><td><b>FOOT_COMP 보상 실기 검증 — E4 blend 0.66→0.771</b>(±0.046 · 같은 가중) ·
+            run_deploy_hw.sh 기본 ON(0.36 Nm) · sim: 실물 플랜트에서 1점 walk 는 보상 없이도 완주
+            = foot 결손은 walk 차단기가 아니라 저부하 힘정확도 문제(재분류)</td></tr>
         <tr><td class="m">★08-27</td><td><b>무게추 브래킷 캠페인 — r_foot(G) 법칙 확정</b>(6점·좌우) ·
             FLOAT_AXES 부분무중력 방법론 · 안전종료 v3(시작자세 jog 복귀 — 낙차 0, 실기 검증) ·
             제어기 검토 확정 10건(워치독 재무장 등) · float_gstar E-stop 감시 사문화 수정 ·

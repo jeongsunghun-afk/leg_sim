@@ -116,7 +116,7 @@
   <h1>이족 실기 현장카드</h1>
   <p class="sub"><b>축약판.</b> 헷갈리면 반드시 틀리는 것, 실기 전에 확인할 것, 아직 모르는 것.
      근거·전개는 상세판에 있다.</p>
-  <span class="lnk">2026-08-26 · E3·E4 완주 — 전달 0.80(평발) / 0.68(Qhome8) ★자세의존</span>
+  <span class="lnk">2026-08-27 · 무게추 캠페인 완주 — r_foot(G) = α − k/G 법칙 확정</span>
 </header>
 
 <div class="grid">
@@ -142,12 +142,13 @@
             <td class="num"><strong>1.10</strong></td></tr>
         <tr class="hi"><td>calf</td><td class="num" colspan="3">g* 측정 불가 → ★저울 힘시험으로 r=0.82 실측</td>
             <td class="num"><strong>1.22</strong></td></tr>
-        <tr><td>foot</td><td class="num" colspan="3">미측정 (평발 스윕 대기 · 1점 walk 발목토크 ~0)</td>
-            <td class="num">1.00</td></tr>
+        <tr class="hi"><td>foot</td><td class="num" colspan="3">★r(G)=0.77−0.36/G 확정(무게추 브래킷 6점·좌우 동일) —
+            스케일이 아니라 sign(τ)·k 보상 대상</td>
+            <td class="num">1.00<br><small>+보상항 예정</small></td></tr>
       </tbody>
     </table></div>
     <pre>GRAV_SCALE_JOINT = STAND_TAU_SCALE_JOINT = "1.20,1.10,★1.22,1.00,1.18,1.10,★1.22,1.00"
-실행: <b>./run_deploy_hw.sh</b>   (home 은 측정용 0° 상태 — walk 전 Qhome8 원복)</pre>
+실행: <b>./run_deploy_hw.sh</b>   (home = Qhome8 원복 완료 · 임의 MJCF 는 절대경로 인자로)</pre>
     <p><span class="flag f-acc">운용 원칙</span><b>"한 점 중립"이 아니라 "전 자세 밴드 안".</b>
        기하 오차가 있는 한 단일 배율은 전 자세 중립일 수 없다. 0° 중립값(1.225)을 쓰면
        +27° 이상(중력→0 구간)에서 절대 초과분이 마찰을 넘어 <b>다리가 떠오른다</b>(실기 관측).
@@ -187,10 +188,10 @@
         <tr class="hi"><td class="m">G_CAD (다리 질량)</td><td>◑ 부분 — HL 총질량 <strong>5,395 g</strong> 실측
             (CAD −2.6%) · HR +150 g 축상부품. <strong>링크별 CoM 미확정</strong>(thigh ~13% 과대 의심)</td>
             <td>게이지 오차가 α 에 섞인다 — E3·E4 가 남은 분리</td></tr>
-        <tr class="hi"><td class="m">α (토크스케일)</td><td>◑ <strong>자세별 확정(08-26)</strong> —
-            평발·0° <strong>0.80±0.02</strong> · Qhome8 <strong>0.68±0.05</strong> (양다리 재현 ·
-            고정 축별 r 기각). 전기 공통 + 자세의존 기하손실(foot 발목각 의심)</td>
-            <td>모든 토크가 그 비율로 약하게 나간다 — Qhome8 힘제어는 ×1.47 보정 필요</td></tr>
+        <tr class="hi"><td class="m">α (토크스케일)</td><td>✅ <strong>법칙 확정(08-27)</strong> —
+            foot: r(G)=0.77−0.36/G (좌우 동일·무게추 브래킷 6점). hip·calf ~0.8(E1·E3) ·
+            thigh HL 케이블 별건. "자세의존"은 토크크기 의존으로 해소</td>
+            <td>저부하 힘명령이 상수 ~0.36 Nm 만큼 부족 — sign(τ)·k 보상으로 해소 예정</td></tr>
         <tr><td class="m">FLOAT_KD</td><td>✅ 0.30 실사용 확인 (무중력 유지 양호 · 08-25)</td>
             <td>크면 뻑뻑, 작으면 30~65 Hz 발산</td></tr>
       </tbody>
@@ -219,13 +220,13 @@
     <p><span class="flag f-hot">한계</span>한 자세에선 축별 분리가 원리적으로 불가
        (τ_cmd 는 모델에서 계산한 값 · 실측 토크 없음 = fCurrent 에코).
        축별은 <b>자세 다양성</b>으로: 0°=calf 지배 · 평발=thigh 37%+foot 38%.</p>
-    <p><span class="flag f-go">★최종(08-26)</span><b>전달비는 자세를 탄다</b> —
-       평발·0° 계열(발끝·뒤꿈치·양다리 9스윕) <b>0.80±0.02</b> vs Qhome8(E4·양다리)
-       <b>0.68±0.05</b>. 고정 축별 r 로는 동시 설명 불가(모델 기각). E3(hip+calf) 0.84~0.86
-       = hip·calf 건강 ⇒ 결손 국소화 = thigh(HL 케이블 확정분) +
-       <b>foot 의 발목각 의존 손실 의심</b>(0° 부근 ~0.4~0.5 vs −55° 에서 ~0.8).
-       접촉 오염 3종(두점 힘고리 0.65 · 테두리 누설 0.55 · 꼭짓점 발끝착지) 실증·격리 —
-       판독·격리는 tools/push_solve.py 가 자동.</p>
+    <p><span class="flag f-go">★최종(08-27)</span><b>"자세의존"의 실체 = 토크크기 의존.</b>
+       무게추(2040 g 실측) foot 브래킷 6점(HL A/B/C·HR A/C)이 한 식에 앉음:
+       <b>r_foot(G) = α − k/G · α 0.77±0.08 · k 0.36±0.12 Nm · 좌우 동일</b>.
+       foot 은 절반경로가 아니라 <b>비례는 준수 + 상수 ~0.36 Nm 결손</b>(벨트 프리로드/씰 계열) —
+       작은 토크일수록 상대손실이 커져 E4(0.68)·평발(0.80) 차이를 만들었다. 각도의존 기각.
+       보정의 올바른 형태 = <b>foot 드라이브 sign(τ)·k 전방보상</b>(스케일 아님).
+       접촉오염 3종 격리·push_solve/float_gstar 자동판독은 그대로 유효.</p>
   </div>
 
   <!-- ── EtherCAT ─────────────────────────────────── -->
@@ -388,20 +389,22 @@
   <div class="card">
     <h2>α — 토크 스케일</h2>
     <p class="lead">세 경로가 모여 게이지가 절반 붕괴 (08-25)</p>
-    <div class="big">0.80 / 0.68</div>
+    <div class="big">α−k/G</div>
     <div class="cap">자세불변 공통 (≤30 N) · E3·E4 로 확정</div>
-    <pre>자세별 전달 blend (상승가지 · 오염 격리 · 08-26 완주):
-  평발·0°  HL 0.79~0.84 · HR 0.78~0.86  → <b>0.80±0.02</b>
-  Qhome8   HL 0.66      · HR 0.69       → <b>0.68±0.05</b> ★양다리 재현
+    <pre>무게추 foot 브래킷 (08-27 · FLOAT_AXES 부분무중력):
+  창(발목각)   G       HL      HR
+  A (0°)     1.43   0.52/0.54  0.541
+  C (−25°)   2.11   0.645     0.615
+  B (−50°)   1.83   0.563      —
 ─────────────────────────
-전기 α 는 자세 불변 → 차이는 <b>모델-실물 기하</b>
-HL 교차검증: float 1/1.225=0.82 ↔ 0.80 ·
-             1/1.50=0.67 ↔ 0.66  (독립 2방법 일치)
-HR 은 thigh float 정상(1.10)인데 E4 0.69
- ⇒ thigh 단독 아님 — foot 발목각 의존 유력</pre>
-    <p><span class="flag f-go">운용 함의</span>2점 평발 stand/walk(Qflat8) → 0.80,
-       현행 g*·STAND_TAU 유지 OK · <b>1점 Qhome8 힘제어(WBIC λ) → 0.68, ×1.47 보정 필요</b>
-       (walk 시점 적용 결정). 확증 실험 = <b>발목각별 foot 단독 토크시험</b>.</p>
+★r_foot(G) = α − k/G
+  α = 0.77±0.08 · k = 0.36±0.12 Nm (rms 0.021)
+  push E2(4.2Nm)→0.69~0.8 · E4(2.7Nm)→0.64 정합
+평발 blend 0.80 · Qhome8 blend 0.68 은
+이 법칙의 자세→토크크기 사슬로 재구성됨</pre>
+    <p><span class="flag f-go">운용 함의</span>고부하 접촉(지지) ~0.77 · 저부하 미세조절 0.5~0.6.
+       보정은 <b>sign(τ_foot)·k 전방보상</b>으로 — C++(tau_to_drive 뒤 채널좌표)·sim 파리티로
+       구현 후 배터리 재검증 → 실기. "×1.47" 류 자세 스칼라는 폐기.</p>
   </div>
 
   <div class="card go">
@@ -469,9 +472,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
             <b>방치시험 30분</b>으로 커넥터 vs MCU 리셋 판별 → 케이블 교체/전원 점검</td></tr>
         <tr><td><strong>thigh 모델중력 +13%</strong></td><td>α≈0.83 공통 해석의 유일한 모델 오차 —
             CAD 원위 CoM 과대 의심. <b>평발 스윕 + 분해 시 정강이+발 저울</b>로 확정</td></tr>
-        <tr><td><strong>★foot 발목각 의존 손실</strong></td><td>Qhome8 결손(0.68)의 유력 원인 —
-            발목 0° 부근 foot 경로 ~0.4~0.5 의심(−55° 에선 ~0.8). <b>발목각별 foot 단독
-            토크시험</b>으로 확증 → Qhome8 힘제어 보정값 확정</td></tr>
+        <tr><td><strong>★foot 상수결손 보상항</strong></td><td>r(G) 법칙 확정됨 — 남은 일은 구현:
+            foot 드라이브 sign(τ)·k(0.36 Nm) 전방보상을 C++·sim 파리티로 넣고 배터리 재검증 → 실기.
+            물리 원인(벨트 프리로드/씰) 규명은 분해 시</td></tr>
         <tr><td><strong>틱틱+토크 급변</strong></td><td>부하 시에만·드라이브 쪽(사용자 판별 완료) —
             하강 회생→버스 과전압 가설. <b>다음 축사망 때 포렌식 배너의 OverVoltage 비트</b>가 심판</td></tr>
         <tr><td>발기하 모델오차 ~3.4°</td><td>두점접촉 판정에서 실증(모델 뒤꿈치 +9mm 공중 vs 실물 접지)
@@ -494,6 +497,10 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
     <p class="lead">2026-08-24 · 옛 바이너리/옛 문서 판별에 쓸 것</p>
     <div class="tw"><table>
       <tbody>
+        <tr><td class="m">★08-27</td><td><b>무게추 브래킷 캠페인 — r_foot(G) 법칙 확정</b>(6점·좌우) ·
+            FLOAT_AXES 부분무중력 방법론 · 안전종료 v3(시작자세 jog 복귀 — 낙차 0, 실기 검증) ·
+            제어기 검토 확정 10건(워치독 재무장 등) · float_gstar E-stop 감시 사문화 수정 ·
+            안전수정 2건(거부래치 q_ch — 실기 작동 확인·배율 클램프)</td></tr>
         <tr><td class="m">★08-26</td><td><b>E3·E4 완주 — 자세별 전달 지도 확정</b>(평발 0.80 /
             Qhome8 0.68 · 양다리) · 접촉오염 3종 실증·자동격리(push_solve) · PUSH_POINT=heel ·
             push_scale 점별 즉시저장 · Emb 8/26 업데이트 무죄(대조 0.79) · setcap 재부여 규칙 ·

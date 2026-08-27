@@ -183,8 +183,14 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
   고정 축별 r 도, "α 0.83 공통 단일값" 도 이 표를 동시에 못 만든다(§0 α 표 최상단 행).
   E3(hip+calf) 0.84~0.86 = hip·calf 건강 ⇒ 결손 국소화 = thigh(HL 케이블) +
   <b>foot 발목각 의존 손실 의심</b>(0° 부근 ~0.4~0.5 vs −55° ~0.8 — E2 정합).
-  확증 수단 = 발목각별 foot 단독 토크시험. 운용: 평발 힘제어 0.80(현행 유지) ·
-  Qhome8 힘제어 <b>×1.47 보정 필요</b>(walk 시점 결정).
+  확증 수단 = 발목각별 foot 단독 토크시험(→⑦에서 실행됨).
+  ⑦<b>★★08-27 — 무게추 foot 브래킷 캠페인 완주: "자세의존"의 실체는 토크크기 의존.</b>
+  실측 질량(2040 g)을 발에 달아 foot 을 float 브래킷으로 직접 측정(FLOAT_AXES 부분무중력 ·
+  창 3개 × 좌우 = 6점): <b>r_foot(G) = α − k/G · α 0.77±0.08 · k 0.36±0.12 Nm · 좌우 동일</b>.
+  각도의존 기각 — foot 은 비례 준수 + <b>상수 ~0.36 Nm 결손</b>(벨트 프리로드/씰 계열).
+  push E2/E4 와 정합: 저부하일수록 상대손실 커짐 → E4 0.68·평발 0.80 이 이 사슬로 재구성됨.
+  ⑥의 "×1.47 스케일" 은 <b>폐기</b> — 올바른 보정 = foot 드라이브 <b>sign(τ)·k 전방보상</b>
+  (마찰보상과 같은 꼴 · 전 자세 일관). 구현: C++·sim 파리티 → 배터리 재검증 → 실기.
   운용값은 <code>run_deploy_hw.sh</code> 와 현장카드가 단일 출처다.</div>
 </header>
 
@@ -251,12 +257,11 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
 <span class="why"><b>지금까지 잰 α</b> — 방법마다 갈리고, 그 폭이 하필 낙상 문턱과 같다:
 <div class="tw" style="margin:8px 0 2px"><table>
 <thead><tr><th>방법</th><th class="n">α</th><th>비고</th></tr></thead><tbody>
-<tr class="pick"><td class="ax strong">★★자세별 push 캠페인 (08-26 완주)</td>
-    <td class="n strong">평발·0° <b>0.80±0.02</b><br>Qhome8 <b>0.68±0.05</b></td>
-    <td><b>최종 — 전달비가 자세를 탄다</b>(양다리 재현 · 고정 축별 r 기각).
-        전기 α 는 자세 불변이므로 차이는 모델-실물 기하. HL 은 float g* 와
-        정량 교차검증(1/1.225=0.82↔0.80 · 1/1.50=0.67↔0.66). 아래 08-24·25 행들은
-        이 지도의 부분 측정이었다</td></tr>
+<tr class="pick"><td class="ax strong">★★무게추 foot 브래킷 (08-27 완주 · 최종)</td>
+    <td class="n strong">r_foot(G)=<b>0.77−0.36/G</b><br>평발 blend 0.80 · Qhome8 0.68</td>
+    <td><b>최종 — "자세의존"의 실체는 토크크기 의존</b>(상수결손). 실측 질량을 발에 달아
+        foot 을 브래킷으로 직접 측정(6점·좌우 동일·각도의존 기각). 자세별 blend(08-26)는
+        이 법칙의 자세→토크크기 사슬로 재구성된다. 보정 = sign(τ)·k 전방보상</td></tr>
 <tr class="pick"><td class="ax strong">★무중력 브래킷 (축별 · 2026-08-24)</td>
     <td class="n strong">hip 0.83~0.85<br>thigh 0.91 / 0.67</td>
     <td><b>마찰 소거 · 밴드가 τ_c/α 를 되돌려줘 자체 검증</b>(0.66~0.68 vs PACE 0.604).
@@ -473,9 +478,9 @@ raw 좌표에서만 성립한다.</b>
 <tr class="rand"><td><span class="chip" style="background:var(--flag-soft);color:var(--flag);border-color:var(--flag)">α</span></td>
     <td class="sym">α</td>
     <td><b>토크 스케일</b> — 실제출력/명령. kt·전류루프·효율·감속비 오설정이 전부 여기로</td>
-    <td><b>★자세별(08-26 최종)</b>: 평발·0° <b>0.80±0.02</b> · Qhome8 <b>0.68±0.05</b>
-    (양다리 재현 · 고정 단일값/축별 r 기각). 전기 공통 + 자세의존 기하손실(foot 발목각 의심 ·
-    HL 은 케이블 가산). Qhome8 힘제어 ×1.47 보정 필요 · 로터갭 0.722 는 관성 축퇴(별개)</td></tr>
+    <td><b>★법칙 확정(08-27)</b>: foot r(G)=0.77−0.36/G (좌우 동일 · 무게추 브래킷).
+    hip·calf ~0.8(E1·E3) · thigh HL 케이블 별건. blend: 평발 0.80 · Qhome8 0.68 은 법칙의 귀결.
+    보정 = foot sign(τ)·k 전방보상(구현 예정) · 로터갭 0.722 는 관성 축퇴(별개)</td></tr>
 </tbody>
 </table>
 </div>
@@ -1701,7 +1706,12 @@ Qhome8 발끝(E4)을 양다리로 완주한 결과: <b>평발·0° 0.80±0.02 / 
 유력 국소화 = <b>foot 전동의 발목각 의존 손실</b>(0° 부근 ~0.4~0.5 vs −55° ~0.8 — foot 최대가중인
 E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: 접촉오염 3종(두점 힘고리 0.65 ·
 저울테두리 누설 0.55 · 꼭짓점 발끝착지) · 크레인 스트랩 부양 13 mm · 발기하 모델오차 ~3.4°.
-확증 실험 = <b>발목각별 foot 단독 토크시험</b>. 해석·격리는 <code>tools/push_solve.py</code>.</div>
+확증 실험 = <b>발목각별 foot 단독 토크시험</b>. 해석·격리는 <code>tools/push_solve.py</code>.<br>
+<b>★08-27 — 그 확증 실험이 실행됐고 답이 나왔다.</b> 무게추 브래킷 6점(도구:
+<code>make_weighted_mjcf.py</code> + <code>FLOAT_AXES</code> 부분무중력 + <code>float_gstar --axis</code>):
+<b>r_foot(G) = 0.77 − 0.36/G · 좌우 동일 · 각도의존 기각</b>. 유지축 표류 중앙값 0.6°/s 로
+위치서보 유지 검증. 안전종료는 v3(시작 매달림 자세로 jog 서행복귀 → 무여자 · 낙차 0)로 확립 —
+배율/게인 램프다운은 중력상수 vs 소멸강성 탓에 말미 낙하가 필연이라 폐기.</div>
 </section>
 
 

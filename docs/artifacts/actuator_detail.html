@@ -1933,8 +1933,8 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
   <div style="margin:26px 0">
     <h3>α — 토크 스케일</h3>
     <div class="src">세 경로가 모여 게이지가 절반 붕괴 (08-25)</div>
-    <p style="font-size:1.5rem;font-weight:700;margin:8px 0 0">α−k/G</div>
-    <p class="src">자세불변 공통 (≤30 N) · E3·E4 로 확정</div>
+    <div style="font-size:1.5rem;font-weight:700;margin:8px 0 0">α−k/G</div>
+    <div class="src">자세불변 공통 (≤30 N) · E3·E4 로 확정</div>
     <pre>무게추 foot 브래킷 (08-27 · FLOAT_AXES 부분무중력):
   창(발목각)   G       HL      HR
   A (0°)     1.43   0.52/0.54  0.541
@@ -1949,6 +1949,7 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
     <p><b>[운용 함의]</b> 고부하 접촉(지지) ~0.77 · 저부하 미세조절 0.5~0.6.
        보정은 <b>sign(τ_foot)·k 전방보상</b>으로 — C++(tau_to_drive 뒤 채널좌표)·sim 파리티로
        구현 후 배터리 재검증 → 실기. "×1.47" 류 자세 스칼라는 폐기.</p>
+  </div>
 
   <div style="margin:26px 0">
     <h3>g* 재는 법 — 브래킷 판독</h3>
@@ -1970,6 +1971,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
        ②<b>E-stop 래치</b> 후엔 전 구간 무여자 = "넓은 밴드" 로 오독(감지 추가)
        ③<b>git pull 은 소스만 바꾼다</b> — 재빌드 없인 옛 바이너리가
        <code>grav_scale_joint</code> 를 조용히 무시한다(전 구간 +0.34°/s 일정이 그 서명).</p>
+  </div>
 
   <div style="margin:26px 0">
     <h3>최근에 고친 것</h3>

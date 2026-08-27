@@ -44,7 +44,10 @@ class BipedMPCWBIC(BS.BipedStep):
         self.head_lead = 0.15                               # ★헤딩 lead clamp[rad](발이 실제보다 앞서는 최대)
         self.static_stand = os.environ.get('FLAT_STATIC', '1') != '0'  # ★평발 정지=정적 양발 지지(0=연속스텝 실험)
         # ★접촉모드 자세 램프(앉기/서기): q_home·높이를 목표로 서서히 이동(발목 눕힘=앉기, 세움=서기).
-        self.CZ_2PT, self.CZ_1PT = 0.362, 0.500       # 모드별 목표 CoM 높이(평발 낮음/점발=배포 검증 crouch 0.50)
+        # ★CZ_1PT 0.50→0.48 (2026-08-28 높이 스윕): 0.50 은 낙상 경계였다 — 0.52 는 vx0.30 낙상,
+        #   0.50 은 vx0.35 낙상+0.30 미끄러짐(실효 0.175). 0.48 은 vx0.35 완주·실효 0.28~0.32,
+        #   배터리 8/8 유지, 무릎 +2Nm 뿐. (0.46/0.44 도 완주하나 tilt 증가 — 0.48 이 최적점)
+        self.CZ_2PT, self.CZ_1PT = 0.362, 0.48        # 모드별 목표 CoM 높이(평발 낮음/점발 crouch)
         self.q_home_tgt = self.q_home.copy()
         self.com_z_tgt = self.CZ_2PT if self.contact_mode == '2pt' else self.CZ_1PT
         self.ramp_q = 0.9                              # 자세 램프 속도[rad/s](≈1.3s에 발목 눕힘/세움)

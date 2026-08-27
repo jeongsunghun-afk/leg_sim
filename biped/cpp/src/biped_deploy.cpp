@@ -717,7 +717,7 @@ int main(int argc, char** argv){
   std::string mode = "off", prev_mode = "off", last_raw;
   bool estop = false, wd_tripped = false;
   double tau_over_t0 = -1, vel_over_t0 = -1, last_cmd_t = now_s(), last_pub = 0, hz_ema = cfg.ctrl_hz;
-  Cmd cmd; double body_h = 0.5;
+  Cmd cmd; double body_h = 0.48;   // ★0.50→0.48 (08-28 높이 스윕 — GUI H_DEF_1PT 와 동기)
   const double watchdog_s = cfg.watchdog_ms/1000.0;
 
   hw->enable(0);

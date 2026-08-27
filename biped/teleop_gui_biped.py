@@ -21,7 +21,7 @@ VMAX   = float(os.environ.get('VMAX',   '0.15'))  # 전진 상한[m/s]
 VY_MAX = float(os.environ.get('VY_MAX', '0.10'))  # 좌우 상한[m/s]
 WZ_MAX = float(os.environ.get('WZ_MAX', '0.30'))  # 선회 상한[rad/s]
 H_MIN, H_MAX, H_DEF = 0.36, 0.54, 0.38  # 슬라이더 전체범위·시작(2점)기본
-H_DEF_1PT, H_DEF_2PT = 0.50, 0.38       # ★접촉모드별 기본 몸통높이(점발/평발, 접촉구2배 자연높이)
+H_DEF_1PT, H_DEF_2PT = 0.48, 0.38       # ★접촉모드별 기본 몸통높이. 1점 0.50→0.48(08-28 스윕: 강건성 — biped_mpc_wbic.py 주석)
 
 # ── 각축(JOG) 검증용 관절 정의 — emb/config/biped_emb.yaml 있으면 로드, 없으면 기본값 ──
 #   실기(app/biped_emb.py) 배포 시 축별 목표각·통신 LED로 각 모터 확인. sim에선 inert(무해).

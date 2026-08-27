@@ -62,7 +62,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 
 MJCF="$HERE/biped_from_quad.mjcf"                  # 1점 점발
 [ "${1:-}" = "flat" ] && MJCF="$HERE/biped_flatfoot.mjcf"
-[ -f "${1:-}" ] && MJCF="$1"                       # ★임의 MJCF 경로 (무게추 변형 등)
+[ -f "${1:-}" ] && MJCF="$(realpath "$1")"         # ★임의 MJCF 경로 (무게추 변형 등)
+                                                   #   절대경로화 필수 — 아래에서 cpp/ 로 cd 한다
 
 # ── ①float(무중력) 축별 중력배율 — 측정된 중립점 g* 그대로 ──────────────────
 #   이 값이면 무중력에서 전 축이 중립이다(뜨지도 지지도 않음). GUI 배율은 이 위에

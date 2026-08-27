@@ -426,6 +426,17 @@ def main() -> int:
                 if q0 and q1 and max(abs(x - y) for x, y in zip(q0, q1)) < 0.3:
                     break
                 q0 = q1
+            # ★유지축도 천천히 내려놓는다 (08-27 실기 "툭" 재발 수정) — FLOAT_AXES 부분
+            #   float 에선 나머지 축이 위치서보로 home 에 잡혀 있어, off 로 바로 끊으면
+            #   그 축들이 통째로 떨어진다. hold 로 현재 자세를 래치한 뒤 위치게인을
+            #   0 까지 램프(~8s) — 감쇠를 타고 전신이 매달림 평형까지 처진다.
+            print("  ■ 위치게인 램프다운 — 잡혀 있던 축들도 천천히 내려앉는다.")
+            hold("hold", 1.0)
+            f = 1.0
+            while f > 0.0:
+                f = max(0.0, f - 0.07)
+                hold("hold", 0.5, pos_kp_scale=f)
+            hold("hold", 2.5, pos_kp_scale=0.0)
             send(mode="off")
             send(mode="off", grav_scale_joint=list(base))   # 배율 원복(off 라 무영향)
             print("  ✅ 안전 처짐 완료(무여자) — 이제 배포기·Emb 를 종료해도 된다.")

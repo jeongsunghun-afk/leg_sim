@@ -164,6 +164,33 @@ print("RESULT " + json.dumps(dict(frames=frames, tau_g=taus)))
     print("  → 커밋 후 Pi 에서 --play 로 재생")
     return 0
 
+# ═══ retau: 기존 궤적의 기대토크를 다른(무게추) 모델로 재계산 (노트북) ═══════
+def retau(a):
+    """무게추 에어워크용 — frames 는 그대로 두고 tau_g 만 주어진 MJCF 로 재계산.
+
+    양발 무게추 모델은 make_weighted_mjcf 2회 체인으로 만든다(커밋 금지 규약):
+      make_weighted_mjcf --leg HL --mass-g 2080 --at toe --x -6.3 --y 0 --z 35.5 --base flat
+      make_weighted_mjcf --leg HR (동일 인자) --base biped_flatfoot_wHL.mjcf
+    (오프셋 = 발끝→발목 선상 36 mm — 08-27 캠페인 부착점)
+    """
+    import numpy as np, mujoco
+    traj = json.load(open(a.traj))
+    m = mujoco.MjModel.from_xml_path(a.mjcf); d = mujoco.MjData(m)
+    taus = []
+    for q in traj["frames"]:
+        d.qpos[:] = 0; d.qpos[2] = 0.5; d.qpos[3] = 1.0
+        d.qpos[7:7 + NJ] = np.deg2rad(q); d.qvel[:] = 0
+        mujoco.mj_forward(m, d)
+        taus.append([round(float(x), 4) for x in d.qfrc_bias[6:6 + NJ]])
+    traj["tau_g"] = taus
+    traj["meta"]["tau_mjcf"] = os.path.basename(a.mjcf)
+    out = a.traj.replace(".json", f"_{a.tag}.json")
+    json.dump(traj, open(out, "w"))
+    mx = [max(abs(t[j]) for t in taus) for j in range(NJ)]
+    print(f"  tau_g 재계산({os.path.basename(a.mjcf)}) → {out}")
+    print("  |G|max[Nm]: " + " ".join(f"{v:.2f}" for v in mx))
+    return 0
+
 # ═══ --play: 스트리밍 재생 + 기록 (Pi · stdlib) ═══════════════════════════
 def play(a):
     traj = json.load(open(a.traj))
@@ -353,9 +380,12 @@ if __name__ == "__main__":
     p.add_argument("--loop", type=int, default=2)
     n = sub.add_parser("analyze", help="궤적 vs 기록 → 갭 표 (노트북)")
     n.add_argument("traj"); n.add_argument("log")
+    t = sub.add_parser("retau", help="궤적 tau_g 를 다른(무게추) MJCF 로 재계산 (노트북)")
+    t.add_argument("traj"); t.add_argument("mjcf")
+    t.add_argument("--tag", default="w2080")
     a = ap.parse_args()
     try:
-        rc = {"gen": gen, "play": play, "analyze": analyze}[a.cmd](a)
+        rc = {"gen": gen, "play": play, "analyze": analyze, "retau": retau}[a.cmd](a)
     except KeyboardInterrupt:
         print("\n⛔ 사용자 중단"); rc = 130
     finally:

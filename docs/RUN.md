@@ -21,6 +21,20 @@ CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1"
 - GEARBOX=반사관성(발 flail 억제·필수). ROTOR_I=1e-4·JDAMP=0.1·JFRIC=0.5 = ★대략값, 실측 대기(sim2real 체크리스트).
 - **★17dof 게인은 C++가 허리모델 자동감지로 기본 적용**(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) → env 불요. Python도 동일 기본.
 
+## D1(OCS2 NMPC+WBC) GUI 텔레옵 — A와 독립 관리
+
+D1 전용 GUI(teleop_gui_d1: 조이스틱 v/vy/w·게이트 trot/walk/bound·Ready/보행·Reset — D1 배선 명령만).
+perceptive는 지형서 자동 ON(flat=OFF). 명령슬루 τ=0.30·swing게인 KP_F700 내장.
+
+```bash
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh flat     # D1 평지
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh slope    # D1 15° 경사 등반
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh course   # D1 지형 코스
+```
+- 뷰어 시각화: 발판 마커=MPC 실제 계획 발(발끝 ~6mm 정합)·녹색=walkable 영역·`HMAP=1`=인지 heightmap 격자.
+- D1 배포 골격(HAL 경계 검증): `bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/deploy/run_deploy.sh slope`
+- 진단 env: `SWING_DBG`(스윙추종)·`TD_DBG`(착지오차)·`SNAP_DBG`(SDF발판스냅)·`COUPLE_DBG`(커플토크).
+
 ## GUI 텔레옵 원샷 (권장) — 뷰어 + GUI 한번에
 ```bash
 # 어디서든 실행 가능(절대 cd로 자기완결). QUAD=/home/jsh/문서/jsh/simulation/quad

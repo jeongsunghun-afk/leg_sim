@@ -370,8 +370,23 @@ def main() -> int:
             print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
         finally:
             _bias[0] = None
-            try: hold("home", 1.5); send(mode="hold")
-            except Exception: pass
+            # ★안전 종료 v3 (08-27): 종전 home+hold 는 도구 종료 직후 워치독 limp 로
+            #   추 달린 다리가 낙하했다("팍"). v1·v2 램프다운은 이 축별 경로를 안 지나
+            #   미실행이었다 — 시작 매달림 자세(q_start)로 jog 서행 복귀 → 수동 평형 →
+            #   off 낙차 0. (붙잡는 힘을 줄이는 방식은 중력상수 탓에 말미 낙하가 필연)
+            try:
+                if q_start:
+                    print("\n  ■ 안전 종료 — 시작 매달림 자세로 서행 복귀(jog) 후 무여자.")
+                    t0f = time.time()
+                    while time.time() - t0f < 25.0:
+                        cur = hold("jog", 0.5, jog_deg=list(q_start))
+                        if cur and max(abs(x - y) for x, y in zip(cur, q_start)) < 1.5:
+                            break
+                    hold("jog", 1.5, jog_deg=list(q_start))
+                send(mode="off")
+                print("  ✅ 안전 종료 완료(무여자·수동 평형) — 배포기·Emb 를 꺼도 된다.")
+            except Exception:
+                pass
         br = bracket(rows)
         gs, bd, lo, hi, why = br[a.axis]
         print(f"\n■ 결과 — {a.axis}\n")

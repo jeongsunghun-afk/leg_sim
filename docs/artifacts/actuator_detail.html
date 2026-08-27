@@ -1777,8 +1777,8 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
 <tr><td class="ax">kp_raw / kd_raw (×gear_k²)</td><td class="n">100 / 6.0</td><td class="n">50 / 4.0</td><td class="n"><b>180 / 7.88</b></td><td class="n">43.2 / 2.88</td></tr>
 <tr class="pick"><td class="ax">트립각 = 15Nm/(kp_ch·gear_k)</td><td class="n">8.59°</td><td class="n">17.19°</td><td class="n"><b>7.16°</b> ★최민감</td><td class="n">23.87°</td></tr>
 <tr><td class="ax">g* 운용 (HL/HR)</td><td class="n">1.20 / 1.18</td><td class="n">1.10</td><td class="n">1.22</td><td class="n">1.00 + <b>FOOT_COMP 0.36Nm</b></td></tr>
-<tr class="pick"><td class="ax">경로 전달 r = <b>토크스케일</b> (실측 · sim <code>ALPHA_AXIS 0.85</code>)</td><td class="n">~0.84</td><td class="n">~0.8 (HL 케이블 별건)</td><td class="n">0.82 (저울)</td><td class="n"><b>r(G)=0.77−0.36/G</b> (좌우 동일)</td></tr>
-<tr><td class="ax">G_real/G_cad ≈ g*×r (중력모델 정확도)</td><td class="n">≈1.01</td><td class="n">≈0.88</td><td class="n">≈1.00</td><td class="n">비율 부적합 — α 0.77 · k 0.36 분해</td></tr>
+<tr class="pick"><td class="ax">토크스케일 r (실측)</td><td class="n">~0.84</td><td class="n">~0.8 (HL 케이블 별건)</td><td class="n">0.82 (저울)</td><td class="n"><b>r(G)=0.77−0.36/G</b> (좌우 동일)</td></tr>
+<tr><td class="ax">G_real/G_cad ≈ g*×r</td><td class="n">≈1.01</td><td class="n">≈0.88</td><td class="n">≈1.00</td><td class="n">α·k 분해</td></tr>
 <tr><td class="ax">마찰 τ_c 벤치 [Nm]</td><td class="n">0.724</td><td class="n">0.604</td><td class="n">0.871</td><td class="n">0.639 (tendon)</td></tr>
 <tr><td class="ax">댐핑 b [Nm·s/rad]</td><td class="n">0.090</td><td class="n">0</td><td class="n">0</td><td class="n">0.110 (tendon)</td></tr>
 <tr><td class="ax">반사관성 armature [kg·m²]</td><td class="n">0.0359</td><td class="n">0.0359</td><td class="n">0.0808</td><td class="n">0.0517 (tendon)</td></tr>
@@ -1789,8 +1789,8 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
 <thead><tr><th>용어</th><th>정의</th><th>함의</th></tr></thead>
 <tbody>
 <tr><td class="ax">트립각</td><td><b>추종오차</b>(명령각−실측각) 한계 = 15Nm/(kp_ch·gear_k) — <b>조인트 리미트 아님</b>(가동범위는 "관절한계" 행)</td><td>넘으면 kp 항 혼자 15 Nm → 트립(limp). kd·q̇·중력보상이 얹혀 실효 여유는 더 작다 → "램프로만 이동" 규약</td></tr>
-<tr><td class="ax">경로 전달 r = 토크스케일</td><td>명령토크 중 관절 도달 비율(실측)</td><td>sim 반영 = <code>ALPHA_AXIS 0.85</code></td></tr>
-<tr><td class="ax">G_real/G_cad</td><td>실제/CAD 중력토크 비 ≈ g*×r</td><td>hip·calf ≈1 → CAD 질량모델 정확, 결손은 전달경로 몫 · thigh 0.88 미분해</td></tr>
+<tr><td class="ax">토크스케일 r</td><td>= 경로 전달비: 명령토크 중 관절 도달 비율(실측)</td><td>sim 반영 = <code>ALPHA_AXIS 0.85</code></td></tr>
+<tr><td class="ax">G_real/G_cad</td><td>실제/CAD 중력토크 비 ≈ g*×r</td><td>hip·calf ≈1 → CAD 질량모델 정확, 결손은 전달경로 몫 · thigh 0.88 미분해 · foot 은 상수결손형이라 α 0.77·k 0.36 으로 분해</td></tr>
 <tr><td class="ax">τ_c·b·armature</td><td>X/α 규약(§0) · foot 셋은 tendon 좌표</td><td>조립 마찰 = 벤치 + foot 0.36(=FOOT_COMP·상수결손) · thigh ~+10%</td></tr>
 </tbody></table></div>
   <!-- ── 확정 파라미터 ─────────────────────────────── -->

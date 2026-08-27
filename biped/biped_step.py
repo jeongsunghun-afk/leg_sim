@@ -45,7 +45,7 @@ from biped_wbic import (STANCE_KD, W_ORI, W_POST, W_ANKLE, MU, MU_MARGIN,
 #     ⇒ 안정영역 **[≤0.24, 0.32]**. 상단을 가르는 건 **후진(vx −0.15)** 이다.
 #     0.30 = 평균 tilt 최저(1.00° vs 0.28→1.31 · 0.32→1.27) + 실패경계에서 두 칸.
 #   ⚠C++ cpp/src/biped_control.hpp 와 **같은 값**이어야 한다.
-T_STEP  = 0.30
+T_STEP  = float(os.environ.get('T_STEP', 0.30))   # ★env 로 개방(08-27) — 실측 플랜트 재스윕용
 DS_FRAC = 0.10          # 짧은 더블서포트
 STEP_H  = 0.06          # 스윙 발 들림 (★강건성 스윕: 0.05→0.06=발스침 여유. base0.50과 조합서 yaw 안정)
 K_CAP   = 1.0           # capture 이론값

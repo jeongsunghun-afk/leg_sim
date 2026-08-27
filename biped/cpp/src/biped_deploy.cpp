@@ -628,7 +628,8 @@ int main(int argc, char** argv){
   //     쓰는 검증용이라 실무상 문제가 안 됐지만, 알고 쓰는 것과 모르고 쓰는 것은 다르다.
   std::vector<double> jog_q(NJ, 0.0);        // 램프 중인 명령(**모델각 deg**)
   double jog_prev_t = 0; bool jog_init = false;
-  bool ground_refused=false;      // ★접지 가드 거부 래치(로그 폭주 방지)
+  bool ground_refused=false;
+  bool push_refused = false;             // ★push 거부 래치 (2026-08-27 검증 반박 반영)      // ★접지 가드 거부 래치(로그 폭주 방지)
   bool still_warned=false;        // ★정지 확인 거부 래치
   // ★★무장 직후 트레이스 (2026-08-20). hold 진입 즉시 속도트립이 반복되는데
   //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
@@ -884,6 +885,15 @@ int main(int argc, char** argv){
       } else if(!nfz) frz_warned=false;
       if(nfz && mode=="off"){ /* 동결 중에는 무장을 막는다 */ }
       frozen_now = nfz; }
+    // ★검토 #3 (2026-08-27): **무장 중** 동결은 즉시 E-stop — 동결값 위에서 토크/속도
+    //   트립은 침묵하고(입력이 얼었으니 임계 도달 불가) 추정기·WBIC 는 오제어를 계속한다
+    //   (FDCAN 다리 동결 = 실기 반복 재현 유형). 종전엔 off 상태의 무장만 막고
+    //   무장 중엔 배너·증거수집뿐이었다.
+    if(frozen_now>0 && mode!="off" && !estop){
+      std::printf("[deploy] ⛔ E-STOP: 통신 동결 %d채널 (무장 중) — 동결값 위 제어 금지 → limp·래치\n",
+                  frozen_now);
+      estop = true; mode = "off"; hw->enable(0);
+    }
 
     // ★★기동 시 **생존 확인**: 명령을 받기 전에 전 축이 실제로 갱신되는지 본다.
     //   동결은 세 번 다 같은 4채널이었고, 매번 **무장을 시도한 뒤에야** 드러났다.
@@ -986,6 +996,8 @@ int main(int argc, char** argv){
                  std::printf("[deploy] 명령 잠금 해제 — %s 수신\n", nm.c_str()); }
         }
         if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
+        if(nm!="push") push_refused = false;                     // ★push 거부도 같은 규약
+        if(push_refused && nm=="push") nm = "hold";              //   래치 중 재발행은 hold 로
         // ★★거부는 **래치**다 (2026-08-21, mock 실측으로 발견).
         //   종전엔 `ground_refused` 가 **검사만** 건너뛰게 했다. 그런데 GUI 는 stand 를
         //   20ms 마다 재전송하므로, 다음 폴에서 nm!=mode 로 다시 진입하고 검사는 건너뛴 채
@@ -1027,6 +1039,35 @@ int main(int argc, char** argv){
               fprintf(trc,"\n");
               std::printf("[deploy] 트레이스 → /tmp/arm_trace.csv (3초 — 블렌드 전체)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
+          if(mode=="push" && (prev_mode=="stand" || prev_mode=="walk")){
+            // ★검토 #7 (2026-08-27): 하중을 받는 stand/walk 에서 오클릭 한 번에
+            //   지지토크(WBIC)가 사라지던 경로 봉인 — push 는 매달림+저울 전제라 직행 금지.
+            std::printf("[deploy] STOP push 거부 — stand/walk 에서 직행 금지(지지 상실 위험). hold 로 잡는다.\n");
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            nm = "hold"; mode = "hold"; push_refused = true;   // ★래치(검증 반박 반영) — GUI 20ms
+          }                                                    //   재발행이 50Hz 스래시+처짐추종을 만들던 구멍
+          if(mode=="push"){
+            // ★매달림 확인 (2026-08-27 · float 와 같은 잣대) — push 전제 = "크레인 팽팽 +
+            //   발이 저울에 살짝(수백 g)". 체중이 실린 채 진입하면 지지력이 사라진다.
+            //   정상 push 세팅(프리로드 ~0.3kg)은 비 ~1.2 이하로 통과한다(실측).
+            for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+            d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+            d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+            for(int i=0;i<6;i++) d->qvel[i]=0.0;
+            mj_forward(m,d);
+            std::vector<double> tm(NJ,0.0); jm.ch_to_tau_joint(hs.tau_nm.data(), tm.data());
+            double hang=0, meas=0;
+            for(int j=0;j<NJ;j++){ hang += std::fabs(d->qfrc_bias[6+j]); meas += std::fabs(tm[j]); }
+            const double ratio=(hang>1e-6)?meas/hang:0.0;
+            const double gmax = getenv("FLOAT_GROUND_MAX") ? atof(getenv("FLOAT_GROUND_MAX")) : 1.25;
+            std::printf("[deploy] 매달림 확인(push) — 실측 |t|합 %.2f vs 예측 %.2f . 비 %.2f (상한 %.2f)\n",
+                        meas, hang, ratio, gmax);
+            if(ratio > gmax){
+              std::printf("[deploy] STOP push 거부 — 하중이 실려 있다. 크레인 이양 후 다시 누를 것.\n");
+              hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+              nm = "hold"; mode = "hold"; push_refused = true;   // ★래치 — 위와 동일 규약
+            }
+          }
           if(mode=="push"){
             // ★push 는 float 와 반대로 **접지(저울 접촉)가 전제**다 — 접지 거부를 안 건다.
             //   대신 힘은 반드시 0 에서 시작해 램프로만 오른다(계단 금지 = 저울/발 충격 방지).
@@ -1388,9 +1429,22 @@ int main(int argc, char** argv){
     bool wd = (mode!="off") && (lt - last_cmd_t) > watchdog_s;
     if(wd != wd_tripped){
       wd_tripped = wd;
-      std::printf(wd ? "[deploy] 워치독 트립 — 명령 두절 %.2fs > %.2fs → limp\n"
-                     : "[deploy] 워치독 해제 — 명령 복귀 (%.2f/%.2f)\n",
-                  lt-last_cmd_t, watchdog_s);
+      if(wd || lt-last_cmd_t < watchdog_s)   // ★off 강하로 wd 가 꺼진 직후의 허위 '해제' 억제
+        std::printf(wd ? "[deploy] 워치독 트립 — 명령 두절 %.2fs > %.2fs → limp\n"
+                       : "[deploy] 워치독 해제 — 명령 복귀 (%.2f/%.2f)\n",
+                    lt-last_cmd_t, watchdog_s);
+      if(wd && mode!="off"){
+        // ★검토 #1 (2026-08-27): 종전엔 명령이 복귀하면 같은 틱에 무가드 재무장 —
+        //   정지·접지·자세거리 가드와 blend 재시작·c.reset() 이 전부 우회돼, limp 중
+        //   처진 자세에 전 게인·완성 토크가 계단으로 걸렸다(낙하 중 재무장 사고 경로).
+        //   ⇒ E-stop 과 같은 급으로 off 강하 + 기동잠금 규약 재사용: 재무장은
+        //     off→X 정상 전이(모든 가드)를 밟고, 운전자가 다른 모드를 한 번 골라야 풀린다.
+        mode = "off";
+        hw->enable(0);            // mode 를 먼저 off 로 내리면 아래 enable 게이트를 안 타므로 명시 limp
+        boot_mode = (cmd.mode=="reset") ? "hold" : cmd.mode;   // 정제값 저장(reset 매핑 정합)
+        mode_locked = true;
+        std::printf("[deploy]   ★→ off 강하 + 명령 잠금 — 버튼을 다시 눌러 재무장한다(가드 경유)\n");
+      }
       std::fflush(stdout);
     }
     if(mode!="off") hw->enable(wd ? 0 : 1);

@@ -25,7 +25,8 @@ cd /home/rpetubt/simulation/biped && python3 tools/make_weighted_mjcf.py \
 cd /home/rpetubt/simulation/biped && ./run_deploy_hw.sh biped_from_quad_wHL.mjcf
 #   (GUI 끄기) 브래킷:
 cd /home/rpetubt/simulation/biped && python3 tools/float_gstar.py --axis HL_foot \
-    --lo 0.3 --hi 1.7 --step 0.1 --hold "1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
+    --lo 0.5 --hi 2.8 --step 0.15 --hold "1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
+#   ⚠범위 0.5~2.8 이어야 r=0.4~0.5 가설(g*≈2.0~2.5)까지 덮는다
 
 # 2. 조건 B — foot 관절각 −50° 창: biped_emb.yaml home.q_deg 를
 #    [0, 30, -20, -50, 0, 30, -20, -50] 로 임시 변경 후 배포기 재기동 → 같은 브래킷

@@ -748,19 +748,6 @@ def set_mode(mode):
     dpg.set_value('spd_sl', 0); dpg.set_value('vy_sl', 0); dpg.set_value('turn_sl', 0)
 
 
-def on_zero_pose():
-    """[Zero 자세] — jog 로 전축 관절 0°(측정 기준자세) 서행 이동 (2026-08-28 사용자 지정).
-
-    ⚠크레인 매달림 상태에서만 — Qhome8 에서 무릎이 38° 펴진다.
-    set_mode('jog') 는 실측각 시드 실패 시 모드를 안 보낸다(fail-closed) — 그때는 여기도 중단.
-    home 버튼과의 분업: home = 기하 진리(1점 Qhome8·2점 Qflat8, 배포기 고정) · zero = 전축 0°.
-    """
-    set_mode('jog')
-    if pub.cmd.get('mode') != 'jog':
-        return                     # jog 진입 취소(상태 미신선/한계 밖) — 명령 안 낸다
-    jog_zero()
-
-
 left  = JoyPad('joyL', 190, on_left, cross_only=True)   # ★십자만(전후 XOR 측방, 대각 금지)
 right = JoyPad('joyR', 190, on_right, x_only=True)
 
@@ -903,9 +890,6 @@ with dpg.window(tag='main'):
             _hb = dpg.add_button(label='Home 복귀', width=100, tag='mbtn_home', callback=lambda: set_mode('home'))
             dpg.add_text('(Qhome8/Qflat8)', color=(120, 130, 150))
         dpg.bind_item_theme(_hb, _home)
-        with dpg.group():              # ★Zero=전축 관절 0° — 측정 기준자세. jog 20dps 서행
-            dpg.add_button(label='Zero 자세', width=100, tag='mbtn_zero', callback=lambda: on_zero_pose())
-            dpg.add_text('(전축 0°·매달림)', color=(120, 130, 150))
         # ★Hold 버튼 제거 (2026-08-21, 사용자: "안 쓸 것").
         #   ⚠**모드 자체는 지우지 않았다** — 제어기가 내부 폴백으로 쓴다:
         #     reset→hold · 접지거부→hold · 자세거부→hold · --start-mode hold.

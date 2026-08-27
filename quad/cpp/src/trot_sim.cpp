@@ -225,6 +225,7 @@ int main(int argc,char**argv){
   double wall=std::chrono::duration<double>(std::chrono::high_resolution_clock::now()-t0).count();
   std::printf("\n=== 종료: STEPS=%d(%.1fs) x=%+.3f z=%.3f max_tilt=%.1f° falls=%d | ★침투평균 앞=%.1fmm 뒤=%.1fmm pitch=%.1f° | %.0f steps/s ===\n",
               STEPS,STEPS*dt,d->qpos[0],d->qpos[2],max_tilt,falls,pn?penF/pn*1000:0,pn?penR/pn*1000:0,pn?pitchSum/pn:0,STEPS/wall);
+  if(q.couple_calls) std::printf("  [COUPLE] 무릎모터(τ_calf−τ_foot) 피크=%.1fNm(한계126) 사영발동=%ld/%ld\n", q.couple_km_pk, q.couple_hits, q.couple_calls);
   std::printf("    토크effort 평균Σ|τ|=%.1fNm  calf평균Σ|τ|=%.2fNm (whip 관절)  발목최대ω=%.1f rad/s\n", pn?tauEff/pn:0, pn?calfTau/pn:0, footWmax);
   if(JSTAT && jstat_n>0){ std::printf("  [JSTAT] 관절별 τ·ω (정착후 %ld스텝)\n", jstat_n);
     std::printf("    %-9s %8s %8s %8s %8s\n","joint","τpeak","τrms","ωpeak","ωrms");

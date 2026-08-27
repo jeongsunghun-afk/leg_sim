@@ -44,9 +44,13 @@ struct QuadControl {
   // ★calf-foot 커플 모터공간 사영: 실기 관절토크 τ_calf=τ_km+τ_am·τ_foot=τ_am(발목모터, 이미 ±peak_foot 클램프).
   //   τ_km=clip(τ_calf−τ_am,±peak_calf) 후 재조합 → 독립박스가 허용하던 실기불가 코너(|τ_calf−τ_foot|>126) 제거.
   //   물리적 사영(드라이브가 실제 하는 것)=비물리 캡 아님. 한계: MOTOR_CURVE의 속도의존 감소는 미커플(후속).
+  long couple_hits=0, couple_calls=0; double couple_km_pk=0;   // ★binding 계측: 사영이 토크를 실제로 바꾼 횟수
   void couple_clamp(mjData* dd){ if(!couple_on) return;
     for(int a2=0;a2<nu;a2++){ int c=cpl_calf_of[a2]; if(c<0) continue;
-      double am=dd->ctrl[a2], km=std::max(-tau_peak[c],std::min(tau_peak[c],dd->ctrl[c]-am));
+      double am=dd->ctrl[a2], km_raw=dd->ctrl[c]-am;
+      double km=std::max(-tau_peak[c],std::min(tau_peak[c],km_raw));
+      if(std::abs(km_raw)>couple_km_pk) couple_km_pk=std::abs(km_raw);
+      if(km!=km_raw) ++couple_hits; ++couple_calls;
       dd->ctrl[c]=km+am; } }
                              // actuator별 앞다리(FL/FR) 여부
   bool stance_pin_ankle=false;                           // 17dof: stance서도 여유발목 핀(전4다리4DOF redundancy 표류차단)

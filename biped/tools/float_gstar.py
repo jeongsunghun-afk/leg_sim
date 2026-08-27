@@ -39,6 +39,45 @@ NAMES = ["HL_hip", "HL_thigh", "HL_calf", "HL_foot",
 
 _seq = [0]
 _bias = [None]          # 축별 기준배율(2차 패스에서 심는다)
+_ARGS = [None]          # ★outer 안전망 (08-27 버그헌트): main 밖 finally 에서 씀
+_QSTART = [None]        # 시작 매달림 자세 — 로봇을 움직이기 **직전**에만 세팅
+_SHUT = [False]
+RATED_G = [1.20, 1.10, 1.22, 1.00, 1.18, 1.10, 1.22, 1.00]   # run_deploy_hw.sh 와 동기
+
+
+def safe_shutdown():
+    """안전 종료(멱등) — jog 로 시작 매달림 자세 서행복귀 → 무여자 → ★운용배율 원복.
+
+    08-27 버그헌트 반영: ①생존확인(home 이동)·판독 중 Ctrl+C 도 outer finally 가 이리 온다
+    ②jog 루프가 E-stop 래치 감시(래치면 jog 사장 — 26.5s 헛대기+거짓 '완료' 방지)
+    ③grav_scale_joint 운용값 원복(스윕 잔재가 다음 float 세션을 오염하던 HIGH 구멍).
+    """
+    if _SHUT[0] or _QSTART[0] is None:
+        return
+    _SHUT[0] = True
+    _bias[0] = None
+    a, q_start = _ARGS[0], _QSTART[0]
+    try:
+        latched = False
+        print("\n  ■ 안전 종료 — 시작 매달림 자세로 서행 복귀(jog) 후 무여자.")
+        t0 = time.time()
+        while time.time() - t0 < 25.0:
+            if estopped():
+                latched = True; break
+            cur = hold("jog", 0.5, jog_deg=list(q_start))
+            if cur and max(abs(x - y) for x, y in zip(cur, q_start)) < 1.5:
+                break
+        if latched:
+            print("  ⛔ E-stop 래치 — jog 가 무시된다. **로봇 위치를 눈으로 확인**하고 배포기 재기동할 것.")
+        else:
+            hold("jog", 1.5, jog_deg=list(q_start))
+        send(mode="off")
+        base = [float(x) for x in a.hold.split(",")] if (a and a.hold) else list(RATED_G)
+        send(mode="off", grav_scale_joint=base)   # ★배율 원복(off 라 무영향·다음 세션 대비)
+        if not latched:
+            print("  ✅ 안전 종료 완료(무여자·배율 원복) — 배포기·Emb 를 꺼도 된다.")
+    except Exception as e:
+        print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI [무중력] 배율을 서서히 0 으로 내린 뒤 off")
 
 
 def send(**kw):
@@ -169,7 +208,7 @@ def main() -> int:
         print("✗ /tmp/biped_state.json 에서 q_leg_deg 를 못 읽는다.")
         print("  biped_deploy 가 떠 있는지 확인할 것.")
         return 1
-    q_start = q()   # ★시작(수동 매달림) 자세 — 종료 때 여기로 서행 복귀하면 낙차 0
+    _ARGS[0] = a
 
     # ★★**경쟁 발행자 검사** — GUI 가 떠 있으면 20ms 마다 자기 모드로 덮어쓴다.
     #   그러면 float 와 hold 가 번갈아 들어가 측정이 통째로 무의미해진다(그리고 로봇이 떤다).
@@ -206,6 +245,7 @@ def main() -> int:
     # ★생존 확인 — home 을 한 번 돌려 로봇이 **실제로 움직이는지** 본다.
     #   안 움직이면 E-stop 래치이거나 통신 두절이다. 그 상태로 스윕하면 전 축 표류 0 이
     #   나오고, 그건 "완벽한 중립" 이 아니라 **아무 데이터도 없는 것**이다.
+    _QSTART[0] = q()   # ★수동 매달림 자세 — 이 줄부터 outer 안전망 활성(로봇이 움직이기 시작)
     qa = q(); hold("home", max(3.0, a.settle)); qb = q()
     moved = max(abs(x - y) for x, y in zip(qa, qb)) if (qa and qb) else 0.0
     print(f"  생존 확인 — home 으로 최대 {moved:.2f}° 이동")
@@ -221,42 +261,47 @@ def main() -> int:
         _bias[0] = bias
         out_rows = []
         print(f"\n■ {tag}")
-        for gv in grid:
-            if bias is not None:
-                _bias[0] = [b * gv for b in bias]     # 축별 기준 × 공통배수
-            hold("home", a.settle)
-            q0 = q()
-            if q0 is None:
-                print("✗ 상태를 못 읽는다 — 중단"); return out_rows
-            t0 = time.time(); q1 = q0
-            while time.time() - t0 < a.dwell:
-                send(mode="float", grav_scale=(1.0 if bias is not None else gv))
-                time.sleep(0.05)
-                cur = q()
-                if cur:
-                    q1 = cur
-                    if max(abs(x - y) for x, y in zip(q0, q1)) > a.abort_deg:
-                        break
-            el = max(1e-3, time.time() - t0)
-            d = [(y - x) / el for x, y in zip(q0, q1)]
-            sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
-            es = estopped()
-            if es:
-                print(f"\n  ⛔ **E-stop 래치** ({es}) — 스윕 중단.")
-                print("     래치되면 전 축 무여자다. 이 뒤 점들은 표류가 배율과 무관해져")
-                print("     **넓은 마찰 밴드처럼 보인다** — 데이터가 아니다.")
-                return out_rows
-            out_rows.append((gv, d, sat))
-            mx = max(range(NJ), key=lambda i: abs(d[i]))
-            print(f"  ×{gv:.3f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
-                  + ("★포화" if any(sat) else "    ") + " "
-                  + " ".join((f"{v:+6.2f}" + ("*" if sat[i] else " ")) for i, v in enumerate(d)),
-                  flush=True)
-            # ⚠창이 무너지면 그 위는 전부 무의미하다 — 조기 종료한다
-            if el < a.dwell * 0.35:
-                print(f"  ⚠관측창이 {el:.1f}s 로 무너졌다({a.dwell:.0f}s 목표의 "
-                      f"{el/a.dwell*100:.0f}%) — 이 위 배율은 **다른 축까지 오염**시킨다. 스윕 중단.")
-                break
+        try:
+            for gv in grid:
+                if bias is not None:
+                    _bias[0] = [b * gv for b in bias]     # 축별 기준 × 공통배수
+                hold("home", a.settle)
+                q0 = q()
+                if q0 is None:
+                    print("✗ 상태를 못 읽는다 — 중단"); return out_rows
+                t0 = time.time(); q1 = q0
+                while time.time() - t0 < a.dwell:
+                    send(mode="float", grav_scale=(1.0 if bias is not None else gv))
+                    time.sleep(0.05)
+                    cur = q()
+                    if cur:
+                        q1 = cur
+                        if max(abs(x - y) for x, y in zip(q0, q1)) > a.abort_deg:
+                            break
+                el = max(1e-3, time.time() - t0)
+                d = [(y - x) / el for x, y in zip(q0, q1)]
+                sat = [abs(y - x) >= a.abort_deg * 0.98 for x, y in zip(q0, q1)]
+                es = estopped()
+                if es:
+                    print(f"\n  ⛔ **E-stop 래치** ({es}) — 스윕 중단.")
+                    print("     래치되면 전 축 무여자다. 이 뒤 점들은 표류가 배율과 무관해져")
+                    print("     **넓은 마찰 밴드처럼 보인다** — 데이터가 아니다.")
+                    return out_rows
+                out_rows.append((gv, d, sat))
+                mx = max(range(NJ), key=lambda i: abs(d[i]))
+                print(f"  ×{gv:.3f} [{el:.1f}s] 최대 {NAMES[mx]:9s}{d[mx]:+7.2f}°/s"
+                      + ("★포화" if any(sat) else "    ") + " "
+                      + " ".join((f"{v:+6.2f}" + ("*" if sat[i] else " ")) for i, v in enumerate(d)),
+                      flush=True)
+                # ⚠창이 무너지면 그 위는 전부 무의미하다 — 조기 종료한다
+                if el < a.dwell * 0.35:
+                    print(f"  ⚠관측창이 {el:.1f}s 로 무너졌다({a.dwell:.0f}s 목표의 "
+                          f"{el/a.dwell*100:.0f}%) — 이 위 배율은 **다른 축까지 오염**시킨다. 스윕 중단.")
+                    break
+        except KeyboardInterrupt:
+            # ★08-27 버그헌트: Ctrl+C 로 스윕이 통째로 증발하던 것 — 수집분은 살려서
+            #   판독·JSON 저장까지 간다(안전 종료는 finally 의 safe_shutdown 몫).
+            print(f"\n  ⛔ 사용자 중단 — 수집한 {len(out_rows)}점만으로 판독한다.")
         return out_rows
 
     def crossings(rows, label=""):
@@ -325,6 +370,7 @@ def main() -> int:
 
     grid1 = grid
     rows1, rows2, res2 = [], [], None
+    res1 = None          # ★1차 스윕 중단 시 NameError 방지 (08-27 버그헌트)
 
     # ── ★축별 스윕 경로 — 여기서 끝낸다(2차 패스 없음) ────────────────────
     if a.axis:
@@ -369,24 +415,7 @@ def main() -> int:
         except KeyboardInterrupt:
             print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
         finally:
-            _bias[0] = None
-            # ★안전 종료 v3 (08-27): 종전 home+hold 는 도구 종료 직후 워치독 limp 로
-            #   추 달린 다리가 낙하했다("팍"). v1·v2 램프다운은 이 축별 경로를 안 지나
-            #   미실행이었다 — 시작 매달림 자세(q_start)로 jog 서행 복귀 → 수동 평형 →
-            #   off 낙차 0. (붙잡는 힘을 줄이는 방식은 중력상수 탓에 말미 낙하가 필연)
-            try:
-                if q_start:
-                    print("\n  ■ 안전 종료 — 시작 매달림 자세로 서행 복귀(jog) 후 무여자.")
-                    t0f = time.time()
-                    while time.time() - t0f < 25.0:
-                        cur = hold("jog", 0.5, jog_deg=list(q_start))
-                        if cur and max(abs(x - y) for x, y in zip(cur, q_start)) < 1.5:
-                            break
-                    hold("jog", 1.5, jog_deg=list(q_start))
-                send(mode="off")
-                print("  ✅ 안전 종료 완료(무여자·수동 평형) — 배포기·Emb 를 꺼도 된다.")
-            except Exception:
-                pass
+            safe_shutdown()   # ★멱등 — outer finally 와 중복 호출돼도 1회만 동작
         br = bracket(rows)
         gs, bd, lo, hi, why = br[a.axis]
         print(f"\n■ 결과 — {a.axis}\n")
@@ -431,25 +460,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n  (중단됨 — 지금까지 모은 점으로 계산한다)")
     finally:
-        _bias[0] = None
-        try:
-            # ★안전 종료 v3 (2026-08-27): 배율/게인 램프다운은 두 번 다 실패했다 —
-            #   중력토크는 상수인데 붙잡는 힘만 줄이면 말미에 반드시 "버티다 놓침"이 된다.
-            #   올바른 종료 = **낙차가 0 인 자세로 이동한 뒤 끄는 것**: 도구 시작 시의
-            #   수동 매달림 자세(q_start)로 jog(20dps 위치제어) 서행 복귀 → 수동 평형이므로
-            #   off 로 바꿔도 움직일 것이 없다. (hold() 20Hz 가 워치독을 먹인다)
-            if q_start:
-                print("\n  ■ 안전 종료 — 시작 매달림 자세로 서행 복귀(jog) 후 무여자.")
-                t0 = time.time()
-                while time.time() - t0 < 25.0:
-                    cur = hold("jog", 0.5, jog_deg=list(q_start))
-                    if cur and max(abs(x - y) for x, y in zip(cur, q_start)) < 1.5:
-                        break
-                hold("jog", 1.5, jog_deg=list(q_start))     # 정착
-            send(mode="off")
-            print("  ✅ 안전 종료 완료(무여자·수동 평형 자세) — 배포기·Emb 를 꺼도 된다.")
-        except Exception as e:
-            print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI [무중력]에서 배율을 서서히 0 으로 내릴 것")
+        safe_shutdown()   # ★멱등
 
     # ── ★브래킷 판독 (2026-08-24) — 이쪽이 물리적으로 옳다 ────────────────
     #   ⚠아래 '영교차' 표와 **나란히** 낸다. 종전 표를 지우지 않는 이유:
@@ -474,6 +485,8 @@ def main() -> int:
     # ── 최종 ────────────────────────────────────────────────────────────
     print("\n■ 결과 — 축별 중립점(영교차 보간 · 종전 기준)\n")
     print(f"  {'축':10s}{'g*':>9s}{'1/g*':>8s}   판정 / 근거")
+    if res1 is None and res2 is None:
+        print("  ⚠판독할 스윕 결과가 없다 — 종료"); return 1
     out = {}
     for i, n in enumerate(NAMES):
         gs, why = (res2 or res1)[n]
@@ -504,4 +517,12 @@ def main() -> int:
     return 0
 
 
-sys.exit(main())
+if __name__ == "__main__":
+    try:
+        rc = main()
+    except KeyboardInterrupt:
+        print("\n⛔ 사용자 중단(Ctrl+C)")
+        rc = 130
+    finally:
+        safe_shutdown()   # ★outer 안전망(멱등) — 로봇이 움직인 뒤라면 어느 지점에서 끊겨도 서행복귀
+    sys.exit(rc)

@@ -154,7 +154,7 @@ class BipedWBIC:
         # ★foot 상수결손 보상(08-27) — 토크부호 기반 k·tanh(τ/τ0). C++ FOOT_COMP_NM 파리티.
         #   속도기반 FRIC_COMP 와 달리 준정적/저속 힘제어에서도 작동. 기본 0(꺼짐).
         self.FOOT_COMP = float(os.environ.get('FOOT_COMP_NM', '0'))
-        self.FOOT_COMP_T0 = float(os.environ.get('FOOT_COMP_T0', '0.30'))
+        self.FOOT_COMP_T0 = max(1e-3, float(os.environ.get('FOOT_COMP_T0', '0.30')))  # 0 나눗셈 가드
         self.sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in ['HL_sphere', 'HR_sphere']]
         self.fbody = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]

@@ -123,40 +123,41 @@ def main() -> int:
     th = threading.Thread(target=_heartbeat, daemon=True)
     th.start()
 
-    # ── ★시작 시 home 정렬 (2026-08-25) — GUI 를 끈 뒤에는 home 을 시킬 방법이
-    #   없고, GUI 종료~도구 시작 사이 워치독 limp 로 다리가 처져 있을 수도 있다.
-    #   ⇒ 도구가 직접 home 을 잡고, 엔코더 정지(같은 기준)로 도달을 확인한 뒤 push 로 간다.
-    if not a.no_home:
-        print('  home 정렬 중… (엔코더 정지로 도달 판정)')
-        _cur['mode'] = 'home'
-        t0 = time.time(); buf = []
-        while time.time() - t0 < 20.0:
-            q = st().get('q_leg_deg')
-            if q:
-                buf.append((time.time(), q))
-                buf = [(t, v) for t, v in buf if time.time() - t <= 1.5]
-                if len(buf) >= 2 and buf[0][0] <= time.time() - 1.4:
-                    span = max(max(v[j] for _, v in buf) - min(v[j] for _, v in buf)
-                               for j in range(NJ))
-                    if span < 0.15:
-                        break
-            if st().get('estop'):
-                print('⛔ E-stop — 중단'); _stop[0] = True; return 1
-            time.sleep(0.1)
-        print('  home 도달. ★저울 위치·발 접촉을 확인하고 엔터를 누르면 push 로 넘어간다.')
-        try:
-            input('  준비되면 엔터: ')
-        except EOFError:
-            pass
-        _cur['mode'] = 'push'
-
     rows = []
     # ★점마다 즉시저장 — 축사망/터미널 사망 등 어떤 형태로 끊겨도 데이터가 남는다
     #   (드라이버 과도→축사망 전조 확인 후 보강, 2026-08-26)
     out = '/tmp/push_scale_%s_%s.json' % (a.leg, time.strftime('%Y%m%d-%H%M%S'))
     def _save():
         json.dump({'leg': a.leg, 'rows': rows}, open(out, 'w'), indent=1)
+    # ★08-27 버그헌트: try 를 home 정렬 앞까지 확장 — 종전엔 home 이동·input 대기 중
+    #   Ctrl+C 가 finally(안전 처짐)를 안 타서, 로봇을 세워둔 채 도구만 죽었다.
     try:
+        # ── ★시작 시 home 정렬 (2026-08-25) — GUI 를 끈 뒤에는 home 을 시킬 방법이
+        #   없고, GUI 종료~도구 시작 사이 워치독 limp 로 다리가 처져 있을 수도 있다.
+        #   ⇒ 도구가 직접 home 을 잡고, 엔코더 정지(같은 기준)로 도달을 확인한 뒤 push 로 간다.
+        if not a.no_home:
+            print('  home 정렬 중… (엔코더 정지로 도달 판정)')
+            _cur['mode'] = 'home'
+            t0 = time.time(); buf = []
+            while time.time() - t0 < 20.0:
+                q = st().get('q_leg_deg')
+                if q:
+                    buf.append((time.time(), q))
+                    buf = [(t, v) for t, v in buf if time.time() - t <= 1.5]
+                    if len(buf) >= 2 and buf[0][0] <= time.time() - 1.4:
+                        span = max(max(v[j] for _, v in buf) - min(v[j] for _, v in buf)
+                                   for j in range(NJ))
+                        if span < 0.15:
+                            break
+                if st().get('estop'):
+                    print('⛔ E-stop — 중단'); _stop[0] = True; return 1
+                time.sleep(0.1)
+            print('  home 도달. ★저울 위치·발 접촉을 확인하고 엔터를 누르면 push 로 넘어간다.')
+            try:
+                input('  준비되면 엔터: ')
+            except EOFError:
+                pass
+            _cur['mode'] = 'push'
         for tgt in grid:
             _cur['push_fz'] = float(tgt)
             # 램프 도달 대기 (+ E-stop 감시 — 래치되면 이후 전부 쓰레기다: float_gstar 교훈)

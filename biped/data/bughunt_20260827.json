@@ -1,0 +1,155 @@
+{
+ "confirmed": [
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 209,
+   "title": "생존확인 home 이동이 안전종료 try/finally 밖 — Ctrl+C 시 워치독 limp 낙하",
+   "severity": "high",
+   "claim": "안전종료 v3 의 try/finally 는 411행에서 시작하는데, 로봇을 실제로 움직이는 생존확인 hold(\"home\", max(3,settle)) (209행)·E-stop 해제(192-193행)는 그 밖에 있다. 이 구간(약 6~8초, 매달림 자세→home 최대 ~47° 이동)에서 KeyboardInterrupt 가 나면 jog 복귀도 off 도 없이 프로세스가 죽는다.",
+   "scenario": "운영자가 home 이동 중 이상(줄 꼬임·추 걸림)을 보고 Ctrl+C → 명령파일 발행 중단 → 워치독(내용변화 500ms)이 enable(0) limp → 추 달린 다리가 home 자세에서 자유낙하('팍'). v3 가 막으려던 바로 그 낙하가 도구 시작 6초 안에서는 여전히 발생한다.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct read. float_gstar.py:209 (`hold(\"home\", max(3.0, a.settle))`) and the E-stop clear at 192-193 run before either protective try/finally (axis path try at line 338, common path try at line 411); the file has no signal handler or atexit, and line 507 is bare `sys.exit(main())`, so a KeyboardInterrupt during the ~6-8s survival-check home move kills the process with no jog return and no `send(mode=\"off\")`. Command publishing then stops, and the consumer's watchdog (emb/app/biped_emb.py:511-519, content-change based — float_gstar bumps `seq` each send precisely to feed it) trips to limp within ~500ms. At that moment the robot is at/near home (up to ~47° from the manual hanging equilibrium q_start per the file's own comment at line 157), so the weighted leg free-falls — the exact \"팍\" drop that safe-shutdown v3 (lines 373-376, 436-450) was written to prevent. Only nuance: interruption during the off-mode E-stop clear (192-193) is benign since the robot is already limp at the hanging equilibrium; the dangerous unprotected window is the home move itself, exactly as the finding states.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 479,
+   "title": "1차 스윕 중 Ctrl+C → res1 미정의 NameError 크래시·JSON 저장 전량 유실",
+   "severity": "medium",
+   "claim": "KeyboardInterrupt 가 sweep() 내부(412행 호출 중)에서 나면 rows1=[](327행 초기값) 그대로이고 res1 은 한 번도 대입되지 않는다(413행 미도달). 431행 except 가 '지금까지 모은 점으로 계산한다'를 찍지만, 475행 최종 표에서 (res2 or res1)[n] (479행)이 NameError 로 죽어 496-503행 원자료 JSON 저장이 실행되지 않는다. sweep() 의 out_rows 는 지역변수라 인터럽트 시점까지 모은 점 자체도 반환되지 못하고 사라진다(2차 스윕 중단 시에도 동일하게 rows2 점 유실).",
+   "scenario": "40분짜리 1차 공통 스윕을 13점째에서 Ctrl+C 로 중단 → 안전종료는 수행되지만 직후 traceback(NameError: res1)으로 크래시 → 브래킷/영교차 표도 미완, /tmp/float_gstar_*.json 미생성 → 13점 실기 데이터 전량 유실. 메시지('모은 점으로 계산')와 정반대 동작.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct read of /home/jsh/simulation/biped/tools/float_gstar.py. res1 is bound only at line 413, after the 1st sweep call at line 412; line 327 initializes only rows1/rows2/res2. A KeyboardInterrupt inside sweep() at line 412 leaves rows1=[] and res1 unbound (sweep's local out_rows with the partial points is discarded on unwind). The line-431 handler prints '지금까지 모은 점으로 계산한다' and the finally block completes the safe shutdown, but at line 479 `(res2 or res1)[n]` evaluates res1 (res2 is None → falsy) and raises an uncaught NameError on the first axis, so the JSON dump at lines 496-503 never runs — no /tmp/float_gstar_*.json is written and the collected points are programmatically lost. The 2nd-sweep-interrupt variant does not crash (res1 already bound) but likewise loses rows2's partial out_rows. Only minor overstatements: the bracket table does print (with all '유효점 부족' rows), and per-point drift rates remain in terminal scrollback, so the data is not literally 100% lost — but no machine-readable output survives.",
+    "severity": "medium"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/push_scale.py",
+   "line": 148,
+   "title": "home 정렬~준비 엔터 구간이 try/finally 밖 — Ctrl+C 시 램프다운 없이 limp",
+   "severity": "medium",
+   "claim": "안전종료 finally 는 159행 try 부터 유효한데, 시작 home 정렬 루프(129-145행)와 '준비되면 엔터' input()(148행)은 그 앞이다. 이 구간의 KeyboardInterrupt 는 147행 try 가 EOFError 만 잡으므로 그대로 전파되어, 힘 0 램프→float→배율 램프다운→off 시퀀스가 통째로 건너뛰어진다. 하트비트는 daemon 스레드라 프로세스와 함께 죽는다.",
+   "scenario": "home 도달 후 저울 위치가 틀린 걸 보고 엔터 대신 Ctrl+C → 프로세스 종료 → 워치독 500ms limp → home 위치서보로 서 있던 다리가 저울/바닥 위로 무릎 꺾이며 낙하. dea02d5 가 넣은 안전종료가 가장 흔한 중단 지점(준비 프롬프트)을 보호하지 못한다.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct read of /home/jsh/simulation/biped/tools/push_scale.py. The safe-shutdown finally (lines 216-239: force-0 ramp → float → grav-scale ramp-down → off) belongs to the try starting at line 159, while the home-alignment loop (129-145) and the readiness input() (148) run before it. The try at 147 catches only EOFError, no signal handler exists, and the except KeyboardInterrupt at 214 belongs to the later try — so Ctrl+C at the prompt (or in the home loop's sleep at 145) propagates uncaught and the process dies. The heartbeat thread is daemon=True (line 123), so command writes stop instantly; per the 500ms content-change watchdog the deployer limps while the robot is position-servoing home mode (set at line 131). The 2026-08-27 safety patch (comment 217-222) thus fails to cover the most common interruption point, exactly as claimed. Mitigation keeping it below high: at that prompt push_fz is still 0 (no sweep load yet) and the procedure mandates a taut crane rope (line 121), so the limp collapse is from an unloaded home stance with the crane partially arresting it — unlike a mid-sweep interrupt under load, which the finally does protect.",
+    "severity": "medium"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 449,
+   "title": "종료 시 축별 중력배율(grav_axis) 원복 없음 — 다음 float 세션이 스윕 잔재로 기동",
+   "severity": "high",
+   "claim": "스윕 동안 grav_scale_joint 를 계속 발행해 배포기의 grav_axis 를 덮어쓰지만(biped_deploy.cpp:961-976), 종료 finally 는 jog·off 만 보내고 배율을 원복하지 않는다(push_scale.py:236 은 BASE_G 원복을 명시적으로 함). 배포기는 grav_axis[j]>=0 이면 공통 grav_scale 을 무시하고(biped_deploy.cpp:1611), GUI 는 공통값만 발행하므로(teleop_gui_biped.py:109,254) GUI 슬라이더로는 되돌릴 수도 없다.",
+   "scenario": "--axis HL_thigh --hi 1.6 스윕(나머지 --hold 미지정=1.0) 후 도구 종료. 같은 배포기 세션에서 나중에 GUI [무중력]을 켜면 run_deploy_hw.sh 의 정격 1.20/1.10/1.22/1.00 대신 thigh 1.6·나머지 1.0 이 적용 — thigh 는 45% 과보상으로 떠오르고 hip 은 17% 부족으로 처짐 → 속도트립 → limp 낙하. 공통 스윕 경로도 마지막 점(bias×1.10)이 잔류한다.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed, not refuted. float_gstar.py publishes grav_scale_joint every sweep point (axis path lines 340-347; common path lines 56-57/226/233), which biped_deploy.cpp:961-972 latches into grav_axis; the only assignments to grav_axis are env-init (476/479) and that command path, and read_cmd (deploy_hw.hpp:504) returns an empty vector when the key is absent, so absence means \"keep last value\" — the residue persists for the deployer session. Both finally blocks (float_gstar.py:371-389 and 433-452, send(mode=\"off\") at 449) set _bias=None and send only jog/off with no grav_scale_joint, so the last sweep point remains latched (thigh≈1.6/others 1.0 for --axis HL_thigh --hi 1.6 without --hold; bias×1.10 for the common path). push_scale.py:236-237 restores BASE_G explicitly (\"다음 세션 대비\"), confirming the intended convention float_gstar omits. biped_deploy.cpp:1611/1653 prefer grav_axis over common GRAV_SCALE once set, and teleop_gui_biped.py (109, 254-261) only publishes the common grav_scale, so the GUI cannot restore the rated table (run_deploy_hw.sh:71 = 1.20,1.10,1.22,1.00,...). The scenario follows: later GUI [무중력] applies thigh 1.6 (+45% over vs rated 1.10) and hip 1.0 (17% under vs 1.20) → rise/sag → velocity trip → E-stop limp drop; the corrupted grav_axis also survives E-stop re-arm and poisons subsequent float/push measurements in that deployer session.",
+    "severity": "high"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/float_gstar.py",
+   "line": 444,
+   "title": "jog 복귀 루프에 E-stop 감시 없음 — 래치 시 26.5초 헛대기 후 거짓 '낙차 0' 성공 보고",
+   "severity": "medium",
+   "claim": "안전종료의 jog 복귀(공통 경로 444-448행, 축별 경로 381-385행)는 estopped() 를 확인하지 않는다. E-stop 래치 중 배포기는 off 이외 모드를 전부 무시하므로(biped_deploy.cpp:988-991) jog 명령은 전부 사장되고, cur 가 q_start 에 수렴하지 못해 25s 타임아웃+1.5s 정착을 꽉 채운 뒤 무조건 '✅ 안전 종료 완료(무여자·수동 평형)'(450행)를 찍는다. q_start 가 None 인 경로(441행 guard)도 복귀 없이 같은 성공 메시지를 찍는다. 스윕 중단의 최다 원인이 바로 E-stop 래치인데, 이 경우 다리는 래치 순간 이미 낙하했다.",
+   "scenario": "스윕 고배율 점에서 속도트립 래치 → 스윕 중단 → finally 가 limp 로봇에 26.5초간 jog 를 발행하며 대기 → '낙차 0 안전 종료 완료' 출력. 운영자는 로그만 믿고 낙하·충격이 없었다고 기록하지만 실제로는 래치 시점에 측정 자세에서 '팍' 낙하가 있었다. 래치 시 즉시 경고하고 넘어가야 할 26.5초도 낭비.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct read. float_gstar.py's safety-exit jog loops (common path 444-448, axis path 381-385) never call estopped(); its only call sites are the sweep loops (lines 243, 357). biped_deploy.cpp:988-991 coerces every non-\"off\" command to \"off\" while the estop latch holds (only a received \"off\" clears it), and line 1490 keeps the robot limp — so all jog commands in the finally block are dead. The loop then exhausts the 25 s timeout plus the fixed 1.5 s settle (line 448/385) and unconditionally prints \"✅ 안전 종료 완료(무여자·수동 평형 자세)\" (line 450/387), falsely reporting a zero-drop shutdown when the weighted leg already dropped at latch time (hw->enable(0) at biped_deploy.cpp:1455/1469/1486; the tool's own comments at 373-376 document this limp \"팍\" drop). The q_start-falsy path (441 guard) likewise prints the same success message with no return, though line 168's early exit makes it unlikely. Only caveat: the 25 s wait could break early if the limp leg passively settles within 1.5° of q_start on all 8 axes, but friction deadbands and the ~home-pose latch position make that improbable, and the false success report stands either way. The code is this week's (comment \"안전 종료 v3 (08-27)\").",
+    "severity": "medium"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/sim_stand_walk_check.py",
+   "line": 42,
+   "title": "서브프로세스 env 상속 — FOOT_COMP_NM 미고정으로 base/real 시나리오 오염",
+   "severity": "medium",
+   "claim": "run_one 은 dict(os.environ, ALPHA_AXIS=…, FRIC_COMP='0') 로 부모 셸 환경을 통째로 상속하며 FOOT_COMP_NM 을 고정하지 않는다(walk1_comp 만 0.36 을 명시). run_deploy_hw.sh:75 가 FOOT_COMP_NM=0.36 을 운용 기본값으로 쓰는 워크플로라 셸에 export 되어 있을 개연성이 높다. walk_demand_check.py:20 도 FOOT_COMP_NM·T_STEP 을 미고정(헤더에 'T_STEP 0.30' 이라 인쇄하면서 셸의 T_STEP 을 그대로 상속), walk_validation_battery.py:21 도 FOOT_COMP_NM 미고정. 또한 세 도구 모두 subprocess.run(timeout=1800)의 TimeoutExpired 를 잡지 않아 한 케이스 지연이 배터리 전체를 traceback 으로 중단시킨다.",
+   "scenario": "운영자가 셸에 export FOOT_COMP_NM=0.36 을 해 둔 상태에서 sim_stand_walk_check 실행 → 보상 OFF 최악조건이어야 할 walk1_real(및 stand/walk base·meas 전부)에 제어기측 foot 보상이 몰래 켜져 walk1_real 과 walk1_comp 가 동일 결과 → 'FOOT_COMP 효과 없음'이라는 거짓 결론. 배터리의 T_STEP 재스윕 결론도 상속된 T_STEP 에 따라 조용히 바뀔 수 있다.",
+   "src": "tools",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct source inspection. sim_stand_walk_check.py:42-43 inherits the full parent env (dict(os.environ, ...)) and pins only ALPHA_AXIS/FRIC_COMP; FOOT_COMP_NM is set only for walk1_comp (line 35), not walk1_real (lines 32-33) or any base/meas scenario. biped_wbic.py:156 reads FOOT_COMP from env FOOT_COMP_NM (default 0) and applies it at lines 182-184 with no contact-mode gate, so an inherited export activates controller-side foot compensation even in 1pt walk — making walk1_real identical to walk1_comp and yielding the false 'FOOT_COMP has no effect' verdict. run_deploy_hw.sh:75 (export FOOT_COMP_NM=\"${FOOT_COMP_NM:-0.36}\") makes 0.36 the operational default, so a sourced script or operator export is realistic; no tool prints the effective FOOT_COMP, so contamination is silent. walk_demand_check.py:20 also fails to pin T_STEP while line 74 prints a hardcoded 'T_STEP 0.30' header, and biped_step.py:48 reads T_STEP from env at import (opened 08-27), so trip-setting recommendations can be measured at a different T_STEP than reported. walk_validation_battery.py:21 pins T_STEP but not FOOT_COMP_NM, silently shifting PART A/B verdicts. All three tools use subprocess.run(timeout=1800) with no TimeoutExpired handling (sim_stand_walk_check.py:70, walk_demand_check.py:61, walk_validation_battery.py:53), so one hung case aborts the whole battery with a traceback. Severity is medium rather than high because the contamination fires only when the operator's shell already exports FOOT_COMP_NM/T_STEP (a normal child-process run of run_deploy_hw.sh does not leak into the interactive shell); from a clean shell all defaults are correct.",
+    "severity": "medium"
+   }
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 1311,
+   "title": "stand 거부 재래치가 prev_mode=hold 에서 지령목표(hold_ch)를 측정각으로 덮어써 처짐 래칫 재생성 (:1311, :1355 2개소)",
+   "severity": "medium",
+   "claim": "e5914ea 가 고쳐 쓴 두 거부래치의 else 가지(`: hs.q_deg`)는 prev_mode 가 \"home\" 이 아니면 무조건 측정각을 래치한다. 그런데 권장 절차(home→hold→접지→stand, :604·:1551)에서는 stand 를 hold 에서 누르므로 prev_mode==\"hold\" 가 되고, 이때 이미 유효한 지령목표(home 인계 home_to 또는 이전 q_ch 래치)를 가진 hold_ch 가 '지금 처져 있는 측정각'으로 덮인다. 08-21 수정이 제거한 '측정각 래치 → 처짐 누적'(:1117-1119) 경로가 이 전이에서만 되살아난다.",
+   "scenario": "home 완료 → hold(home_to 인계, 처짐을 되당기는 상태) → 크레인을 내리며 stand 를 조금 일찍 누름 → 접지비 1.1<1.25 로 거부 → hold_ch 가 home_to 에서 '30% 하중에 눌려 처진 측정각'(thigh 2~4° 아래)으로 교체. hold 는 이제 처진 자세를 목표로 버틴다. 크레인을 더 내리면 더 처지고, hold 버튼(래치 해제)→stand 재시도가 거부될 때마다 hold_ch 가 그 시점 측정각으로 한 단계씩 더 내려간다 — 하중이양 중 로봇이 단계적으로 가라앉고, 크레인을 다시 올려도 목표가 처진 자세로 남는다.",
+   "src": "cpp",
+   "verdict": {
+    "refuted": false,
+    "reason": "Confirmed by direct read of biped_deploy.cpp. Both rejection latches (:1309-1311 and :1353-1355) latch hold_ch = hs.q_deg (measured angles) whenever prev_mode != \"home\", and the recommended procedure (:604, :1550-1551 — home→hold→접지→stand) makes prev_mode==\"hold\" the normal case at the guard. hold entry (:1149-1150) inherits home_to precisely to prevent the droop-accumulation described at :1115-1121; the rejection latch overwrites that valid target with the load-sagged measured pose. Nothing restores it: the guards sit after the hold-entry block inside the nm!=mode transition block (:1031), so when rejection sets mode=\"hold\" (:1313, :1357) the hold-entry latch cannot re-fire, and dispatch (:1533-1536) servos to the overwritten hold_ch. The ground_refused latch (:998, :1007) forces retry via hold→stand, so each rejected retry re-latches the then-current measured angle — under load the measured angle sits ~load/kp below target (code's own figure :1365: hip 5.247Nm/kp100 = 3.0°), so the target ratchets down a few degrees per cycle and stays sagged even if the crane is re-raised. Keeping the already-valid hold_ch would add zero command step, so the overwrite has no safety justification for this transition. One attribution nuance that does not change the finding: the \": hs.q_deg\" else branch originates in dfd7c16 (08-24); e5914ea (08-27) rewrote the expression but only fixed the home branch, leaving the hold-branch measured-latch in place.",
+    "severity": "medium"
+   }
+  }
+ ],
+ "refuted": [
+  {
+   "title": "push 모드(특히 PUSH_POINT=heel)에서 FOOT_COMP 가 발목 링키지를 타고 calf 측정을 오염 — 상수 바이어스라 램프 왕복평균으로 소거 안 됨",
+   "reason": "기전의 절반은 사실이나(run_deploy_hw.sh:75 가 FOOT_COMP_NM=0.36 기본 export → biped_deploy.cpp:1684 에서 push 모드에도 foot_comp() 적용 → foot 채널토크가 deploy_hw.hpp:405 커플링 전치로 calf 관절에 실림), 주장된 오동작(α_calf 계통 바이어스)은 성립하지 않는"
+  }
+ ],
+ "lows": [
+  {
+   "file": "/home/jsh/simulation/biped/tools/push_solve.py",
+   "line": 119,
+   "title": "scipy 부재 시 무경고 폴백 — 물리범위(0.3~1.2) 구속이 조용히 사라짐",
+   "severity": "low",
+   "claim": "solve_leg 는 lsq_linear ImportError 시 경고 없이 np.linalg.lstsq 로 폴백한다(117-119행). 8aba5b1 이 넣은 경계구속(근평행 방정식의 시소 폭주 방지)이 통째로 빠지는데 출력에는 아무 표시가 없고, 경계도달 플래그(182행, v<=0.301/v>=1.199)도 구속 해 전제라 폴백 해에서는 의미가 없다.",
+   "scenario": "scipy 없는 Pi/노트북에서 같은 데이터를 돌리면 r_thigh 가 1.200±0.891(경계표시) 대신 예컨대 2.9±0.9 나 음수로 나오며 ⛔경계 표시도 없다 — 같은 원자료로 두 기계가 다른 전달비 결론을 내고, 폭주값이 실기 배율 산정에 그대로 인용될 수 있다.",
+   "src": "tools"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/walk_demand_check.py",
+   "line": 82,
+   "title": "낙상 케이스에서 무데이터/낙하과도 기반 트립 제안치 출력",
+   "severity": "low",
+   "claim": "t<2.5s 낙상이면 rec 이 비어 np.zeros((1,8)) 로 대체되는데(51행), 최종 요약은 낙상 여부와 무관하게 '제안: vel_trip ≥ {1.3×max}' 를 출력한다(82-83행) — 무데이터면 'vel_trip ≥ 0 dps'. 낙상이 2.5s 이후면 rec 에 tilt 45° 문턱까지의 붕괴 과도 속도가 섞여 max 가 부풀려진 제안치가 나온다.",
+   "scenario": "vx=0.20 케이스가 t=4.8s 낙상 → 붕괴 중 채널속도(수백 dps)가 v_max 에 포함되어 'vel_trip ≥ 700 dps' 같은 무의미한 상향 제안이 표에 남고, 이를 근거로 실기 트립을 올리면 정상 보행 보호 마진 산정이 오염된다. 조기 낙상이면 'vel_trip ≥ 0 dps' 라는 무데이터 제안이 그대로 인쇄된다.",
+   "src": "tools"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/cpp/src/biped_deploy.cpp",
+   "line": 967,
+   "title": "grav_scale_joint [0,3] 클램프가 범위 밖 값을 거부 대신 무언 강제 — 오타 음수는 0.0(그 축 중력지지 제거)으로, 3 초과 스윕점은 3.0 평탄 데이터로 둔갑",
+   "severity": "low",
+   "claim": "0.0 자체는 통과시키므로(min 포함) float_gstar/push_scale 의 0.0 값은 막지 않는다 — 그 점은 정상. 문제는 클램프가 범위 밖 값을 조용히 치환하는 것: 커밋 취지가 '오타 하나가 사고가 되지 않게'인데, 부호 오타(-1.22)는 거부되지 않고 0.0 이 되어 float 중 그 축의 중력보상이 통째로 사라지고, 3 초과 값은 3.0 으로 눌린다. 도구 쪽(float_gstar)은 자기가 요청한 gv 가 적용됐다고 믿고 표류를 기록하므로 치환 사실이 데이터에 드러나지 않는다.",
+   "scenario": "① 사용자가 --hold 에 '1.20,-1.10,...' 처럼 부호 오타를 넣으면(숫자 검증은 통과) 크레인에 매달린 float 중 HL_thigh 배율이 0.0 — 그 다리가 마찰 평형까지 스르르 접히며 측정 자세가 무너진다. ② --hi 3.4 스윕이나 2차 패스 bias×gv 가 3.0 을 넘으면 그 구간 전부 3.0 으로 눌려 표류가 배율과 무관해지고, float_gstar 문서가 경고하는 최악 오독('넓은 마찰 밴드'로 읽힘 = g* 허구값)이 경고 한 줄 없이 재현된다.",
+   "src": "cpp"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/biped_wbic.py",
+   "line": 184,
+   "title": "_foot_comp 의 FOOT_COMP_T0 무가드 — C++ 는 max(1e-3,·) 클램프, sim 은 0/음수에서 발산·역보상",
+   "severity": "low",
+   "claim": "C++ foot_comp 는 t0=std::max(1e-3, FOOT_COMP_T0/gear_k) 로 0·음수를 방어하지만 Python _foot_comp 는 drv[i]/self.FOOT_COMP_T0 를 그대로 나눈다. 문서(fieldcard·actuator_detail)가 보상을 'sign(τ)·k 전방보상'으로 표기하므로 FOOT_COMP_T0=0 으로 순수 sign 을 만들려는 시도가 자연스러운데, 이때 sim 은 0 나눗셈(drv=0 이면 nan → d.ctrl nan → mj_step 발산, 아니면 RuntimeWarning+±k)이 되고, 음수 T0 는 tanh 부호가 뒤집혀 결손을 2배로 키우는 역보상이 된다.",
+   "scenario": "C++ 파리티 검증 목적의 배터리에서 FOOT_COMP_T0=0(또는 오타 음수)을 양쪽에 같이 걸면 실기는 τ0=1e-3 급경사 tanh 로 정상 동작하는데 sim 만 nan 발산 또는 역보상 낙상 — '보상이 sim 에서 파탄'이라는 거짓 판정으로 실기 검증된 FOOT_COMP_NM=0.36 운용 기본값을 의심하게 만든다.",
+   "src": "sim"
+  },
+  {
+   "file": "/home/jsh/simulation/biped/tools/walk_validation_battery.py",
+   "line": 21,
+   "title": "'실측 플랜트' foot 비례항 0.85 주입 — 확정 법칙 r_foot(G)=0.77−0.36/G 와 불일치",
+   "severity": "low",
+   "claim": "배터리와 sim_stand_walk_check 'walk1_real/comp' 는 ALPHA_AXIS='0.85' 를 전 8축(foot 포함)에 걸고 FOOT_FRIC_EXTRA=0.36 을 더하는데, 무게추 브래킷 캠페인 확정치(PLAN_0826.md:115)는 foot 비례항 α=0.77±0.08 이다. sim foot 의 브래킷 등가 법칙은 r(G)=0.85−0.36/G 가 되어 확정 법칙보다 전 부하에서 +0.08 (고부하 기준 약 10%) 강하다. 0.85 의 도출 근거는 저장소 어디에도 기록돼 있지 않다(측정 blend 는 평발 0.80·Qhome8 0.68).",
+   "scenario": "발목 토크가 지배하는 시나리오(2점 stand 전이·평발 walk·push 재현)에서 sim 발목이 실기보다 ~10% 강해 '보상 없이도 완주' '8/8 무낙상' 판정이 낙관 편향된다 — 실기에서는 같은 조건이 발목 포화로 깨질 수 있는데 sim2sim 게이트를 통과해 버린다.",
+   "src": "sim"
+  }
+ ]
+}

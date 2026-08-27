@@ -39,7 +39,10 @@ def run_one(name, sc):
     """자식 프로세스에서 한 시나리오 실행 (ALPHA_AXIS 는 import 시점 주입이라 프로세스 분리)."""
     # ★FRIC_COMP=0 — 실기용 마찰 전방보상이 sim 에선 림보사이클을 만든다
     #   (08-27 실증: 기본 1.0 이면 기준 stand 가 8s 주기 낙상-리셋, 0 이면 tilt 0.1°)
-    env = dict(os.environ, ALPHA_AXIS=sc['alpha'], FRIC_COMP='0')
+    # ★08-27 버그헌트: 셸에서 FOOT_COMP_NM/FOOT_FRIC_EXTRA/T_STEP 을 export 해두면
+    #   기준 시나리오까지 오염된다 — 명시 기본값으로 고정하고 시나리오 env 만 덮는다.
+    env = dict(os.environ, ALPHA_AXIS=sc['alpha'], FRIC_COMP='0',
+               FOOT_COMP_NM='0', FOOT_FRIC_EXTRA='0', T_STEP='0.30')
     env.update(sc.get('env', {}))
     code = f'''
 import os, sys, json

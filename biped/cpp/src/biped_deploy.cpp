@@ -1306,9 +1306,13 @@ int main(int argc, char** argv){
               // ★★램프 도중 거부면 도착점이 아니라 그 순간의 지령각(q_ch)을 래치한다
               //   (2026-08-27 검토) — hold 정상 진입의 2026-08-24 수정과 같은 논리를 이식.
               //   종전엔 home 진행 20% 지점에서 거부되면 남은 이동량 전부가 계단 명령이었다.
-              hold_ch = (prev_mode=="home")
-                          ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
-                          : hs.q_deg;
+              // ★08-27 버그헌트: hold 중 거부(prev_mode=="hold")면 **재래치 금지** —
+              //   hs.q_deg 는 PD 처짐이 실린 측정각이라, 거부가 반복 발화할 때마다
+              //   목표가 처진 각을 다시 물어 계단식으로 주저앉는다. 기존 목표 유지.
+              if(prev_mode!="hold")
+                hold_ch = (prev_mode=="home")
+                            ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
+                            : hs.q_deg;
               jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
@@ -1350,9 +1354,13 @@ int main(int argc, char** argv){
               // ★★램프 도중 거부면 도착점이 아니라 그 순간의 지령각(q_ch)을 래치한다
               //   (2026-08-27 검토) — hold 정상 진입의 2026-08-24 수정과 같은 논리를 이식.
               //   종전엔 home 진행 20% 지점에서 거부되면 남은 이동량 전부가 계단 명령이었다.
-              hold_ch = (prev_mode=="home")
-                          ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
-                          : hs.q_deg;
+              // ★08-27 버그헌트: hold 중 거부(prev_mode=="hold")면 **재래치 금지** —
+              //   hs.q_deg 는 PD 처짐이 실린 측정각이라, 거부가 반복 발화할 때마다
+              //   목표가 처진 각을 다시 물어 계단식으로 주저앉는다. 기존 목표 유지.
+              if(prev_mode!="hold")
+                hold_ch = (prev_mode=="home")
+                            ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
+                            : hs.q_deg;
               jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }

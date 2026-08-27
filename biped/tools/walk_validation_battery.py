@@ -19,7 +19,7 @@ BIPED = os.path.dirname(HERE)
 
 def run(t_step, vx, vy, wz, T=12.0):
     env = dict(os.environ, ALPHA_AXIS='0.85', FOOT_FRIC_EXTRA='0.36', FRIC_COMP='0',
-               T_STEP=str(t_step))
+               FOOT_COMP_NM='0', T_STEP=str(t_step))   # ★상속 오염 차단(08-27)
     code = f'''
 import os, sys, json
 sys.path.insert(0, {BIPED!r})

@@ -116,6 +116,7 @@ def solve_leg(entries):
         from scipy.optimize import lsq_linear
         r = lsq_linear(A, y, bounds=(0.3, 1.2)).x
     except ImportError:
+        print('  ⚠scipy 없음 — [0.3,1.2] 구속 생략, 무구속 최소제곱 폴백(시소 폭주 가능: r 값 신중히)')
         r, *_ = np.linalg.lstsq(A, y, rcond=None)
     U, sv, Vt = np.linalg.svd(A)               # Vt 4×4 전체 — 영공간까지
     k = int(np.sum(sv > max(sv[0], 1.0) * 1e-3))

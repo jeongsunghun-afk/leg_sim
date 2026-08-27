@@ -17,7 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIPED = os.path.dirname(HERE)
 
 def run_walk(vx, T=12.0):
-    env = dict(os.environ, ALPHA_AXIS='0.85', FOOT_FRIC_EXTRA='0.36', FRIC_COMP='0')
+    env = dict(os.environ, ALPHA_AXIS='0.85', FOOT_FRIC_EXTRA='0.36', FRIC_COMP='0',
+               FOOT_COMP_NM='0', T_STEP='0.30')   # ★상속 오염 차단(08-27)
     code = f'''
 import os, sys, json
 sys.path.insert(0, {BIPED!r})

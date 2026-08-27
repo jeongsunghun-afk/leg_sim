@@ -381,6 +381,15 @@ def main() -> int:
             print(f"    밴드×G_CAD/2 = τ_c/α  (G_CAD 는 MJCF 에서 뽑을 것)")
         else:
             print(f"  {why}")
+        # ★원자료 저장 (2026-08-27) — 축별 모드가 저장 없이 반환해 세 스윕의 원자료가
+        #   화면에만 남았던 것을 수정. rows 의 d[8] 로 유지축 표류(드룹/커플링)까지 검증 가능.
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        path = f"/tmp/float_gstar_{a.axis}_{ts}.json"
+        with open(path, "w") as fjs:
+            json.dump({"axis": a.axis, "names": NAMES, "hold": a.hold,
+                       "rows": [[g, list(d), list(st)] for g, d, st in rows],
+                       "g_lo": lo, "g_hi": hi, "gstar": gs, "band": (bd if gs else None)}, fjs, indent=1)
+        print(f"\n  원자료 → {path}   (전 8축 표류 포함 — 이 파일을 그대로 전달하면 된다)")
         return 0
 
     try:

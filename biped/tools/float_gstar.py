@@ -168,8 +168,8 @@ def main() -> int:
     if q() is None:
         print("✗ /tmp/biped_state.json 에서 q_leg_deg 를 못 읽는다.")
         print("  biped_deploy 가 떠 있는지 확인할 것.")
-    q_start = q()   # ★시작(수동 매달림) 자세 — 종료 때 여기로 서행 복귀하면 낙차 0
         return 1
+    q_start = q()   # ★시작(수동 매달림) 자세 — 종료 때 여기로 서행 복귀하면 낙차 0
 
     # ★★**경쟁 발행자 검사** — GUI 가 떠 있으면 20ms 마다 자기 모드로 덮어쓴다.
     #   그러면 float 와 hold 가 번갈아 들어가 측정이 통째로 무의미해진다(그리고 로봇이 떤다).

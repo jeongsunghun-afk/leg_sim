@@ -222,15 +222,29 @@ def play(a):
             print(f"✗ 배포기 모드가 '{dm}' (jog 아님) — 명령이 안 먹힌다. 배포기 터미널에서")
             print("  '명령 잠금'/'jog 진입' 출력을 확인할 것. (GUI 경쟁·estop·워치독 잠금 순으로 의심)")
             return 1
+        # ★정렬 판정 = **수렴**(2026-08-28 실기 2차 반영): 매달림에선 PD 처짐이 hip ~3.8°·
+        #   thigh ~3.2° 로 남는 게 정상이다(문서값 hip 5.2Nm/kp100=3.0° 와 정합) — 고정 2° 는
+        #   영원히 못 넘는 문턱이었다. 잔차가 2s 동안 0.3° 미만으로 안 변하면 정착으로 본다.
+        #   절대 가드 8°: 그 이상 남으면 처짐이 아니라 고장(트립/무구동)이다.
         t0 = time.time()
-        cur = None
+        cur = None; hist = []
+        ok = False
         while time.time() - t0 < 40.0:
             if estopped():
                 print("⛔ E-stop 래치 — 중단"); return 1
             cur = hold("jog", 0.5, jog_deg=list(fr[0]))
-            if cur and max(abs(x - y) for x, y in zip(cur, fr[0])) < 2.0:
-                break
-        else:
+            if not cur:
+                continue
+            emax = max(abs(x - y) for x, y in zip(cur, fr[0]))
+            hist.append((time.time(), list(cur)))
+            hist = [(t, v) for t, v in hist if time.time() - t <= 2.0]
+            settled = (len(hist) >= 3 and time.time() - hist[0][0] > 1.5 and
+                       max(abs(a2 - b2) for a2, b2 in zip(hist[0][1], hist[-1][1])) < 0.3)
+            if emax < 2.0 or (settled and emax < 8.0):
+                if emax >= 2.0:
+                    print(f"  정착 판정 — 잔차 max {emax:.1f}° 는 매달림 PD 처짐(정상). 재생으로 간다.")
+                ok = True; break
+        if not ok:
             print("✗ 첫 프레임 정렬 실패(40s) — 축별 잔차(측정−목표):")
             if cur:
                 for j in range(NJ):

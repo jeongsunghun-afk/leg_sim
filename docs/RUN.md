@@ -21,21 +21,7 @@ CFG="MOTOR_CURVE=1 VEL_LIM=1 GEARBOX=1"
 - GEARBOX=반사관성(발 flail 억제·필수). ROTOR_I=1e-4·JDAMP=0.1·JFRIC=0.5 = ★대략값, 실측 대기(sim2real 체크리스트).
 - **★17dof 게인은 C++가 허리모델 자동감지로 기본 적용**(w_ori20·W_AM12·KD_AM24·FRONT_ANKLE−0.5·base_z0 0.5234) → env 불요. Python도 동일 기본.
 
-## D1(OCS2 NMPC+WBC) GUI 텔레옵 — A와 독립 관리
-
-D1 전용 GUI(teleop_gui_d1: 조이스틱 v/vy/w·게이트 trot/walk/bound·Ready/보행·Reset — D1 배선 명령만).
-perceptive는 지형서 자동 ON(flat=OFF). 명령슬루 τ=0.30·swing게인 KP_F700 내장.
-
-```bash
-bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh flat     # D1 평지
-bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh slope    # D1 15° 경사 등반
-bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh course   # D1 지형 코스
-```
-- 뷰어 시각화: 발판 마커=MPC 실제 계획 발(발끝 ~6mm 정합)·녹색=walkable 영역·`HMAP=1`=인지 heightmap 격자.
-- D1 배포 골격(HAL 경계 검증): `bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/deploy/run_deploy.sh slope`
-- 진단 env: `SWING_DBG`(스윙추종)·`TD_DBG`(착지오차)·`SNAP_DBG`(SDF발판스냅)·`COUPLE_DBG`(커플토크).
-
-## GUI 텔레옵 원샷 (권장) — 뷰어 + GUI 한번에
+## A(본선 배포) GUI 텔레옵 원샷 (권장) — 뷰어 + GUI 한번에
 ```bash
 # 어디서든 실행 가능(절대 cd로 자기완결). QUAD=/home/jsh/문서/jsh/simulation/quad
 (cd /home/jsh/문서/jsh/simulation/quad && bash run_gui.sh)        # ★C++ 실시간 배포(1kHz) — 기본 맵=종합코스
@@ -50,16 +36,20 @@ bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh course   # D1
 - perceptive 자동 ON(지형 씬). 평지만 원하면 `run_gui.sh flat`.
 - **★강건 기립(2026-07-15)**: 앉기→서기 = **앉기→눕기→서기 라우팅**(haunch 직접상승은 측방 발산 → 대칭 저크라우치 거쳐 검증된 상승). 버튼 조작 동일.
 
-## D1 (OCS2 perceptive NMPC) GUI 텔레옵 — 원샷 (2026-08-04 배선)
+## D1(OCS2 perceptive NMPC) GUI 텔레옵 — A와 독립 관리 (2026-08-27 갱신)
 ```bash
-# ★GUI(dearpygui)+D1 뷰어 동시 기동. GUI의 v/vy/w를 D1이 CMDFILE(/tmp/quad_cmd.json)로 50Hz 소비.
-bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh          # 기본=종합코스
-bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh rough   # 맵: course|flat|rough|slope|<절대경로.mjcf>
+# ★D1 전용 GUI(teleop_gui_d1)+D1 뷰어 동시 기동. D1 배선 명령만: 조이스틱 v/vy/w·게이트 trot/walk/bound·Ready/보행·Reset.
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh flat     # 평지(perceptive OFF)
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh slope    # 15° 경사 등반(perceptive ON)
+bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/run_gui_d1.sh course   # 지형 코스  (맵: course|flat|rough|slope|<절대.mjcf>)
 ```
-- **좌스틱=전후·측방, 우스틱=선회**(yaw-rate). GUI에서 **Walk 먼저** 누르고 조이스틱. D1은 trot 보행+선회 지원.
-- **★GUI python=proxddp env**(`/home/jsh/miniforge3/envs/proxddp/bin/python`=dearpygui 설치됨). 기본 `python`엔 dearpygui 없어 `python teleop_gui_17dof.py` 직접 실행은 실패 → **이 스크립트 사용**(올바른 python 자동).
-- **A와 차이**: D1=OCS2 NMPC 별도 바이너리(~0.2–0.3× 실시간=뷰어 슬로모션). 배선=A와 동일 CMDFILE JSON 채널(v/vy/w). CMDFILE 없으면 고정 VX(하위호환).
-- **보행성(실측)**: 평지·rough·완만경사(~8–10°) 보행 OK / **이산 갭·급단차는 낙상**(D1 프론티어, 험지 크로싱=RL 몫). 종합코스=rough 라인 보행·갭 라인 낙상 → 깔끔 데모는 **rough/slope 맵** 권장.
+- **좌스틱=전후·측방, 우스틱=선회**. GUI에서 **보행** 누르고 조이스틱. 게이트 trot/walk/**bound** 라이브 전환.
+- 내장: 명령슬루 τ=0.30·swing게인 KP_F700·OMP단일스레드. perceptive=지형 자동 ON(flat=OFF).
+- 뷰어 시각화: **발판 마커=MPC 실제 계획 발**(발끝 ~6mm 정합)·녹색=walkable 영역·`HMAP=1`=인지 heightmap 격자.
+- **A와 차이**: D1=OCS2 NMPC 별도 바이너리(~0.2–0.3× 실시간=뷰어 슬로모션). 동일 CMDFILE 채널이나 **GUI는 별도**(teleop_gui_d1 vs 17dof).
+- **보행성(실측)**: 평지·rough·경사 8~15° 등반 OK(참조버그 수정 후) / **이산 갭·급단차는 낙상**(험지 크로싱=RL 몫).
+- D1 배포 골격(HAL 경계): `bash /home/jsh/문서/jsh/simulation/quad/ocs2_02leg/deploy/run_deploy.sh slope`
+- 진단 env: `SWING_DBG`(스윙추종)·`TD_DBG`(착지오차)·`SNAP_DBG`(SDF발판스냅)·`COUPLE_DBG`(calf-foot 커플토크).
 - D1 재빌드: `(cd /home/jsh/문서/jsh/simulation/quad/ocs2_ws && source /opt/ros/humble/setup.bash && source install/setup.bash && env -u PYTHONPATH colcon build --packages-select ocs2_legged_robot --cmake-args -DCMAKE_CXX_FLAGS="-include cstddef -include cstdint")`. 상세=[D1_OCS2_개발리포트.md](D1_OCS2_개발리포트.md).
 
 ## ★지형 crossing — ③ selectFoot (perceptive foothold, FOOT_NUDGE)

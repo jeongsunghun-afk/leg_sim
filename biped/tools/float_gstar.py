@@ -168,6 +168,7 @@ def main() -> int:
     if q() is None:
         print("✗ /tmp/biped_state.json 에서 q_leg_deg 를 못 읽는다.")
         print("  biped_deploy 가 떠 있는지 확인할 것.")
+    q_start = q()   # ★시작(수동 매달림) 자세 — 종료 때 여기로 서행 복귀하면 낙차 0
         return 1
 
     # ★★**경쟁 발행자 검사** — GUI 가 떠 있으면 20ms 마다 자기 모드로 덮어쓴다.
@@ -417,38 +418,21 @@ def main() -> int:
     finally:
         _bias[0] = None
         try:
-            # ★안전 처짐 종료 (2026-08-27, 무게추 실험 대비 — 사용자 요구):
-            #   추/부하가 달린 채 자세를 잡고 끝내면 배포기를 끄는 순간 limp 가 되어
-            #   **자유낙하 충돌**한다. 중력배율을 ~8초에 걸쳐 0 으로 내려 마찰·FLOAT_KD 를
-            #   타고 매달림 평형까지 천천히 내려앉힌 뒤 off 로 끝낸다 — 이후 언제 꺼도 안전.
-            #   (hold() 가 20Hz 로 워치독을 먹이므로 램프 중 트립 없음)
-            base = [float(x) for x in a.hold.split(",")] if a.hold else [1.0] * NJ
-            print("\n  ■ 안전 처짐 — 중력배율 램프다운(~8s). 다리가 천천히 내려앉는다.")
-            hold("float", 0.6, grav_scale_joint=list(base))
-            f = 1.0
-            while f > 0.0:
-                f = max(0.0, f - 0.08)
-                hold("float", 0.6, grav_scale_joint=[f * v for v in base])
-            q0 = q(); t0 = time.time()          # 정지 대기(최대 8s)
-            while time.time() - t0 < 8.0:
-                q1 = hold("float", 0.5, grav_scale_joint=[0.0] * NJ)
-                if q0 and q1 and max(abs(x - y) for x, y in zip(q0, q1)) < 0.3:
-                    break
-                q0 = q1
-            # ★유지축도 천천히 내려놓는다 (08-27 실기 "툭" 재발 수정) — FLOAT_AXES 부분
-            #   float 에선 나머지 축이 위치서보로 home 에 잡혀 있어, off 로 바로 끊으면
-            #   그 축들이 통째로 떨어진다. hold 로 현재 자세를 래치한 뒤 위치게인을
-            #   0 까지 램프(~8s) — 감쇠를 타고 전신이 매달림 평형까지 처진다.
-            print("  ■ 위치게인 램프다운 — 잡혀 있던 축들도 천천히 내려앉는다.")
-            hold("hold", 1.0)
-            f = 1.0
-            while f > 0.0:
-                f = max(0.0, f - 0.07)
-                hold("hold", 0.5, pos_kp_scale=f)
-            hold("hold", 2.5, pos_kp_scale=0.0)
+            # ★안전 종료 v3 (2026-08-27): 배율/게인 램프다운은 두 번 다 실패했다 —
+            #   중력토크는 상수인데 붙잡는 힘만 줄이면 말미에 반드시 "버티다 놓침"이 된다.
+            #   올바른 종료 = **낙차가 0 인 자세로 이동한 뒤 끄는 것**: 도구 시작 시의
+            #   수동 매달림 자세(q_start)로 jog(20dps 위치제어) 서행 복귀 → 수동 평형이므로
+            #   off 로 바꿔도 움직일 것이 없다. (hold() 20Hz 가 워치독을 먹인다)
+            if q_start:
+                print("\n  ■ 안전 종료 — 시작 매달림 자세로 서행 복귀(jog) 후 무여자.")
+                t0 = time.time()
+                while time.time() - t0 < 25.0:
+                    cur = hold("jog", 0.5, jog_deg=list(q_start))
+                    if cur and max(abs(x - y) for x, y in zip(cur, q_start)) < 1.5:
+                        break
+                hold("jog", 1.5, jog_deg=list(q_start))     # 정착
             send(mode="off")
-            send(mode="off", grav_scale_joint=list(base))   # 배율 원복(off 라 무영향)
-            print("  ✅ 안전 처짐 완료(무여자) — 이제 배포기·Emb 를 종료해도 된다.")
+            print("  ✅ 안전 종료 완료(무여자·수동 평형 자세) — 배포기·Emb 를 꺼도 된다.")
         except Exception as e:
             print(f"  ⚠종료 정리 실패({type(e).__name__}) — GUI [무중력]에서 배율을 서서히 0 으로 내릴 것")
 

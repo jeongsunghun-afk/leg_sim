@@ -929,9 +929,16 @@ int main(int argc, char** argv){
         // ★축별 배율을 명령파일로 받는다 — env 는 기동 1회뿐이라 스윕 중에 못 바꾼다.
         if((int)nc.grav_scale_joint.size() >= NJ){
           bool ch=false;
-          for(int j=0;j<NJ;j++) if(std::fabs(nc.grav_scale_joint[j]-grav_axis[j])>1e-9) ch=true;
+          // ★[0,3] 클램프 (2026-08-27 검토) — 공통배율(아래)과 동일한 한계를 축별에도.
+          //   이 값은 도구(float_gstar/GUI)가 파일로 주입한다 — 오타·스크립트 버그
+          //   하나가 무제한 토크 배율이 되어 계단으로 걸리면 안 된다.
+          double gcl[NJ];
+          for(int j=0;j<NJ;j++){
+            gcl[j] = std::max(0.0, std::min(3.0, nc.grav_scale_joint[j]));
+            if(std::fabs(gcl[j]-grav_axis[j])>1e-9) ch=true;
+          }
           if(ch){
-            for(int j=0;j<NJ;j++) grav_axis[j] = nc.grav_scale_joint[j];
+            for(int j=0;j<NJ;j++) grav_axis[j] = gcl[j];
             std::printf("[deploy] 축별 중력배율(명령) =");
             for(int j=0;j<NJ;j++) std::printf(" %.3f", grav_axis[j]);
             std::printf("\n");
@@ -1234,7 +1241,12 @@ int main(int argc, char** argv){
               //   ⚠화면엔 "거부, hold 유지" 라고 뜬다 — 유지할 hold 가 애초에 없었다.
               //   ⚠Python(biped_emb.py)엔 이 버그가 없다: 가드가 FSM **진입 전에** 모드를 바꿔
               //     `if fsm.entered(HOLD): hold_leg = q_leg.copy()` 가 정상 발화한다. C++ 이관에서만 갈라졌다.
-              hold_ch = (prev_mode=="home" && home_to.size()==(size_t)NCH) ? home_to : hs.q_deg;
+              // ★★램프 도중 거부면 도착점이 아니라 그 순간의 지령각(q_ch)을 래치한다
+              //   (2026-08-27 검토) — hold 정상 진입의 2026-08-24 수정과 같은 논리를 이식.
+              //   종전엔 home 진행 20% 지점에서 거부되면 남은 이동량 전부가 계단 명령이었다.
+              hold_ch = (prev_mode=="home")
+                          ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
+                          : hs.q_deg;
               jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }
@@ -1273,7 +1285,12 @@ int main(int argc, char** argv){
               //   ⚠화면엔 "거부, hold 유지" 라고 뜬다 — 유지할 hold 가 애초에 없었다.
               //   ⚠Python(biped_emb.py)엔 이 버그가 없다: 가드가 FSM **진입 전에** 모드를 바꿔
               //     `if fsm.entered(HOLD): hold_leg = q_leg.copy()` 가 정상 발화한다. C++ 이관에서만 갈라졌다.
-              hold_ch = (prev_mode=="home" && home_to.size()==(size_t)NCH) ? home_to : hs.q_deg;
+              // ★★램프 도중 거부면 도착점이 아니라 그 순간의 지령각(q_ch)을 래치한다
+              //   (2026-08-27 검토) — hold 정상 진입의 2026-08-24 수정과 같은 논리를 이식.
+              //   종전엔 home 진행 20% 지점에서 거부되면 남은 이동량 전부가 계단 명령이었다.
+              hold_ch = (prev_mode=="home")
+                          ? ((home_done && home_to.size()==(size_t)NCH) ? home_to : q_ch)
+                          : hs.q_deg;
               jm.clamp_ch_via_joint(hold_ch.data());
               nm = "hold"; mode = "hold"; ground_refused = true;
             }

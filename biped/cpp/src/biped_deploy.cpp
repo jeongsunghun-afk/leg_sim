@@ -225,6 +225,19 @@ int main(int argc, char** argv){
   // ── 설정 ──
   EmbCfg cfg; std::string err;
   if(!load_cfg(cfg_p, cfg, err)){ std::printf("✗ %s\n", err.c_str()); return 1; }
+  // ★JOG_SPEED_DPS env (2026-08-28, 에어워크 리허설용) — jog 슬루 한계를 세션 한정으로
+  //   개방한다. tools/airwalk.py 가 walk 궤적을 감속 재생할 때 20dps 로는 형상이 뭉개진다.
+  //   [5,150] 클램프: 150dps 관절 = calf 채널 225dps 로 cfg 트립(200) 위라, 상한은
+  //   "트립이 여전히 최후 방어선으로 남는" 범위다. 무효값은 무시.
+  if(const char* e = getenv("JOG_SPEED_DPS")){
+    const double v = atof(e);
+    if(std::isfinite(v) && v >= 5.0 && v <= 150.0){
+      std::printf("[deploy] ⚠JOG_SPEED_DPS %.0f → %.0f dps (에어워크 세션용 — 평시엔 지울 것)\n",
+                  cfg.jog_speed_dps, v);
+      cfg.jog_speed_dps = v;
+    } else std::printf("[deploy] ⚠JOG_SPEED_DPS='%s' 무효(5~150) — 설정값 %.0f 유지\n",
+                       e, cfg.jog_speed_dps);
+  }
   const int NCH = cfg.n_channel;
   const double dt = 1.0/cfg.ctrl_hz;
   JointMap jm(cfg);

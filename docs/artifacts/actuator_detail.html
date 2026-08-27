@@ -194,6 +194,17 @@ p code,td code,li code,figcaption code,.note code,.gloss code{background:var(--s
   <b>→ 실기 검증 완료(같은 날): E4 blend 0.660→0.771 (±0.046) — FOOT_COMP_NM=0.36 이
   run_deploy_hw.sh 기본값으로 편입.</b> sim 은 실물 플랜트(상수마찰 표현)에서 1점 walk 가
   보상 없이도 완주 — foot 결손은 walk 차단기가 아니라 저부하 힘정확도 문제로 재분류.
+  ⑧<b>★08-28 — 에어워크 리허설(tools/airwalk.py · walk 궤적 감속 재생) + 운용값 3건 갱신.</b>
+  매달림 jog 스트리밍 2런(vx0.05·vx0.30 궤적, 무트립 완주): <b>반전 이력폭 calf 4.3~5.9° ·
+  foot 4.2~5.7° · HR 이 HL 보다 ~+0.8°</b>(백래쉬+마찰각+유연성 — HR 틱틱음의 유력 통일가설,
+  "영점 틀어짐" 소동의 진상도 이 유격의 calf 처짐). r̂=G/τ_echo 동적 전달은 hip ~1.0 ·
+  thigh 0.8~1.36 으로 준정적(0.84/0.8)보다 높음 — 결손의 정지마찰성 방증(kd·dq 미보정 참고치).
+  운용 갱신: <b>①1점 CoM 0.50→0.48</b>(높이 스윕 — 0.50 은 낙상 경계, 0.48 은 vx0.35 완주·
+  실효 0.28~0.32·배터리 8/8·무릎 +2Nm · data/comh_sweep_20260828.txt) <b>②walk 묶음 편입</b>
+  (WALK_VEL_TRIP 900·WALK_TAU_TRIP 25·WALK_KD_FLOOR 0.15 — 16-에이전트 검증 워크플로 확정 5건
+  반영: stand↔walk 전이 연속화·kdf 램프·이탈 0.5s 유예·env 가드·1점 walk kp 차단, mock 6/6)
+  <b>③home = Qhome8/Qflat8 고정</b>(yaml 비의존 · 측정은 HOME_DEG env — B자세 커밋사고 구조 제거).
+  안전가드 3종(워치독 재무장·push 직행·hold 재래치) 실기 검증 ✓.
   운용값은 <code>run_deploy_hw.sh</code> 와 현장카드가 단일 출처다.</div>
 </header>
 

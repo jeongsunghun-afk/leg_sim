@@ -125,19 +125,23 @@
   <!-- ── 운용 세팅 ─────────────────────────────────── -->
   <div class="card go wide">
     <h2>운용 세팅 — 이대로 실행한다</h2>
-    <p class="lead">단일 출처 run_deploy_hw.sh · 2026-08-27 확정</p>
+    <p class="lead">단일 출처 run_deploy_hw.sh · 2026-08-28 확정</p>
     <pre>cd /home/rpetubt/simulation/biped && <b>./run_deploy_hw.sh</b>         # 1점 (home = Qhome8)
 cd /home/rpetubt/simulation/biped && <b>./run_deploy_hw.sh flat</b>    # 2점 평발 · 임의 MJCF 는 절대경로 인자
 
 GRAV_SCALE_JOINT = STAND_TAU_SCALE_JOINT = "1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
-<b>FOOT_COMP_NM = 0.36</b>   ← foot 상수결손 전방보상 (08-27 실기검증: E4 0.66→0.77)</pre>
-    <p><span class="flag f-acc">safety</span><code>tau_trip 15Nm/50ms</code> · <code>vel_trip 200dps/20ms</code> ·
-       <code>tilt 40°</code>(IMU 사망 — 무력) · <code>watchdog 500ms</code> → 트립 시 <b>off 강하 + 명령잠금</b>
-       (다른 버튼 한 번으로 재무장·전 가드 경유) · 무장 중 통신동결 = 즉시 E-stop ·
-       push 는 stand/walk 직행 금지 + 매달림 확인</p>
-    <p><span class="flag f-hot">walk 게이트</span>EtherCAT 케이블 · HL thigh 케이블 ·
-       walk q̇_cmd+모드별 트립 구현(설계 확정 — walk 한정 vel ~900 dps).
-       sim 검증은 실측 플랜트에서 <b>8/8 무낙상</b> 통과.</p>
+<b>FOOT_COMP_NM = 0.36</b>   ← foot 상수결손 전방보상 (08-27 실기검증: E4 0.66→0.77)
+<b>walk 한정</b>: WALK_VEL_TRIP_DPS=900 · WALK_TAU_TRIP_NM=25 · WALK_KD_FLOOR=0.15 (이탈 0.5s 유예)
+1점 CoM 높이 <b>0.48</b> (0.50→08-28 스윕: vx0.35 완주·실효 0.28~0.32·배터리 8/8)
+home = <b>Qhome8/Qflat8 고정</b> (yaml 비의존 — 측정용 임시 자세는 HOME_DEG env)</pre>
+    <p><span class="flag f-acc">safety</span><code>tau_trip 15Nm/50ms</code> · <code>vel_trip 200dps/20ms</code>
+       (walk 중 900/25 · 이탈 0.5s 유예) · <code>tilt 40°</code>(IMU 사망 — 무력) ·
+       <code>watchdog 500ms</code> → 트립 시 <b>off 강하 + 명령잠금</b> · 무장 중 통신동결 = 즉시 E-stop ·
+       push 직행 금지+매달림 확인 — <b>재무장·push·hold 재래치 3종 08-28 실기검증 ✓</b>.
+       접지 판정 = 실측 |τ|합 / 매달림 모델 예측 비 ≥ 1.25 (stand 진입 게이트) + 무장 후엔 QP 실패율</p>
+    <p><span class="flag f-hot">walk 게이트</span><b>EtherCAT 케이블 · HL thigh 케이블 — 이 둘만 남음.</b>
+       walk 묶음(kd 축소·모드별 트립·전이 연속화)은 구현·검증 완료(mock 6/6+검증 워크플로).
+       sim 8/8 무낙상 · 에어워크 리허설 2런 무트립(tools/airwalk.py — 백래쉬·전달비 계측 겸용)</p>
     <p><span class="flag f-go">근거·측정</span>측정 행렬 · r_foot(G) 법칙 · 파라미터 검증 현황 ·
        EtherCAT 진단 · 수리 이력 — <b>전부 상세판 §부록으로 이관</b>:
        <a href="https://claude.ai/code/artifact/e29e55f3-1a93-4ce6-9ecd-412ecb8a634a">액추에이터 식별과 브링업</a></p>
@@ -316,8 +320,9 @@ GRAV_SCALE_JOINT = STAND_TAU_SCALE_JOINT = "1.20,1.10,1.22,1.00,1.18,1.10,1.22,1
             CAD 원위 CoM 과대 의심. <b>평발 스윕 + 분해 시 정강이+발 저울</b>로 확정</td></tr>
         <tr><td>foot 결손 물리원인</td><td>보상은 완료(FOOT_COMP 기본 ON · E4 0.66→0.77 검증) —
             남은 건 실체 규명뿐: 분해 시 벨트 프리로드/씰 점검</td></tr>
-        <tr><td><strong>틱틱+토크 급변</strong></td><td>부하 시에만·드라이브 쪽(사용자 판별 완료) —
-            하강 회생→버스 과전압 가설. <b>다음 축사망 때 포렌식 배너의 OverVoltage 비트</b>가 심판</td></tr>
+        <tr><td><strong>틱틱+토크 급변</strong></td><td>부하 시에만·드라이브 쪽 —
+            ①<b>백래쉬 유격 관통 충격</b>(08-28 에어워크: HR 이력폭 +0.8° 정합 — 유력)
+            ②하강 회생→버스 과전압. <b>다음 축사망 때 포렌식 배너 OverVoltage 비트</b>가 ② 심판</td></tr>
         <tr><td>발기하 모델오차 ~3.4°</td><td>두점접촉 판정에서 실증(모델 뒤꿈치 +9mm 공중 vs 실물 접지)
             — 발목영점 또는 발 링크 기하. walk 전 확인</td></tr>
         <tr><td><strong>스윕 축사망 3회</strong></td><td>2연속 "하강 5 N" · 하강 중반부터 점진 약화
@@ -325,8 +330,10 @@ GRAV_SCALE_JOINT = STAND_TAU_SCALE_JOINT = "1.20,1.10,1.22,1.00,1.18,1.10,1.22,1
         <tr><td><strong>IMU 전부 0</strong></td><td>tilt E-stop 무력 · CoM 적분 xy 차단. 복구는 Pi 앱 5줄</td></tr>
         <tr><td>링크별 CoM</td><td>총질량은 실측됨(HL 5,395 g · CAD −2.6%) — <b>링크별 분포는 분해 시 저울</b>
             (thigh 모델중력 ~13% 과대 의심의 최종 확인)</td></tr>
-        <tr><td>보행 <code>q̇_cmd</code></td><td>C++ 0 · 감쇠토크가 스윙에서 트립의 2.1배 —
-            <code>T_STEP</code>→트립→<code>q̇_cmd</code> 한 묶음</td></tr>
+        <tr><td><strong>★calf·foot 백래쉬/이력 4~5°</strong></td><td>에어워크 실측(08-28):
+            반전 이력폭 calf 4.3/5.1° · foot 4.2/5.0° — <b>HR 이 +0.8° 큼 = 틱틱음 유력 가설</b>
+            (부하 반전 시 유격 관통 충격). 순수 백래쉬는 off 상태 손 측정으로 분리 ·
+            <b>분해 시 벨트 텐션(HR 우선)</b>. 강성 ×5 는 트립각 1.43° &lt; 유격이라 금지</td></tr>
         <tr><td>1차↔2차 스윕 불일치</td><td>같은 배율에서 표류가 다른 이상이 3회 재현 —
             크레인 스트랩/접촉 의심. 무중력 전 HL_hip 자유 확인</td></tr>
       </tbody>

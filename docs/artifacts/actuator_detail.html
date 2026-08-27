@@ -1764,6 +1764,29 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
 <div class="shead"><span class="n">§A</span><h2>부록 — 측정 행렬 · 검증 현황 · 진단 · 이력</h2>
   <span class="tag">구 현장카드 이관 · 2026-08-27</span></div>
 <p>현장카드를 운용 전용으로 슬림화하며 근거성 내용을 여기로 옮겼다. 내용은 이관 시점 기준 그대로다.</p>
+
+<h3>A.0 ★축별 마스터 표 — 주요 파라미터 한판 (2026-08-27 기준)</h3>
+<div class="tw"><table>
+<thead><tr><th></th><th class="n">hip</th><th class="n">thigh</th><th class="n">calf</th><th class="n">foot</th></tr></thead>
+<tbody>
+<tr><td class="ax">채널 (HL/HR)</td><td class="n">0 / 4</td><td class="n">1 / 5</td><td class="n">2 / 6</td><td class="n">3 / 7</td></tr>
+<tr><td class="ax">sign (HL/HR)</td><td class="n">−1 / −1</td><td class="n">+1 / −1</td><td class="n">−1 / +1</td><td class="n">−1 / +1</td></tr>
+<tr><td class="ax">gear_k (감속 보정)</td><td class="n">1.0</td><td class="n">1.0</td><td class="n"><b>1.5</b></td><td class="n"><b>1.2</b></td></tr>
+<tr><td class="ax">offset° (HL/HR · 08-24 영점)</td><td class="n">−0.63 / +1.06</td><td class="n">+0.33 / −2.65</td><td class="n">−3.07 / −12.66</td><td class="n">−3.02 / +0.35</td></tr>
+<tr><td class="ax">kp_ch / kd_ch (배포)</td><td class="n">100 / 6.0</td><td class="n">50 / 4.0</td><td class="n">80 / 3.5</td><td class="n">30 / 2.0</td></tr>
+<tr><td class="ax">kp_raw / kd_raw (×gear_k²)</td><td class="n">100 / 6.0</td><td class="n">50 / 4.0</td><td class="n"><b>180 / 7.88</b></td><td class="n">43.2 / 2.88</td></tr>
+<tr class="pick"><td class="ax">트립각 = 15Nm/(kp_ch·gear_k)</td><td class="n">8.59°</td><td class="n">17.19°</td><td class="n"><b>7.16°</b> ★최민감</td><td class="n">23.87°</td></tr>
+<tr><td class="ax">g* 운용 (HL/HR)</td><td class="n">1.20 / 1.18</td><td class="n">1.10</td><td class="n">1.22</td><td class="n">1.00 + <b>FOOT_COMP 0.36Nm</b></td></tr>
+<tr class="pick"><td class="ax">경로 전달 (실측)</td><td class="n">~0.84</td><td class="n">~0.8 (HL 케이블 별건)</td><td class="n">0.82 (저울)</td><td class="n"><b>r(G)=0.77−0.36/G</b> (좌우 동일)</td></tr>
+<tr><td class="ax">마찰 τ_c 벤치 [Nm]</td><td class="n">0.724</td><td class="n">0.604</td><td class="n">0.871</td><td class="n">0.639 (tendon)</td></tr>
+<tr><td class="ax">댐핑 b [Nm·s/rad]</td><td class="n">0.090</td><td class="n">0</td><td class="n">0</td><td class="n">0.110 (tendon)</td></tr>
+<tr><td class="ax">반사관성 armature [kg·m²]</td><td class="n">0.0359</td><td class="n">0.0359</td><td class="n">0.0808</td><td class="n">0.0517 (tendon)</td></tr>
+<tr><td class="ax">관절한계 [°]</td><td class="n">±14.9</td><td class="n">−64.7~+135.2</td><td class="n">−68.0~+49.8</td><td class="n">−84.8~+67.0</td></tr>
+<tr><td class="ax">드라이브 피크 [Nm]</td><td class="n">84</td><td class="n">84</td><td class="n">126</td><td class="n">100.8</td></tr>
+</tbody></table></div>
+<div class="note">트립각 = 위치서보 오차가 토크트립(15 Nm)에 닿는 한계각(τ=kp·오차). 계단 명령이
+이 각을 넘으면 즉시 limp — "램프로만 움직인다" 규약의 근거. τ_c·b·armature 는 X/α 규약(§0) ·
+foot 셋은 tendon 좌표. 조립 마찰은 벤치 대비 foot +0.36(=FOOT_COMP·상수결손) · thigh ~+10%.</div>
   <!-- ── 확정 파라미터 ─────────────────────────────── -->
   <div style="margin:26px 0">
     <h3>★확정 파라미터 + 측정 행렬 — g* 는 자세를 탄다</h3>

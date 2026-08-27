@@ -151,6 +151,10 @@ class BipedWBIC:
         # ★마찰 전방보상 게인 — C++ 기본값과 **같아야** 파리티가 유지된다(env 이름도 동일).
         self.FRIC_COMP = float(os.environ.get('FRIC_COMP', 1.0))
         self.FRIC_V0 = float(os.environ.get('FRIC_V0', 0.20))
+        # ★foot 상수결손 보상(08-27) — 토크부호 기반 k·tanh(τ/τ0). C++ FOOT_COMP_NM 파리티.
+        #   속도기반 FRIC_COMP 와 달리 준정적/저속 힘제어에서도 작동. 기본 0(꺼짐).
+        self.FOOT_COMP = float(os.environ.get('FOOT_COMP_NM', '0'))
+        self.FOOT_COMP_T0 = float(os.environ.get('FOOT_COMP_T0', '0.30'))
         self.sph = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_GEOM, f) for f in ['HL_sphere', 'HR_sphere']]
         self.fbody = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, b)
                       for b in ['HL_foot_contact_link', 'HR_foot_contact_link']]
@@ -172,6 +176,13 @@ class BipedWBIC:
         self.qmax = self.m.jnt_range[1:, 1].copy()
         self.com_ref = None
         self.setup_gearbox()
+
+    def _foot_comp(self, drv):
+        """foot 드라이브(3·7)에 상수결손 보상 k·tanh(τ/τ0) — C++ foot_comp 와 동일."""
+        if self.FOOT_COMP > 0:
+            for i in (3, 7):
+                drv[i] += self.FOOT_COMP * np.tanh(drv[i] / self.FOOT_COMP_T0)
+        return drv
 
     def setup_gearbox(self):
         """반사관성(armature=Irot·N²) + 점성감쇠 + 마찰. mature와 동일(GEARBOX ON). 다리 flail 억제."""
@@ -236,6 +247,14 @@ class BipedWBIC:
             m.tendon_armature[t] = ROTOR_I * GEAR[3] ** 2   # 0.0517
             m.tendon_damping[t] = JDAMP[3]                   # 0.110
             m.tendon_frictionloss[t] = JFRIC[3]              # 0.639
+        # ★플랜트 결손 주입(08-27 무게추 브래킷): 실물 foot 은 벤치 마찰(0.639) 외에
+        #   상수 ~0.36 Nm 을 더 먹는다(r_foot(G)=α−k/G). 실물 재현 모드:
+        #   FOOT_FRIC_EXTRA=0.36 → tendon 마찰 가산. 제어기는 모른다(ALPHA_AXIS 와 동일 철학).
+        extra = float(os.environ.get('FOOT_FRIC_EXTRA', '0'))
+        if extra > 0:
+            for t in tid:
+                m.tendon_frictionloss[t] += extra
+            print(f"  ★플랜트 foot 결손 주입: tendon frictionloss +{extra} → {m.tendon_frictionloss[tid[0]]:.3f} Nm")
 
     # ── 초기화: home pose 스폰 + 발 착지 높이 + com_ref = 지지중심 ──
     def reset_stand(self):
@@ -371,7 +390,7 @@ class BipedWBIC:
                 f = JFRIC[3] * np.tanh((dq[b + 2] + dq[b + 3]) / self.FRIC_V0)
                 comp[b + 2] += f; comp[b + 3] += f                   # tendon → coefᵀ
             tau = tau + self.FRIC_COMP * comp
-        d.ctrl[:] = np.clip(tau_to_drive(tau), -self.drv_peak, self.drv_peak)
+        d.ctrl[:] = np.clip(self._foot_comp(tau_to_drive(tau)), -self.drv_peak, self.drv_peak)
         return True
 
 

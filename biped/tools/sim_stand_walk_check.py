@@ -28,6 +28,11 @@ SCENARIOS = {
     'walk1_base':  dict(contact='1pt', alpha='1.0', vx=0.10, T=15),
     'walk1_meas':  dict(contact='1pt', alpha='0.80', vx=0.10, T=15),
     'walk1_hypo':  dict(contact='1pt', alpha='0.80,0.80,0.80,0.45', vx=0.10, T=15),
+    # ★08-27 확정 플랜트: 비례 0.85 + foot 상수결손 0.36Nm(tendon 마찰 가산 — r(G) 법칙)
+    'walk1_real':  dict(contact='1pt', alpha='0.85', vx=0.10, T=15,
+                        env={'FOOT_FRIC_EXTRA': '0.36'}),
+    'walk1_comp':  dict(contact='1pt', alpha='0.85', vx=0.10, T=15,
+                        env={'FOOT_FRIC_EXTRA': '0.36', 'FOOT_COMP_NM': '0.36'}),
 }
 
 def run_one(name, sc):
@@ -35,6 +40,7 @@ def run_one(name, sc):
     # ★FRIC_COMP=0 — 실기용 마찰 전방보상이 sim 에선 림보사이클을 만든다
     #   (08-27 실증: 기본 1.0 이면 기준 stand 가 8s 주기 낙상-리셋, 0 이면 tilt 0.1°)
     env = dict(os.environ, ALPHA_AXIS=sc['alpha'], FRIC_COMP='0')
+    env.update(sc.get('env', {}))
     code = f'''
 import os, sys, json
 sys.path.insert(0, {BIPED!r})

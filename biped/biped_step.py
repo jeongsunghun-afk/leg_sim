@@ -258,7 +258,7 @@ class BipedStep(BW.BipedWBIC):
             return self.wbic_stance()      # 폴백
         qdd = x[:nv]; tau = M[6:, :] @ qdd + h[6:]
         for k in range(Kc): tau -= cjac[k][:, 6:].T @ x[sl(k):sl(k)+3]
-        d.ctrl[:] = np.clip(tau_to_drive(tau), -DRV_PEAK, DRV_PEAK)   # ★ctrl=드라이브 토크
+        d.ctrl[:] = np.clip(self._foot_comp(tau_to_drive(tau)), -DRV_PEAK, DRV_PEAK)   # ★ctrl=드라이브 토크
         return True
 
     def control(self, dt):

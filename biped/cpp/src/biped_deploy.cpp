@@ -483,6 +483,27 @@ int main(int argc, char** argv){
   }
   //   kd 만 남긴다 — kp=kd=0 순수토크가 30~65Hz 에서 발산한 전례가 그대로 적용된다.
   //   ⚠크면 뻑뻑해서 무중력 느낌이 안 난다. 작으면 발산 위험. 0.30 에서 시작한다.
+  // ★foot 상수결손 보상 (2026-08-27 무게추 브래킷 캠페인 확정: r_foot(G)=α−k/G ·
+  //   k≈0.36 Nm(관절측) · 좌우 동일 — data/push/PLAN_0826.md 최종표).
+  //   드라이브의 정지마찰성 결손이라 **속도가 아니라 명령토크 부호**로 보상한다
+  //   (FRIC_COMP 는 속도기반 → 준정적 유지·저속 힘제어에서 0 이라 이 결손을 못 덮는다).
+  //   채널좌표에서 더한다(k·tanh(τ_ch/τ0) · k_ch = k_joint/gear_k) — "g* 관절좌표 비가환"
+  //   검토 발견과 같은 이유로, 드라이브별 손실 보정은 드라이브(채널) 단위가 정칙이다.
+  //   기본 0(꺼짐). 실기 검증 예정값: FOOT_COMP_NM=0.36
+  const double FOOT_COMP_NM = getenv("FOOT_COMP_NM") ? atof(getenv("FOOT_COMP_NM")) : 0.0;
+  const double FOOT_COMP_T0 = getenv("FOOT_COMP_T0") ? atof(getenv("FOOT_COMP_T0")) : 0.30;
+  auto foot_comp = [&](std::vector<float>& tch){
+    if(FOOT_COMP_NM <= 0.0) return;
+    for(int leg=0; leg<2; leg++){
+      const auto& FJ = cfg.joints[leg*4+3];              // foot
+      const double kc = FOOT_COMP_NM / FJ.gear_k;        // 관절 Nm → 채널
+      const double t0 = std::max(1e-3, FOOT_COMP_T0 / FJ.gear_k);
+      tch[FJ.channel] += (float)(kc * std::tanh((double)tch[FJ.channel] / t0));
+    }
+  };
+  if(FOOT_COMP_NM > 0.0)
+    std::printf("[deploy] ★foot 상수결손 보상 ON — k=%.2f Nm(관절측)·τ0=%.2f · r_foot(G) 법칙\n",
+                FOOT_COMP_NM, FOOT_COMP_T0);
   const double FLOAT_KD = getenv("FLOAT_KD") ? atof(getenv("FLOAT_KD")) : 0.30;
   //   ★**기본은 전 축이다.** 무중력은 다리 전체를 무게 없이 만드는 것이 목적이다 —
   //     축이 서로 커플링돼 있어(hip 이 처지면 thigh 의 중력이 바뀐다) 전 축을 같이 놓아야
@@ -1537,6 +1558,7 @@ int main(int argc, char** argv){
       // ★관절토크 → 채널. tau_ctrl_to_ch 가 **커플링 전치**(τ_raw_calf = τ_calf − c·τ_foot)와
       //   gear_k 나눗셈을 같이 한다. 직접 나누면 발목에서 틀린다.
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+      foot_comp(tau_ch);
       jm.kd_ch(kd_ch.data(), FLOAT_KD);
       for(int i=0;i<NCH;i++) kp_ch[i] = 0.f;
       if(getenv("FLOAT_DBG")){
@@ -1605,6 +1627,7 @@ int main(int argc, char** argv){
       for(int j=0;j<NJ;j++)
         tau_ctrl[j] = std::max(-PUSH_TAU_MAX, std::min(PUSH_TAU_MAX, tau_ctrl[j]));
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+      foot_comp(tau_ch);
       jm.kd_ch(kd_ch.data(), FLOAT_KD);
       for(int i=0;i<NCH;i++) kp_ch[i] = 0.f;
       if(getenv("PUSH_DBG")){
@@ -1729,6 +1752,7 @@ int main(int argc, char** argv){
       jm.q_ctrl_to_ch(q_ctrl.data(), q_ch.data());        // 위치/속도는 참고값(kp=kd=0 이라 무영향)
       jm.dq_ctrl_to_ch(dq_ctrl.data(), dq_ch.data());
       jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+      foot_comp(tau_ch);
       // ★순수 토크: kp=kd=0. 드라이버가 tau_ff 만 실행한다.
       // ★블렌드: s=0 → 위치제어(hold 자세) · s=1 → 순수토크(WBIC)
       double sb = (stand_T>0) ? (lt-stand_t0)/stand_T : 1.0;

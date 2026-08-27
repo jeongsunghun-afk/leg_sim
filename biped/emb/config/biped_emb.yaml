@@ -432,6 +432,10 @@ home:
   #     항상 이 값이다 — 평발로 세우려면 배포기(biped_deploy --mjcf biped_flatfoot.mjcf)를
   #     쓸 것.
   #
+  # ★★★2026-08-28 **biped_deploy 는 이 값을 더 읽지 않는다** — home = 기하 진리 고정
+  #   (1점 Qhome8 · 2점 Qflat8, biped_deploy.cpp home 진입부). 측정용 임시 자세는
+  #   HOME_DEG env(관절 deg 8개 CSV) 로만 — yaml 편집·커밋 사고(08-27 B자세) 재발 방지.
+  #   이 값은 이제 biped_emb.py(파이썬 제어기) 전용이다.
   # ★★★2026-08-24 전축 0° → **Qhome8(1점 점발 보행자세)** (사용자: "1점은 walk 다").
   #   ⚠**전축 0° 로는 walk 에 진입할 수 없었다.** 배포기가 stand·walk 앞에 자세 가드를 둔다:
   #       biped_deploy.cpp:1220   |목표채널각 − 현재채널각| ≤ STAND_POSE_LIM(15°)

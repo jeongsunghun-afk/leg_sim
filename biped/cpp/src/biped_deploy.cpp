@@ -1242,19 +1242,28 @@ int main(int argc, char** argv){
           }
           if(mode=="home"){
             home_from = hs.q_deg;
-            // ★★목표자세 (2026-08-21 수정) — **1점 점발은 biped_emb.py 와 같은 곳으로 간다.**
-            //   종전엔 cmode 와 무관하게 MJCF 기하에서 뽑은 Qhome8(thigh +11.6°·calf −38.5°)
-            //   로 갔다. biped_emb.py 는 설정의 `home.q_deg`(지금 전축 0°)로 간다.
-            //   ⇒ **같은 HOME 버튼인데 제어기에 따라 다른 자세**였다. 그게 "1점 점발에서
-            //     홈이 이상하게 움직인다" 의 정체다. 이제 설정 하나를 같이 읽는다.
-            //   ⚠2점 평발(cmode=1)은 그대로 **Qflat8**이다. 거긴 발바닥이 지면과 평행해야
-            //     하는 기하 조건이고, 0° 로 가면 stand 진입검사(채널 15°)에 걸려 못 선다.
-            //   ⚠설정에 home.q_deg 가 없으면 종전 Qhome8 로 폴백한다(조용히 0 으로 가면
-            //     크레인에 매달린 채 무릎이 38° 펴진다 — 폴백은 반드시 옛 동작이어야 한다).
-            const bool use_cfg_home = (c.cmode!=1 && (int)cfg.home_q_deg.size() >= NJ);
-            if(use_cfg_home){
-              jm.q_joint_to_ch(cfg.home_q_deg.data(), home_to.data());   // 설정은 **deg**
-            } else {
+            // ★★목표자세 = **기하 진리 고정** (2026-08-28 사용자 지정): 1점 Qhome8 · 2점 Qflat8.
+            //   yaml `home.q_deg` 는 더 읽지 않는다 — 측정 캠페인마다 yaml 을 임시 편집하던
+            //   관행이 B자세 실수 커밋(08-27)까지 만든 원흉이다. home = stand 블렌드 종점과
+            //   항상 같은 자세가 되고(기하 일관), 전축 0° 는 GUI [Zero 자세](jog)가 담당한다.
+            //   측정용 임시 자세는 **HOME_DEG env**(관절 deg 8개 CSV — 1회성, 커밋 불가)로만.
+            //   ⚠biped_emb.py 는 여전히 yaml 을 읽는다 — 실기 writer 는 배포기 하나라 무해.
+            bool env_home = false;
+            if(const char* e = getenv("HOME_DEG")){
+              std::vector<double> hv; std::stringstream hss(e); std::string tk;
+              while(std::getline(hss, tk, ',')) hv.push_back(atof(tk.c_str()));
+              if((int)hv.size() >= NJ){
+                jm.q_joint_to_ch(hv.data(), home_to.data());             // env 는 **deg**
+                env_home = true;
+                std::printf("[deploy] ⚠HOME_DEG 덮어씀(측정용) — home 이 기하 진리가 아니다:");
+                for(int j=0;j<NJ;j++) std::printf(" %.1f", hv[j]);
+                std::printf("\n");
+              } else {
+                std::printf("[deploy] ⚠HOME_DEG 원소 %d < %d — 무시하고 기하 진리 사용\n",
+                            (int)hv.size(), NJ);
+              }
+            }
+            if(!env_home){
               std::vector<double> qt(NJ);
               for(int j=0;j<NJ;j++) qt[j] = (c.cmode==1 ? c.Qflat8[j] : c.Qhome8[j]);
               jm.q_ctrl_to_ch(qt.data(), home_to.data());                // 기하는 **rad**
@@ -1279,8 +1288,8 @@ int main(int argc, char** argv){
             home_t0 = lt; home_done = false; home_warned = false;
             std::printf("[deploy] home → **%s** 자세 · 최대이동 %.1f° · %.1fs 램프"
                         "(5차 S-curve · 최대 %.0fdps ≪ 트립 %.0f)\n",
-                        use_cfg_home ? "설정 home.q_deg (biped_emb.py 와 동일)"
-                                     : (c.cmode==1?"2점 평발 Qflat8":"1점 점발 Qhome8(폴백)"),
+                        env_home ? "HOME_DEG(측정용 임시)"
+                                 : (c.cmode==1?"2점 평발 Qflat8":"1점 점발 Qhome8"),
                         mx, home_T, S_VMAX*mx/home_T, cfg.vel_trip_dps);
           }
           // ★★접지 확인 없이 stand 를 못 켜게 막는다 (2026-08-20 실기).

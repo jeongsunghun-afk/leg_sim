@@ -2009,6 +2009,44 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
   </div>
 
   <div style="margin:26px 0">
+    <h3>★운용 파라미터 변경 이력 — 이전 → 현재</h3>
+    <div class="src">현재값은 현장카드 [운용 세팅] · 여기는 <b>무엇이 왜 바뀌었나</b></div>
+    <div class="tw"><table>
+      <thead><tr><th>파라미터</th><th>이전 → 현재</th><th>근거</th></tr></thead>
+      <tbody>
+      <tr class="pick"><td class="ax">1점 CoM 높이<br><span class="src">CZ_1PT · GUI H_DEF_1PT · deploy body_h</span></td>
+          <td class="n">0.50 → <b>0.48</b></td>
+          <td>08-28 높이 스윕: 0.50 은 낙상 경계(0.52 는 vx0.30 낙상 · 0.50 은 vx0.35 낙상 +
+              0.30 미끄러짐 실효 0.175). <b>0.48 = vx0.35 완주 · 실효 0.28~0.32 · 배터리 8/8 ·
+              무릎 +2 Nm</b>. 속도한계 0.30 → 0.35~0.40 (data/comh_sweep_20260828.txt)</td></tr>
+      <tr><td class="ax">WALK_VEL_TRIP_DPS</td><td class="n">— → <b>900</b></td>
+          <td>walk 한정. 실측 플랜트 스윙 요구 calf 채널 673 dps(고정 200 은 스윙 즉살) ·
+              타 모드 200 유지 · <b>이탈 0.5 s 유예</b>(잔류 속도가 복원된 문턱에 걸리던 구멍)</td></tr>
+      <tr><td class="ax">WALK_TAU_TRIP_NM</td><td class="n">— → <b>25</b></td>
+          <td>walk 한정(타 모드 15 유지). ⚠KD_FLOOR×41 &gt; 0.8×TAU_TRIP 이면 정상 스윙 제동만으로
+              발화 — 기동 시 경고를 낸다(한계비 0.61)</td></tr>
+      <tr><td class="ax">WALK_KD_FLOOR</td><td class="n">— → <b>0.15</b></td>
+          <td>스윙 kd 제동 41 → ~6 Nm. <b>원안 q̇_cmd 전송은 기각</b> — dq_ch 는 측정속도라
+              dq_des 로 보내면 지연 탓 음의 감쇠(목표 관절속도는 토크 WBIC 에 존재하지 않음).
+              전이 계단 방지로 2.0/s 램프</td></tr>
+      <tr><td class="ax">home 목표</td><td class="n">yaml home.q_deg → <b>Qhome8/Qflat8 고정</b></td>
+          <td>측정 캠페인마다 yaml 을 임시 편집하던 관행이 B자세 실수 커밋을 만들었다 —
+              구조 자체를 제거. 측정용 임시 자세는 <code>HOME_DEG</code> env(관절 deg 8 CSV)</td></tr>
+      <tr><td class="ax">JOG_SPEED_DPS</td><td class="n">— → env [5,150]</td>
+          <td>에어워크 세션 한정 jog 슬루 개방(20 dps 로는 궤적이 시간왜곡). <b>평시엔 빼 둔다</b></td></tr>
+      <tr><td class="ax">airwalk <code>--align-dps</code></td><td class="n">— → <b>25</b>(무게추 20)</td>
+          <td>정렬·복귀를 도구가 서행 보간. 종전엔 배포기 슬루에 맡겨 무게추 2 kg 에서
+              hip 16.86 Nm 토크트립(중력 10 Nm = 트립의 67% + 슬루 감쇠)</td></tr>
+      <tr><td class="ax">유지(변경 없음)</td>
+          <td class="n">GRAV = STAND_TAU "1.20,1.10,1.22,1.00,<br>1.18,1.10,1.22,1.00" ·
+              <b>FOOT_COMP_NM 0.36</b> · T_STEP 0.30</td>
+          <td>g* 는 08-25 확정분 · FOOT_COMP 는 08-27 실기검증(E4 0.66→0.77) ·
+              T_STEP 은 실측 플랜트 재스윕에서 0.26~0.40 전부 완주라 0.30 유지</td></tr>
+      </tbody></table></div>
+    <div class="note">새로 들어간 안전장치(값이 아니라 로직): <b>토크 불응답 감지</b> —
+      위치모드에서 오차 &gt; 5° + 정지 &lt; 2 dps + |kp 토크| &gt; 2|G| + 2 Nm 이 1 s 지속 →
+      채널 래치 · stand/walk 진입 거부 · 접지 중 보류 · off 로 해제.</div>
+
     <h3>최근에 고친 것</h3>
     <div class="src">2026-08-24 · 옛 바이너리/옛 문서 판별에 쓸 것</div>
     <div class="tw"><table>

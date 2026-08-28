@@ -839,7 +839,7 @@ int main(int argc, char** argv){
           "\n%s\n!! ⛔⛔ **통신 동결** — 다음 채널이 0.5초 넘게 값이 하나도 안 바뀐다:%s\n"
           "!!   %s\n"
           "!!   ⚠health=ok · n_fault=0 으로 보인다 — **믿으면 안 된다.**\n"
-          "!!   복구: %s\n%s\n\n",
+          "!!   복구: %s%s\n%s\n\n",
           std::string(72,'!').c_str(), fz.c_str(),
           link_down
             ? "★**EtherCAT 물리 링크 단절**(eth0 carrier=0) — EMB↔transfer 구간이다.\n"
@@ -932,9 +932,9 @@ int main(int argc, char** argv){
         char row[1024];
         std::snprintf(row,sizeof row,
           "%s\t%.1f\t%s\t%.1f\t%d\t%s\t%s\t%lld\t%s\t%lld\t%lld\t%lld\t%.2f\t%s\t%.2f\t%.0f\t"
-          "%s\t%ld\t%.1f\t%.0f\t%ld",
+          "%s\t%ld\t%.1f\t%.0f\t%ld\t%s",
           wall_stamp().c_str(), lt-t0, mode.c_str(), lt-mode_t0, nfz,
-          all_ch?"EtherCAT":"FDCAN", fz.c_str(),
+          link_down ? "EtherCAT" : (all_ch ? "SPI/MCU" : "FDCAN"), fz.c_str(),
           dj, e2.state.c_str(), n1.carrier, dcrc, derr,
           tmax, tch>=0?chname[tch].c_str():"-", cmax, hz_ema,
           sttx.c_str(), stt_or, soc.temp_c, soc.mhz, soc.thr, nrow?dp:"-");

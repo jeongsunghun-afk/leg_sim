@@ -826,16 +826,30 @@ int main(int argc, char** argv){
         //   4축만 얼면 MCU 는 살아 있고 그 아래 **FDCAN(해당 다리)** 이 끊긴 것이다 —
         //   MCU 가 마지막 값을 EtherCAT 으로 계속 올리므로 갱신 플래그·health 는 정상으로 보인다.
         const bool all_ch = (nfz >= (int)cfg.joints.size());
+        // ★★판정 순서 정정 (2026-08-28 실기): 종전엔 **채널 수만 보고** 판정문을 먼저 찍고
+        //   물리링크 증거는 그 아래에 붙였다. 그 결과 "4축만 얼었으니 EtherCAT 이 아니다" 라고
+        //   단정한 배너 바로 밑에 **carrier 0(링크 끊김)** 이 찍히는 모순이 실제로 나왔다.
+        //   ⇒ **carrier 를 먼저 읽고, 0 이면 그것이 최종 판정이다.** 링크가 끊기면 Emb 은
+        //   마지막 버퍼를 계속 재발행하므로(commEtherCATm.cpp:520) 어느 채널이 먼저 '정지'로
+        //   잡히는지는 타이밍 문제일 뿐이라, 채널 수로 구간을 가르면 틀린다.
+        //   ⚠토폴로지: EMB ―EtherCAT→ transfer ―SPI→ MCU ―FDCAN→ MD80 (2026-08-28 정정)
+        const NicSnap n_pre = NicSnap::take();
+        const bool link_down = (n_pre.carrier == 0);
         std::fprintf(stderr,
           "\n%s\n!! ⛔⛔ **통신 동결** — 다음 채널이 0.5초 넘게 값이 하나도 안 바뀐다:%s\n"
           "!!   %s\n"
           "!!   ⚠health=ok · n_fault=0 으로 보인다 — **믿으면 안 된다.**\n"
-          "!!   복구: 모터 전원 OFF/ON → Emb 재기동. %s\n%s\n\n",
+          "!!   복구: %s\n%s\n\n",
           std::string(72,'!').c_str(), fz.c_str(),
-          all_ch ? "8축 **전부** → EtherCAT(EMB↔MCU) 구간이 끊겼다."
-                 : "일부만 얼었다 ⇒ **EtherCAT 이 아니다**(슬레이브는 8축 하나뿐이다).\n"
-                   "!!   MCU 는 살아 있고 그 아래 **FDCAN(그 다리)** 이 끊긴 것이다.",
-          all_ch ? "" : "\n!!   ⚠전원 재투입으로 잠깐 풀려도 재발한다 — 배선·커넥터·종단저항을 볼 것.",
+          link_down
+            ? "★**EtherCAT 물리 링크 단절**(eth0 carrier=0) — EMB↔transfer 구간이다.\n"
+              "!!   ⚠얼어붙은 채널 수는 판단에 쓰지 않는다: 링크가 끊기면 Emb 이 마지막 버퍼를\n"
+              "!!   계속 재발행하므로, 어느 채널이 먼저 '정지'로 잡히는지는 타이밍 문제다."
+            : (all_ch ? "carrier 는 살아 있는데 8축 **전부** 얼었다 ⇒ **transfer/SPI 또는 MCU** 구간."
+                      : "carrier 는 살아 있고 일부만 얼었다 ⇒ **FDCAN(그 다리)**. MCU 는 살아 있다."),
+          link_down ? "**케이블·커넥터 점검이 먼저다.** 재기동으로 잠깐 살아나도 재발한다."
+                    : "모터 전원 OFF/ON → Emb 재기동.",
+          link_down ? "" : "\n!!   ⚠전원 재투입으로 잠깐 풀려도 재발한다 — 배선·커넥터·종단저항을 볼 것.",
           std::string(72,'!').c_str());
 
         // ═══ 증거 수집 (2026-08-24) ═══════════════════════════════════════

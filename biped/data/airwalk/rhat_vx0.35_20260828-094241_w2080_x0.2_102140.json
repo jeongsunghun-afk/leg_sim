@@ -1,0 +1,64 @@
+{
+ "HL_hip": {
+  "alpha": 0.885,
+  "d_alpha": 0.002,
+  "tau_f": 0.083,
+  "visc": 9.042,
+  "inertia": 0.1697,
+  "r2": 0.774,
+  "n": 1223,
+  "alpha_qs": 0.945
+ },
+ "HL_thigh": {
+  "alpha": 0.637,
+  "d_alpha": 0.008,
+  "tau_f": 0.603,
+  "visc": 3.112,
+  "inertia": 0.1563,
+  "r2": 0.63,
+  "n": 1294,
+  "alpha_qs": 0.779
+ },
+ "HL_calf": {
+  "alpha": 1.172,
+  "d_alpha": 0.012,
+  "tau_f": 0.347,
+  "visc": 9.323,
+  "inertia": 0.1348,
+  "r2": 0.935,
+  "n": 1527,
+  "alpha_qs": 1.24
+ },
+ "HL_foot": null,
+ "HR_hip": {
+  "alpha": 0.927,
+  "d_alpha": 0.002,
+  "tau_f": 0.427,
+  "visc": 11.233,
+  "inertia": 0.0935,
+  "r2": 0.836,
+  "n": 1200,
+  "alpha_qs": 1.002
+ },
+ "HR_thigh": {
+  "alpha": 0.975,
+  "d_alpha": 0.01,
+  "tau_f": 0.915,
+  "visc": 4.851,
+  "inertia": 0.2312,
+  "r2": 0.728,
+  "n": 1475,
+  "alpha_qs": 1.167
+ },
+ "HR_calf": {
+  "alpha": 0.831,
+  "d_alpha": 0.007,
+  "tau_f": 0.163,
+  "visc": 6.656,
+  "inertia": 0.1249,
+  "r2": 0.944,
+  "n": 1433,
+  "alpha_qs": 0.846
+ },
+ "HR_foot": null
+}

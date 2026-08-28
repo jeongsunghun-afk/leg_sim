@@ -131,15 +131,38 @@ inline VectorXd wbic_track(const WbicIn& in){
     Gr.push_back(-r); hv.push_back(in.drv_peak[i]+off);
   }
   // eiquadprog: CE x+ce0=0 · CI x+ci0≥0
-  // ★정규화 (2026-08-28 실기): 2점 평발은 **발당 2접촉점 = 4점**이라 λ 가 rank-deficient 다
-  //   (sim(biped_mpc_wbic.py:243)은 이 경우 solver 를 proxqp 로 갈아탄다 — C++ 은 eiquadprog
-  //   하나로 미는데 정규화가 1e-8 뿐이었다). 실기 2점 stand 에서 **QP 실패 20~33%** 가 관측됐고,
-  //   실패하면 중력보상 폴백으로 떨어지므로 매 틱 두 해가 번갈아 나가 **떨림**이 된다.
-  //   ⇒ 감쇠최소제곱과 같은 처방: Hessian 대각 가산을 키워 축퇴를 흡수한다.
-  //   기본은 종전값 유지(회귀 방지) · WBIC_REG 로 현장에서 올려 시험한다(1e-6 ~ 1e-4 권장).
+  //   WBIC_REG: Hessian 대각 가산(기본 1e-8). ⚠**등식 축퇴에는 안 듣는다** — 아래 프루닝이 그 몫.
   static const double WREG = getenv("WBIC_REG") ? atof(getenv("WBIC_REG")) : 1e-8;
   P=(0.5*(P+P.transpose())).eval()+WREG*MatrixXd::Identity(nz,nz);
   MatrixXd CE=A; VectorXd ce0=-bb;
+  // ★★등식 제약 프루닝 (2026-08-28 실기에서 확정) ─────────────────────────────
+  //   실기 2점 평발 stand 에서 QP 실패율 20~100%, 사유코드 **4 = REDUNDANT_EQUALITIES**.
+  //   원인은 수치가 아니라 **구조**다: 한 발에 접촉점이 둘인데 발은 강체라, 두 점의
+  //   가속도 구속 6행 중 **두 점을 잇는 선 방향 1행이 종속**이다(강체는 그 거리를 못 바꾼다).
+  //   발이 둘이니 정확히 2행이 남는다 → eiquadprog 는 이걸 못 넘기고 통째로 포기하고,
+  //   그때마다 중력보상 폴백(τ=h)으로 떨어져 **두 해가 번갈아 나가는 것이 떨림**이었다.
+  //   (sim 은 이 경우 solver 를 proxqp 로 갈아타 우회한다 — biped_mpc_wbic.py:243)
+  //   ⇒ rank-revealing QR 로 **독립 행만 남긴다.** 버리는 행은 남은 행들의 선형결합이므로
+  //     해집합이 바뀌지 않는다(구조적 종속이라 일관성도 보장된다).
+  //   끄려면 WBIC_EQ_PRUNE=0.
+  static const bool EQ_PRUNE = !getenv("WBIC_EQ_PRUNE") || atoi(getenv("WBIC_EQ_PRUNE"));
+  if(EQ_PRUNE && CE.rows() > 0){
+    Eigen::ColPivHouseholderQR<MatrixXd> qr(CE.transpose());
+    qr.setThreshold(1e-9);
+    const int r = (int)qr.rank();
+    { static int last_r=-1, last_n=-1;
+      if(r!=last_r || (int)CE.rows()!=last_n){ last_r=r; last_n=(int)CE.rows();
+        std::fprintf(stderr,"[wbic] 등식 rank: %d/%ld %s\n", r, (long)CE.rows(),
+                     r<CE.rows() ? "→ **프루닝 발동**" : "(축퇴 없음)"); } }
+    if(r < CE.rows()){
+      const auto& perm = qr.colsPermutation().indices();   // CE^T 의 열 = CE 의 행
+      std::vector<int> keep(perm.data(), perm.data()+r);
+      std::sort(keep.begin(), keep.end());
+      MatrixXd CE2(r, CE.cols()); VectorXd ce02(r);
+      for(int i=0;i<r;i++){ CE2.row(i)=CE.row(keep[i]); ce02[i]=ce0[keep[i]]; }
+      CE = CE2; ce0 = ce02; neq = r;
+    }
+  }
   int nci=(int)Gr.size(); MatrixXd CI(nci,nz); VectorXd ci0(nci);
   for(int i=0;i<nci;i++){ CI.row(i)=-Gr[i]; ci0[i]=hv[i]; }
   VectorXd x(nz);

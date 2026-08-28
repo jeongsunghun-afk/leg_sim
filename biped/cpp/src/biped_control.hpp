@@ -440,8 +440,37 @@ struct BipedControl {
     for(int k=0;k<K;k++){ int o=nv+3*k;
       for(int s=0;s<4;s++){ VectorXd r=VectorXd::Zero(nz); r[o]=sgn[s][0]; r[o+1]=sgn[s][1]; r[o+2]=-MU_EFF; Gr.push_back(r); hv.push_back(0.0);}
       VectorXd r=VectorXd::Zero(nz); r[o+2]=-1; Gr.push_back(r); hv.push_back(-LAMZ_MIN); }
-    P=(0.5*(P+P.transpose())).eval()+1e-6*MatrixXd::Identity(nz,nz);   // ★정칙화↑(1e-8→1e-6, eiquadprog 안정)
-    MatrixXd CE=A; VectorXd ce0=-bb; int nci=(int)Gr.size(); MatrixXd CI(nci,nz); VectorXd ci0(nci);
+    static const double WREG = getenv("WBIC_REG") ? atof(getenv("WBIC_REG")) : 1e-6;
+    P=(0.5*(P+P.transpose())).eval()+WREG*MatrixXd::Identity(nz,nz);   // ★정칙화(1e-8→1e-6, eiquadprog 안정)
+    MatrixXd CE=A; VectorXd ce0=-bb;
+    // ★★등식 제약 프루닝 (2026-08-28 실기 확정) ───────────────────────────────
+    //   실기 2점 평발 stand 에서 QP 실패 20~100%, 사유코드 **4 = REDUNDANT_EQUALITIES**.
+    //   원인은 수치가 아니라 **구조**다: 한 발에 접촉점이 둘인데 발은 강체라, 두 점의
+    //   가속도 구속 6행 중 **두 점을 잇는 선 방향 1행이 종속**이다(강체는 그 거리를 못 바꾼다).
+    //   발이 둘이니 정확히 2행 남는다 → eiquadprog 는 통째로 포기하고 중력보상 폴백(τ=h)으로
+    //   떨어진다. **두 해가 매 틱 번갈아 나가는 것이 실기에서 본 떨림**이었다.
+    //   (sim(biped_mpc_wbic.py:243)은 이 경우 solver 를 proxqp 로 갈아타 우회한다)
+    //   ⇒ rank-revealing QR 로 독립 행만 남긴다. 버리는 행은 남은 행들의 선형결합이라
+    //     해집합이 안 바뀐다(구조적 종속이므로 일관성도 보장).  끄려면 WBIC_EQ_PRUNE=0.
+    static const bool EQ_PRUNE = !getenv("WBIC_EQ_PRUNE") || atoi(getenv("WBIC_EQ_PRUNE"));
+    if(EQ_PRUNE && CE.rows() > 0){
+      Eigen::ColPivHouseholderQR<MatrixXd> qr(CE.transpose());
+      qr.setThreshold(1e-9);
+      const int rk = (int)qr.rank();
+      { static int last_r=-1;
+        if(rk != last_r){ last_r = rk;
+          std::fprintf(stderr,"[wbic_stance] 등식 rank %d/%d %s\n", rk, neq,
+                       rk<neq ? "→ **프루닝 발동**(축퇴 제거)" : "(축퇴 없음)"); } }
+      if(rk < CE.rows()){
+        const auto& perm = qr.colsPermutation().indices();
+        std::vector<int> keep(perm.data(), perm.data()+rk);
+        std::sort(keep.begin(), keep.end());
+        MatrixXd CE2(rk, CE.cols()); VectorXd ce02(rk);
+        for(int i=0;i<rk;i++){ CE2.row(i)=CE.row(keep[i]); ce02[i]=ce0[keep[i]]; }
+        CE = CE2; ce0 = ce02; neq = rk;
+      }
+    }
+    int nci=(int)Gr.size(); MatrixXd CI(nci,nz); VectorXd ci0(nci);
     for(int i=0;i<nci;i++){ CI.row(i)=-Gr[i]; ci0[i]=hv[i]; }
     VectorXd x(nz); eiquadprog::solvers::EiquadprogFast qp; qp.reset(nz,neq,nci);
     auto st=qp.solve_quadprog(P,g,CE,ce0,CI,ci0,x);

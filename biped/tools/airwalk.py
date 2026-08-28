@@ -68,6 +68,7 @@ def hold(mode, secs, hz=20, **kw):
 
 # ── 안전 종료 (float_gstar v3/멱등 규약) ─────────────────────────────────────
 _QSTART = [None]; _SHUT = [False]
+_ALIGN  = [20.0]        # 정렬/복귀 램프 속도[dps] — play 가 --align-dps 로 채운다
 
 def safe_shutdown():
     if _SHUT[0] or _QSTART[0] is None:
@@ -80,7 +81,7 @@ def safe_shutdown():
         # ★복귀도 **도구가 보간**한다 (2026-08-28 실기: 복귀에서 토크트립).
         #   목표를 한 번에 던지면 배포기 슬루(에어워크 세션은 140dps)로 달려 감쇠·과도
         #   토크가 얹힌다 — 무게추 상태의 hip 은 중력만으로 트립의 2/3 를 이미 쓴다.
-        rate = float(getattr(_ARGS[0], "align_dps", 20.0) or 20.0)
+        rate = float(_ALIGN[0])
         q_now0 = q_now()
         if q_now0:
             span = max(abs(x - y) for x, y in zip(q_now0, qs))
@@ -355,6 +356,7 @@ def play(a):
             print("    " + l[:100])
         return 1
     try:
+        _ALIGN[0] = float(a.align_dps)
         _QSTART[0] = q_now()
         if _QSTART[0] is None:
             print("✗ 관절각을 못 읽는다"); return 1

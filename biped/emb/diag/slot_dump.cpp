@@ -16,6 +16,11 @@
  *   (단 배포기가 돌고 있으면 값이 움직이는 상태로 보인다 — 그게 오히려 판별에 좋다)
  *
  *   빌드: g++ -O2 -std=c++17 -I/usr/include slot_dump.cpp -o slot_dump -lRobotSharedMem -lrt
+ *   ★32비트 경로도 같이 본다 (2026-08-28): 헤더에 MotorParam32_t + Set/GetMotorStatus32 가
+ *     이미 있다. Emb 이 그쪽도 채우고 있다면 **float32(사실상 무손실)** 로 받을 수 있어,
+ *     float16 의 각도 해상도 0.11°(2~3 rad 부근) 제약이 사라진다. 16/32 를 나란히 찍어
+ *     "32비트 영역이 살아 있는가" 를 판정한다.
+ *
  *   실행: ./slot_dump [iterations]      기본 200회 (~4s @ 20ms)
  */
 #include <cstdio>
@@ -45,6 +50,8 @@ int main(int argc, char** argv){
     const char* FN[8] = {"fPosition","fVelocity","fAccelOrTemp","fTorque",
                          "fGainKp","fGainKd","fGainKi","fCurrent"};
     Stat st_f[MAX_CH][8];
+    Stat st_g[MAX_CH][8];                     // 32비트 경로
+    int n32_ok = 0;
     Stat st_ratio[MAX_CH];                    // fCurrent / fTorque
     unsigned char uc_seen[MAX_CH][4] = {};    // ucDevID/Mode/Command/Status 마지막값
     int nupd = 0;
@@ -62,6 +69,13 @@ int main(int argc, char** argv){
             if (std::fabs(f[3]) > 0.05) st_ratio[i].add(f[7] / f[3]);
             uc_seen[i][0]=s.ucDevID; uc_seen[i][1]=s.ucMode;
             uc_seen[i][2]=s.ucCommand; uc_seen[i][3]=s.ucStatus;
+            MotorParam32_t g;
+            if (RobotMemGait_GetMotorStatus32(&g, i) == ENUM_RESULT_SUCCESS){
+                const double h[8] = {g.fPosition, g.fVelocity, g.fAccelrationOrTemperture,
+                                     g.fTorque, g.fGainKp, g.fGainKd, g.fGainKi, g.fCurrent};
+                for (int j = 0; j < 8; j++) st_g[i][j].add(h[j]);
+                if (i == 0) n32_ok++;
+            }
         }
         sleep_ms(20);
     }
@@ -81,6 +95,15 @@ int main(int argc, char** argv){
             printf("  %-4s %-13s %10.4f %10.4f %10.4f %8.4f   %s\n",
                    "", FN[j], s.avg(), s.mn, s.mx, s.span(), verdict);
         }
+        // 32비트 경로 요약 — 살아 있으면 우선 사용 후보
+        bool any32 = false;
+        for (int j = 0; j < 8; j++) if (st_g[i][j].n && (st_g[i][j].mn != 0.0 || st_g[i][j].mx != 0.0)) any32 = true;
+        if (st_g[i][0].n == 0)      printf("  %-4s [32비트] GetMotorStatus32 호출 실패 — 그 경로 없음\n", "");
+        else if (!any32)            printf("  %-4s [32비트] 전 필드 0 — 영역은 있으나 **Emb 이 안 채운다**\n", "");
+        else {
+            printf("  %-4s [32비트] ★살아있다 — pos %.4f  vel %.4f  tau %.4f  (f32 = 각도 무손실)\n", "",
+                   st_g[i][0].avg(), st_g[i][1].avg(), st_g[i][3].avg());
+        }
         if (st_ratio[i].n > 10){
             const Stat& r = st_ratio[i];
             printf("  %-4s fCurrent/fTorque  평균 %.4f  변동 %.4f (%d 표본)   %s\n", "",
@@ -89,11 +112,14 @@ int main(int argc, char** argv){
                                    : "→ 비가 흔들림 = 독립 측정 가능성");
         }
     }
+    printf("\n  32비트 상태영역 %s\n", n32_ok ? "읽기 성공(위 [32비트] 줄 참조)" : "읽기 실패");
     printf("\n  판독 요령:\n"
            "   · fAccelOrTemp 가 20~60 근처면 = MOTOR TEMPERATURE(문서상 응답 B3)\n"
            "   · 남는 칸(fGainKp/Kd/Ki)이 **관절 움직임과 함께 변하면** 출력축 엔코더가\n"
            "     이미 실려 오는 것이다 — 그러면 요청 없이 바로 쓸 수 있다\n"
            "   · 전부 0 이면 빈 칸 확정 → fCurrent 재활용 제안의 근거\n"
-           "   · 배포기를 돌리며(jog 등) 같이 재면 '움직임과 함께 변하는가' 가 잘 보인다\n");
+           "   · 배포기를 돌리며(jog 등) 같이 재면 '움직임과 함께 변하는가' 가 잘 보인다\n"
+           "   · [32비트] 가 살아 있으면 출력축을 **float32 로** 요청하는 게 낫다\n"
+           "     (float16 은 2~3 rad 부근 0.11° — 백래쉬 7° 엔 충분하나 미세 유격엔 거칠다)\n");
     return 0;
 }

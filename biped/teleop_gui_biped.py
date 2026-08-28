@@ -304,6 +304,24 @@ def set_push_leg(l):
     dpg.set_value('push_lbl', f'{"HR" if l else "HL"} · 목표 {_push[0]:g} N (램프 5 N/s)')
 
 
+# ── ★hold 중력지지율 (2026-08-28) ────────────────────────────────────────────
+#   hold 는 순수 위치 PD 라 중력을 **오차로만** 이긴다 → 처짐(실측 foot 8.2°).
+#   강성을 올려 처짐을 줄이려다 ×3·×5 에서 HL_calf 가 주저앉았으므로, 게인 대신
+#   **필요한 토크를 전방보상으로 직접 준다.** 100% = 한 다리가 mg/2 를 떠받침.
+#   총 명령토크는 그대로고(중력 요구량은 자세가 정한다) 오차만 0 으로 간다 —
+#   그래서 트립 여유가 나빠지지 않는다. 이게 강성 상향과 결정적으로 다른 점이다.
+HOLD_FF_STEPS = [0, 25, 50, 75, 100]
+_holdff = [0.0]
+
+
+def set_hold_ff(p):
+    if p is None:
+        print('[gui] set_hold_ff(None) — user_data 누락?'); return
+    _holdff[0] = float(p)
+    pub.set(hold_ff_pct=float(p))
+    dpg.set_value('hff_lbl', f'목표 {p:g} % 로 램프 중…')
+
+
 def jog_zero():                       # 전체 0(home)
     for i in range(NJ):
         dpg.set_value(f'jog_{i}', 0.0)
@@ -384,6 +402,18 @@ def _refresh_mode_led(st):
             tgt = pub.cmd.get('push_fz', 0.0)
             dpg.set_value('push_lbl', f'{"HR" if _push[1] else "HL"} · 적용 {pf:.1f} N'
                                       + (f' → 목표 {tgt:g}' if abs(pf - tgt) > 0.5 else ''))
+        except Exception: pass
+    # 중력지지 버튼 — 힘 버튼과 같은 규칙(**실제 램프된 값**이 도달했을 때만 켠다)
+    hp = st.get('hold_ff_pct')
+    if hp is not None:
+        for k, v in enumerate(HOLD_FF_STEPS):
+            try: dpg.bind_item_theme(f'hffbtn_{k}', _kp_on if abs(hp - v) < 1.0 else _kp_off)
+            except Exception: pass
+        try:
+            tgt = pub.cmd.get('hold_ff_pct', 0.0)
+            hn, hf = st.get('hold_ff_n', 0.0), st.get('hold_ff_full_n', 0.0)
+            dpg.set_value('hff_lbl', f'적용 {hp:.0f} % ({hn:.1f}/{hf:.1f} N·다리)'
+                                     + (f' → 목표 {tgt:g} %' if abs(hp - tgt) > 1.0 else ''))
         except Exception: pass
 
 
@@ -977,6 +1007,19 @@ with dpg.window(tag='main'):
             dpg.add_button(label=f'{_f:g}N', width=48, tag=f'pfbtn_{_k}', user_data=_f,
                            callback=lambda _s_, _a_, _u_: set_push_fz(_u_))
         dpg.add_text('', tag='push_lbl', color=(150, 155, 175))
+    dpg.add_separator()
+    # ── ★hold 중력지지 (2026-08-28) ──────────────────────────────────────
+    dpg.add_text('● hold 중력지지 (hold 모드 전용 — 100% = 한 다리가 몸무게 절반을 떠받침)',
+                 color=(255, 205, 120))
+    with dpg.group(horizontal=True):
+        for _k, _p in enumerate(HOLD_FF_STEPS):
+            dpg.add_button(label=f'{_p:g}%', width=48, tag=f'hffbtn_{_k}', user_data=_p,
+                           callback=lambda _s_, _a_, _u_: set_hold_ff(_u_))
+        dpg.add_text('', tag='hff_lbl', color=(150, 155, 175))
+    dpg.add_text('강성을 올리는 것과 다르다 — **총 명령토크는 그대로**고 kp·오차에 있던 몫이 '
+                 'τ_ff 로 옮겨갈 뿐이라 처짐만 줄고 토크트립 여유는 안 나빠진다. '
+                 '0%면 종전 hold(순수 위치 PD)와 완전히 같다. 진입할 때마다 0에서 다시 램프한다.',
+                 color=(150, 155, 175), wrap=760)
     dpg.add_separator()
     dpg.add_text('⚠올릴수록 자세는 잘 지키지만 **토크트립까지의 각도가 줄어든다** '
                  '(τ_trip ÷ (kp_ch·gear_k)). 접지시키며 하중이 실릴 때 여기 걸리기 쉽다 — ×3 부터 시작할 것.',

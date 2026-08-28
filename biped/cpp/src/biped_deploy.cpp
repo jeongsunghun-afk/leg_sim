@@ -478,6 +478,37 @@ int main(int argc, char** argv){
   const double PUSH_MAX  = getenv("PUSH_MAX")  ? atof(getenv("PUSH_MAX"))  : 60.0;  // [N]
   const double PUSH_TAU_MAX = getenv("PUSH_TAU_MAX") ? atof(getenv("PUSH_TAU_MAX")) : 12.0; // [Nm/관절]
   double push_fz_cur = 0.0;
+  // ★★hold 중력 전방보상 (2026-08-28) — "hold 로 서기".
+  //   ⚠무엇이 문제였나: hold 는 **순수 위치 PD** 다(τ_ff 를 안 보낸다 — write_pos).
+  //     중력을 오차로만 이긴다 ⇒ 정상상태 처짐 = τ_중력 /(α·kp_ch·gear_k).
+  //     실측(08-28, 크레인 부분지지): hip 3.2° · thigh 0.6° · calf 2.2° · **foot 8.2°**.
+  //     그래서 강성배율로 처짐을 줄이려 했고 — ×3·×5 에서 **HL_calf 가 주저앉았다**
+  //     (오차 15~23° 로 벌어지는데 토크는 오히려 떨어짐 = 그 채널이 토크를 못 냄).
+  //   ⇒ 게인을 올리는 대신 **필요한 토크를 처음부터 준다.** 이건 토크를 더 주는 게 아니다:
+  //     중력이 요구하는 총량은 자세가 정하므로 고정이고, kp·오차 항에 있던 몫이 τ_ff 로
+  //     **자리를 옮길 뿐**이다. 총 명령토크는 그대로고 **오차만 0 으로 간다.**
+  //     ⇒ 트립 여유(15Nm)도 나빠지지 않는다. 이게 강성 상향과 결정적으로 다른 점이다.
+  //   식:  τ = g*축별·G_model(q_meas) + Σ_다리 Jᵀ(발)·(0,0,−F) ,  kp·kd 는 그대로 유지
+  //   ⚠**IMU 가 필요 없다** — float/push 와 똑같이 베이스를 단위 쿼터니언으로 고정한다.
+  //     (2점 stand 는 WBIC 가 base 자세 **피드백**을 쓰므로 IMU 가 죽으면 못 선다.
+  //      이건 피드백이 아니라 전방보상이라 그 의존이 없다. 대신 자세를 스스로 못 세운다 —
+  //      "무너지지 않고 버티기" 까지가 목표고, 균형 회복은 stand 의 몫이다.)
+  //   램프는 **지지율[%/s]** 이다 — 힘[N/s]이 아니다. 중력항까지 같은 비율로 올려야
+  //   계단이 안 생기기 때문이다(아래 hold 분기 주석). 기본 10 %/s = 0→100% 에 10초.
+  const double HOLD_FF_RATE = getenv("HOLD_FF_RATE") ? atof(getenv("HOLD_FF_RATE")) : 10.0;
+  const double HOLD_FF_TAU_MAX = getenv("HOLD_FF_TAU_MAX") ? atof(getenv("HOLD_FF_TAU_MAX")) : 12.0;
+  //   적용점: 평발 2점 접지의 압력중심은 발바닥 어딘가다. 발끝에만 걸면 발목토크가
+  //   과대평가되고, 발목원점(뒤꿈치 구)에만 걸면 발목토크가 0 이 되어 **정작 병목인
+  //   foot 축을 하나도 안 도와준다.** 기본은 둘에 반반(=발바닥 중앙).
+  const bool   HOLD_FF_MID = !(getenv("HOLD_FF_POINT") && std::string(getenv("HOLD_FF_POINT"))=="toe");
+  //   한 다리 100% = mg/2. 모델에서 뽑는다(기체가 바뀌면 자동으로 따라간다).
+  const double HOLD_FF_FULL_N = 0.5 * mj_getTotalmass(m) * 9.81;
+  double hold_fz_cur = 0.0, hold_ff_pct_cur = 0.0;
+  std::printf("[deploy] hold 중력지지 — 모델 총질량 %.2f kg · **한 다리 100%% = %.1f N** ·"
+              " 램프 %.1f %%/s · 적용점 %s\n"
+              "         GUI [중력지지] 버튼(0~100%%)으로 올린다. 0%% 면 종전 hold(순수 위치 PD)와 같다.\n",
+              mj_getTotalmass(m), HOLD_FF_FULL_N, HOLD_FF_RATE,
+              HOLD_FF_MID ? "발바닥 중앙(발끝+뒤꿈치 반반)" : "발끝");
   //   ★★**축별 배율** (2026-08-24 실기에서 필요해졌다).
   //     실기 관측: HR 은 잘 맞는데 **HL_hip 이 특히 약하고** HL_thigh 가 한쪽으로 흐른다.
   //     무부하 실측이 이미 예측한 것이다 — ROTOR_I HL 7.652e-4 vs HR 7.121e-4(7.5%) ·
@@ -1190,6 +1221,9 @@ int main(int argc, char** argv){
             }
           }
           if(mode=="hold"){
+            // ★중력지지는 **매 진입마다 0 에서 다시 램프**한다 — GUI 버튼이 눌린 채로
+            //   남아 있어도 진입 순간 계단이 걸리지 않는다(push 와 같은 규약).
+            hold_fz_cur = 0.0; hold_ff_pct_cur = 0.0;
             std::vector<float> raw = hs.q_deg;             // 클램프 전
             // ★★home → hold 는 **home 의 목표를 이어받는다** (2026-08-21, 사용자 요청).
             //   하려는 것: home 자세를 잡고 hold 로 굳힌 뒤 **크레인을 내려 중력을 걸어도
@@ -1674,7 +1708,63 @@ int main(int argc, char** argv){
     } else if(mode=="hold"){
       jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = hold_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
-      hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+      // 지지율 램프 — 계단 금지. 목표는 GUI(hold_ff_pct), 0 이면 종전 경로 그대로 간다.
+      //   ⚠비율은 **전방보상 전체**에 곱한다(중력항 포함). 중력항만 통째로 켜면
+      //     램프를 시작하는 순간 관절당 5 Nm 계단이 걸린다 — 목업에서 실제로 나왔다.
+      //   ⇒ 0% = 종전 hold 와 **완전히 동일** · 100% = 중력 + 몸무게 절반 전량.
+      { const double tgt = std::max(0.0, std::min(100.0, cmd.hold_ff_pct));
+        const double stp = HOLD_FF_RATE * dt;
+        hold_ff_pct_cur += std::max(-stp, std::min(stp, tgt - hold_ff_pct_cur));
+        hold_fz_cur = 0.01 * hold_ff_pct_cur * HOLD_FF_FULL_N; }
+      if(hold_ff_pct_cur <= 1e-6){
+        hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+      } else {
+        // ★중력 전방보상 — 자세는 그대로 hold_ch 로 잡고 τ_ff 만 얹는다(위 상수 주석 참조).
+        //   베이스 고정 + qvel=0 ⇒ qfrc_bias 는 코리올리 없는 **순수 중력항**. IMU 불필요.
+        for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+        d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+        d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+        for(int i=0;i<6;i++) d->qvel[i]=0.0;
+        mj_forward(m,d);
+        for(int j=0;j<NJ;j++)
+          tau_ctrl[j] = (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE) * d->qfrc_bias[6+j];
+        // 몸무게를 **양 다리에** 건다 — push 와 달리 한쪽이 아니다.
+        //   부호는 push 와 같다: τ = G + Jᵀ·(0,0,−F) 가 "발이 F 로 딛고 반작용 F↑ 를 받는다".
+        //   ⚠여기선 **전량**(HOLD_FF_FULL_N)을 넣는다 — 지지율은 아래에서 한 번만 곱한다.
+        { static std::vector<mjtNum> jacp;
+          for(int leg=0; leg<2; leg++){
+            const int gs[2] = { c.sph[leg], (HOLD_FF_MID && c.has_heel) ? c.sph2[leg] : -1 };
+            const double share = (gs[1] >= 0) ? 0.5 : 1.0;
+            for(int k=0;k<2;k++){
+              if(gs[k] < 0) continue;
+              jacp.assign(3*m->nv, 0.0);
+              mj_jacGeom(m, d, jacp.data(), nullptr, gs[k]);
+              for(int j=0;j<NJ;j++)
+                tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-HOLD_FF_FULL_N*share);
+            }
+          } }
+        // ★지지율을 **여기서** 곱한다 — 중력항까지 함께 램프되어야 계단이 안 생긴다.
+        const double hff = 0.01 * hold_ff_pct_cur;
+        for(int j=0;j<NJ;j++)
+          tau_ctrl[j] = std::max(-HOLD_FF_TAU_MAX, std::min(HOLD_FF_TAU_MAX, hff*tau_ctrl[j]));
+        jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
+        foot_comp(tau_ch);
+        hw->write_mit(hold_ch.data(), zero.data(), tau_ch.data(),
+                      kp_ch.data(), kd_ch.data(), NCH);
+        // ★1초 진단 — 브링업 중엔 항상 찍는다(지지율 0 이면 이 가지에 안 들어온다).
+        //   읽는 법: 지지율을 올릴수록 **오차가 줄고 τ_ff 가 그만큼 커져야** 정상이다.
+        //   오차가 안 줄면 그 축은 명령을 못 따르는 것(구동 결손·기구 걸림)이다.
+        { static double last_hff = -1e9;
+          if(lt - last_hff > 1.0){ last_hff = lt;
+            double emx=0; int ech=-1;
+            for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+              const double e=(double)hold_ch[i]-(double)hs.q_deg[i];
+              if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
+            std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · tau_ff:", hold_ff_pct_cur, hold_fz_cur);
+            for(int j=0;j<NJ;j++) std::printf(" %+.2f", tau_ctrl[j]);
+            std::printf("  최대오차 %s %+.2f°\n", ech>=0?chname[ech].c_str():"-", emx);
+            std::fflush(stdout); } }
+      }
     } else if(mode=="soft_off"){
       double u = (soft_T>0) ? (lt-soft_t0)/soft_T : 1.0;
       u = std::max(0.0, std::min(1.0, u));
@@ -2272,6 +2362,9 @@ int main(int argc, char** argv){
         //   ⇒ 그래서 GUI 가 채널각↔모델각 역산식을 **복사할 필요가 없다.** 그 복사본이
         //     stale 이 되는 게 이 저장소가 반복해서 당한 버그다(joint_map 규칙 복제 주석 참조).
         "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,\"push_fz\":%.1f,"
+        // ★hold 중력지지 — `hold_ff_pct` 는 **지금 실제로 나가는 값**(램프 중이면 중간값),
+        //   `hold_ff_n` 은 그때의 한 다리 지지력[N]. 0 이면 순수 위치 PD(종전 hold).
+        "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,"
         "\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
@@ -2286,7 +2379,8 @@ int main(int argc, char** argv){
         LCOMP>0 ? lat_comp_ms : 0.0, lc_n ? 100.0*(double)lc_skip/(double)lc_n : 0.0,
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
-        POS_KP, kp_scale_tgt, POS_KD, push_fz_cur, offs_json.c_str());
+        POS_KP, kp_scale_tgt, POS_KD, push_fz_cur,
+        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, offs_json.c_str());
       write_state(stt_p, buf);
     }
 

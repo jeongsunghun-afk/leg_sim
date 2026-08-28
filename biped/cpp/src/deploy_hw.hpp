@@ -468,6 +468,13 @@ struct Cmd {
   std::vector<double> grav_scale_joint;
   double push_fz = 0.0;              // push(발밀기) 모드 목표 z-힘[N, 아래로 양수]
   int    push_leg = 0;               // 0=HL · 1=HR
+  // ★hold 중력지지율 [%] — hold 모드에서 **한 다리가 떠받칠 몸무게의 비율**.
+  //   100 = mg/2(모델 총질량에서 계산). push_fz 와 왜 따로 두나:
+  //     ① push 의 힘 버튼은 최대 50N 인데 여기 필요한 값은 68N(=mg/2) 이라 못 닿는다.
+  //     ② push 는 "발밑 저울" 실험용 절대힘이고 이건 "몸무게의 몇 %" 라 의미가 다르다.
+  //        기체 질량이 바뀌면 절대힘은 틀리지만 % 는 그대로 맞다.
+  //   0 = 전방보상 없음(종전 hold 와 동일). 음수는 0 으로 클램프한다.
+  double hold_ff_pct = 0.0;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -509,6 +516,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.grav_scale_joint = list("grav_scale_joint");
   out.push_fz  = num("push_fz", 0.0);
   out.push_leg = (int)num("push_leg", 0);
+  out.hold_ff_pct = num("hold_ff_pct", 0.0);
   return true;
 }
 

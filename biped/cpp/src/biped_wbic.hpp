@@ -145,7 +145,8 @@ inline VectorXd wbic_track(const WbicIn& in){
   //   ⇒ rank-revealing QR 로 **독립 행만 남긴다.** 버리는 행은 남은 행들의 선형결합이므로
   //     해집합이 바뀌지 않는다(구조적 종속이라 일관성도 보장된다).
   //   끄려면 WBIC_EQ_PRUNE=0.
-  static const bool EQ_PRUNE = !getenv("WBIC_EQ_PRUNE") || atoi(getenv("WBIC_EQ_PRUNE"));
+  // ★기본 OFF 로 되돌림 (2026-08-28) — 실기 미검증. 켜려면 WBIC_EQ_PRUNE=1.
+  static const bool EQ_PRUNE = getenv("WBIC_EQ_PRUNE") && atoi(getenv("WBIC_EQ_PRUNE"));
   if(EQ_PRUNE && CE.rows() > 0){
     Eigen::ColPivHouseholderQR<MatrixXd> qr(CE.transpose());
     qr.setThreshold(1e-9);

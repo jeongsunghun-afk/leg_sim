@@ -452,7 +452,11 @@ struct BipedControl {
     //   (sim(biped_mpc_wbic.py:243)은 이 경우 solver 를 proxqp 로 갈아타 우회한다)
     //   ⇒ rank-revealing QR 로 독립 행만 남긴다. 버리는 행은 남은 행들의 선형결합이라
     //     해집합이 안 바뀐다(구조적 종속이므로 일관성도 보장).  끄려면 WBIC_EQ_PRUNE=0.
-    static const bool EQ_PRUNE = !getenv("WBIC_EQ_PRUNE") || atoi(getenv("WBIC_EQ_PRUNE"));
+    // ★기본 OFF 로 되돌림 (2026-08-28): sim 에선 QP 실패 18.5%→0% 로 좋아졌지만
+    //   **실기에서는 균형이 오히려 나빠졌다**(사용자 관찰: "더 힘이 빠진다").
+    //   실기 검증 전에 기본값을 바꾼 것이 잘못이었다 — 켜려면 WBIC_EQ_PRUNE=1.
+    //   ⚠종전 동작(프루닝 없음)은 QP 실패 시 **중력보상 폴백**이라 안전측이다.
+    static const bool EQ_PRUNE = getenv("WBIC_EQ_PRUNE") && atoi(getenv("WBIC_EQ_PRUNE"));
     if(EQ_PRUNE && CE.rows() > 0){
       Eigen::ColPivHouseholderQR<MatrixXd> qr(CE.transpose());
       qr.setThreshold(1e-9);

@@ -1960,8 +1960,12 @@ E2 가 0.80 인 것과 정합) + thigh(HL 케이블 확정분). 부수 실증: �
             안 늘면 <b>커넥터 접촉</b> → 흔들기로 지점 특정 → 케이블 교체</td></tr>
       </tbody>
     </table></div>
-    <p><b>[토폴로지]</b> EtherCAT 은 <b>Pi(Emb) ↔ MCU</b> 구간뿐이다.
-       MCU ↔ 드라이버는 <b>FDCAN</b>. 8축 전부 동결 = EtherCAT · 일부만 = FDCAN.</p>
+    <p><b>[토폴로지]</b> (2026-08-28 정정 — 중간에 <b>transfer 보드</b>가 있다):
+       <code>Emb(Pi) ―EtherCAT→ transfer ―SPI→ MCU ―FDCAN→ MD80</code>.
+       <b>판별</b>: 8축 전부 동결인데 <code>eth0 carrier</code> 가 <b>끊기면 EtherCAT</b>(Pi↔transfer 케이블) ·
+       <b>carrier 는 살아 있는데 데이터만 정지하면 SPI/MCU</b> 구간 · 일부 축만이면 <b>FDCAN</b>.
+       종전 서술("EtherCAT 은 Pi↔MCU 뿐")은 transfer 단을 빠뜨렸다 — dmesg eth0 Down/Up 증거는
+       Pi↔transfer 링크를 가리키므로 <b>기존 진단은 유효</b>하다.</p>
   </div>
 
   <!-- ── α ─────────────────────────────────────────── -->
@@ -2018,7 +2022,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
    │ hw->write_mit()  →  bridge_write_mit()
  SHM 명령영역              MotorParam16_t{ucMode=1, fPosition, fVelocity,
    │ SetMotorCommand16()                   fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
- Emb → EtherCAT → MCU      (MCU 가 <b>deg → rad</b> 변환)
+ Emb ―EtherCAT→ transfer ―SPI→ MCU   (MCU 가 <b>deg → rad</b> 변환)
    │
  FDCAN  SET_IMPEDANCE_PD(32B)  Kp · Kd · Target position · Target velocity
    │                           · Feedforward torque · Max output        <b>float32</b>
@@ -2027,7 +2031,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
 <b>상태 (모터 → 우리)</b>
  MD80   DEFAULT_RESPONSE(<b>24B</b>)  id(1) · ERROR VECTOR(2) · MAIN ENC pos(4) vel(4)
    │                                · <b>OUTPUT ENC pos(4) vel(4)</b> · MOTOR TORQUE(4) · TEMP(1)
- MCU → EtherCAT → Emb       ← 출력축 2필드는 <b>여기서 버려진다</b>(담을 SHM 칸 없음)
+ MCU ―SPI→ transfer ―EtherCAT→ Emb   ← 출력축 2필드는 <b>이 3홉 어딘가에서 버려진다</b>
    │ SetMotorStatus16()
  SHM 상태영역              MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
    │ GetMotorStatus16() → bridge_read()
@@ -2065,11 +2069,12 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       <b>단위 경계</b>: SHM 까지는 deg/dps, CAN 부터 rad/(rad/s) — 변환은 MCU 가 한다.<br>
       <b>정밀도</b>: float16 은 토크 10 Nm 부근 0.008 Nm(무해)이지만 각도 2~3 rad 부근 <b>0.11°</b> —
       미세 유격 측정엔 32비트 경로(<code>MotorParam32_t</code>)가 낫다.<br>
-      <b>어디에 무엇이 사는가</b>: SHM 은 <b>Pi 램</b>(프로세스 간 공유 — Emb 앱이 채우고 우리 배포기가 읽음,
-      두 프로세스 모두 Pi 위에 있다) · EtherCAT PDO 는 <b>Pi ↔ MCU 케이블</b> · FDCAN 프레임 정의는
-      <b>MCU 펌웨어 + MD80 펌웨어</b>. ⇒ 출력축을 받으려면 손댈 곳이 <b>둘</b>이다:
-      ①MCU 가 응답에서 파싱 ②Emb 이 SHM(fCurrent)에 기록 — 그 사이 EtherCAT PDO 가
-      MotGeneral_t 레이아웃 그대로면 자동 통과, 아니면 PDO 매핑도 함께.<br>
+      <b>어디에 무엇이 사는가</b>: SHM 은 <b>Pi 램</b>(Emb 앱이 채우고 우리 배포기가 읽음 — 둘 다 Pi 위) ·
+      EtherCAT 은 <b>Pi ↔ transfer</b> · SPI 는 <b>transfer ↔ MCU</b> · FDCAN 프레임 정의는
+      <b>MCU + MD80 펌웨어</b>. ⇒ 출력축을 받으려면 손댈 곳은 <b>양 끝 둘</b>이다:
+      ①MCU 가 응답에서 파싱 ②Emb 이 SHM(<code>fCurrent</code>)에 기록.
+      <b>가운데 두 홉(SPI·EtherCAT)은 무변경</b> — 새 필드를 만들지 않고 기존 20 B 안의 빈 칸을 쓰기 때문이다
+      (필드를 늘리면 SPI 패킷·EtherCAT PDO 매핑까지 4곳이 된다. 슬롯 재활용의 진짜 이점이 이것).<br>
       <b>미해결</b>: 상태의 MOTOR TORQUE 가 실측(kt·i_q)인지 드라이브 내부 계산값인지 불명 —
       실측이면 α≈0.85 가 진짜 전달효율, 계산값이면 전류루프 오차가 섞인다. Emb 확인 항목.</div>
 

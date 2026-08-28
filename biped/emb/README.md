@@ -19,7 +19,10 @@ biped **모델기반 제어기(MPC+WBIC)** 를 RGA `RobotSharedMem`(Gait) 실모
     │  joint_map.q_joint_to_ch          ★커플링 되먹임 + 부호·감속비 + offset
     ▼
  채널각 q_ch [deg]  ─ SHM(MotGeneral_t, **float16**) ─▶  RobotEmbedded (1 kHz 폴링)
-                                                          │  EtherCAT 사이클
+                                                          │  EtherCAT  (Pi ↔ transfer 보드)
+                                                          ▼
+                                                     transfer 보드 (EtherCAT 슬레이브)
+                                                          │  SPI       (transfer ↔ MCU)
                                                           ▼
                                                         MCU  ─ FDCAN ─▶  **md80 드라이버**
                                                                           (MIT 임피던스 모드)

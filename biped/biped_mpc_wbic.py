@@ -48,6 +48,13 @@ class BipedMPCWBIC(BS.BipedStep):
         #   0.50 은 vx0.35 낙상+0.30 미끄러짐(실효 0.175). 0.48 은 vx0.35 완주·실효 0.28~0.32,
         #   배터리 8/8 유지, 무릎 +2Nm 뿐. (0.46/0.44 도 완주하나 tilt 증가 — 0.48 이 최적점)
         self.CZ_2PT, self.CZ_1PT = 0.362, 0.48        # 모드별 목표 CoM 높이(평발 낮음/점발 crouch)
+        # ★스윙 위치제어 하이브리드 게인(관절 Nm/rad · Nm·s/rad). 0 = 꺼짐(종전 동작)
+        self.SWING_KP = float(os.environ.get('SWING_KP', 0.0))
+        self.SWING_KD = float(os.environ.get('SWING_KD', 0.0))
+        self._ik_scratch = None
+        # WBIC 스윙 태스크 게인(기본 = biped_step 값). 하이브리드에선 낮춰 배분한다
+        self.SW_KP_EFF = float(os.environ.get('SW_KP_EFF', SW_KP))
+        self.SW_KD_EFF = float(os.environ.get('SW_KD_EFF', SW_KD))
         self.q_home_tgt = self.q_home.copy()
         self.com_z_tgt = self.CZ_2PT if self.contact_mode == '2pt' else self.CZ_1PT
         self.ramp_q = 0.9                              # 자세 램프 속도[rad/s](≈1.3s에 발목 눕힘/세움)
@@ -178,7 +185,9 @@ class BipedMPCWBIC(BS.BipedStep):
         P = np.zeros((nz, nz)); g = np.zeros(nz); sw_vidx = set()
         for leg, (ptgt, vtgt) in swing.items():
             J = self.foot_jac_center(leg)          # ★swing=발 중심 추종(2접촉이면 2구 평균)
-            accel = SW_KP*(ptgt - self.foot_center(leg)) + SW_KD*(vtgt - J @ qv)
+            # ★하이브리드 배분(2026-08-28): 스윙을 관절 위치제어로 넘기면 WBIC 태스크는
+            #   낮추거나 꺼야 한다 — 둘이 같은 다리를 동시에 몰면 서로 감쇠시킨다.
+            accel = self.SW_KP_EFF*(ptgt - self.foot_center(leg)) + self.SW_KD_EFF*(vtgt - J @ qv)
             P[:nv,:nv] += 90.0*(J.T @ J); g[:nv] -= 90.0*(J.T @ accel)
             for t in range(4): sw_vidx.add(6 + leg*4 + t)
             if self.has_heel and self.contact_mode == '2pt':   # ★평발 walk 시만 swing 발 수평(점발 보행엔 부적용)
@@ -239,6 +248,62 @@ class BipedMPCWBIC(BS.BipedStep):
         for k in range(Kc): tau -= cjac[k][:,6:].T @ x[sl(k):sl(k)+3]
         d.ctrl[:]=np.clip(self._foot_comp(tau_to_drive(tau)),-self.drv_peak,self.drv_peak); return True   # ★ctrl=드라이브 토크
 
+    # ★★스윙 위치제어 하이브리드 (2026-08-28 · 기본 꺼짐 SWING_KP=0)
+    #   구조: **지지=토크(WBIC) · 스윙=위치(IK 목표각 + 관절 PD)**.
+    #   왜: 스윙은 무부하 궤적추종이라 힘제어가 필요 없고, 위치 피드백이 우리 플랜트의
+    #   약점(α 0.85 전달손실·마찰 0.6~0.9Nm·foot 상수결손)을 **되먹임으로 걷어낸다**.
+    #   또 현재 스윙은 kp=0·dq_des=0 이라 드라이브 kd 가 41Nm 로 제동하는 문제가 있는데,
+    #   IK 목표를 주면 **진짜 q_des·q̇_des** 가 생겨 그 문제가 사라진다
+    #   (종전 "q̇_cmd 전송" 안이 기각된 이유 = dq_ch 가 측정속도였기 때문).
+    #   ⚠실기 전제: 백래쉬. 무릎 유격 7° = 발끝 42mm 라 **기어 재조임 전에는 무의미**하다.
+    #   여기서는 드라이브가 할 PD 를 sim 에서 재현한다(τ += kp·err + kd·derr, 스윙 4축만).
+    def _foot_pt(self, dat, leg):
+        """접촉 기준점 — 평발(2점)이면 두 구의 중심, 점발이면 발끝 구. foot_center 와 같은 규약."""
+        if self.has_heel and self.sph2 is not None:
+            return 0.5 * (dat.geom_xpos[self.sph[leg]] + dat.geom_xpos[self.sph2[leg]])
+        return dat.geom_xpos[self.sph[leg]]
+
+    def _swing_ik(self, leg, p_tgt, iters=12):
+        """DLS IK — 스윙 4관절로 발 중심을 p_tgt 에 (base 는 현재 상태 고정)."""
+        m, d = self.m, self.d
+        if self._ik_scratch is None:
+            self._ik_scratch = mujoco.MjData(m)
+        s = self._ik_scratch
+        s.qpos[:] = d.qpos[:]; s.qvel[:] = 0.0
+        vidx = list(range(6 + 4 * leg, 6 + 4 * leg + 4))
+        qidx = list(range(7 + 4 * leg, 7 + 4 * leg + 4))
+        q = np.array(d.qpos[qidx], float)
+        for _ in range(iters):
+            s.qpos[qidx] = q
+            mujoco.mj_kinematics(m, s); mujoco.mj_comPos(m, s)
+            p = self._foot_pt(s, leg)
+            e = np.asarray(p_tgt, float) - p
+            if np.linalg.norm(e) < 1e-4:
+                break
+            jp = np.zeros((3, m.nv))
+            mujoco.mj_jac(m, s, jp, None, p, self.fbody[leg])
+            J = jp[:, vidx]
+            q = q + J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(3), e)
+            for k, vi in enumerate(vidx):                      # 관절한계 클램프
+                lo, hi = m.jnt_range[m.dof_jntid[vi]]
+                if hi > lo: q[k] = min(max(q[k], lo), hi)
+        # 목표속도: q̇ = J⁺ v  (같은 자세에서)
+        s.qpos[qidx] = q; mujoco.mj_kinematics(m, s); mujoco.mj_comPos(m, s)
+        jp = np.zeros((3, m.nv))
+        mujoco.mj_jac(m, s, jp, None, self._foot_pt(s, leg), self.fbody[leg])
+        return q, jp[:, vidx]
+
+    def _apply_swing_pd(self, leg, q_des, J, v_tgt):
+        """드라이브측 관절 PD 를 재현 — 스윙 4축의 드라이브 토크에 가산."""
+        if self.SWING_KP <= 0.0: return
+        m, d = self.m, self.d
+        qidx = list(range(7 + 4 * leg, 7 + 4 * leg + 4))
+        vidx = list(range(6 + 4 * leg, 6 + 4 * leg + 4))
+        dq_des = J.T @ np.linalg.solve(J @ J.T + 1e-4*np.eye(3), np.asarray(v_tgt, float))
+        tau_pd = self.SWING_KP * (q_des - d.qpos[qidx]) + self.SWING_KD * (dq_des - d.qvel[vidx])
+        full = np.zeros(8); full[4*leg:4*leg+4] = tau_pd
+        d.ctrl[:] = np.clip(d.ctrl + tau_to_drive(full), -self.drv_peak, self.drv_peak)
+
     def reset(self):
         super().reset()
         self.q_home_tgt = self.q_home.copy()           # 램프 목표 = 스폰 자세(램프 없이 시작)
@@ -293,6 +358,9 @@ class BipedMPCWBIC(BS.BipedStep):
             self.liftoff[swing_leg] = self.foot_center(swing_leg).copy()
         p, v = self.swing_traj(swing_leg, s)
         self.wbic_track(stance, {swing_leg: (p, v)}, self.lam)
+        if self.SWING_KP > 0.0:                       # ★스윙만 위치제어 가산
+            q_des, J = self._swing_ik(swing_leg, p)
+            self._apply_swing_pd(swing_leg, q_des, J, v)
         self.t += dt
 
 

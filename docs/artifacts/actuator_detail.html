@@ -2022,8 +2022,10 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
    │ jm.*_ctrl_to_ch()     ← 좌표변환 + 커플링 전단 + gear_k
  채널 좌표                 tau_ch[Nm] q_ch[<b>deg</b>] kp_ch kd_ch
    │ hw->write_mit()  →  bridge_write_mit()
- SHM 명령영역              MotorParam16_t{ucMode=1, fPosition, fVelocity,
-   │ SetMotorCommand16()                   fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
+ SHM <b>명령영역</b>            MotorParam16_t{ucMode=1, fPosition, fVelocity,
+   │                                        fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
+   │ <b>우리</b> RobotMemGait_<b>SetMotorCommand16</b>()  ← 쓰기
+   │ <b>Emb</b>  RobotMemGait_<b>GetMotorCommand16</b>()  ← 읽기
  Emb ―EtherCAT→ transfer ―SPI→ MCU   (MCU 가 <b>deg → rad</b> 변환)
    │
  FDCAN  SET_IMPEDANCE_PD(32B)  Kp · Kd · Target position · Target velocity
@@ -2035,8 +2037,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
    │                                · <b>OUTPUT ENC pos(4) vel(4)</b> · MOTOR TORQUE(4) · TEMP(1)
  MCU ―SPI→ transfer ―EtherCAT→ Emb   ← 출력축 2필드는 <b>이 3홉 어딘가에서 버려진다</b>
    │ SetMotorStatus16()
- SHM 상태영역              MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
-   │ GetMotorStatus16() → bridge_read()
+ SHM <b>상태영역</b>            MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
+   │ <b>Emb</b>  RobotMemGait_<b>SetMotorStatus16</b>()   ← 쓰기
+   │ <b>우리</b> RobotMemGait_<b>GetMotorStatus16</b>() → bridge_read()
  채널 좌표                 hs.q_deg hs.dq_dps hs.tau_nm hs.cur_a
    │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
  배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
@@ -2062,6 +2065,12 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       용량 병목은 <b>공유메모리 20 B/채널</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).<br>
       ⚠①과 ② 는 <b>같은 EMB 보드 안</b>이다(우리 배포기 프로세스 ↔ Emb 앱 프로세스가 램으로 만난다).
       ②와 ③ 사이에만 <b>EtherCAT → transfer → SPI</b> 3홉이 들어간다.</div>
+    <div class="note"><b>타입과 함수를 구분할 것.</b> <code>MotorParam16_t</code> 는 <b>자료형</b>(20 B 구조체)이고,
+      <code>RobotMemGait_Set/GetMotorCommand16</code> · <code>Set/GetMotorStatus16</code> 은 그 구조체를
+      SHM 의 <b>어느 영역</b>에 넣고 빼는 <b>함수</b>다. 같은 타입이 <b>명령영역·상태영역 두 곳</b>에 각각 놓여 있고,
+      우리와 Emb 이 정확히 반대쪽을 쓴다(우리 = Set명령 / Get상태 · Emb = Get명령 / Set상태).
+      ⇒ 상태영역의 <code>fGainKp/Kd/Ki</code> 를 재활용해도 <b>명령영역의 게인과는 다른 주소</b>다.</div>
+
     <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
     <div class="tw"><table>
       <thead><tr><th style="width:15%">물리량</th>

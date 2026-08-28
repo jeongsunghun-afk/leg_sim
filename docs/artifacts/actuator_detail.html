@@ -2009,6 +2009,65 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
   </div>
 
   <div style="margin:26px 0">
+    <h3>★신호 파이프라인 — 배포기 ↔ MD80 (2026-08-28 정리)</h3>
+    <div class="src">같은 물리량이 층마다 이름·좌표·타입이 바뀐다. 어디서 무엇이 되는지의 단일 출처</div>
+<pre><b>명령 (우리 → 모터)</b>
+ 배포기(biped_deploy)      tau_ctrl[Nm,관절] q_ctrl[rad,관절]
+   │ jm.*_ctrl_to_ch()     ← 좌표변환 + 커플링 전단 + gear_k
+ 채널 좌표                 tau_ch[Nm] q_ch[<b>deg</b>] kp_ch kd_ch
+   │ hw->write_mit()  →  bridge_write_mit()
+ SHM 명령영역              MotorParam16_t{ucMode=1, fPosition, fVelocity,
+   │ SetMotorCommand16()                   fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
+ Emb → EtherCAT → MCU      (MCU 가 <b>deg → rad</b> 변환)
+   │
+ FDCAN  SET_IMPEDANCE_PD(32B)  Kp · Kd · Target position · Target velocity
+   │                           · Feedforward torque · Max output        <b>float32</b>
+ MD80   τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_ff
+
+<b>상태 (모터 → 우리)</b>
+ MD80   DEFAULT_RESPONSE(<b>24B</b>)  id(1) · ERROR VECTOR(2) · MAIN ENC pos(4) vel(4)
+   │                                · <b>OUTPUT ENC pos(4) vel(4)</b> · MOTOR TORQUE(4) · TEMP(1)
+ MCU → EtherCAT → Emb       ← 출력축 2필드는 <b>여기서 버려진다</b>(담을 SHM 칸 없음)
+   │ SetMotorStatus16()
+ SHM 상태영역              MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
+   │ GetMotorStatus16() → bridge_read()
+ 채널 좌표                 hs.q_deg hs.dq_dps hs.tau_nm hs.cur_a
+   │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
+ 배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
+    <div class="tw"><table>
+      <thead><tr><th>물리량</th><th>배포기(관절)</th><th>채널</th><th>SHM 필드</th><th>CAN 필드</th></tr></thead>
+      <tbody>
+      <tr><td class="ax">위치</td><td class="n">q_ctrl [rad]</td><td class="n">q_ch [deg]</td>
+          <td class="n">fPosition (f16)</td><td class="n">Target position / MAIN ENC POS [rad]</td></tr>
+      <tr><td class="ax">속도</td><td class="n">dq_ctrl [rad/s]</td><td class="n">dq_ch [dps]</td>
+          <td class="n">fVelocity (f16)</td><td class="n">Target velocity / MAIN ENC VEL [rad/s]</td></tr>
+      <tr class="pick"><td class="ax">토크</td><td class="n">tau_ctrl [Nm]</td><td class="n">tau_ch [Nm]</td>
+          <td class="n">fTorque (f16)</td>
+          <td class="n">명령=Feedforward torque<br>상태=<b>MOTOR TORQUE</b> [Nm]</td></tr>
+      <tr><td class="ax">게인</td><td class="n">—</td><td class="n">kp_ch kd_ch</td>
+          <td class="n">fGainKp fGainKd</td><td class="n">Kp Kd</td></tr>
+      <tr><td class="ax">적분게인</td><td class="n">—</td><td class="n">—</td>
+          <td class="n">fGainKi <b>= 0 고정</b></td><td class="n"><b>없음</b>(임피던스 모드엔 Ki 필드 부재)</td></tr>
+      <tr><td class="ax">상태비트</td><td class="n">health</td><td class="n">—</td>
+          <td class="n">ucStatus</td><td class="n">ERROR VECTOR (uint16)</td></tr>
+      <tr class="rand"><td class="ax">전류</td><td class="n">(포렌식만)</td><td class="n">hs.cur_a</td>
+          <td class="n">fCurrent</td><td class="n"><b>응답에 없음</b> → 토크 파생값</td></tr>
+      <tr class="rand"><td class="ax"><b>출력축 위치</b></td><td class="n">— 미수신</td><td class="n">—</td>
+          <td class="n"><b>칸 없음</b>(→ fCurrent 재활용 제안)</td>
+          <td class="n"><b>OUTPUT ENCODER POSITION</b> [rad] — 이미 전송 중</td></tr>
+      <tr class="rand"><td class="ax">출력축 속도</td><td class="n">— 미수신</td><td class="n">—</td>
+          <td class="n">칸 없음(fGainKi 는 적분항용으로 보존)</td>
+          <td class="n">OUTPUT ENCODER VELOCITY [rad/s] — 이미 전송 중</td></tr>
+      </tbody></table></div>
+    <div class="note"><b>병목은 그릇 크기다.</b> FDCAN 은 프레임당 64 B 라 24 B 응답에 출력축이 이미 들어 있고,
+      막히는 곳은 <code>MotGeneral_t</code> <b>20 B/채널</b> 고정 레이아웃이다 — 그래서 새 필드를 만들지 않고
+      빈 칸(<code>fCurrent</code>) 재활용을 제안한다(PDO·대역폭 무변경).<br>
+      <b>단위 경계</b>: SHM 까지는 deg/dps, CAN 부터 rad/(rad/s) — 변환은 MCU 가 한다.<br>
+      <b>정밀도</b>: float16 은 토크 10 Nm 부근 0.008 Nm(무해)이지만 각도 2~3 rad 부근 <b>0.11°</b> —
+      미세 유격 측정엔 32비트 경로(<code>MotorParam32_t</code>)가 낫다.<br>
+      <b>미해결</b>: 상태의 MOTOR TORQUE 가 실측(kt·i_q)인지 드라이브 내부 계산값인지 불명 —
+      실측이면 α≈0.85 가 진짜 전달효율, 계산값이면 전류루프 오차가 섞인다. Emb 확인 항목.</div>
+
     <h3>★운용 파라미터 변경 이력 — 이전 → 현재</h3>
     <div class="src">현재값은 현장카드 [운용 세팅] · 여기는 <b>무엇이 왜 바뀌었나</b></div>
     <div class="tw"><table>

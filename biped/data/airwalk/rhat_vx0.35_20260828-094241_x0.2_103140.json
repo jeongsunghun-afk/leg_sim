@@ -1,0 +1,46 @@
+{
+ "HL_hip": {
+  "alpha": 0.888,
+  "d_alpha": 0.002,
+  "tau_f": 0.159,
+  "visc": 7.818,
+  "inertia": 0.0728,
+  "r2": 0.92,
+  "n": 1102,
+  "alpha_qs": 0.946
+ },
+ "HL_thigh": {
+  "alpha": 0.852,
+  "d_alpha": 0.003,
+  "tau_f": 0.465,
+  "visc": 3.755,
+  "inertia": 0.088,
+  "r2": 0.953,
+  "n": 1506,
+  "alpha_qs": 0.939
+ },
+ "HL_calf": null,
+ "HL_foot": null,
+ "HR_hip": {
+  "alpha": 0.877,
+  "d_alpha": 0.002,
+  "tau_f": 0.205,
+  "visc": 8.609,
+  "inertia": 0.0489,
+  "r2": 0.913,
+  "n": 1118,
+  "alpha_qs": 0.901
+ },
+ "HR_thigh": {
+  "alpha": 1.033,
+  "d_alpha": 0.004,
+  "tau_f": 0.421,
+  "visc": 5.015,
+  "inertia": 0.0927,
+  "r2": 0.956,
+  "n": 1518,
+  "alpha_qs": 1.169
+ },
+ "HR_calf": null,
+ "HR_foot": null
+}

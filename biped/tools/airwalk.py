@@ -77,8 +77,25 @@ def safe_shutdown():
     try:
         latched = False
         print("\n  ■ 안전 종료 — 시작 매달림 자세로 jog 서행 복귀 후 무여자.")
+        # ★복귀도 **도구가 보간**한다 (2026-08-28 실기: 복귀에서 토크트립).
+        #   목표를 한 번에 던지면 배포기 슬루(에어워크 세션은 140dps)로 달려 감쇠·과도
+        #   토크가 얹힌다 — 무게추 상태의 hip 은 중력만으로 트립의 2/3 를 이미 쓴다.
+        rate = float(getattr(_ARGS[0], "align_dps", 20.0) or 20.0)
+        q_now0 = q_now()
+        if q_now0:
+            span = max(abs(x - y) for x, y in zip(q_now0, qs))
+            t_ramp = max(1.0, span / max(1.0, rate))
+            print(f"    복귀 램프 — {span:.1f}° · {rate:.0f}dps · {t_ramp:.1f}s")
+            tr0 = time.time()
+            while True:
+                u = (time.time() - tr0) / t_ramp
+                if u >= 1.0: break
+                if estopped(): latched = True; break
+                uu = u * u * (3.0 - 2.0 * u)
+                send(mode="jog", jog_deg=[f + (t - f) * uu for f, t in zip(q_now0, qs)])
+                time.sleep(0.05)
         t0 = time.time()
-        while time.time() - t0 < 30.0:
+        while not latched and time.time() - t0 < 30.0:
             if estopped():
                 latched = True; break
             cur = hold("jog", 0.5, jog_deg=list(qs))

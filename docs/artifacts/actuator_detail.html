@@ -2119,7 +2119,20 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       <tr class="rand"><td class="ax">전류</td><td class="n"><b>필드 없음(벤더 확정)</b><br>
           <span class="src">토크 자체가 상전류 추정값이라 정보 중복</span></td>
           <td class="n">fCurrent ← 토크 파생값</td><td class="n">cur_a[] → 포렌식 기록만</td></tr>
+      <tr class="rand"><td class="ax">(게인 3칸)</td><td class="n"><b>필드 없음</b><br>
+          <span class="src">드라이브는 게인을 되돌려 보내지 않는다</span></td>
+          <td class="n">fGainKp · fGainKd · fGainKi<br><b>= 상태 방향엔 의미 없음</b><br>
+          <span class="src">실제 내용은 slot_dump 로 확인 필요</span></td>
+          <td class="n">— 안 읽음</td></tr>
       </tbody></table></div>
+    <div class="note"><b>★상태 구조체의 빈 칸은 하나가 아니다.</b> 명령·상태는 <b>서로 다른 메모리 영역</b>
+      (<code>SetMotorCommand16</code> ↔ <code>SetMotorStatus16</code>)인데 타입만 같다. 게인은 명령 방향에만
+      의미가 있고 드라이브는 게인을 되돌려 보내지 않으므로, <b>상태 쪽 fGainKp/Kd/Ki 세 칸은 비어 있을 가능성이 높다</b>
+      — 그러면 출력축 <b>위치와 속도를 둘 다</b> 받을 수 있다.<br>
+      ⚠"fGainKi 는 적분항용으로 보존" 결정은 <b>명령 방향</b> 이야기다. 상태 방향의 같은 이름 칸은
+      다른 주소이므로 충돌하지 않는다.<br>
+      ⇒ 확인 절차: <code>emb/diag/slot_dump.cpp</code> 로 12필드를 떠서 세 칸이 0 인지 본다.
+      0 이면 <b>위치+속도 둘 다</b> 요청, 무언가 실려 있으면 <code>fCurrent</code> 하나만(위치).</div>
     <div class="note"><b>①</b> FDCAN <code>DEFAULT_RESPONSE</code>(= 벤더 QUICK DATA 0x0A) 24 B ·
       <b>float32</b> · <b>rad</b> · <b>②</b> <code>GetMotorStatus16</code> → <code>MotorParam16_t</code>
       20 B/채널 · <b>float16</b> · deg · <b>③</b> <code>bridge_read()</code> 출력 → biped_deploy · 채널좌표 deg</div>

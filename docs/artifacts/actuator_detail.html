@@ -2039,6 +2039,26 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
    │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
  배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
     <div class="tw"><table>
+      <thead><tr><th>계층</th><th>사는 곳(HW)</th><th>담는 그릇</th><th>좌표·단위</th><th>소유</th></tr></thead>
+      <tbody>
+      <tr><td class="ax">배포기 변수</td><td>Pi 프로세스</td><td>C++ 벡터</td>
+          <td class="n">관절(모델각) rad · Nm</td><td>우리</td></tr>
+      <tr><td class="ax">채널 변수</td><td>Pi 프로세스</td><td>C++ 벡터</td>
+          <td class="n">채널 <b>deg · dps</b> · Nm</td><td>우리(joint_map)</td></tr>
+      <tr class="pick"><td class="ax">SHM</td><td><b>Pi 램</b>(Emb ↔ 배포기)</td>
+          <td class="n"><b>MotorParam16_t 20 B</b>/채널 ×8</td>
+          <td class="n">deg · dps · Nm (<b>float16</b>)</td><td>RGA(RobotSharedMem.h)</td></tr>
+      <tr><td class="ax">EtherCAT</td><td>Pi ↔ <b>transfer 보드</b></td><td class="n">PDO</td>
+          <td class="n">SHM 필드 그대로 추정</td><td>RGA</td></tr>
+      <tr><td class="ax">SPI</td><td><b>transfer ↔ MCU</b></td><td class="n">SPI 패킷</td>
+          <td class="n">동상</td><td>RGA</td></tr>
+      <tr class="pick"><td class="ax">FDCAN</td><td><b>MCU ↔ MD80</b></td>
+          <td class="n">프레임 <b>최대 64 B</b><br>(명령 32 B · 응답 <b>24 B</b>)</td>
+          <td class="n"><b>rad · rad/s</b> · Nm (<b>float32</b>)</td><td>MD80 프로토콜 + MCU 펌웨어</td></tr>
+      </tbody></table></div>
+    <div class="note">단위 경계는 <b>MCU</b>(deg ↔ rad) · 정밀도 경계는 <b>SHM</b>(float32 → float16) ·
+      그릇 병목은 <b>SHM 20 B</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).</div>
+    <div class="tw"><table>
       <thead><tr><th>물리량</th><th>배포기(관절)</th><th>채널</th><th>SHM 필드</th><th>CAN 필드</th></tr></thead>
       <tbody>
       <tr><td class="ax">위치</td><td class="n">q_ctrl [rad]</td><td class="n">q_ch [deg]</td>

@@ -2065,6 +2065,11 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       <b>단위 경계</b>: SHM 까지는 deg/dps, CAN 부터 rad/(rad/s) — 변환은 MCU 가 한다.<br>
       <b>정밀도</b>: float16 은 토크 10 Nm 부근 0.008 Nm(무해)이지만 각도 2~3 rad 부근 <b>0.11°</b> —
       미세 유격 측정엔 32비트 경로(<code>MotorParam32_t</code>)가 낫다.<br>
+      <b>어디에 무엇이 사는가</b>: SHM 은 <b>Pi 램</b>(프로세스 간 공유 — Emb 앱이 채우고 우리 배포기가 읽음,
+      두 프로세스 모두 Pi 위에 있다) · EtherCAT PDO 는 <b>Pi ↔ MCU 케이블</b> · FDCAN 프레임 정의는
+      <b>MCU 펌웨어 + MD80 펌웨어</b>. ⇒ 출력축을 받으려면 손댈 곳이 <b>둘</b>이다:
+      ①MCU 가 응답에서 파싱 ②Emb 이 SHM(fCurrent)에 기록 — 그 사이 EtherCAT PDO 가
+      MotGeneral_t 레이아웃 그대로면 자동 통과, 아니면 PDO 매핑도 함께.<br>
       <b>미해결</b>: 상태의 MOTOR TORQUE 가 실측(kt·i_q)인지 드라이브 내부 계산값인지 불명 —
       실측이면 α≈0.85 가 진짜 전달효율, 계산값이면 전류루프 오차가 섞인다. Emb 확인 항목.</div>
 

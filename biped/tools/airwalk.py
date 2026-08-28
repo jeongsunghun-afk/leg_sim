@@ -365,6 +365,25 @@ def play(a):
         drp = [abs(g0[j]) / (0.85 * KP_CH[j] * GEAR_K[j] ** 2) * 180.0 / 3.14159 for j in range(NJ)]
         drp_max = max(drp)
         drp_lim = max(8.0, 1.6 * drp_max)
+        # ★정렬은 **도구가 직접 서행 램프**한다 (2026-08-28 실기 트립 반영).
+        #   종전엔 목표를 한 번에 fr[0] 으로 던지고 배포기 슬루(JOG_SPEED_DPS)에 맡겼는데,
+        #   재생에 필요한 슬루(≥83dps)를 정렬에도 그대로 쓰게 되어 **감쇠·과도 토크**가 얹혔다:
+        #   무게추 2kg 에서 hip 중력 10Nm(트립 15 의 67%) + 140dps 슬루 → ch0 16.9Nm 토크트립.
+        #   ⇒ 정렬만 --align-dps(기본 25dps)로 보간해 내려보낸다. 재생 속도와 독립이다.
+        q_from = list(_QSTART[0])
+        span = max(abs(x - y) for x, y in zip(q_from, fr[0]))
+        t_ramp = max(1.0, span / max(1.0, a.align_dps))
+        print(f"  정렬 램프 — 최대이동 {span:.1f}° · {a.align_dps:.0f}dps · {t_ramp:.1f}s")
+        tr0 = time.time()
+        while True:
+            u = (time.time() - tr0) / t_ramp
+            if u >= 1.0:
+                break
+            if estopped():
+                print("⛔ E-stop 래치 — 정렬 램프 중단"); return 1
+            uu = u * u * (3.0 - 2.0 * u)                     # smoothstep(가감속 완만)
+            send(mode="jog", jog_deg=[f + (t - f) * uu for f, t in zip(q_from, fr[0])])
+            time.sleep(0.05)
         t0 = time.time()
         cur = None; hist = []
         ok = False
@@ -502,6 +521,8 @@ if __name__ == "__main__":
     p.add_argument("traj")
     p.add_argument("--speed", type=float, default=0.25)
     p.add_argument("--loop", type=int, default=2)
+    p.add_argument("--align-dps", type=float, default=25.0,
+                   help="첫 프레임 정렬 램프 속도[dps] — 무게추 시엔 낮게(토크트립 회피)")
     n = sub.add_parser("analyze", help="궤적 vs 기록 → 갭 표 (노트북)")
     n.add_argument("traj"); n.add_argument("log")
     rh = sub.add_parser("rhat", help="전달비·마찰 동시적합 — 실측자세 G·kd 분리 (노트북)")

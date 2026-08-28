@@ -137,7 +137,9 @@ home = <b>Qhome8/Qflat8 고정</b> (yaml 비의존 — 측정용 임시 자세�
     <p><span class="flag f-acc">safety</span><code>tau_trip 15Nm/50ms</code> · <code>vel_trip 200dps/20ms</code>
        (walk 중 900/25 · 이탈 0.5s 유예) · <code>tilt 40°</code>(IMU 사망 — 무력) ·
        <code>watchdog 500ms</code> → 트립 시 <b>off 강하 + 명령잠금</b> · 무장 중 통신동결 = 즉시 E-stop ·
-       push 직행 금지+매달림 확인 — <b>재무장·push·hold 재래치 3종 08-28 실기검증 ✓</b>.
+       push 직행 금지+매달림 확인 — <b>재무장·push·hold 재래치 3종 08-28 실기검증 ✓</b> ·
+       <b>토크 불응답 감지</b>(위치모드에서 오차&gt;5°+정지+kp토크&gt;2|G|+2Nm 이 1s → 채널 래치,
+       stand/walk 진입 거부. 접지 중 보류·off 로 해제).
        접지 판정 = 실측 |τ|합 / 매달림 모델 예측 비 ≥ 1.25 (stand 진입 게이트) + 무장 후엔 QP 실패율</p>
     <p><span class="flag f-hot">walk 게이트</span><b>EtherCAT 케이블 · HL thigh 케이블 — 이 둘만 남음.</b>
        walk 묶음(kd 축소·모드별 트립·전이 연속화)은 구현·검증 완료(mock 6/6+검증 워크플로).
@@ -330,10 +332,16 @@ home = <b>Qhome8/Qflat8 고정</b> (yaml 비의존 — 측정용 임시 자세�
         <tr><td><strong>IMU 전부 0</strong></td><td>tilt E-stop 무력 · CoM 적분 xy 차단. 복구는 Pi 앱 5줄</td></tr>
         <tr><td>링크별 CoM</td><td>총질량은 실측됨(HL 5,395 g · CAD −2.6%) — <b>링크별 분포는 분해 시 저울</b>
             (thigh 모델중력 ~13% 과대 의심의 최종 확인)</td></tr>
-        <tr><td><strong>★calf·foot 백래쉬/이력 4~5°</strong></td><td>에어워크 실측(08-28):
-            반전 이력폭 calf 4.3/5.1° · foot 4.2/5.0° — <b>HR 이 +0.8° 큼 = 틱틱음 유력 가설</b>
-            (부하 반전 시 유격 관통 충격). 순수 백래쉬는 off 상태 손 측정으로 분리 ·
-            <b>분해 시 벨트 텐션(HR 우선)</b>. 강성 ×5 는 트립각 1.43° &lt; 유격이라 금지</td></tr>
+        <tr><td><strong>★HL_calf 유격 δ≈−7°</strong></td><td>에어워크 무게추 2런 독립 일치
+            (−7.0°/−6.9°) — HL_calf α̂ 를 HR(0.83)로 맞추는 링크-엔코더 어긋남.
+            이력폭은 <b>하중과 무관</b>(2kg 걸어도 calf 4.1→4.0°) = 탄성이 아니라 <b>기하 유격</b>.
+            HR 도 3.8~5.9° 존재. <b>분해 시 벨트 텐션(calf·foot)</b> · 강성 ×5 금지(트립각 1.43° &lt; 유격)</td></tr>
+        <tr><td><strong>★HL_thigh 하중의존 손실</strong></td><td>α̂ 0.852(무부하) → <b>0.637</b>(2kg 발끝)
+            — 백래쉬로 설명 불가(유격은 하중 무관). HL 케이블 외란과 같은 뿌리로 추정.
+            <b>케이블타이 재배치 후 재측정</b>이 검증(성공 = 하중 의존 소멸)</td></tr>
+        <tr><td><strong>★토크 불응답(사일런트)</strong></td><td>실기 실측: HR_thigh 가 오차 10.1° 유지,
+            kp 요구 8.81Nm vs 중력 0.65Nm — 그런데 <b>health 전 축 ok·fault 0</b>.
+            감지기 도입(위 safety) · 원인 미규명 — <b>재발 시 포렌식 배너 + Emb 담당자 보고</b></td></tr>
         <tr><td>1차↔2차 스윕 불일치</td><td>같은 배율에서 표류가 다른 이상이 3회 재현 —
             크레인 스트랩/접촉 의심. 무중력 전 HL_hip 자유 확인</td></tr>
       </tbody>

@@ -2039,7 +2039,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
    │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
  배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
     <div class="tw"><table>
-      <thead><tr><th>계층</th><th>사는 곳(HW)</th><th>담는 그릇</th><th>좌표·단위</th><th>소유</th></tr></thead>
+      <thead><tr><th>계층</th><th>사는 곳(HW)</th><th>데이터 컨테이너</th><th>좌표·단위</th><th>소유</th></tr></thead>
       <tbody>
       <tr><td class="ax">배포기 변수</td><td>Pi 프로세스</td><td>C++ 벡터</td>
           <td class="n">관절(모델각) rad · Nm</td><td>우리</td></tr>
@@ -2056,14 +2056,16 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
           <td class="n">프레임 <b>최대 64 B</b><br>(명령 32 B · 응답 <b>24 B</b>)</td>
           <td class="n"><b>rad · rad/s</b> · Nm (<b>float32</b>)</td><td>MD80 프로토콜 + MCU 펌웨어</td></tr>
       </tbody></table></div>
-    <div class="note">단위 경계는 <b>MCU</b>(deg ↔ rad) · 정밀도 경계는 <b>SHM</b>(float32 → float16) ·
-      그릇 병목은 <b>SHM 20 B</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).</div>
+    <div class="note">단위 경계는 <b>MCU</b>(deg ↔ rad) · 정밀도 경계는 <b>공유메모리</b>(float32 → float16) ·
+      용량 병목은 <b>공유메모리 20 B/채널</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).<br>
+      ⚠①과 ② 는 <b>같은 EMB 보드 안</b>이다(우리 배포기 프로세스 ↔ Emb 앱 프로세스가 램으로 만난다).
+      ②와 ③ 사이에만 <b>EtherCAT → transfer → SPI</b> 3홉이 들어간다.</div>
     <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
     <div class="tw"><table>
       <thead><tr><th>물리량</th>
-        <th>그릇 ①<br><code>bridge_write_mit()</code><span class="src">우리 API · 채널좌표</span></th>
-        <th>그릇 ②<br><code>SetMotorCommand16</code><span class="src">MotorParam16_t 20 B · f16</span></th>
-        <th>그릇 ③<br><code>SET_IMPEDANCE_PD</code><span class="src">FDCAN 0x12 · 32 B · f32</span></th></tr></thead>
+        <th>① EMB 프로세스<span class="src">biped_deploy · bridge_write_mit() 인자 · 채널 deg</span></th>
+        <th>② EMB 공유메모리<span class="src">SetMotorCommand16 → MotorParam16_t 20 B · f16</span></th>
+        <th>③ MCU → MD80<span class="src">FDCAN SET_IMPEDANCE_PD 0x12 · 32 B · f32 · rad</span></th></tr></thead>
       <tbody>
       <tr><td class="ax">모드</td><td class="n">—</td><td class="n">ucMode = 1</td>
           <td class="n">(CONTROL_SELECT 0x02 로 사전 설정)</td></tr>
@@ -2086,9 +2088,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
     <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → 우리</h4>
     <div class="tw"><table>
       <thead><tr><th>물리량</th>
-        <th>그릇 ①<br><code>DEFAULT_RESPONSE</code><span class="src">FDCAN · 24 B · f32 · rad</span></th>
-        <th>그릇 ②<br><code>GetMotorStatus16</code><span class="src">MotorParam16_t 20 B · f16 · deg</span></th>
-        <th>그릇 ③<br><code>bridge_read()</code><span class="src">우리 API</span></th></tr></thead>
+        <th>① MD80 → MCU<span class="src">FDCAN DEFAULT_RESPONSE · 24 B · f32 · rad</span></th>
+        <th>② EMB 공유메모리<span class="src">GetMotorStatus16 → MotorParam16_t 20 B · f16 · deg</span></th>
+        <th>③ EMB 프로세스<span class="src">bridge_read() 출력 → 배포기</span></th></tr></thead>
       <tbody>
       <tr><td class="ax">에러</td><td class="n">ERROR VECTOR (uint16, 2 B)</td>
           <td class="n">ucStatus</td><td class="n">status[] → health</td></tr>
@@ -2098,7 +2100,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
           <td class="n">fVelocity</td><td class="n">dq_dps[] → hs.dq_dps</td></tr>
       <tr class="rand"><td class="ax"><b>출력축 위치</b></td>
           <td class="n"><b>OUTPUT ENCODER POSITION (4 B)</b></td>
-          <td class="n"><b>담을 칸 없음</b> ← 여기서 버려진다<br>(→ <code>fCurrent</code> 재활용 제안)</td>
+          <td class="n"><b>담을 칸 없음</b> ← <b>여기서 버려진다</b><br>(→ <code>fCurrent</code> 재활용 제안)</td>
           <td class="n">— (인자 추가하면 즉시 사용)</td></tr>
       <tr class="rand"><td class="ax">출력축 속도</td>
           <td class="n">OUTPUT ENCODER VELOCITY (4 B)</td>

@@ -76,6 +76,8 @@ b,strong{font-weight:650}
 .note.key{border-color:var(--acc-line);background:var(--acc-soft)}
 .note.flag{border-color:color-mix(in srgb,var(--flag) 40%,var(--rule));background:var(--flag-soft)}
 .note .lead{color:var(--ink);font-weight:650}
+.thsub{display:block;margin-top:3px;font-weight:400;font-size:10.5px;line-height:1.45;
+  letter-spacing:.01em;color:var(--mut);text-transform:none;white-space:normal}
 .src{font-size:11.5px;color:var(--mut);letter-spacing:.02em;
   font-family:ui-monospace,Menlo,monospace}
 
@@ -2063,9 +2065,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
     <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
     <div class="tw"><table>
       <thead><tr><th>물리량</th>
-        <th>① EMB 프로세스<span class="src">biped_deploy · bridge_write_mit() 인자 · 채널 deg</span></th>
-        <th>② EMB 공유메모리<span class="src">SetMotorCommand16 → MotorParam16_t 20 B · f16</span></th>
-        <th>③ MCU → MD80<span class="src">FDCAN SET_IMPEDANCE_PD 0x12 · 32 B · f32 · rad</span></th></tr></thead>
+        <th>① EMB 프로세스<br><span class="thsub">biped_deploy · bridge_write_mit() 인자<br>채널 좌표 · deg</span></th>
+        <th>② EMB 공유메모리<br><span class="thsub">SetMotorCommand16 → MotorParam16_t<br>20 B/채널 · float16 · deg</span></th>
+        <th>③ MCU → MD80<br><span class="thsub">FDCAN SET_IMPEDANCE_PD (0x12)<br>32 B · float32 · rad</span></th></tr></thead>
       <tbody>
       <tr><td class="ax">모드</td><td class="n">—</td><td class="n">ucMode = 1</td>
           <td class="n">(CONTROL_SELECT 0x02 로 사전 설정)</td></tr>
@@ -2088,9 +2090,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
     <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → 우리</h4>
     <div class="tw"><table>
       <thead><tr><th>물리량</th>
-        <th>① MD80 → MCU<span class="src">FDCAN DEFAULT_RESPONSE · 24 B · f32 · rad</span></th>
-        <th>② EMB 공유메모리<span class="src">GetMotorStatus16 → MotorParam16_t 20 B · f16 · deg</span></th>
-        <th>③ EMB 프로세스<span class="src">bridge_read() 출력 → 배포기</span></th></tr></thead>
+        <th>① MD80 → MCU<br><span class="thsub">FDCAN DEFAULT_RESPONSE<br>24 B · float32 · rad</span></th>
+        <th>② EMB 공유메모리<br><span class="thsub">GetMotorStatus16 → MotorParam16_t<br>20 B/채널 · float16 · deg</span></th>
+        <th>③ EMB 프로세스<br><span class="thsub">bridge_read() 출력 → biped_deploy<br>채널 좌표 · deg</span></th></tr></thead>
       <tbody>
       <tr><td class="ax">에러</td><td class="n">ERROR VECTOR (uint16, 2 B)</td>
           <td class="n">ucStatus</td><td class="n">status[] → health</td></tr>

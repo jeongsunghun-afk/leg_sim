@@ -2022,31 +2022,40 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       EtherCAT 을 돌리며 SHM 을 채운다 · <b>transfer</b>: EtherCAT 슬레이브 겸 SPI 마스터 보드 ·
       <b>MCU</b>: FDCAN 프레임 조립/해석 · <b>MD80</b>: 관절 드라이버 ×8.</div>
 <pre><b>명령 (biped_deploy → 모터)</b>
- 배포기(biped_deploy)      tau_ctrl[Nm,관절] q_ctrl[rad,관절]
-   │ jm.*_ctrl_to_ch()     ← 좌표변환 + 커플링 전단 + gear_k
- 채널 좌표                 tau_ch[Nm] q_ch[<b>deg</b>] kp_ch kd_ch
-   │ hw->write_mit()  →  bridge_write_mit()
- SHM <b>명령영역</b>            MotorParam16_t{ucMode=1, fPosition, fVelocity,
-   │                                        fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
-   │ <b>biped_deploy</b>  RobotMemGait_<b>SetMotorCommand16</b>()  ← 쓰기
-   │ <b>Emb</b>           RobotMemGait_<b>GetMotorCommand16</b>()  ← 읽기
- Emb ―EtherCAT→ transfer ―SPI→ MCU   (MCU 가 <b>deg → rad</b> 변환)
+
+biped_deploy          tau_ctrl[Nm, 관절]   q_ctrl[rad, 관절]
+   │ jm.*_ctrl_to_ch()        ← 좌표변환 + 커플링 전단 + gear_k
+채널 좌표             tau_ch[Nm]  q_ch[deg]  kp_ch  kd_ch
+   │ hw->write_mit() → bridge_write_mit()
+─────────────────────────────────────────── <b>EMB 보드 (Pi)</b>
+SHM 명령영역          MotorParam16_t{ucMode=1, fPosition, fVelocity,
+                                     fTorque, fGainKp, fGainKd, fGainKi=0}   <b>float16</b>
+   │ biped_deploy  RobotMemGait_SetMotorCommand16()   ← 쓰기
+   │ Emb           RobotMemGait_GetMotorCommand16()   ← 읽기
+───────────────────────────────────────────
+Emb ―EtherCAT→ transfer ―SPI→ MCU            (MCU 가 <b>deg → rad</b> 변환)
    │
- FDCAN  SET_IMPEDANCE_PD(32B)  Kp · Kd · Target position · Target velocity
-   │                           · Feedforward torque · Max output        <b>float32</b>
- MD80   τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_ff
+FDCAN  SET_IMPEDANCE_PD (0x12, 32 B)         Kp · Kd · Target position · Target velocity
+                                              · Feedforward torque · Max output    <b>float32</b>
+MD80                  τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_ff
+
 
 <b>상태 (모터 → biped_deploy)</b>
- MD80   DEFAULT_RESPONSE(<b>24B</b>)  id(1) · ERROR VECTOR(2) · MAIN ENC pos(4) vel(4)
-   │                                · <b>OUTPUT ENC pos(4) vel(4)</b> · MOTOR TORQUE(4) · TEMP(1)
- MCU ―SPI→ transfer ―EtherCAT→ Emb   ← 출력축 2필드는 <b>이 3홉 어딘가에서 버려진다</b>
-   │ SetMotorStatus16()
- SHM <b>상태영역</b>            MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
-   │ <b>Emb</b>           RobotMemGait_<b>SetMotorStatus16</b>()   ← 쓰기
-   │ <b>biped_deploy</b>  RobotMemGait_<b>GetMotorStatus16</b>() → bridge_read()
- 채널 좌표                 hs.q_deg hs.dq_dps hs.tau_nm hs.cur_a
+
+MD80   DEFAULT_RESPONSE (24 B)   id(1) · QUICK STATUS(2) · TEMP(1)
+                                 · MAIN ENC pos(4) vel(4) · MOTOR TORQUE(4)
+                                 · <b>OUTPUT ENC pos(4) vel(4)</b>          <b>float32 · rad</b>
+   │
+MCU ―SPI→ transfer ―EtherCAT→ Emb            ← ★<b>출력축 2필드는 이 3홉 어딘가에서 버려진다</b>
+─────────────────────────────────────────── <b>EMB 보드 (Pi)</b>
+SHM 상태영역          MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
+   │ Emb           RobotMemGait_SetMotorStatus16()    ← 쓰기
+   │ biped_deploy  RobotMemGait_GetMotorStatus16()    ← 읽기
+───────────────────────────────────────────
+   │ bridge_read()
+채널 좌표             hs.q_deg   hs.dq_dps   hs.tau_nm   hs.cur_a
    │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
- 배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
+biped_deploy          q_ctrl  dq_ctrl (관절) → 제어기 · 트립 · 상태 JSON</pre>
     <div class="tw"><table>
       <thead><tr><th>계층</th><th>사는 곳(HW)</th><th>데이터 컨테이너</th><th>좌표·단위</th><th>소유</th></tr></thead>
       <tbody>

@@ -191,6 +191,97 @@ def retau(a):
     print("  |G|max[Nm]: " + " ".join(f"{v:.2f}" for v in mx))
     return 0
 
+# ═══ rhat: 전달비·마찰 동시적합 (노트북 · 정밀판) ═══════════════════════════
+#   analyze 의 r̂ 은 **명령 자세**의 G 를 쓰고 kd 항이 섞여 있어 참고치였다.
+#   여기서는 세 가지를 고친다(2026-08-28):
+#     ①G 를 **실측 자세**에서 계산 — 매달림 PD 처짐이 5~13° 라 명령 자세 G 는 그만큼 틀리다
+#     ②명령토크에서 **kd 항을 분리** — τ_ch = kp·err + kd·(0−dq̇) 중 뒤엣것은 중력과 무관.
+#       채널→관절 환산: τ_kd_raw = kd_ch·gear_k²·dq̇_raw · 발목 커플링(raw_foot = foot+calf)
+#       · τ_joint = drive_to_tau(τ_raw)  (calf 관절 = calf raw + foot raw)
+#     ③비의 중앙값이 아니라 **동시적합** c = (G + τ_f·sign(q̇))/α  →  push_solve 와 같은 꼴.
+#       미지수 둘(1/α, τ_f/α)이라 마찰과 전달비가 함께 나온다(벤치 τ_c 와 대조 가능).
+KD_CH   = [6.0, 4.0, 3.5, 2.0] * 2
+GEAR_K  = [1.0, 1.0, 1.5, 1.2] * 2
+
+def _kd_joint(dq_dps):
+    """관절속도[dps] → kd 항이 만드는 **관절토크**[Nm] (부호: 속도를 거스름)."""
+    import numpy as np
+    w = np.deg2rad(np.asarray(dq_dps, float))
+    out = np.zeros(NJ)
+    for leg in range(2):
+        b = 4 * leg
+        raw_h = KD_CH[b + 0] * GEAR_K[b + 0] ** 2 * w[b + 0]
+        raw_t = KD_CH[b + 1] * GEAR_K[b + 1] ** 2 * w[b + 1]
+        raw_c = KD_CH[b + 2] * GEAR_K[b + 2] ** 2 * w[b + 2]
+        raw_f = KD_CH[b + 3] * GEAR_K[b + 3] ** 2 * (w[b + 2] + w[b + 3])   # 커플링 coef +1
+        out[b + 0] = -raw_h; out[b + 1] = -raw_t
+        out[b + 2] = -(raw_c + raw_f)          # drive_to_tau: calf 관절 = calf + foot
+        out[b + 3] = -raw_f
+    return out
+
+def rhat(a):
+    import numpy as np, mujoco
+    log = json.load(open(a.log))
+    m = mujoco.MjModel.from_xml_path(a.mjcf); d = mujoco.MjData(m)
+    rows = [r for r in log["rows"] if r.get("q") and r.get("tau") and r.get("dq")]
+    G = np.zeros((len(rows), NJ)); C = np.zeros((len(rows), NJ)); S = np.zeros((len(rows), NJ))
+    DQ = np.zeros((len(rows), NJ))
+    for i, r in enumerate(rows):
+        d.qpos[:] = 0; d.qpos[2] = 0.5; d.qpos[3] = 1.0
+        d.qpos[7:7 + NJ] = np.deg2rad(r["q"]); d.qvel[:] = 0
+        mujoco.mj_forward(m, d)
+        G[i] = d.qfrc_bias[6:6 + NJ]
+        C[i] = np.asarray(r["tau"], float) - _kd_joint(r["dq"])   # 중력 담당분만
+        DQ[i] = r["dq"]
+        S[i] = np.sign(r["dq"])
+    W = np.deg2rad(DQ)
+    AC = np.zeros_like(W)                      # 중앙차분 각가속도 [rad/s²]
+    ts = np.array([r["t"] for r in rows])
+    for i in range(1, len(rows) - 1):
+        dt2 = ts[i + 1] - ts[i - 1]
+        if 1e-3 < dt2 < 0.3:
+            AC[i] = (W[i + 1] - W[i - 1]) / dt2
+    print(f"■ 전달비·마찰 동시적합 — {len(rows)}점 · {os.path.basename(a.log)}")
+    print(f"  모델 {os.path.basename(a.mjcf)} · c=(G+τ_f·sign(q̇))/α · |q̇|>{a.vmin}dps·|G|>{a.gmin}Nm")
+    print(f"  {'축':9s}{'α̂':>7s}{'±':>6s}{'τ̂_f':>7s}{'b_v':>7s}{'관성':>8s}{'R²':>6s}{'n':>6s}{'α_qs':>8s}  벤치τ_c")
+    BENCH = [0.724, 0.604, 0.871, 0.639] * 2
+    out = {}
+    for j in range(NJ):
+        sel = (np.abs(DQ[:, j]) > a.vmin) & (np.abs(G[:, j]) > a.gmin)
+        n = int(sel.sum())
+        if n < 40:
+            print(f"  {NAMES[j]:9s}{'—':>7s}{'':>6s}{'—':>7s}{'':>7s}{'':>8s}{'':>6s}{n:6d}"
+                  f"{'—':>8s}   (신호 부족 · |G|max {np.abs(G[:,j]).max():.2f})")
+            out[NAMES[j]] = None; continue
+        # ★회귀항 (08-28 2차): 쿨롱마찰만으로는 **추종 지연 토크**가 sign 항에 섞여
+        #   τ_f 가 벤치의 2~5배로 부풀고 α 가 1 을 넘는다(비물리). 지연은 속도에 비례하고
+        #   가속 구간에는 관성항이 실리므로 넷을 함께 푼다:
+        #     c·α = G + τ_f·sign(q̇) + b_v·q̇ + I·q̈
+        A = np.column_stack([G[sel, j], S[sel, j], W[sel, j], AC[sel, j]]); y = C[sel, j]
+        sol, *_ = np.linalg.lstsq(A, y, rcond=None)
+        res = y - A @ sol
+        r2 = 1.0 - res.var() / y.var() if y.var() > 0 else 0.0
+        cov = np.linalg.pinv(A.T @ A) * (res @ res) / max(1, n - len(sol))
+        a_hat, b_hat, e_hat, f_hat = sol
+        alpha = 1.0 / a_hat if abs(a_hat) > 1e-9 else float("nan")
+        da = np.sqrt(max(cov[0, 0], 0)) * alpha ** 2
+        tf, bv, inr = b_hat * alpha, e_hat * alpha, f_hat * alpha
+        # ★교차검증: 준정적(|q̇| 하위 구간)만으로 G/c 중앙값 — 회귀와 어긋나면 모델 부적합
+        q_sel = sel & (np.abs(W[:, j]) < 0.08)
+        qs = float(np.median(G[q_sel, j] / C[q_sel, j])) if q_sel.sum() > 30 else float("nan")
+        out[NAMES[j]] = dict(alpha=round(float(alpha), 3), d_alpha=round(float(da), 3),
+                             tau_f=round(float(tf), 3), visc=round(float(bv), 3),
+                             inertia=round(float(inr), 4), r2=round(float(r2), 3),
+                             n=n, alpha_qs=None if qs != qs else round(qs, 3))
+        print(f"  {NAMES[j]:9s}{alpha:7.3f}{da:6.3f}{tf:7.3f}{bv:7.2f}{inr:8.3f}{r2:6.3f}{n:6d}"
+              + (f"{qs:8.2f}" if qs == qs else f"{'—':>8s}") + f"   {BENCH[j]:.2f}")
+    print("  판독: α̂ = 경로 전달비(캠페인 hip 0.84·thigh 0.8·calf 0.82) · τ̂_f = 조립 마찰(벤치 대조)")
+    print("        R² 낮으면 그 축은 동적항/백래쉬가 커서 준정적 모델이 안 맞는다는 뜻")
+    o = a.log.replace("log_", "rhat_")
+    json.dump(out, open(o, "w"), indent=1, ensure_ascii=False)
+    print(f"  → {o}")
+    return 0
+
 # ═══ --play: 스트리밍 재생 + 기록 (Pi · stdlib) ═══════════════════════════
 def play(a):
     traj = json.load(open(a.traj))
@@ -380,12 +471,16 @@ if __name__ == "__main__":
     p.add_argument("--loop", type=int, default=2)
     n = sub.add_parser("analyze", help="궤적 vs 기록 → 갭 표 (노트북)")
     n.add_argument("traj"); n.add_argument("log")
+    rh = sub.add_parser("rhat", help="전달비·마찰 동시적합 — 실측자세 G·kd 분리 (노트북)")
+    rh.add_argument("log"); rh.add_argument("mjcf")
+    rh.add_argument("--vmin", type=float, default=2.0, help="분류에 쓸 최소 관절속도[dps]")
+    rh.add_argument("--gmin", type=float, default=0.8, help="최소 중력토크 신호[Nm]")
     t = sub.add_parser("retau", help="궤적 tau_g 를 다른(무게추) MJCF 로 재계산 (노트북)")
     t.add_argument("traj"); t.add_argument("mjcf")
     t.add_argument("--tag", default="w2080")
     a = ap.parse_args()
     try:
-        rc = {"gen": gen, "play": play, "analyze": analyze, "retau": retau}[a.cmd](a)
+        rc = {"gen": gen, "play": play, "analyze": analyze, "retau": retau, "rhat": rhat}[a.cmd](a)
     except KeyboardInterrupt:
         print("\n⛔ 사용자 중단"); rc = 130
     finally:

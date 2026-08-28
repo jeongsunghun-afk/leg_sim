@@ -669,6 +669,17 @@ int main(int argc, char** argv){
   //   그래서 살아 있는 목표를 속도클램프로 따라간다(biped_emb.py control/jog.py 와 같은 방식).
   //   ⚠등속 램프는 출발·도착에서 가속도가 불연속이다(config 주석). jog 는 축 하나씩 천천히
   //     쓰는 검증용이라 실무상 문제가 안 됐지만, 알고 쓰는 것과 모르고 쓰는 것은 다르다.
+  // ★안전 종료(soft_off) 상태 — 2026-08-28 사용자 요청.
+  //   ⚠`off` 는 **비상 탈출구로 그대로 둔다**(즉시 무여자). 안전 종료는 별도 모드다 —
+  //     넘어지는 중에 "천천히" 내려가면 그게 더 위험하기 때문이다.
+  //   방식: 현재 자세 → **안전 자세**로 위치제어 서행(기본 20 dps) → 정착 → off.
+  //   ⚠게인/배율 램프다운은 쓰지 않는다: 중력은 상수인데 붙잡는 힘만 줄이면 말미에
+  //     반드시 "버티다 놓침"이 된다(float_gstar v1·v2 가 그렇게 실패했다).
+  //     검증된 방식은 **낙차가 0 인 자세로 옮긴 뒤 끄는 것**이다(v3, 실기 확인).
+  std::vector<float> soft_from(NCH,0.f), soft_to(NCH,0.f);
+  double soft_t0=0, soft_T=1.0; bool soft_done=false;
+  bool soft_latched=false;   // ★완료 래치 — GUI 20ms 재발행이 드라이브를 되살리던 구멍
+  std::vector<float> boot_pose(NCH, 0.f); bool boot_pose_set=false;
   std::vector<double> jog_q(NJ, 0.0);        // 램프 중인 명령(**모델각 deg**)
   double jog_prev_t = 0; bool jog_init = false;
   bool ground_refused=false;
@@ -760,6 +771,7 @@ int main(int argc, char** argv){
 
     // ① 센서
     hw->read(hs);
+    if(!boot_pose_set && hs.mask){ boot_pose = hs.q_deg; boot_pose_set = true; }
     jm.ch_to_q_ctrl(hs.q_deg.data(),  q_ctrl.data());
     jm.ch_to_dq_ctrl(hs.dq_dps.data(), dq_ctrl.data());
     // ★★2026-08-20 **토크 통계는 루프율(500Hz)에서 낸다** — 발행(20Hz)에서 내면 안 된다.
@@ -1044,6 +1056,7 @@ int main(int argc, char** argv){
         std::string nm = nc.mode;
         if(nm=="reset") nm = "hold";
         if(nm!="off" && nm!="hold" && nm!="home" && nm!="jog" && nm!="stand" && nm!="walk"
+           && nm!="soft_off"
            && nm!="float" && nm!="push") nm = "off";  // ★float=무중력 · push=발밀기(힘제어)
         // ★E-stop 래치는 명시적 off 로만 해제. 그 전까지 모드변경 무시.
         if(estop){
@@ -1058,6 +1071,11 @@ int main(int argc, char** argv){
         }
         if(nm!="stand" && nm!="walk") ground_refused = false;   // ★다른 모드 = 재시도 허용
         if(nm!="push") push_refused = false;                     // ★push 거부도 같은 규약
+        // ★안전 종료 완료 래치 (2026-08-28): 완료 뒤에도 GUI 는 soft_off 를 20ms 마다
+        //   계속 보낸다. 그대로 두면 재진입 → hw->enable(1) 로 **드라이브가 되살아난다.**
+        //   ground_refused/push_refused 와 같은 규약: 다른 모드를 한 번 고를 때까지 off 유지.
+        if(nm!="soft_off") soft_latched = false;
+        if(soft_latched && nm=="soft_off") nm = "off";
         if(push_refused && nm=="push") nm = "hold";              //   래치 중 재발행은 hold 로
         // ★★거부는 **래치**다 (2026-08-21, mock 실측으로 발견).
         //   종전엔 `ground_refused` 가 **검사만** 건너뛰게 했다. 그런데 GUI 는 stand 를
@@ -1270,6 +1288,25 @@ int main(int argc, char** argv){
             jog_prev_t = lt; jog_init = true;
             std::printf("[deploy] jog 진입 — 현재 자세에서 시작 · %.0f dps 제한 · 한계는 관절한계\n",
                         cfg.jog_speed_dps);
+          }
+          if(mode=="soft_off"){
+            // 목표 = SOFT_OFF_DEG(관절 deg 8개 CSV) · 없으면 **기동 시 자세**
+            //   (매달림이면 그게 자연 매달림 자세라 낙차가 0 이다 — airwalk 가 검증한 규약)
+            soft_from = hs.q_deg; soft_to = boot_pose_set ? boot_pose : hs.q_deg;
+            if(const char* e=getenv("SOFT_OFF_DEG")){
+              std::vector<double> sv; std::stringstream ss(e); std::string tk;
+              while(std::getline(ss,tk,',')) sv.push_back(atof(tk.c_str()));
+              if((int)sv.size()>=NJ) jm.q_joint_to_ch(sv.data(), soft_to.data());
+            }
+            jm.clamp_ch_via_joint(soft_to.data());
+            const double rate = getenv("SOFT_OFF_DPS") ? atof(getenv("SOFT_OFF_DPS")) : 20.0;
+            double mx=0; for(int i=0;i<NCH;i++) if(cfg.installed_has(i))
+              mx = std::max(mx, (double)std::fabs(soft_to[i]-soft_from[i]));
+            soft_T = std::max(0.5, mx / std::max(1.0, rate));
+            soft_t0 = lt; soft_done = false;
+            std::printf("[deploy] ■ 안전 종료 — 최대이동 %.1f° · %.0f dps · %.1fs 서행 후 무여자\n"
+                        "         (하중을 받고 있으면 **크레인으로 먼저 받칠 것** — 이건 낙차만 줄인다)\n",
+                        mx, rate, soft_T);
           }
           if(mode=="home"){
             home_from = hs.q_deg;
@@ -1638,6 +1675,21 @@ int main(int argc, char** argv){
       jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
       qcmd_ch = hold_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_pos(hold_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+    } else if(mode=="soft_off"){
+      double u = (soft_T>0) ? (lt-soft_t0)/soft_T : 1.0;
+      u = std::max(0.0, std::min(1.0, u));
+      const double sf = u*u*u*(10.0 - 15.0*u + 6.0*u*u);      // home 과 같은 5차 S-curve
+      for(int i=0;i<NCH;i++)
+        q_ch[i] = soft_from[i] + (float)(sf*(double)(soft_to[i]-soft_from[i]));
+      jm.kp_ch(kp_ch.data(), POS_KP); jm.kd_ch(kd_ch.data(), POS_KD);
+      qcmd_ch = q_ch; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
+      hw->write_pos(q_ch.data(), kp_ch.data(), kd_ch.data(), NCH);
+      if(u>=1.0 && !soft_done && lt-soft_t0 > soft_T + 1.5){    // 1.5s 정착 후 무여자
+        soft_done = true; soft_latched = true;
+        mode = "off"; boot_mode = "off"; mode_locked = false;
+        hw->enable(0);
+        std::printf("[deploy] ✅ 안전 종료 완료 — 무여자. 배포기를 꺼도 된다.\n");
+      }
     } else if(mode=="home"){
       // ★5차 S-curve s(τ)=10τ³−15τ⁴+6τ⁵ — biped_emb.py control/home.py 와 **같은 식**.
       //   경계 속도·가속도가 둘 다 0 이라 진입/도착에서 토크가 계단으로 안 튄다.

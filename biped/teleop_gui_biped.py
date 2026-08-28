@@ -364,6 +364,7 @@ _last_sys = [0.0]
 #   불만 들어오는" 거짓 표시가 없다 — 클릭해도 제어기가 거부(가드·옛 바이너리)하면
 #   불이 안 들어와서 **그 자체가 진단**이 된다.
 _MODE_BTNS = {'hold': 'mbtn_hold', 'off': 'mbtn_off', 'jog': 'mbtn_jog',
+              'soft_off': 'mbtn_softoff',
               'float': 'mbtn_float', 'push': 'mbtn_push', 'home': 'mbtn_home',
               'stand': 'mbtn_stand', 'walk': 'mbtn_walk'}
 
@@ -858,6 +859,13 @@ with dpg.window(tag='main'):
         dpg.bind_item_theme(_rb, _stop)
         _ob = dpg.add_button(label='Off 전원', width=100, tag='mbtn_off', callback=lambda: set_mode('off'))
         dpg.bind_item_theme(_ob, _stop)
+        # ★안전 종료 (2026-08-28) — 현재 자세에서 **기동 시 자세**로 20dps 서행 후 무여자.
+        #   ⚠[Off 전원] 은 **비상 탈출구로 그대로 둔다**(즉시 무여자). 넘어지는 중에
+        #     "천천히" 내려가면 그게 더 위험하다. 평시 종료만 이 버튼을 쓴다.
+        #   ⚠하중을 받고 있으면 이 버튼도 낙차를 줄일 뿐이다 — 크레인으로 먼저 받칠 것.
+        _sb = dpg.add_button(label='안전 종료', width=100, tag='mbtn_softoff',
+                             callback=lambda: set_mode('soft_off'))
+        dpg.bind_item_theme(_sb, _stop)
         dpg.add_button(label='JOG 검증', width=90, tag='mbtn_jog', callback=lambda: set_mode('jog'))   # ★각축 검증(실기)
         with dpg.group():              # ★무중력 = 중력보상만. 매달린 상태 전용
             _fb = dpg.add_button(label='무중력', width=100, tag='mbtn_float', callback=lambda: set_mode('float'))

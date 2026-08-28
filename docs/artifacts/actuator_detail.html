@@ -2058,30 +2058,60 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       </tbody></table></div>
     <div class="note">단위 경계는 <b>MCU</b>(deg ↔ rad) · 정밀도 경계는 <b>SHM</b>(float32 → float16) ·
       그릇 병목은 <b>SHM 20 B</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).</div>
+    <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
     <div class="tw"><table>
-      <thead><tr><th>물리량</th><th>배포기(관절)</th><th>채널</th><th>SHM 필드</th><th>CAN 필드</th></tr></thead>
+      <thead><tr><th>물리량</th>
+        <th>그릇 ①<br><code>bridge_write_mit()</code><span class="src">우리 API · 채널좌표</span></th>
+        <th>그릇 ②<br><code>SetMotorCommand16</code><span class="src">MotorParam16_t 20 B · f16</span></th>
+        <th>그릇 ③<br><code>SET_IMPEDANCE_PD</code><span class="src">FDCAN 0x12 · 32 B · f32</span></th></tr></thead>
       <tbody>
-      <tr><td class="ax">위치</td><td class="n">q_ctrl [rad]</td><td class="n">q_ch [deg]</td>
-          <td class="n">fPosition (f16)</td><td class="n">Target position / MAIN ENC POS [rad]</td></tr>
-      <tr><td class="ax">속도</td><td class="n">dq_ctrl [rad/s]</td><td class="n">dq_ch [dps]</td>
-          <td class="n">fVelocity (f16)</td><td class="n">Target velocity / MAIN ENC VEL [rad/s]</td></tr>
-      <tr class="pick"><td class="ax">토크</td><td class="n">tau_ctrl [Nm]</td><td class="n">tau_ch [Nm]</td>
-          <td class="n">fTorque (f16)</td>
-          <td class="n">명령=Feedforward torque<br>상태=<b>MOTOR TORQUE</b> [Nm]</td></tr>
-      <tr><td class="ax">게인</td><td class="n">—</td><td class="n">kp_ch kd_ch</td>
-          <td class="n">fGainKp fGainKd</td><td class="n">Kp Kd</td></tr>
-      <tr><td class="ax">적분게인</td><td class="n">—</td><td class="n">—</td>
-          <td class="n">fGainKi <b>= 0 고정</b></td><td class="n"><b>없음</b>(임피던스 모드엔 Ki 필드 부재)</td></tr>
-      <tr><td class="ax">상태비트</td><td class="n">health</td><td class="n">—</td>
-          <td class="n">ucStatus</td><td class="n">ERROR VECTOR (uint16)</td></tr>
-      <tr class="rand"><td class="ax">전류</td><td class="n">(포렌식만)</td><td class="n">hs.cur_a</td>
-          <td class="n">fCurrent</td><td class="n"><b>응답에 없음</b> → 토크 파생값</td></tr>
-      <tr class="rand"><td class="ax"><b>출력축 위치</b></td><td class="n">— 미수신</td><td class="n">—</td>
-          <td class="n"><b>칸 없음</b>(→ fCurrent 재활용 제안)</td>
-          <td class="n"><b>OUTPUT ENCODER POSITION</b> [rad] — 이미 전송 중</td></tr>
-      <tr class="rand"><td class="ax">출력축 속도</td><td class="n">— 미수신</td><td class="n">—</td>
-          <td class="n">칸 없음(fGainKi 는 적분항용으로 보존)</td>
-          <td class="n">OUTPUT ENCODER VELOCITY [rad/s] — 이미 전송 중</td></tr>
+      <tr><td class="ax">모드</td><td class="n">—</td><td class="n">ucMode = 1</td>
+          <td class="n">(CONTROL_SELECT 0x02 로 사전 설정)</td></tr>
+      <tr><td class="ax">채널 지정</td><td class="n">배열 인덱스 i</td><td class="n">ucDevID = i</td>
+          <td class="n">CAN 액추에이터 ID</td></tr>
+      <tr><td class="ax">목표 위치</td><td class="n">q_des_deg</td><td class="n">fPosition</td>
+          <td class="n">Target position [<b>rad</b>]</td></tr>
+      <tr><td class="ax">목표 속도</td><td class="n">dq_des_dps</td><td class="n">fVelocity</td>
+          <td class="n">Target velocity [rad/s]</td></tr>
+      <tr class="pick"><td class="ax">전향토크</td><td class="n">tau_ff_nm</td><td class="n">fTorque</td>
+          <td class="n"><b>Feedforward torque</b> [Nm]</td></tr>
+      <tr><td class="ax">게인</td><td class="n">kp, kd</td><td class="n">fGainKp, fGainKd</td>
+          <td class="n">Kp, Kd</td></tr>
+      <tr><td class="ax">적분게인</td><td class="n">—</td><td class="n">fGainKi = <b>0 고정</b></td>
+          <td class="n"><b>필드 없음</b> — 임피던스는 PD 뿐<br>(Ki 는 0x10/0x11 위치·속도 PID 전용)</td></tr>
+      <tr><td class="ax">토크 상한</td><td class="n">(우리 클램프)</td><td class="n">—</td>
+          <td class="n">Max output</td></tr>
+      </tbody></table></div>
+
+    <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → 우리</h4>
+    <div class="tw"><table>
+      <thead><tr><th>물리량</th>
+        <th>그릇 ①<br><code>DEFAULT_RESPONSE</code><span class="src">FDCAN · 24 B · f32 · rad</span></th>
+        <th>그릇 ②<br><code>GetMotorStatus16</code><span class="src">MotorParam16_t 20 B · f16 · deg</span></th>
+        <th>그릇 ③<br><code>bridge_read()</code><span class="src">우리 API</span></th></tr></thead>
+      <tbody>
+      <tr><td class="ax">에러</td><td class="n">ERROR VECTOR (uint16, 2 B)</td>
+          <td class="n">ucStatus</td><td class="n">status[] → health</td></tr>
+      <tr><td class="ax">입력축 위치</td><td class="n">MAIN ENCODER POSITION (4 B)</td>
+          <td class="n">fPosition</td><td class="n">q_deg[] → hs.q_deg</td></tr>
+      <tr><td class="ax">입력축 속도</td><td class="n">MAIN ENCODER VELOCITY (4 B)</td>
+          <td class="n">fVelocity</td><td class="n">dq_dps[] → hs.dq_dps</td></tr>
+      <tr class="rand"><td class="ax"><b>출력축 위치</b></td>
+          <td class="n"><b>OUTPUT ENCODER POSITION (4 B)</b></td>
+          <td class="n"><b>담을 칸 없음</b> ← 여기서 버려진다<br>(→ <code>fCurrent</code> 재활용 제안)</td>
+          <td class="n">— (인자 추가하면 즉시 사용)</td></tr>
+      <tr class="rand"><td class="ax">출력축 속도</td>
+          <td class="n">OUTPUT ENCODER VELOCITY (4 B)</td>
+          <td class="n">담을 칸 없음<br>(fGainKi 는 적분항용으로 보존)</td>
+          <td class="n">— (위치 미분으로 대체 가능)</td></tr>
+      <tr class="pick"><td class="ax">토크</td><td class="n"><b>MOTOR TORQUE (4 B)</b><br>
+          <span class="src">실측(kt·i_q)인지 계산값인지 미확인</span></td>
+          <td class="n">fTorque</td><td class="n">tau_nm[] → hs.tau_nm<br><span class="src">α̂·토크트립이 쓰는 값</span></td></tr>
+      <tr><td class="ax">온도</td><td class="n">MOTOR TEMPERATURE (uint8, 1 B)</td>
+          <td class="n">fAccelrationOrTemperture(추정)</td><td class="n">— 안 읽음</td></tr>
+      <tr class="rand"><td class="ax">전류</td><td class="n"><b>필드 없음</b><br>
+          <span class="src">SET_MAX_CURRENT 는 한계설정 명령일 뿐</span></td>
+          <td class="n">fCurrent ← 토크 파생값</td><td class="n">cur_a[] → 포렌식 기록만</td></tr>
       </tbody></table></div>
     <div class="note"><b>병목은 그릇 크기다.</b> FDCAN 은 프레임당 64 B 라 24 B 응답에 출력축이 이미 들어 있고,
       막히는 곳은 <code>MotGeneral_t</code> <b>20 B/채널</b> 고정 레이아웃이다 — 그래서 새 필드를 만들지 않고

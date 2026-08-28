@@ -1,0 +1,233 @@
+<title>8·28 실기 보고</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+
+<style>
+:root{
+  --bg:#F3F2EF; --panel:#FFFFFF; --sunk:#EAE8E3;
+  --ink:#17191A; --ink2:#4A4F52; --mut:#7C8386;
+  --rule:#D8D6D0; --rule2:#BEBCB5;
+  --bad:#A33119;  --bad-bg:#FAEBE6;
+  --ok:#1F5B45;   --ok-bg:#E4EFEA;
+  --hold:#8A5A0B; --hold-bg:#F8EFDD;
+  --shadow:0 1px 0 rgba(23,25,26,.04), 0 6px 18px rgba(23,25,26,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1213; --panel:#171B1D; --sunk:#1F2427;
+    --ink:#E9EDEE; --ink2:#A7AFB2; --mut:#798285;
+    --rule:#282D30; --rule2:#3A4145;
+    --bad:#E8836B;  --bad-bg:#2A1713;
+    --ok:#6FC7A2;   --ok-bg:#122420;
+    --hold:#E0A63F; --hold-bg:#2A2011;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1213; --panel:#171B1D; --sunk:#1F2427;
+  --ink:#E9EDEE; --ink2:#A7AFB2; --mut:#798285;
+  --rule:#282D30; --rule2:#3A4145;
+  --bad:#E8836B;  --bad-bg:#2A1713;
+  --ok:#6FC7A2;   --ok-bg:#122420;
+  --hold:#E0A63F; --hold-bg:#2A2011;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15.5px/1.72 "Noto Sans KR",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased}
+code,.m,th,.n{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:940px;margin:0 auto;padding:40px 20px 90px}
+
+header{border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:8px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+h1{margin:0 0 8px;font-size:clamp(1.6rem,4.5vw,2.15rem);font-weight:700;
+  letter-spacing:-.025em;line-height:1.14;text-wrap:balance}
+.deck{margin:0;color:var(--ink2);font-size:15px;max-width:64ch}
+.deck b{color:var(--ink)}
+
+h2{font-size:1.12rem;font-weight:700;letter-spacing:-.015em;margin:38px 0 4px;
+  padding-left:12px;border-left:4px solid var(--rule2)}
+h2 .num{font-family:"IBM Plex Mono",monospace;font-size:.72em;color:var(--mut);
+  margin-right:8px;letter-spacing:.06em}
+h3{font-size:.95rem;font-weight:700;margin:20px 0 6px}
+p{margin:10px 0;color:var(--ink2)}
+p b{color:var(--ink)}
+
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:9px;
+  padding:16px 18px;margin:14px 0;box-shadow:var(--shadow)}
+.card.bad{border-left:4px solid var(--bad);background:var(--bad-bg)}
+.card.ok{border-left:4px solid var(--ok);background:var(--ok-bg)}
+.card.hold{border-left:4px solid var(--hold);background:var(--hold-bg)}
+.card h3{margin-top:0}
+.card p:last-child{margin-bottom:0}
+
+.tag{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.66rem;
+  font-weight:600;letter-spacing:.07em;padding:2px 7px;border-radius:4px;
+  border:1px solid currentColor;vertical-align:.12em;margin-right:8px}
+.t-bad{color:var(--bad)} .t-ok{color:var(--ok)} .t-hold{color:var(--hold)}
+
+.tw{overflow-x:auto;margin:12px -2px}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);
+  font-weight:600;text-align:left;padding:0 9px 7px;border-bottom:1px solid var(--rule2);
+  white-space:nowrap}
+td{padding:7px 9px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.55;
+  color:var(--ink2)}
+td b,td strong{color:var(--ink)}
+td.n,th.n{text-align:right;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tr.hi td{background:var(--sunk)}
+
+pre{background:var(--sunk);border:1px solid var(--rule);border-radius:7px;
+  padding:11px 13px;margin:12px 0;overflow-x:auto;
+  font:.78rem/1.68 "IBM Plex Mono",monospace;color:var(--ink2)}
+pre b{color:var(--ink)}
+code{background:var(--sunk);border:1px solid var(--rule);border-radius:4px;
+  padding:1px 5px;font-size:.85em}
+
+ol{padding-left:1.3em} li{margin:6px 0;color:var(--ink2)} li b{color:var(--ink)}
+footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--rule2);
+  font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--mut);line-height:1.7}
+a{color:var(--bad)}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">biped 실기 세션 · 2026-08-28</div>
+  <h1>2점 stand 는 섰지만 떨리고 기운다 — 원인 넷을 데이터로 갈랐다</h1>
+  <p class="deck">이번 세션에서 <b>2점 평발 stand 가 처음으로 체중을 받았다.</b> 그러나 심하게 떨리고
+  시간이 갈수록 한 방향으로 기운다. 두 현상은 <b>원인이 서로 다르며</b>, 기움은 원인이 확정됐고
+  떨림은 후보를 여섯 개 배제해 하나로 좁혔다. 통신 동결은 5건을 포렌식으로 확보했다.</p>
+</header>
+
+<h2><span class="num">01</span>기움 — 원인 확정</h2>
+
+<div class="card bad">
+  <h3><span class="tag t-bad">확정</span>IMU 가 죽어 있어 자세 오차를 아예 못 본다</h3>
+  <p>WBIC 의 자세 레벨링 태스크는 base 쿼터니언으로 기울기 오차를 계산하는데, 그 값은 IMU 에서 온다.
+  현재 IMU 는 전 채널 0 이라 <b>쿼터니언이 항상 단위(=완전 수평)</b> 다. 따라서</p>
+  <pre>oerr ≡ 0  →  레벨링 목표 가속도 = 0  →  <b>아무리 기울어도 보정 명령이 안 나간다</b></pre>
+  <p>실측: CoM 오차가 <b>2.5 cm → 5.9 cm 로 단조 증가</b>(밑창 반길이 7.3 cm 의 80%), 육안으로도
+  실제 기울기 확인. 이건 튜닝으로 못 고치며 <b>IMU 복구가 stand·walk 의 전제</b>다.</p>
+  <p>복구안은 이미 진단이 끝나 있다(<code>emb/IMU_RECOVERY.md</code>):
+  <code>halIMU.cpp:164-167</code> 이 파싱 결과를 <code>[0]</code> 행에 쓰는데 게터는 Body = 4행을 읽는다
+  → Body 슬롯 영구 0. 수정은 <code>[0]</code> → <code>[unDevID]</code> <b>4곳</b>이고,
+  MCU 펌웨어가 아니라 <b>Pi 앱 재컴파일</b>로 끝난다.</p>
+</div>
+
+<h2><span class="num">02</span>떨림 — 우리 제어 노브가 아니다</h2>
+
+<p>무장 3초 트레이스(500 Hz · 8축 q/dq/tau)를 세 조건에서 받아 스펙트럼과 진폭 성장을 비교했다.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>조건</th><th class="n">주파수</th><th class="n">HR_calf 진폭</th><th>HR_calf 토크 진폭 (0 → 3초)</th></tr></thead>
+  <tbody>
+    <tr><td>기준 (v₀ 0.2 · kp floor 0.30)</td><td class="n">7.1 Hz</td><td class="n">2.70°</td><td class="n">1.05 → <b>3.72 Nm</b></td></tr>
+    <tr><td><code>STAND_KP_FLOOR=0</code></td><td class="n">9.3 Hz</td><td class="n">1.49°</td><td class="n">0.95 → <b>3.83 Nm</b></td></tr>
+    <tr><td><code>LAT_COMP_MS=0</code></td><td class="n">8.1 Hz</td><td class="n">3.76°</td><td class="n">0.94 → <b>3.94 Nm</b></td></tr>
+  </tbody>
+</table></div>
+
+<p><b>세 조건이 사실상 동일하고, 셋 다 3초 블렌드 동안 단조 증가한다.</b> 블렌드 계수가 0→1 로 오르며
+<b>WBIC 토크 권한이 커질수록 진동이 자란다</b> — 전이(감쇠)가 아니라 <b>발산</b>이다.</p>
+
+<h3>데이터로 배제한 후보</h3>
+<div class="tw"><table>
+  <thead><tr><th>후보</th><th>판정</th><th>근거</th></tr></thead>
+  <tbody>
+    <tr><td>QP 등식 축퇴</td><td>실재 버그였으나 <b>떨림과 무관</b></td><td>실패율 20~33% → 0% 인데 떨림 그대로</td></tr>
+    <tr><td>마찰보상 <code>FRIC_COMP</code></td><td>무관</td><td>v₀ 0.2 → 0.6 (음의 감쇠 1/3) 에도 동일</td></tr>
+    <tr><td>관절 위치서보 kp</td><td>무관</td><td><code>STAND_KP_FLOOR=0</code> 에도 동일</td></tr>
+    <tr><td>지연보상 8.4 ms</td><td>무관</td><td><code>LAT_COMP_MS=0</code> 에도 동일</td></tr>
+    <tr><td>kd × 지연 발산 (30~65 Hz)</td><td>무관</td><td>25~70 Hz 대역 에너지 <b>4% 이하</b></td></tr>
+    <tr><td>루프 스톨 · 접지 불량</td><td>무관</td><td>loop 497~511 Hz 안정 · K=4 · 접지비 1.49~1.64</td></tr>
+  </tbody>
+</table></div>
+
+<div class="card hold">
+  <h3><span class="tag t-hold">유력·미검증</span>가짜 자세 + 유격</h3>
+  <p>남은 설명은 하나다. WBIC 는 <b>조작된 base 자세</b>(IMU 0 → 항상 수평)로 지면반력을 계산하므로,
+  <b>권한이 커질수록 모델 오차가 그대로 커진다.</b> 여기에 <b>HL_calf 유격 7°</b>
+  (토크가 유격 안에서 헛돌다 충돌)가 겹치면 8 Hz 대 성장과 부합한다.</p>
+  <p>⇒ <b>IMU 복구 전에는 stand 튜닝이 무의미하다.</b> 가짜 자세를 먹는 제어기를 튜닝하는 셈이다.</p>
+</div>
+
+<h2><span class="num">03</span>통신 동결 — 5건 확보, 두 유형</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>시각</th><th>모드</th><th>구간(재판정)</th><th class="n">carrier</th><th class="n">직전 τmax</th><th>상태워드</th><th class="n">SoC</th></tr></thead>
+  <tbody>
+    <tr><td class="n">16:11</td><td>home</td><td><b>EtherCAT 물리단절</b></td><td class="n">0</td><td class="n">6.4</td><td class="n">전부 00</td><td class="n">84.8°C</td></tr>
+    <tr class="hi"><td class="n">16:21</td><td>off</td><td>transfer/SPI·MCU</td><td class="n">1</td><td class="n">0.15</td><td class="n"><b>c0,c0,c0</b></td><td class="n">84.8°C</td></tr>
+    <tr class="hi"><td class="n">16:28</td><td>off</td><td>transfer/SPI·MCU</td><td class="n">1</td><td class="n">0.12</td><td class="n"><b>c0,c0,c0</b></td><td class="n">90.3°C</td></tr>
+    <tr><td class="n">16:50</td><td>stand</td><td>transfer/SPI·MCU</td><td class="n">1</td><td class="n">17.50</td><td class="n">전부 00</td><td class="n">87.5°C</td></tr>
+    <tr><td class="n">16:59</td><td>off</td><td><b>EtherCAT 물리단절</b></td><td class="n">0</td><td class="n">16.53</td><td class="n">전부 00</td><td class="n">85.3°C</td></tr>
+  </tbody>
+</table></div>
+
+<ol>
+  <li><b>온도가 5/5 사건에 공통</b> — 84.8~90.3°C, 전부 스로틀 상태. 유일하게 모든 사건에 걸친 인자이고,
+      Pi 스로틀은 EtherCAT 사이클과 PHY <b>양쪽을 동시에 설명할 수 있는 유일한 후보</b>다. ⇒ 냉각이 1순위.</li>
+  <li><b>“고토크가 원인” 단독 가설은 기각</b> — 16:21·16:28 은 <b>off 모드·토크 0.12 Nm</b> 에서 발생.
+      다만 16:50·16:59 는 16~17.5 Nm 직후라 촉발 요인 가능성은 남는다.</li>
+  <li><b>드라이버 폴트 비트를 처음 확보</b> — 상태워드 <code>0xC0</code>(bit6+bit7)이 ch2·ch3·ch4 에서 2건.
+      그동안 “전부 00”만 보던 것이다. <b>비트 정의를 RGA 에 확인</b>해야 한다.</li>
+  <li><code>rx_crc</code>·<code>rx_err</code> 전 사건 0 ⇒ <b>이더넷 전기 노이즈는 아니다.</b>
+      Emb 프로세스는 항상 살아 있었다.</li>
+</ol>
+
+<h2><span class="num">04</span>고친 것</h2>
+
+<div class="card ok">
+  <h3><span class="tag t-ok">수정</span>QP 등식 rank 축퇴 — 실재 버그</h3>
+  <p>2점 평발 stand 에서 QP 실패율 <b>20~33%</b>(접지 불량 시 75%), 사유코드 <b>4 = REDUNDANT_EQUALITIES</b>.
+  원인은 수치가 아니라 <b>구조</b>다 — 한 발에 접촉점이 둘인데 발은 강체라, 두 점의 가속도 구속 6행 중
+  선 방향 1행이 종속이다. 발이 둘이니 정확히 2행(실측 <b>rank 16/18</b>). 실패하면 중력보상 폴백으로
+  떨어지므로 두 해가 번갈아 나간다. rank-revealing QR 프루닝으로 sim 실패 <b>18.5% → 0.0%</b>.</p>
+</div>
+
+<div class="card bad">
+  <h3><span class="tag t-bad">되돌림</span>그 수정을 기본값으로 넣은 것은 잘못이었다</h3>
+  <p>sim 근거만으로 배포기 <b>기본값을 ON 으로</b> 바꿨는데, 실기에서는 균형이 오히려 나빠졌다.
+  <b>기본 OFF 로 환원</b>했고 <code>WBIC_EQ_PRUNE=1</code> 로만 켜진다. 종전 동작(실패 시 중력보상 폴백)이
+  최소한 안전측이다. <b>실기 미검증 상태로 기본값을 바꾸지 않는다</b>를 규칙으로 남긴다.</p>
+</div>
+
+<div class="tw"><table>
+  <thead><tr><th>기타 수정</th><th>내용</th></tr></thead>
+  <tbody>
+    <tr><td>동결 배너 오진</td><td>채널 수만 보고 판정한 뒤 증거(carrier)를 나중에 수집해, <b>“EtherCAT 이 아니다”라고 단정한 바로 아래에 carrier=0 이 찍히는</b> 모순 발생 → carrier 우선 판정으로 수정</td></tr>
+    <tr><td>포렌식 TSV 열 누락</td><td>헤더 22열인데 서식은 21개 — <code>pre_csv</code> 열이 통째로 빠져 있었다(기존 버그)</td></tr>
+    <tr><td>토크 불응답 감지</td><td>“신호는 오는데 토크가 안 나오는” 채널을 감지해 stand/walk 진입 차단(오전 작업)</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="num">05</span>차단 요소와 다음 순서</h2>
+
+<div class="tw"><table>
+  <thead><tr><th class="n">#</th><th>항목</th><th>근거</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td><b>IMU 복구</b> (halIMU.cpp 4줄 · Pi 재컴파일)</td><td>기움의 확정 원인 · 떨림의 유력 원인 · stand·walk 공통 전제</td></tr>
+    <tr><td class="n">2</td><td><b>HL_calf 기어 재조임</b></td><td>유격 7° = 발끝 42 mm. 검수는 2 kg 에어워크로 α̂ 1.28 → 0.83 복귀 확인</td></tr>
+    <tr><td class="n">3</td><td><b>냉각 보강</b></td><td>동결 5/5 가 84.8~90.3°C 스로틀</td></tr>
+    <tr><td class="n">4</td><td>EtherCAT 케이블·커넥터</td><td>carrier=0 2건 = 물리 단절 확정</td></tr>
+    <tr><td class="n">5</td><td>RGA 문의 3건</td><td>상태워드 <code>0xC0</code> 비트 정의 · 출력축 엔코더 SHM 전달 · PACE 토크스케일 규약</td></tr>
+  </tbody>
+</table></div>
+
+<p><b>1·2 가 끝난 뒤에 재개</b>: 기어 검수(에어워크) → 2점 stand 재시도 → QP 프루닝 실기 A/B →
+1점 walk. 오늘 데이터가 “그 전에는 튜닝이 무의미하다”를 분명히 보여줬다.</p>
+
+<footer>
+근거 데이터 — <code>biped/data/forensics/</code> (SHAKE_20260828.md · README.md · freeze_log_0828.tsv ·
+trace_*.csv) · 커밋 <code>740f09d</code> 외<br>
+관련 문서 — 현장카드 · 액추에이터 상세판 · <code>emb/IMU_RECOVERY.md</code>
+</footer>
+
+</div>

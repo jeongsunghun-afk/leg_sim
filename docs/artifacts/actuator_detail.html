@@ -2017,29 +2017,33 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
   <div style="margin:26px 0">
     <h3>★신호 파이프라인 — 배포기 ↔ MD80 (2026-08-28 정리)</h3>
     <div class="src">같은 물리량이 층마다 이름·좌표·타입이 바뀐다. 어디서 무엇이 되는지의 단일 출처</div>
-<pre><b>명령 (우리 → 모터)</b>
+    <div class="note"><b>등장인물</b> — <code>biped_deploy</code>: 우리가 만든 실기 제어기(EMB 보드 위 프로세스,
+      모터 명령의 <b>유일한 writer</b>) · <code>RobotEmbedded</code>(Emb): 벤더(RGA) 앱, 같은 보드에서 1 kHz 로
+      EtherCAT 을 돌리며 SHM 을 채운다 · <b>transfer</b>: EtherCAT 슬레이브 겸 SPI 마스터 보드 ·
+      <b>MCU</b>: FDCAN 프레임 조립/해석 · <b>MD80</b>: 관절 드라이버 ×8.</div>
+<pre><b>명령 (biped_deploy → 모터)</b>
  배포기(biped_deploy)      tau_ctrl[Nm,관절] q_ctrl[rad,관절]
    │ jm.*_ctrl_to_ch()     ← 좌표변환 + 커플링 전단 + gear_k
  채널 좌표                 tau_ch[Nm] q_ch[<b>deg</b>] kp_ch kd_ch
    │ hw->write_mit()  →  bridge_write_mit()
  SHM <b>명령영역</b>            MotorParam16_t{ucMode=1, fPosition, fVelocity,
    │                                        fTorque, fGainKp, fGainKd, fGainKi=0}  <b>float16</b>
-   │ <b>우리</b> RobotMemGait_<b>SetMotorCommand16</b>()  ← 쓰기
-   │ <b>Emb</b>  RobotMemGait_<b>GetMotorCommand16</b>()  ← 읽기
+   │ <b>biped_deploy</b>  RobotMemGait_<b>SetMotorCommand16</b>()  ← 쓰기
+   │ <b>Emb</b>           RobotMemGait_<b>GetMotorCommand16</b>()  ← 읽기
  Emb ―EtherCAT→ transfer ―SPI→ MCU   (MCU 가 <b>deg → rad</b> 변환)
    │
  FDCAN  SET_IMPEDANCE_PD(32B)  Kp · Kd · Target position · Target velocity
    │                           · Feedforward torque · Max output        <b>float32</b>
  MD80   τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_ff
 
-<b>상태 (모터 → 우리)</b>
+<b>상태 (모터 → biped_deploy)</b>
  MD80   DEFAULT_RESPONSE(<b>24B</b>)  id(1) · ERROR VECTOR(2) · MAIN ENC pos(4) vel(4)
    │                                · <b>OUTPUT ENC pos(4) vel(4)</b> · MOTOR TORQUE(4) · TEMP(1)
  MCU ―SPI→ transfer ―EtherCAT→ Emb   ← 출력축 2필드는 <b>이 3홉 어딘가에서 버려진다</b>
    │ SetMotorStatus16()
  SHM <b>상태영역</b>            MotorParam16_t{ucStatus, fPosition, fVelocity, fTorque, fCurrent}
-   │ <b>Emb</b>  RobotMemGait_<b>SetMotorStatus16</b>()   ← 쓰기
-   │ <b>우리</b> RobotMemGait_<b>GetMotorStatus16</b>() → bridge_read()
+   │ <b>Emb</b>           RobotMemGait_<b>SetMotorStatus16</b>()   ← 쓰기
+   │ <b>biped_deploy</b>  RobotMemGait_<b>GetMotorStatus16</b>() → bridge_read()
  채널 좌표                 hs.q_deg hs.dq_dps hs.tau_nm hs.cur_a
    │ jm.ch_to_*_ctrl() / ch_to_tau_joint()
  배포기                    q_ctrl dq_ctrl (관절) → 제어기·트립·상태 JSON</pre>
@@ -2047,9 +2051,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       <thead><tr><th>계층</th><th>사는 곳(HW)</th><th>데이터 컨테이너</th><th>좌표·단위</th><th>소유</th></tr></thead>
       <tbody>
       <tr><td class="ax">배포기 변수</td><td>Pi 프로세스</td><td>C++ 벡터</td>
-          <td class="n">관절(모델각) rad · Nm</td><td>우리</td></tr>
+          <td class="n">관절(모델각) rad · Nm</td><td>우리 팀(biped_deploy)</td></tr>
       <tr><td class="ax">채널 변수</td><td>Pi 프로세스</td><td>C++ 벡터</td>
-          <td class="n">채널 <b>deg · dps</b> · Nm</td><td>우리(joint_map)</td></tr>
+          <td class="n">채널 <b>deg · dps</b> · Nm</td><td>우리 팀(joint_map)</td></tr>
       <tr class="pick"><td class="ax">SHM</td><td><b>Pi 램</b>(Emb ↔ 배포기)</td>
           <td class="n"><b>MotorParam16_t 20 B</b>/채널 ×8</td>
           <td class="n">deg · dps · Nm (<b>float16</b>)</td><td>RGA(RobotSharedMem.h)</td></tr>
@@ -2063,15 +2067,16 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       </tbody></table></div>
     <div class="note">단위 경계는 <b>MCU</b>(deg ↔ rad) · 정밀도 경계는 <b>공유메모리</b>(float32 → float16) ·
       용량 병목은 <b>공유메모리 20 B/채널</b>(FDCAN 은 64 B 라 여유). 왕복지연 실측 8.39 ± 0.79 ms(4홉 합).<br>
-      ⚠①과 ② 는 <b>같은 EMB 보드 안</b>이다(우리 배포기 프로세스 ↔ Emb 앱 프로세스가 램으로 만난다).
+      ⚠①과 ② 는 <b>같은 EMB 보드 안</b>이다(<code>biped_deploy</code> 프로세스 ↔ <code>RobotEmbedded</code>(Emb) 프로세스가 램으로 만난다).
       ②와 ③ 사이에만 <b>EtherCAT → transfer → SPI</b> 3홉이 들어간다.</div>
     <div class="note"><b>타입과 함수를 구분할 것.</b> <code>MotorParam16_t</code> 는 <b>자료형</b>(20 B 구조체)이고,
       <code>RobotMemGait_Set/GetMotorCommand16</code> · <code>Set/GetMotorStatus16</code> 은 그 구조체를
       SHM 의 <b>어느 영역</b>에 넣고 빼는 <b>함수</b>다. 같은 타입이 <b>명령영역·상태영역 두 곳</b>에 각각 놓여 있고,
-      우리와 Emb 이 정확히 반대쪽을 쓴다(우리 = Set명령 / Get상태 · Emb = Get명령 / Set상태).
+      <code>biped_deploy</code> 와 <code>RobotEmbedded</code>(Emb)이 정확히 반대쪽을 쓴다
+      (biped_deploy = Set명령 / Get상태 · Emb = Get명령 / Set상태).
       ⇒ 상태영역의 <code>fGainKp/Kd/Ki</code> 를 재활용해도 <b>명령영역의 게인과는 다른 주소</b>다.</div>
 
-    <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
+    <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — biped_deploy → MD80</h4>
     <div class="tw"><table>
       <thead><tr><th style="width:15%">물리량</th>
         <th style="width:28%">① EMB 프로세스</th>
@@ -2092,14 +2097,14 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
           <td class="n">Kp, Kd</td></tr>
       <tr><td class="ax">적분게인</td><td class="n">—</td><td class="n">fGainKi = <b>0 고정</b></td>
           <td class="n"><b>필드 없음</b> — 임피던스는 PD 뿐<br>(Ki 는 0x10/0x11 위치·속도 PID 전용)</td></tr>
-      <tr><td class="ax">토크 상한</td><td class="n">(우리 클램프)</td><td class="n">—</td>
+      <tr><td class="ax">토크 상한</td><td class="n">(배포기 클램프)</td><td class="n">—</td>
           <td class="n">Max output</td></tr>
       </tbody></table></div>
     <div class="note"><b>①</b> biped_deploy · <code>bridge_write_mit()</code> 인자 · 채널좌표 <b>deg</b> ·
       <b>②</b> <code>SetMotorCommand16</code> → <code>MotorParam16_t</code> 20 B/채널 · <b>float16</b> · deg ·
       <b>③</b> FDCAN <code>SET_IMPEDANCE_PD</code>(0x12) 32 B · <b>float32</b> · <b>rad</b></div>
 
-    <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → 우리</h4>
+    <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → biped_deploy</h4>
     <div class="tw"><table>
       <thead><tr><th style="width:15%">물리량</th>
         <th style="width:31%">① MD80 → MCU</th>
@@ -2164,7 +2169,7 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       왕복 스윕으로 분리해야 한다.<br>
       ★<b>드라이브 내장 시험</b>: <code>runTestOutputEncoderCmd(0x082)</code> 실행 →
       <code>calOutputEncoderStdDev/MinE/MaxE(0x100~0x102)</code> 로 aux-메인 불일치의
-      표준편차·최소·최대를 드라이브가 직접 돌려준다. 우리 도구 없이 유격 크기를 재는 지름길.<br>
+      표준편차·최소·최대를 드라이브가 직접 돌려준다. 자체 도구 없이 유격 크기를 재는 지름길.<br>
       ★참고: MD 는 <b>위치·속도·토크를 모두 출력축 기준</b>으로 보고한다(내부 감속기 반영). 우리 벨트 단은 그 바깥.</div>
 
     <div class="note"><b>병목은 그릇 크기다.</b> FDCAN 은 프레임당 64 B 라 24 B 응답에 출력축이 이미 들어 있고,

@@ -2064,10 +2064,10 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       ②와 ③ 사이에만 <b>EtherCAT → transfer → SPI</b> 3홉이 들어간다.</div>
     <h4 style="margin:16px 0 4px;font-size:14px">명령 방향 — 우리 → MD80</h4>
     <div class="tw"><table>
-      <thead><tr><th>물리량</th>
-        <th>① EMB 프로세스<br><span class="thsub">biped_deploy · bridge_write_mit() 인자<br>채널 좌표 · deg</span></th>
-        <th>② EMB 공유메모리<br><span class="thsub">SetMotorCommand16 → MotorParam16_t<br>20 B/채널 · float16 · deg</span></th>
-        <th>③ MCU → MD80<br><span class="thsub">FDCAN SET_IMPEDANCE_PD (0x12)<br>32 B · float32 · rad</span></th></tr></thead>
+      <thead><tr><th style="width:15%">물리량</th>
+        <th style="width:28%">① EMB 프로세스</th>
+        <th style="width:28%">② EMB 공유메모리</th>
+        <th style="width:29%">③ MCU → MD80</th></tr></thead>
       <tbody>
       <tr><td class="ax">모드</td><td class="n">—</td><td class="n">ucMode = 1</td>
           <td class="n">(CONTROL_SELECT 0x02 로 사전 설정)</td></tr>
@@ -2086,13 +2086,16 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
       <tr><td class="ax">토크 상한</td><td class="n">(우리 클램프)</td><td class="n">—</td>
           <td class="n">Max output</td></tr>
       </tbody></table></div>
+    <div class="note"><b>①</b> biped_deploy · <code>bridge_write_mit()</code> 인자 · 채널좌표 <b>deg</b> ·
+      <b>②</b> <code>SetMotorCommand16</code> → <code>MotorParam16_t</code> 20 B/채널 · <b>float16</b> · deg ·
+      <b>③</b> FDCAN <code>SET_IMPEDANCE_PD</code>(0x12) 32 B · <b>float32</b> · <b>rad</b></div>
 
     <h4 style="margin:16px 0 4px;font-size:14px">상태 방향 — MD80 → 우리</h4>
     <div class="tw"><table>
-      <thead><tr><th>물리량</th>
-        <th>① MD80 → MCU<br><span class="thsub">FDCAN DEFAULT_RESPONSE<br>24 B · float32 · rad</span></th>
-        <th>② EMB 공유메모리<br><span class="thsub">GetMotorStatus16 → MotorParam16_t<br>20 B/채널 · float16 · deg</span></th>
-        <th>③ EMB 프로세스<br><span class="thsub">bridge_read() 출력 → biped_deploy<br>채널 좌표 · deg</span></th></tr></thead>
+      <thead><tr><th style="width:15%">물리량</th>
+        <th style="width:31%">① MD80 → MCU</th>
+        <th style="width:27%">② EMB 공유메모리</th>
+        <th style="width:27%">③ EMB 프로세스</th></tr></thead>
       <tbody>
       <tr><td class="ax">에러</td><td class="n">ERROR VECTOR (uint16, 2 B)</td>
           <td class="n">ucStatus</td><td class="n">status[] → health</td></tr>
@@ -2117,6 +2120,9 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
           <span class="src">토크 자체가 상전류 추정값이라 정보 중복</span></td>
           <td class="n">fCurrent ← 토크 파생값</td><td class="n">cur_a[] → 포렌식 기록만</td></tr>
       </tbody></table></div>
+    <div class="note"><b>①</b> FDCAN <code>DEFAULT_RESPONSE</code>(= 벤더 QUICK DATA 0x0A) 24 B ·
+      <b>float32</b> · <b>rad</b> · <b>②</b> <code>GetMotorStatus16</code> → <code>MotorParam16_t</code>
+      20 B/채널 · <b>float16</b> · deg · <b>③</b> <code>bridge_read()</code> 출력 → biped_deploy · 채널좌표 deg</div>
     <h4 style="margin:16px 0 4px;font-size:14px">벤더 원문 대조 — MAB <code>MD80-x-CANdle-Documentation</code> (2026-08-28 확인)</h4>
     <div class="note">RGA 정리본의 <code>DEFAULT_RESPONSE</code> = 벤더 문서의 <b>Legacy response
       (QUICK DATA, frame id 0x0A)</b>. 바이트 지도가 정확히 일치한다:

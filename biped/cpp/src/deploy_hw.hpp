@@ -267,22 +267,27 @@ struct MockHw : HwIface {
   //   env: FAULT_AT_S(주입 시각) · FAULT_TILT_DEG · FAULT_TAU_NM · FAULT_VEL_DPS
   double t=0, fault_at=1e9, f_tilt=0, f_tau=0, f_vel=0;
   bool f_imu_dead=false;              // FAULT_IMU_DEAD=1 → IMU 전부 0(실기 현상 재현)
+  int  f_stuck_ch=-1;                 // ★FAULT_STUCK_CH=n → 그 채널만 명령 무시(토크 불응답 재현).
+                                      //   health=ok·에코 정상인 채 안 움직이는 08-28 실기 현상.
   MockHw(int nch, double dt_, double max_dps=60.0)
     : n(nch), dt(dt_), max_step(max_dps*dt_), q(nch,0.f), dq(nch,0.f), q_des(nch,0.f), kp(nch,0.f) {
     auto ev=[](const char* k, double dv){ const char* v=getenv(k); return v? atof(v) : dv; };
     fault_at = ev("FAULT_AT_S", 1e9);
     f_tilt = ev("FAULT_TILT_DEG",0); f_tau = ev("FAULT_TAU_NM",0); f_vel = ev("FAULT_VEL_DPS",0);
     f_imu_dead = ev("FAULT_IMU_DEAD",0) != 0;
+    f_stuck_ch = (int)ev("FAULT_STUCK_CH", -1);
   }
   bool init(int) override {
     std::printf("[MockHw] n_channel=%d dt=%.4f (SHM 없음 — 로직 검증용)\n", n, dt);
     if(fault_at<1e8) std::printf("[MockHw] 고장 주입 @%.1fs: tilt=%.0f° tau=%.1fNm vel=%.0fdps\n",
                                  fault_at, f_tilt, f_tau, f_vel);
     if(f_imu_dead) std::printf("[MockHw] 고장 주입: IMU 사망(전부 0)\n");
+    if(f_stuck_ch>=0) std::printf("[MockHw] 고장 주입: ch%d 토크 불응답(명령 무시·health ok)\n", f_stuck_ch);
     return true; }
   int read(HwState& s) override {
     if(on){
       for(int i=0;i<n;i++){
+        if(i==f_stuck_ch && t>=fault_at){ dq[i]=0.f; continue; }   // ★불응답: 명령을 조용히 무시
         float e = (kp[i]>0)? (q_des[i]-q[i]) : 0.f;
         float st = std::max((float)-max_step, std::min((float)max_step, e));
         q[i]+=st; dq[i]=st/(float)dt;

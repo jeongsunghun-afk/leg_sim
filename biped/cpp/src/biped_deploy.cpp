@@ -672,7 +672,11 @@ int main(int argc, char** argv){
   std::vector<double> jog_q(NJ, 0.0);        // 램프 중인 명령(**모델각 deg**)
   double jog_prev_t = 0; bool jog_init = false;
   bool ground_refused=false;
-  bool push_refused = false;             // ★push 거부 래치 (2026-08-27 검증 반박 반영)      // ★접지 가드 거부 래치(로그 폭주 방지)
+  bool push_refused = false;             // ★push 거부 래치 (2026-08-27 검증 반박 반영)
+  // ★토크 불응답(사일런트 축사망) 감지 상태 (2026-08-28 실기)
+  std::vector<double> unresp_t0(NCH, -1.0);      // 조건 시작 시각(채널별)
+  std::vector<char>   unresp(NCH, 0);            // 래치
+  double unresp_chk_t = 0.0;      // ★접지 가드 거부 래치(로그 폭주 방지)
   bool still_warned=false;        // ★정지 확인 거부 래치
   // ★★무장 직후 트레이스 (2026-08-20). hold 진입 즉시 속도트립이 반복되는데
   //   원인 후보(게인 점프 / 낡은 측정값 / 부호 / 한쪽 다리)를 말로 가릴 수 없다.
@@ -1422,6 +1426,18 @@ int main(int argc, char** argv){
           //   kd/kp 가 계단 점프, c.reset()·u_prev=0 이 지연보상 예측까지 오염한다.
           //   접지가드(위)와 같은 prev_mode 배제. 1점 gait 는 stand 도 제자리 스텝핑이라
           //   컨트롤러 연속이 곧 올바른 의미고, 2점 정적지지는 매 틱 자체 재무장한다.
+          // ★토크 불응답 래치가 있으면 stand/walk 를 막는다 (2026-08-28)
+          if((mode=="stand" || mode=="walk")){
+            std::string bad;
+            for(int i=0;i<NCH;i++) if(unresp[i]){ bad += " " + chname[i]; }
+            if(!bad.empty()){
+              std::printf("[deploy] ⛔ STOP **토크 불응답 채널이 있다**:%s — stand/walk 거부, hold 유지.\n"
+                          "         그 축은 체중을 못 받친다(주저앉는다). off 재무장/Emb 재기동 후 재시도.\n",
+                          bad.c_str());
+              if(prev_mode!="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
+              nm = "hold"; mode = "hold"; ground_refused = true;
+            }
+          }
           if((mode=="stand" || mode=="walk") && prev_mode!="stand" && prev_mode!="walk"){
             stand_hold = hs.q_deg; jm.clamp_ch_via_joint(stand_hold.data());
             // ★★2026-08-21 블렌드 목표를 **측정각에 얼리지 않는다** — 기하 자세로 램프한다.
@@ -1995,6 +2011,65 @@ int main(int argc, char** argv){
         }
       }
     }
+
+    // ── ★토크 불응답(사일런트 축사망) 감지 (2026-08-28 실기에서 당함) ──────────
+    //   실기 서명: "신호는 들어오는데 토크제어가 안 먹는" 채널이 **간헐적으로** 생긴다 —
+    //   health=ok · fault 0 · estop 없음 · 토크 에코 정상이라 **어떤 플래그로도 안 잡힌다.**
+    //   실측(08-28 에어워크 정렬 실패): HR_thigh 가 명령에서 10.1° 벌어진 채 정지,
+    //   kp 가 요구하는 토크 8.8 Nm 인데 그 자세의 중력은 0.65 Nm — 붙잡는 것이 중력이 아니다.
+    //   ⚠하중 처짐과 반드시 구분해야 한다(2kg 무게추에서 thigh 가 10° 처지는 건 **정상**):
+    //     처짐 평형은 kp·err ≈ G/α 라 중력과 균형이 맞고, 불응답은 중력을 크게 웃돈다.
+    //   ⇒ 위치모드에서 (큰 오차 + 정지 + 중력 대비 과도 요구토크)가 1s 지속 = 래치.
+    //     래치 중 stand/walk 진입 거부(사일런트 무토크 축 위에 서면 그대로 주저앉는다).
+    //   ⚠stand/walk 는 kp≈0 이라 이 서명이 성립하지 않는다 — 그래서 위치모드 전용이고,
+    //     그 대신 **진입 차단**으로 보호한다.
+    if(mode!="off" && mode!="stand" && mode!="walk" && !estop && lt - unresp_chk_t >= 0.1){
+      unresp_chk_t = lt;
+      // 측정 자세의 중력토크(고정베이스 — float/push 가드와 같은 계산)
+      for(int j=0;j<NJ;j++){ d->qpos[7+j]=q_ctrl[j]; d->qvel[6+j]=0.0; }
+      d->qpos[0]=d->qpos[1]=0; d->qpos[2]=0.5;
+      d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
+      for(int i=0;i<6;i++) d->qvel[i]=0.0;
+      mj_forward(m,d);
+      std::vector<double> gj(NJ); std::vector<float> gch(NCH, 0.f);
+      for(int j=0;j<NJ;j++) gj[j] = d->qfrc_bias[6+j];
+      jm.tau_ctrl_to_ch(gj.data(), gch.data());
+      // ★접지 중이면 검사하지 않는다 — 체중이 실리면 관절토크가 "매달림 중력" 을 정당하게
+      //   크게 웃돌아 전 축이 오탐된다(float/push 가드와 같은 매달림 판정을 재사용).
+      { std::vector<double> tm(NJ,0.0); jm.ch_to_tau_joint(hs.tau_nm.data(), tm.data());
+        double hang=0, meas=0;
+        for(int j=0;j<NJ;j++){ hang += std::fabs(gj[j]); meas += std::fabs(tm[j]); }
+        if(hang>1e-6 && meas/hang > 1.25) goto unresp_skip;   // 접지 — 판정 보류
+      }
+      for(int i=0;i<NCH;i++){
+        if(!cfg.installed_has(i) || unresp[i]) continue;
+        const double err  = (double)qcmd_ch[i] - (double)hs.q_deg[i];      // 채널 deg
+        const double tkp  = (double)kpcmd_ch[i] * err * M_PI/180.0;        // kp 가 내는 채널토크
+        // ★문턱 근거: 건강한 처짐 평형은 kp·err = (G + 마찰)/α 라 |tkp| ≈ 1.2|G| + ~1 Nm 이다
+        //   (α≈0.85 · 채널 마찰 0.4~0.9 Nm). 2|G| + 2.0 은 그 위로 충분히 떨어져 있고,
+        //   실측 불응답(tkp 8.8 vs G 0.65)은 크게 넘는다.
+        const bool   stuck = std::fabs(err) > 5.0 && std::fabs(hs.dq_dps[i]) < 2.0
+                          && std::fabs(tkp) > 2.0*std::fabs((double)gch[i]) + 2.0;
+        if(getenv("UNRESP_DBG") && cfg.installed_has(i))
+          std::printf("[unresp] ch%d err %+.1f dq %+.1f tkp %+.2f G %+.2f %s\n",
+                      i, err, (double)hs.dq_dps[i], tkp, (double)gch[i], stuck?"STUCK":"");
+        if(stuck){
+          if(unresp_t0[i] < 0) unresp_t0[i] = lt;
+          else if(lt - unresp_t0[i] > 1.0){
+            unresp[i] = 1;
+            std::printf("[deploy] ⛔ **토크 불응답 의심 ch%d(%s)** — 오차 %.1f° 가 %.1fs 유지,"
+                        " 축은 정지(%.1f dps)\n"
+                        "         kp 요구토크 %.2f Nm vs 그 자세 중력 %.2f Nm — 붙잡는 게 중력이 아니다.\n"
+                        "         (드라이버가 명령을 조용히 무시하거나 기구가 물렸다. health=ok 여도 그렇다)\n"
+                        "         → **stand/walk 진입을 막는다.** off 로 내렸다가 재무장하거나 Emb 재기동할 것.\n",
+                        i, chname[i].c_str(), err, lt-unresp_t0[i], (double)hs.dq_dps[i],
+                        tkp, (double)gch[i]);
+          }
+        } else unresp_t0[i] = -1.0;
+      }
+      unresp_skip: ;
+    }
+    if(mode=="off"){ for(int i=0;i<NCH;i++){ unresp[i]=0; unresp_t0[i]=-1.0; } }
 
     // ⑥ 상태 발행(~20Hz)
     double period = lt - prev_loop; prev_loop = lt;

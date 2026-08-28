@@ -201,7 +201,22 @@ def retau(a):
 #     ③비의 중앙값이 아니라 **동시적합** c = (G + τ_f·sign(q̇))/α  →  push_solve 와 같은 꼴.
 #       미지수 둘(1/α, τ_f/α)이라 마찰과 전달비가 함께 나온다(벤치 τ_c 와 대조 가능).
 KD_CH   = [6.0, 4.0, 3.5, 2.0] * 2
+KP_CH   = [100.0, 50.0, 80.0, 30.0] * 2
 GEAR_K  = [1.0, 1.0, 1.5, 1.2] * 2
+
+def _pd_joint(x, gains):
+    """축별 입력(관절 deg 또는 dps)이 만드는 **관절토크** — 채널게인·gear²·발목 커플링."""
+    import math
+    r = [math.radians(v) for v in x]
+    out = [0.0] * NJ
+    for leg in range(2):
+        b = 4 * leg
+        raw = [gains[b + i] * GEAR_K[b + i] ** 2 * (r[b + i] if i < 3 else (r[b + 2] + r[b + 3]))
+               for i in range(4)]
+        out[b + 0], out[b + 1] = raw[0], raw[1]
+        out[b + 2] = raw[2] + raw[3]      # drive_to_tau: calf 관절 = calf raw + foot raw
+        out[b + 3] = raw[3]
+    return out
 
 def _kd_joint(dq_dps):
     """관절속도[dps] → kd 항이 만드는 **관절토크**[Nm] (부호: 속도를 거스름)."""
@@ -344,6 +359,12 @@ def play(a):
         #   thigh ~3.2° 로 남는 게 정상이다(문서값 hip 5.2Nm/kp100=3.0° 와 정합) — 고정 2° 는
         #   영원히 못 넘는 문턱이었다. 잔차가 2s 동안 0.3° 미만으로 안 변하면 정착으로 본다.
         #   절대 가드 8°: 그 이상 남으면 처짐이 아니라 고장(트립/무구동)이다.
+        # ★허용 잔차는 **예측 처짐**에서 뽑는다(08-28): 무게추를 달면 thigh 처짐이 10° 를 넘어
+        #   고정 8° 가드가 정상 상태를 고장으로 오판한다. droop ≈ G/(α·kp_joint).
+        g0 = traj.get("tau_g", [[0.0] * NJ])[0]
+        drp = [abs(g0[j]) / (0.85 * KP_CH[j] * GEAR_K[j] ** 2) * 180.0 / 3.14159 for j in range(NJ)]
+        drp_max = max(drp)
+        drp_lim = max(8.0, 1.6 * drp_max)
         t0 = time.time()
         cur = None; hist = []
         ok = False
@@ -358,17 +379,29 @@ def play(a):
             hist = [(t, v) for t, v in hist if time.time() - t <= 2.0]
             settled = (len(hist) >= 3 and time.time() - hist[0][0] > 1.5 and
                        max(abs(a2 - b2) for a2, b2 in zip(hist[0][1], hist[-1][1])) < 0.3)
-            if emax < 2.0 or (settled and emax < 8.0):
+            if emax < 2.0 or (settled and emax < drp_lim):
                 if emax >= 2.0:
-                    print(f"  정착 판정 — 잔차 max {emax:.1f}° 는 매달림 PD 처짐(정상). 재생으로 간다.")
+                    print(f"  정착 판정 — 잔차 max {emax:.1f}° 는 매달림 PD 처짐(예측 {drp_max:.1f}°·"
+                          f"허용 {drp_lim:.1f}°). 재생으로 간다.")
                 ok = True; break
         if not ok:
-            print("✗ 첫 프레임 정렬 실패(40s) — 축별 잔차(측정−목표):")
+            print("✗ 첫 프레임 정렬 실패(40s) — 축별 잔차와 원인 분류:")
             if cur:
+                # ★잔차의 정체를 가른다(2026-08-28 실기): 하중 처짐이면 kp 토크가 그 자세의
+                #   중력과 균형을 이루고, **토크 불응답**이면 중력을 크게 웃돈다(붙잡는 게 중력이 아님).
+                g0 = traj.get("tau_g", [[0.0] * NJ])[0]
+                tk = _pd_joint([fr[0][j] - cur[j] for j in range(NJ)], KP_CH)
                 for j in range(NJ):
                     e = cur[j] - fr[0][j]
+                    why = ""
+                    if abs(e) >= 2.0:
+                        why = ("  ⛔토크 불응답 의심" if abs(tk[j]) > 2.0 * abs(g0[j]) + 2.0
+                               else "  (하중 처짐 — 정상)")
                     print(f"    {NAMES[j]:9s} {cur[j]:+7.1f} → {fr[0][j]:+7.1f}  잔차 {e:+6.1f}°"
-                          + ("  ⚠" if abs(e) >= 2.0 else ""))
+                          f"  kp토크 {tk[j]:+6.2f} vs 중력 {g0[j]:+6.2f}{why}")
+                if any(abs(tk[j]) > 2.0 * abs(g0[j]) + 2.0 and abs(cur[j] - fr[0][j]) >= 2.0
+                       for j in range(NJ)):
+                    print("  → **불응답 채널이 있다.** 배포기를 off 로 내렸다 재무장하거나 Emb 재기동 후 재시도.")
             print(f"  배포기 모드: '{state().get('mode')}' · JOG_SPEED_DPS 로그·트립 여부를 확인할 것")
             return 1
         print(f"  재생 시작 — {len(fr)/hz/a.speed:.1f}s × {a.loop}회. Ctrl+C = 안전 종료.")

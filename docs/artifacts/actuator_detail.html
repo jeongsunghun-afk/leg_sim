@@ -2113,10 +2113,32 @@ g*  = (g_lo+g_hi)/2   ← 마찰 소거
           <td class="n">fTorque</td><td class="n">tau_nm[] → hs.tau_nm<br><span class="src">α̂·토크트립이 쓰는 값</span></td></tr>
       <tr><td class="ax">온도</td><td class="n">MOTOR TEMPERATURE (uint8, 1 B)</td>
           <td class="n">fAccelrationOrTemperture(추정)</td><td class="n">— 안 읽음</td></tr>
-      <tr class="rand"><td class="ax">전류</td><td class="n"><b>필드 없음</b><br>
-          <span class="src">SET_MAX_CURRENT 는 한계설정 명령일 뿐</span></td>
+      <tr class="rand"><td class="ax">전류</td><td class="n"><b>필드 없음(벤더 확정)</b><br>
+          <span class="src">토크 자체가 상전류 추정값이라 정보 중복</span></td>
           <td class="n">fCurrent ← 토크 파생값</td><td class="n">cur_a[] → 포렌식 기록만</td></tr>
       </tbody></table></div>
+    <h4 style="margin:16px 0 4px;font-size:14px">벤더 원문 대조 — MAB <code>MD80-x-CANdle-Documentation</code> (2026-08-28 확인)</h4>
+    <div class="note">RGA 정리본의 <code>DEFAULT_RESPONSE</code> = 벤더 문서의 <b>Legacy response
+      (QUICK DATA, frame id 0x0A)</b>. 바이트 지도가 정확히 일치한다:
+      <code>B0 FRAME ID · B1-2 QUICK STATUS(u16) · B3 MOTOR TEMP(u8) · B4-7 MAIN ENC POS ·
+      B8-11 MAIN ENC VEL · B12-15 MOTOR TORQUE · <b>B16-19 OUTPUT ENC POS</b> ·
+      <b>B20-23 OUTPUT ENC VEL</b></code> (전부 float32 rad/rad/s/Nm) = <b>24 B</b>.<br>
+      ★<b>전류는 응답에도, 레지스터 맵에도 없다</b> — 읽기전용 전류 관련은
+      <code>shuntResistance(0x700)</code>·<code>maxDriverCurrent(0x701)</code> 같은 하드웨어 상수뿐이다.
+      게다가 <i>Measurements</i> 문서가 <b>"토크는 상전류를 측정해 추정한다"</b> 고 명시한다 —
+      즉 <b>토크와 전류는 같은 정보</b>이고 <code>fCurrent</code> 재활용에 잃는 것이 없음이 원문으로 확정됐다.<br>
+      ★<b>출력축(aux) 엔코더는 레지스터로도 열려 있다</b>:
+      <code>outputEncoderPosition(0x024)</code>·<code>outputEncoderVelocity(0x023)</code> RO float32,
+      <b>5 kHz</b> 갱신. 모드 <code>outputEncoderMode(0x025)</code> 는
+      <b>REPORT(3)</b> 로 두면 <b>모션 제어는 메인 엔코더 그대로</b>이고 aux 는 보고만 한다 —
+      제어 위험 없이 계측만 얻는 정확한 설정. ⚠단 REPORT 모드는 aux 캘리브가 불가라
+      <b>비선형 위치 오차</b>가 남는다: 백래쉬(방향 의존 이력)와 비선형(위치 의존 단일값)은
+      왕복 스윕으로 분리해야 한다.<br>
+      ★<b>드라이브 내장 시험</b>: <code>runTestOutputEncoderCmd(0x082)</code> 실행 →
+      <code>calOutputEncoderStdDev/MinE/MaxE(0x100~0x102)</code> 로 aux-메인 불일치의
+      표준편차·최소·최대를 드라이브가 직접 돌려준다. 우리 도구 없이 유격 크기를 재는 지름길.<br>
+      ★참고: MD 는 <b>위치·속도·토크를 모두 출력축 기준</b>으로 보고한다(내부 감속기 반영). 우리 벨트 단은 그 바깥.</div>
+
     <div class="note"><b>병목은 그릇 크기다.</b> FDCAN 은 프레임당 64 B 라 24 B 응답에 출력축이 이미 들어 있고,
       막히는 곳은 <code>MotGeneral_t</code> <b>20 B/채널</b> 고정 레이아웃이다 — 그래서 새 필드를 만들지 않고
       빈 칸(<code>fCurrent</code>) 재활용을 제안한다(PDO·대역폭 무변경).<br>

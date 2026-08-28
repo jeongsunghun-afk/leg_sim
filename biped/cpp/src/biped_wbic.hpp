@@ -131,7 +131,14 @@ inline VectorXd wbic_track(const WbicIn& in){
     Gr.push_back(-r); hv.push_back(in.drv_peak[i]+off);
   }
   // eiquadprog: CE x+ce0=0 · CI x+ci0≥0
-  P=(0.5*(P+P.transpose())).eval()+1e-8*MatrixXd::Identity(nz,nz);
+  // ★정규화 (2026-08-28 실기): 2점 평발은 **발당 2접촉점 = 4점**이라 λ 가 rank-deficient 다
+  //   (sim(biped_mpc_wbic.py:243)은 이 경우 solver 를 proxqp 로 갈아탄다 — C++ 은 eiquadprog
+  //   하나로 미는데 정규화가 1e-8 뿐이었다). 실기 2점 stand 에서 **QP 실패 20~33%** 가 관측됐고,
+  //   실패하면 중력보상 폴백으로 떨어지므로 매 틱 두 해가 번갈아 나가 **떨림**이 된다.
+  //   ⇒ 감쇠최소제곱과 같은 처방: Hessian 대각 가산을 키워 축퇴를 흡수한다.
+  //   기본은 종전값 유지(회귀 방지) · WBIC_REG 로 현장에서 올려 시험한다(1e-6 ~ 1e-4 권장).
+  static const double WREG = getenv("WBIC_REG") ? atof(getenv("WBIC_REG")) : 1e-8;
+  P=(0.5*(P+P.transpose())).eval()+WREG*MatrixXd::Identity(nz,nz);
   MatrixXd CE=A; VectorXd ce0=-bb;
   int nci=(int)Gr.size(); MatrixXd CI(nci,nz); VectorXd ci0(nci);
   for(int i=0;i<nci;i++){ CI.row(i)=-Gr[i]; ci0[i]=hv[i]; }

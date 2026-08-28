@@ -456,7 +456,16 @@ struct BipedControl {
     //   ⚠누적률은 초기 과도에 희석된다 ⇒ **최근 창(200틱)** 비율을 따로 낸다.
     qp_n++; qp_w_n++;
     const bool qp_ok = (st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL);
-    if(!qp_ok){ qp_fail++; qp_w_fail++; }
+    if(!qp_ok){ qp_fail++; qp_w_fail++;
+      // ★실패 사유를 남긴다 (2026-08-28) — REDUNDANT_EQUALITIES 면 rank 축퇴(정규화로 해결),
+      //   INFEASIBLE 이면 접촉/마찰콘 제약이 진짜로 안 맞는 것(접지·자세 문제).
+      static long fs_cnt[8]={0}; const int si=(int)st & 7; fs_cnt[si]++;
+      static long fs_tick=0;
+      if((++fs_tick % 1500) == 0){                      // ~3s @500Hz
+        std::fprintf(stderr,"[wbic] QP 실패 사유 누적: ");
+        for(int q=0;q<8;q++) if(fs_cnt[q]) std::fprintf(stderr,"code%d=%ld ",q,fs_cnt[q]);
+        std::fprintf(stderr,"(최근창 %.0f%%)\n", qp_rate*100.0); }
+    }
     qp_K = K;
     qp_cerr[0]=com_ref_xy[0]-c[0]; qp_cerr[1]=com_ref_xy[1]-c[1]; qp_cerr[2]=com_ref_z-c[2];
     if(qp_w_n>=200){ qp_rate = (double)qp_w_fail/(double)qp_w_n; qp_w_n=0; qp_w_fail=0; }

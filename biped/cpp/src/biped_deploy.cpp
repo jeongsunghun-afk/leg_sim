@@ -1145,7 +1145,8 @@ int main(int argc, char** argv){
           if(((mode!="off" && prev_mode=="off") || mode=="stand" || mode=="walk") && !trc){
             trc = fopen("/tmp/arm_trace.csv","w"); trc_t0 = lt;
             if(trc){ fprintf(trc,"t");
-              for(int i=0;i<NCH;i++) fprintf(trc,",q%d,dq%d,tau%d,cmd%d",i,i,i,i);
+              // cmd=실제 나간 위치명령 · kp/kd=그 틱에 실제 나간 게인(blend 중 매 틱 변한다)
+              for(int i=0;i<NCH;i++) fprintf(trc,",q%d,dq%d,tau%d,cmd%d,kp%d,kd%d",i,i,i,i,i,i);
               fprintf(trc,"\n");
               std::printf("[deploy] 트레이스 → /tmp/arm_trace.csv (3초 — 블렌드 전체)\n"); } }
           hw->enable(mode=="off" ? 0 : 1);
@@ -1664,16 +1665,7 @@ int main(int argc, char** argv){
     } else { tau_over_t0 = -1; vel_over_t0 = -1; }
     if(estop) hw->enable(0);
 
-    // ★트레이스 기록 — 무장 후 0.5초. 명령각은 hold/home 이 쓴 q_ch/hold_ch 다.
-    if(trc){
-      if(lt-trc_t0 <= 3.0){
-        fprintf(trc,"%.4f", lt-trc_t0);
-        for(int i=0;i<NCH;i++)
-          fprintf(trc,",%.3f,%.1f,%.3f,%.3f", hs.q_deg[i], hs.dq_dps[i], hs.tau_nm[i],
-                  (mode=="hold")? (double)hold_ch[i] : (double)q_ch[i]);
-        fprintf(trc,"\n");
-      } else { fclose(trc); trc=nullptr; std::printf("[deploy] 트레이스 저장 완료\n"); }
-    }
+    // (트레이스 기록은 **모드 분기 뒤로** 옮겼다 — 아래 "트레이스 기록" 참조)
 
     // ★강성 배율 램프 — 목표까지 KP_RAMP_S 에 걸쳐 **선형**으로 옮긴다.
     //   계단으로 바꾸면 하중을 받아 err 만큼 벌어진 축의 토크가 그 자리에서 배율만큼
@@ -2108,6 +2100,27 @@ int main(int argc, char** argv){
       qcmd_ch = stand_ref; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
+    }
+
+    // ★트레이스 기록 — 무장 후 3초.
+    //   ★★2026-08-28 두 곳을 고쳤다. 종전 트레이스로 한 **추종오차 분석은 전부 무효**다.
+    //   ① **위치**: 종전엔 모드 분기 **앞**에서 찍었다 ⇒ 측정은 이번 틱인데 명령은
+    //      **직전 틱** 것이었다(외부 분석에서 `cmd[k] ≡ q[k−1]`, max|Δ|=0.000000 으로 검출).
+    //   ② **열**: 종전엔 `(mode=="hold")? hold_ch : q_ch` 를 명령각이라 적었는데,
+    //      **stand 의 실제 명령각은 `stand_ref`** 이고 `q_ch` 는 stand 분기에서 갱신조차
+    //      안 된다(float/push 가 마지막에 넣은 측정각이 그대로 남는다).
+    //      ⇒ 모든 모드에서 실제로 나간 값인 `qcmd_ch/kpcmd_ch/kdcmd_ch` 를 찍는다.
+    //   ★게인도 같이 찍는다: blend 중에는 kp·kd 가 매 틱 변한다. 이게 없으면
+    //     τ_ff = τ_echo − kp·err − kd·(−q̇) 분해를 **추정**할 수밖에 없고, 08-28 리플
+    //     조사가 실제로 그 재구성 때문에 불확실성을 안았다. 이제 직접 분해된다.
+    if(trc){
+      if(lt-trc_t0 <= 3.0){
+        fprintf(trc,"%.4f", lt-trc_t0);
+        for(int i=0;i<NCH;i++)
+          fprintf(trc,",%.3f,%.1f,%.3f,%.3f,%.2f,%.2f", hs.q_deg[i], hs.dq_dps[i], hs.tau_nm[i],
+                  (double)qcmd_ch[i], (double)kpcmd_ch[i], (double)kdcmd_ch[i]);
+        fprintf(trc,"\n");
+      } else { fclose(trc); trc=nullptr; std::printf("[deploy] 트레이스 저장 완료\n"); }
     }
 
     // ★★자세유지 토크 스냅샷 — hold(위치제어) vs stand(WBIC 토크) 비교용.

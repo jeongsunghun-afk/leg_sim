@@ -2230,6 +2230,12 @@ int main(int argc, char** argv){
         for(int j=0;j<NJ;j++){ hang += std::fabs(gj[j]); meas += std::fabs(tm[j]); }
         if(hang>1e-6 && meas/hang > 1.25) goto unresp_skip;   // 접지 — 판정 보류
       }
+      // ★★중력지지 중에도 검사하지 않는다 (2026-09-02 실기 오탐 — HL_foot 에서 발화).
+      //   τ_ff 가 발을 지면에 밀어붙이므로 "kp 요구토크 vs 매달림 중력" 비교의 전제가
+      //   무너진다 — 오차 7° 를 붙잡던 건 드라이버 불응답이 아니라 **지면 반력**이었다.
+      //   위의 전역 접지 게이트(meas/hang)로는 못 거른다: 크레인이 체중 대부분을 들면
+      //   전신 합계는 "매달림" 으로 보이는데, **발끝만은 이미 눌려** 있었다.
+      if(mode=="hold" && hold_ff_pct_cur > 5.0) goto unresp_skip;
       for(int i=0;i<NCH;i++){
         if(!cfg.installed_has(i) || unresp[i]) continue;
         const double err  = (double)qcmd_ch[i] - (double)hs.q_deg[i];      // 채널 deg

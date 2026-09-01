@@ -671,11 +671,19 @@ int main(int argc, char** argv) {
       //   legged: LeggedController.cpp:135(kp=0,kd=3) → LeggedHWSim.cpp:163. velDes=MPC 관절속도(uDes 후반 nJ).
       double jkd = getenv("JKD") ? atof(getenv("JKD")) : 0.0;   // 이상토크 MuJoCo=0(kd=3는 WBC 정확토크와 충돌)
       double jkp = getenv("JKP") ? atof(getenv("JKP")) : 0.0;   // kp(옵션, legged 기본 0)
+      // ★위상 스케줄 블렌드(2026-09-01, leg-heavy 설계 반영): swing=PD 지배(모델오차 큰 곳=고게인 피드백)·
+      //   stance=tau_ff 지배(GRF 최적화 신뢰=저게인). JKP_SW/JKD_SW 미설정=균일 JKP/JKD(하위호환).
+      //   ⚠순수 PD 아님 — tau_ff는 유지(무거운 다리의 중력·관성을 FF가 지고 PD는 잔차만).
+      double jkpSw = getenv("JKP_SW") ? atof(getenv("JKP_SW")) : jkp;
+      double jkdSw = getenv("JKD_SW") ? atof(getenv("JKD_SW")) : jkd;
+      const auto cfBlend = modeNumber2StanceLeg(md);   // 관절순 [FL,FR,HL,HR]=contact flag 순
       for (int i = 0; i < nJ; ++i) {
         double qMeas = rbd_s(6 + i), qdMeas = rbd_s(12 + nJ + i);  // rbd: jointPos@6.., jointVel@(12+nJ)..
         double qDes = xDes(12 + i);                               // centroidal state: momentum(6)+basePose(6)+jointPos(nJ)
         double qdDes = uDes(3 * 4 + i);                           // centroidal input: contactForce(3*4)+jointVel(nJ)
-        d->ctrl[act[i]] = tauJ(i) + jkp * (qDes - qMeas) + jkd * (qdDes - qdMeas);  // τ_ff + τ_pd
+        const bool stanceLeg = cfBlend[i / (nJ / 4)];
+        double kpU = stanceLeg ? jkp : jkpSw, kdU = stanceLeg ? jkd : jkdSw;
+        d->ctrl[act[i]] = tauJ(i) + kpU * (qDes - qMeas) + kdU * (qdDes - qdMeas);  // τ_ff + τ_pd(위상 스케줄)
       }
       // 앞다리(FL,FR = 첫 2다리 = 관절 0~2*perLeg) 떨림 계측: 관절속도 피크 + 토크 변화(채터) 피크
       int nFront = 2 * (nJ / 4);

@@ -32,5 +32,5 @@ source "$HERE/ocs2_ws/install/setup.bash" 2>/dev/null || true
 EXE="$HERE/ocs2_ws/install/ocs2_legged_robot/lib/ocs2_legged_robot/test02legMujoco"
 CFG="$HERE/ocs2_02leg/config/task.info $HERE/ocs2_02leg/urdf/02leg_ocs2.urdf $HERE/ocs2_02leg/config/reference.info"
 echo "▶ D1 GUI 구동 | $(basename "$MJCF") gait=$GAIT | perceptive=$PERC(0=평지 순수속도추종) | 명령슬루 τ=0.30 | 좌스틱=전진·우스틱=선회 (GUI에서 Walk 먼저 누르기)"
-env OMP_NUM_THREADS=1 WBC=1 VIEW=1 WBC_LEGGED=1 $PERCENV MPC_HZ=100 CMD_TAU=0.30 KP_F=700 KD_F=50 JKP=20 JKD=1 CMDFILE="$CMD" \
+env OMP_NUM_THREADS=1 WBC=1 VIEW=1 WBC_LEGGED=1 $PERCENV MPC_HZ=100 CMD_TAU=0.30 KP_F=700 KD_F=50 JKP=20 JKD=1 JKP_SW=60 JKD_SW=2 CMDFILE="$CMD" \
     "$EXE" $CFG "$MJCF" "$GAIT" 100000

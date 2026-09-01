@@ -503,7 +503,14 @@ int main(int argc, char** argv){
   const bool   HOLD_FF_MID = !(getenv("HOLD_FF_POINT") && std::string(getenv("HOLD_FF_POINT"))=="toe");
   //   한 다리 100% = mg/2. 모델에서 뽑는다(기체가 바뀌면 자동으로 따라간다).
   const double HOLD_FF_FULL_N = 0.5 * mj_getTotalmass(m) * 9.81;
+  // ★foot 하중항 배율 (2026-09-02 실기 1차 반영). foot 은 g*(1.00)로 못 메운다 —
+  //   결손이 상수+비율 혼합(r_foot(G)=0.77−0.36/G)이라 저부하(float)에선 상수가 지배해
+  //   FOOT_COMP 몫이었지만, **체중 하중(G≈6~7Nm)에선 비율부 0.77 이 지배**한다.
+  //   실기 1차: HL_foot 잔차 +2.8° ≈ 결손 20%×6Nm/(α·kp_raw 36.7) + 마찰 1° — 정량 일치.
+  //   ⇒ foot 의 전방보상 전체에 1/0.77≈1.30 을 기본 적용(다른 축은 종전대로 g*).
+  const double HOLD_FF_FOOT = getenv("HOLD_FF_FOOT") ? atof(getenv("HOLD_FF_FOOT")) : 1.30;
   double hold_fz_cur = 0.0, hold_ff_pct_cur = 0.0;
+  double hold_split_cur = 50.0;            // 좌우 배분[% to HL] — 진입 시 50 으로 리셋·2%/s 램프
   std::printf("[deploy] hold 중력지지 — 모델 총질량 %.2f kg · **한 다리 100%% = %.1f N** ·"
               " 램프 %.1f %%/s · 적용점 %s\n"
               "         GUI [중력지지] 버튼(0~100%%)으로 올린다. 0%% 면 종전 hold(순수 위치 PD)와 같다.\n",
@@ -1224,7 +1231,7 @@ int main(int argc, char** argv){
           if(mode=="hold"){
             // ★중력지지는 **매 진입마다 0 에서 다시 램프**한다 — GUI 버튼이 눌린 채로
             //   남아 있어도 진입 순간 계단이 걸리지 않는다(push 와 같은 규약).
-            hold_fz_cur = 0.0; hold_ff_pct_cur = 0.0;
+            hold_fz_cur = 0.0; hold_ff_pct_cur = 0.0; hold_split_cur = 50.0;
             std::vector<float> raw = hs.q_deg;             // 클램프 전
             // ★★home → hold 는 **home 의 목표를 이어받는다** (2026-08-21, 사용자 요청).
             //   하려는 것: home 자세를 잡고 hold 로 굳힌 뒤 **크레인을 내려 중력을 걸어도
@@ -1718,13 +1725,20 @@ int main(int argc, char** argv){
         d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
         for(int i=0;i<6;i++) d->qvel[i]=0.0;
         mj_forward(m,d);
-        for(int j=0;j<NJ;j++)
-          tau_ctrl[j] = (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE) * d->qfrc_bias[6+j];
+        for(int j=0;j<NJ;j++) tau_ctrl[j] = d->qfrc_bias[6+j];      // 중력항(무배율 — 아래서 일괄)
         // 몸무게를 **양 다리에** 건다 — push 와 달리 한쪽이 아니다.
         //   부호는 push 와 같다: τ = G + Jᵀ·(0,0,−F) 가 "발이 F 로 딛고 반작용 F↑ 를 받는다".
-        //   ⚠여기선 **전량**(HOLD_FF_FULL_N)을 넣는다 — 지지율은 아래에서 한 번만 곱한다.
+        //   ⚠여기선 **전량**을 넣는다 — 지지율은 아래에서 한 번만 곱한다.
+        // ★좌우 배분 (2026-09-02 실기 1차): 50:50 고정이었더니 HR_foot 이 −3.3° 과보상
+        //   = 실제 하중이 HL 쏠림. GUI 트림(hold_ff_split, % to HL)을 2%/s 로 램프해 따른다.
+        { const double tgt_sp = std::max(20.0, std::min(80.0, cmd.hold_ff_split));
+          const double stp = 2.0 * dt;
+          hold_split_cur += std::max(-stp, std::min(stp, tgt_sp - hold_split_cur)); }
         { static std::vector<mjtNum> jacp;
           for(int leg=0; leg<2; leg++){
+            // 총하중 mg = 2·FULL_N. HL 몫 = split%, HR 몫 = 100−split%.
+            const double frac = (leg==0) ? 0.01*hold_split_cur : 0.01*(100.0-hold_split_cur);
+            const double F_leg = 2.0 * HOLD_FF_FULL_N * frac;
             const int gs[2] = { c.sph[leg], (HOLD_FF_MID && c.has_heel) ? c.sph2[leg] : -1 };
             const double share = (gs[1] >= 0) ? 0.5 : 1.0;
             for(int k=0;k<2;k++){
@@ -1732,13 +1746,18 @@ int main(int argc, char** argv){
               jacp.assign(3*m->nv, 0.0);
               mj_jacGeom(m, d, jacp.data(), nullptr, gs[k]);
               for(int j=0;j<NJ;j++)
-                tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-HOLD_FF_FULL_N*share);
+                tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-F_leg*share);
             }
           } }
-        // ★지지율을 **여기서** 곱한다 — 중력항까지 함께 램프되어야 계단이 안 생긴다.
+        // ★지지율 × **축별 배율**을 여기서 한 번에 곱한다 — 계단 금지(램프 hff)와
+        //   "명령 = 필요토크/전달비" 를 같은 자리에서 처리한다.
+        //   foot 만 g* 대신 HOLD_FF_FOOT(1.30) — 하중 대역에선 비율부 0.77 이 지배(상단 주석).
         const double hff = 0.01 * hold_ff_pct_cur;
-        for(int j=0;j<NJ;j++)
-          tau_ctrl[j] = std::max(-HOLD_FF_TAU_MAX, std::min(HOLD_FF_TAU_MAX, hff*tau_ctrl[j]));
+        for(int j=0;j<NJ;j++){
+          const double sc = (j % 4 == 3) ? HOLD_FF_FOOT
+                          : (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE);
+          tau_ctrl[j] = std::max(-HOLD_FF_TAU_MAX, std::min(HOLD_FF_TAU_MAX, hff*sc*tau_ctrl[j]));
+        }
         jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
         foot_comp(tau_ch);
         hw->write_mit(hold_ch.data(), zero.data(), tau_ch.data(),
@@ -1752,7 +1771,8 @@ int main(int argc, char** argv){
             for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
               const double e=(double)hold_ch[i]-(double)hs.q_deg[i];
               if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
-            std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · tau_ff:", hold_ff_pct_cur, hold_fz_cur);
+            std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · 배분 HL%.0f:%.0fHR · tau_ff:",
+                        hold_ff_pct_cur, hold_fz_cur, hold_split_cur, 100.0-hold_split_cur);
             for(int j=0;j<NJ;j++) std::printf(" %+.2f", tau_ctrl[j]);
             std::printf("  최대오차 %s %+.2f°\n", ech>=0?chname[ech].c_str():"-", emx);
             std::fflush(stdout); } }
@@ -2400,7 +2420,7 @@ int main(int argc, char** argv){
         "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,\"push_fz\":%.1f,"
         // ★hold 중력지지 — `hold_ff_pct` 는 **지금 실제로 나가는 값**(램프 중이면 중간값),
         //   `hold_ff_n` 은 그때의 한 다리 지지력[N]. 0 이면 순수 위치 PD(종전 hold).
-        "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,"
+        "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,\"hold_ff_split\":%.1f,"
         "%s\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
@@ -2416,7 +2436,8 @@ int main(int argc, char** argv){
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
         POS_KP, kp_scale_tgt, POS_KD, push_fz_cur,
-        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, extra_json.c_str(), offs_json.c_str());
+        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, hold_split_cur,
+        extra_json.c_str(), offs_json.c_str());
       write_state(stt_p, buf);
     }
 

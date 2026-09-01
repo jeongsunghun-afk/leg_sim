@@ -2309,6 +2309,29 @@ int main(int argc, char** argv){
           std::snprintf(b,sizeof b,"%s%.2f", sep, (double)kdcmd_ch[jj.channel]*k2); kds += b; }
       }
       dqs+="]"; taus+="]"; taucs+="]"; kps+="]"; kds+="]";
+      // ★출력축(aux) 엔코더 + 통신 ACK (2026-09-01, RGA 08/31 펌웨어) — 지원될 때만 키를 낸다.
+      //   키 부재 = "기능 없음"(구 .so/mock), 값 0 = "AUX_MODE 꺼짐/에코 정상" — 셋을 구분한다.
+      //   aux_deg 는 **채널 원시각**(모델각 아님): 벨트 앞단이라 calf/foot 은 gear_k 나누기 전 값.
+      std::string extra_json;
+      { float ap[16], av[16]; int al[16], as_[16];
+        const int ar = hw->aux(ap, av);
+        if(ar >= 0){
+          char b[64];
+          extra_json += "\"aux_on\":"; extra_json += (ar==1) ? "true," : "false,";
+          extra_json += "\"aux_deg\":[";
+          for(int i=0;i<NCH;i++){ std::snprintf(b,sizeof b,"%s%.3f", i?",":"", (double)ap[i]); extra_json += b; }
+          extra_json += "],\"aux_dps\":[";
+          for(int i=0;i<NCH;i++){ std::snprintf(b,sizeof b,"%s%.2f", i?",":"", (double)av[i]); extra_json += b; }
+          extra_json += "],";
+        }
+        if(hw->ack(al, as_) == 0){
+          char b[32];
+          extra_json += "\"ack_lag\":[";
+          for(int i=0;i<NCH;i++){ std::snprintf(b,sizeof b,"%s%d", i?",":"", al[i]); extra_json += b; }
+          extra_json += "],\"ack_stale\":[";
+          for(int i=0;i<NCH;i++){ std::snprintf(b,sizeof b,"%s%d", i?",":"", as_[i]); extra_json += b; }
+          extra_json += "],";
+        } }
       // ★창 통계(500Hz 누적) → 발행. 창이 비면(첫 틱) 빈 배열 대신 0 을 낸다.
       std::string tsd="[", tmn="[", tmx="[";
       for(int i=0;i<jm.n_leg;i++){
@@ -2333,7 +2356,7 @@ int main(int argc, char** argv){
       const std::string tstand= tau_snap(tau_stand, have_tau_stand);
       const long ts_n_pub = ts_n;
       ts_reset();                       // 창을 비운다 — 다음 발행까지 다시 쌓는다
-      char buf[5120];   // ★4096 → 5120 (2026-08-21): 자세유지 토크 스냅샷 2배열 추가
+      char buf[6144];   // ★5120 → 6144 (2026-09-01): aux/ack 4배열 추가(최대 ~600B)
       // 런타임에 안 변하므로 한 번만 만든다.
       static std::string offs_json;
       if(offs_json.empty()){
@@ -2378,7 +2401,7 @@ int main(int argc, char** argv){
         // ★hold 중력지지 — `hold_ff_pct` 는 **지금 실제로 나가는 값**(램프 중이면 중간값),
         //   `hold_ff_n` 은 그때의 한 다리 지지력[N]. 0 이면 순수 위치 PD(종전 hold).
         "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,"
-        "\"offset_deg\":%s}",
+        "%s\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
         dqs.c_str(), taus.c_str(), taucs.c_str(), kps.c_str(), kds.c_str(),
@@ -2393,7 +2416,7 @@ int main(int argc, char** argv){
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
         POS_KP, kp_scale_tgt, POS_KD, push_fz_cur,
-        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, offs_json.c_str());
+        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, extra_json.c_str(), offs_json.c_str());
       write_state(stt_p, buf);
     }
 

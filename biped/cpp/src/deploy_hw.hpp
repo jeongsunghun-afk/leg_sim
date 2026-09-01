@@ -223,6 +223,11 @@ struct HwIface {
                          const float* kp, const float* kd, int n) = 0;
   virtual int  enable(int on) = 0;
   virtual const char* name() const = 0;
+  // ── 2026-09-01 선택 기능(RGA 08/31 펌웨어) — 기본 구현 = 미지원 ──
+  //   aux: 출력축 엔코더(AUX_MODE=1 + 신 펌웨어). 반환 1=값 유효 · 0=꺼짐 · -1=미지원.
+  //   ack: 통신 왕복 감시(lag[틱]·stale[read 수], stale -1=에코 미수신). 반환 0 · -1=미지원.
+  virtual int  aux(float*, float*){ return -1; }
+  virtual int  ack(int*, int*){ return -1; }
 };
 
 // ── 실기: libbipedshm.so 동적 로드(dlopen) ───────────────────────────────────
@@ -236,6 +241,9 @@ struct ShmHw : HwIface {
   int (*p_wpos)(const float*,const float*,const float*,int)=nullptr;
   int (*p_wmit)(const float*,const float*,const float*,const float*,const float*,int)=nullptr;
   int (*p_en)(int)=nullptr;
+  // ★신 심볼(2026-09-01) — 구 .so 에는 없으므로 **없어도 통과**한다(dlsym 실패 허용).
+  int (*p_aux)(float*,float*)=nullptr;
+  int (*p_ack)(int*,int*)=nullptr;
   int n=10;
   std::string lib, err;
 
@@ -253,6 +261,8 @@ struct ShmHw : HwIface {
   int write_mit(const float* q,const float* dq,const float* tf,const float* kp,const float* kd,int nn) override {
     return p_wmit(q,dq,tf,kp,kd,nn); }
   int enable(int on) override { return p_en(on); }
+  int aux(float* p, float* v) override { return p_aux ? p_aux(p, v) : -1; }
+  int ack(int* l, int* s) override { return p_ack ? p_ack(l, s) : -1; }
   const char* name() const override { return "shm"; }
 };
 
@@ -545,6 +555,11 @@ inline bool ShmHw::init(int recv_wait_ms){
   p_wmit=(int(*)(const float*,const float*,const float*,const float*,const float*,int))sym("bridge_write_mit");
   p_en  =(int(*)(int))sym("bridge_enable");
   if(!p_init||!p_read||!p_wpos||!p_wmit||!p_en) return false;
+  // 신 심볼 — 구 .so 호환을 위해 **실패 허용**. err 를 더럽히지 않게 sym() 을 안 쓴다.
+  p_aux=(int(*)(float*,float*))dlsym(h,"bridge_aux");
+  p_ack=(int(*)(int*,int*))dlsym(h,"bridge_ack");
+  if(!p_aux || !p_ack)
+    std::printf("[ShmHw] ⚠구 브리지 .so — aux/ack 심볼 없음. emb/hal/build_bridge.sh 재실행 시 활성화.\n");
   if(p_init(recv_wait_ms)!=0){
     err = "bridge_init 실패 — Emb(RobotEmbedded) 미기동이거나 halGait 초기화 미완료.\n"
           "  Emb 기동 후 5초(=100+4500 tick @1kHz 게이트) 기다린 뒤 재시도할 것.";

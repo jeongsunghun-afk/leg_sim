@@ -5,6 +5,8 @@
 #include "shm_bridge.h"
 #include <cstring>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 
 #include "define/defineGeneral.h"        // RobotTestGait/inc — ENUM_RESULT_*
@@ -31,11 +33,42 @@ static int   g_conn_ctr[16] = {0};       // 채널별 통신연결 카운터(상
 static int   g_status[16] = {0};         // 채널별 마지막 ucStatus(모터/펌웨어 보고)
 static const int CONN_WINDOW = 250;      // 이 콜 수(≈0.5s@500Hz) 동안 미수신이면 연결끊김(LED off)
 
+// ── 2026-09-01 (RGA 08/31 펌웨어 대응) ──────────────────────────────────────
+// ★출력축(aux) 엔코더 — ucMode=0x5A 로 보내면 MCU 가 상태의 fGainKp/fGainKd 슬롯에
+//   출력축 pos[deg]/vel[deg/s] 를 싣는다(modLeg.c ParseStatusEach). 아니면 그 슬롯 0.
+//   기본 **꺼짐**(ucMode=1 유지) — 0x5A 가 MCU→MD80 명령 프레임까지 바꾸는지 RGA 미확인.
+//   확인 전엔 매달린 상태에서만 AUX_MODE=1 로 시험할 것.
+// ★ACK 카운터 — ucCommand 상위 니블(&0xF0)은 halGait 패스스루가 **보존**하고
+//   하위 니블엔 Emb 가 자기 카운트를 넣는다. MCU 는 받은 ucCommand 를 상태에 에코(08/31).
+//   ⇒ 상위 니블에 4비트 카운터를 실으면 Pi↔MCU 왕복을 직접 셀 수 있다 — 동결 포렌식이
+//     carrier 로 추정하던 것을 대체한다. 지금까지도 ucCommand 는 Emb 카운트가 실려
+//     매 틱 변하는 값이었으므로(우리가 0 을 보내도) 새 값이 가는 것 자체는 새 위험이 아니다.
+static unsigned char g_mode = 1;         // ucMode: 1=MIT/임피던스 · 0x5A=+출력축 엔코더 응답
+static int   g_ack_on = 1;               // ACK_CTR=0 으로 끔
+static unsigned g_tick = 0;              // write 틱마다 +1 (전 채널 공통 — 상관 가능하게)
+static float g_aux_pos[16] = {0};        // 마지막 aux pos[deg] (fGainKp 슬롯)
+static float g_aux_vel[16] = {0};        //          vel[deg/s] (fGainKd 슬롯)
+static int   g_echo_nib[16];             // 마지막 에코 상위 니블(-1=미수신)
+static int   g_echo_stale[16] = {0};     // 에코 니블 무변화 연속 read 수
+static int   g_ack_lag[16] = {0};        // (송신 − 에코) & 0xF [write 틱]
+
 int bridge_n_channel(void){ return NCH; }
 
 static void sleep_ms(int ms){ struct timespec ts{ ms/1000, (long)(ms%1000)*1000000L }; nanosleep(&ts, nullptr); }
 
 int bridge_init(int recv_wait_ms){
+    // env 는 여기서 한 번만 읽는다(운전 중 바뀌면 계단이 되므로 재읽기 금지)
+    { const char* am = getenv("AUX_MODE");
+      g_mode = (am && atoi(am) != 0) ? (unsigned char)0x5A : (unsigned char)1;
+      const char* ac = getenv("ACK_CTR");
+      g_ack_on = (ac && atoi(ac) == 0) ? 0 : 1;
+      for (int i = 0; i < 16; i++) g_echo_nib[i] = -1;
+      if (g_mode == 0x5A)
+          std::printf("[shm_bridge] ★AUX_MODE — ucMode=0x5A: 상태 GainKp/Kd 슬롯 = 출력축 pos/vel\n"
+                      "             ⚠MD80 명령 프레임 영향 미확인 — 매달린 상태에서만 시험할 것\n");
+      if (!g_ack_on)
+          std::printf("[shm_bridge] ACK 카운터 꺼짐(ACK_CTR=0) — ucCommand 상위 니블 0 고정\n");
+    }
     if (RobotMemGait_InitComm() != ENUM_RESULT_SUCCESS) return -1;
     // RobotEmbedded 기동 확인: 모터 상태 수신될 때까지 대기(명령 전 안전 핸드셰이크).
     int waited = 0;
@@ -67,6 +100,14 @@ int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
                 g_last_q[i]   = (float)st.fPosition;
                 g_status[i]   = (int)st.ucStatus;               // 모터/펌웨어 보고 상태
                 g_conn_ctr[i] = CONN_WINDOW;
+                // aux 엔코더(AUX_MODE 시 MCU 가 채움 — 아니면 0 이 온다. 그대로 저장)
+                g_aux_pos[i] = (float)st.fGainKp;
+                g_aux_vel[i] = (float)st.fGainKd;
+                // ACK 에코 추적 — 상위 니블만 우리 몫(하위는 Emb 카운트)
+                { const int nib = ((int)st.ucCommand >> 4) & 0x0F;
+                  if (nib == g_echo_nib[i]) { if (g_echo_stale[i] < 1000000) g_echo_stale[i]++; }
+                  else                      { g_echo_nib[i] = nib; g_echo_stale[i] = 0; }
+                  g_ack_lag[i] = (int)((g_tick - (unsigned)nib) & 0x0F); }
             }
             mask |= 0x01;
         } else if (g_conn_ctr[i] > 0){
@@ -101,11 +142,14 @@ int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
 static int write_mit_impl(const float* q_des, const float* dq_des, const float* tau_ff,
                           const float* kp, const float* kd, int n){
     if (n > NCH) n = NCH;
+    g_tick++;                                              // write 틱(전 채널 공통 ACK 카운터)
     MotGeneral_t cmd;
     for (int i=0;i<n;i++){
         std::memset(&cmd, 0, sizeof(cmd));
         cmd.ucDevID  = (unsigned char)(i & 0xff);
-        cmd.ucMode   = 1;                                  // MIT/임피던스
+        cmd.ucMode   = g_mode;                             // 1=MIT/임피던스 · 0x5A=+출력축 응답
+        // 상위 니블 = 우리 ACK 카운터. 하위 니블은 halGait 가 자기 카운트로 덮는다(&0xF0 보존).
+        cmd.ucCommand = g_ack_on ? (unsigned char)((g_tick & 0x0F) << 4) : (unsigned char)0;
         cmd.fPosition = (float16)(g_enabled ? q_des[i] : g_last_q[i]);
         cmd.fVelocity = (float16)(g_enabled && dq_des ? dq_des[i] : 0.0f);
         cmd.fTorque   = (float16)(g_enabled && tau_ff ? tau_ff[i] : 0.0f);
@@ -126,3 +170,19 @@ int bridge_write_mit(const float* q_des_deg, const float* dq_des_dps, const floa
 }
 
 int bridge_enable(int on){ g_enabled = on ? 1 : 0; return 0; }
+
+int bridge_aux(float* pos_deg, float* vel_dps){
+    for (int i = 0; i < NCH; i++){
+        if (pos_deg) pos_deg[i] = g_aux_pos[i];
+        if (vel_dps) vel_dps[i] = g_aux_vel[i];
+    }
+    return (g_mode == 0x5A) ? 1 : 0;
+}
+
+int bridge_ack(int* lag, int* stale){
+    for (int i = 0; i < NCH; i++){
+        if (lag)   lag[i]   = g_ack_lag[i];
+        if (stale) stale[i] = (g_echo_nib[i] < 0) ? -1 : g_echo_stale[i];   // -1 = 에코 미수신
+    }
+    return 0;
+}

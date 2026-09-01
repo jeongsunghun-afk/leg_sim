@@ -33,6 +33,23 @@ int  bridge_write_mit(const float* q_des_deg, const float* dq_des_dps, const flo
 /* 모터 전원 enable/disable. off(0)=토크 0 명령(limp). 성공=0. */
 int  bridge_enable(int on);
 
+/* ── 2026-09-01 신설 (RGA 08/31 펌웨어 대응) — 구 .so 에는 없다: dlsym 실패 허용할 것 ── */
+
+/* 출력축(aux) 엔코더 스냅샷. env AUX_MODE=1 로 기동했을 때만 값이 온다(ucMode=0x5A).
+ *   MCU 가 상태의 fGainKp/fGainKd 슬롯에 출력축 pos[deg]/vel[deg/s] 를 실어 보낸다
+ *   (modLeg.c ParseStatusEach: ucMode==0x5A 분기. 아니면 그 슬롯은 0).
+ *   반환: 1=AUX_MODE 켜짐(값 유효) · 0=꺼짐(배열은 0 채움). 배열 길이 = n_channel. */
+int  bridge_aux(float* pos_deg, float* vel_dps);
+
+/* 통신 ACK 왕복 감시. 우리가 ucCommand 상위 니블에 4비트 카운터를 실어 보내면
+ *   Emb 는 상위 니블을 보존한 채 하위 니블에 자기 카운트를 넣고(halGait: &0xF0 | cnt&0x0F),
+ *   MCU 가 받은 그대로 상태에 에코한다(08/31 신설). 그 에코로 두 값을 계산한다:
+ *     lag[i]   = (마지막 송신 카운터 − 에코 카운터) & 0xF   — 왕복 지연[write 틱]
+ *     stale[i] = 에코 니블이 변하지 않은 연속 read 횟수      — 통신 두절 감지(랩 없음)
+ *   ⚠구 MCU 펌웨어는 에코가 없다 → stale 만 계속 자란다(그 자체가 "구 펌웨어" 판정).
+ *   env ACK_CTR=0 으로 카운터 송신을 끌 수 있다(기본 1). 반환 0. */
+int  bridge_ack(int* lag, int* stale);
+
 #ifdef __cplusplus
 }
 #endif

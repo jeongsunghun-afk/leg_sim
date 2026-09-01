@@ -15,7 +15,9 @@
  *   명령을 전혀 쓰지 않는다 → 모터 무동작. 읽기만 하므로 배포기와 동시 실행해도 안전하다.
  *   (단 배포기가 돌고 있으면 값이 움직이는 상태로 보인다 — 그게 오히려 판별에 좋다)
  *
- *   빌드: g++ -O2 -std=c++17 -I/usr/include slot_dump.cpp -o slot_dump -lRobotSharedMem -lrt
+ *   빌드: g++ -O2 -std=c++17 -I/usr/include -I$HOME/ZSource/RobotTestGait/inc \
+ *         slot_dump.cpp -o slot_dump -lRobotSharedMem -lrt
+ *   (RobotTestGait/inc 는 defineGeneral.h(ENUM_RESULT_*)용 — 원 빌드줄엔 빠져 있었다)
  *   ★32비트 경로도 같이 본다 (2026-08-28): 헤더에 MotorParam32_t + Set/GetMotorStatus32 가
  *     이미 있다. Emb 이 그쪽도 채우고 있다면 **float32(사실상 무손실)** 로 받을 수 있어,
  *     float16 의 각도 해상도 0.11°(2~3 rad 부근) 제약이 사라진다. 16/32 를 나란히 찍어
@@ -28,6 +30,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <ctime>
+#include "define/defineGeneral.h"   // ENUM_RESULT_* (RobotTestGait/inc)
 #include "RobotSharedMem.h"
 
 #ifndef MAX_CH

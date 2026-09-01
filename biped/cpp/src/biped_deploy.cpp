@@ -702,6 +702,13 @@ int main(int argc, char** argv){
   std::vector<double> q_hold(NCH,0.0),   q_stand(NCH,0.0);
   bool have_tau_hold=false, have_tau_stand=false;
   double mode_t0=0;                                     // 현재 모드 진입시각
+  // ★stand 폭주 가드 (2026-09-03 실기 — lite 2차에서 발이 14° 폭주하는 동안 **아무
+  //   가드도 안 걸렸다**: 속도가 느려 속도트립 미달, 토크도 15Nm 아래로 스침).
+  //   stand 는 기준자세(stand_ref)가 고정이므로 "기준 대비 큰 이탈 지속" 자체가 이상이다.
+  //   발동 시 limp 가 아니라 **hold 로 강하**한다 — hold 는 자립 실증된 안전 상태고,
+  //   지지율(hold_fz_cur)을 리셋하지 않아 전방보상이 연속으로 이어진다(주저앉음 방지).
+  const double STAND_RUNAWAY_DEG = getenv("STAND_RUNAWAY_DEG") ? atof(getenv("STAND_RUNAWAY_DEG")) : 12.0;
+  double runaway_t0 = -1.0; bool stand_runaway = false;
   // ★jog 램프 상태 (2026-08-21). **등속 램프**다 — home 의 S-curve 를 쓰지 않는다.
   //   S-curve 는 "A→B 1회 이동" 전제인데 jog 목표는 슬라이더를 끄는 동안 **매 틱 바뀐다.**
   //   그래서 살아 있는 목표를 속도클램프로 따라간다(biped_emb.py control/jog.py 와 같은 방식).
@@ -958,7 +965,7 @@ int main(int argc, char** argv){
           "!!  물리링크 %s    carrier %lld · rx_crc %+lld · rx_err %+lld → **%s**\n"
           "!!  모터 상태워드  [%s] → **%s**\n"
           "!!  SoC           %.1f°C · %.0fMHz · throttled %s%s\n"
-          "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I| %.2fA · 모드 %s(%.1fs째)\n"
+          "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I|(=τ에코, 실측아님) %.2f · 모드 %s(%.1fs째)\n"
           "!!  직전 %.1fs 기록 → %s (%zu행)\n"
           "!!  사건로그(누적) → %s   ← **여기를 여러 번 모아 놓고 봐야 원인이 보인다**\n"
           "%s\n\n",
@@ -1519,6 +1526,16 @@ int main(int argc, char** argv){
           //   kd/kp 가 계단 점프, c.reset()·u_prev=0 이 지연보상 예측까지 오염한다.
           //   접지가드(위)와 같은 prev_mode 배제. 1점 gait 는 stand 도 제자리 스텝핑이라
           //   컨트롤러 연속이 곧 올바른 의미고, 2점 정적지지는 매 틱 자체 재무장한다.
+          // ★stand 폭주 래치 — off 재무장 전까지 stand 재진입 거부 (2026-09-03)
+          //   ⚠배너는 1s 로 솎는다 — GUI 가 20ms 재발행이라 안 그러면 초당 50줄 스팸.
+          if(mode=="stand" && stand_runaway){
+            static double rw_warn_t = -1e9;
+            if(lt - rw_warn_t > 1.0){ rw_warn_t = lt;
+              std::printf("[deploy] ⛔ STOP **stand 폭주 래치** — off 재무장 전까지 stand 거부, hold 유지.\n"
+                          "         (직전 stand 에서 기준자세 이탈 폭주 — 모델 CoM/IMU 문제를 먼저 볼 것)\n"); }
+            if(prev_mode!="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
+            nm = "hold"; mode = "hold";
+          }
           // ★토크 불응답 래치가 있으면 stand/walk 를 막는다 (2026-08-28)
           if((mode=="stand" || mode=="walk")){
             std::string bad;
@@ -1598,6 +1615,10 @@ int main(int argc, char** argv){
         c.wz_cmd = (mode=="walk") ? cmd.w  : 0.0;
       }
     }
+
+    // ★stand 폭주 래치 해제 — off 재무장 규약. 전이 분기가 아니라 **매 틱** 본다
+    //   (전이 분기 안에 두면 off 처리 경로에 따라 안 타는 수가 있다 — sim 검증에서 발각).
+    if(mode=="off" && stand_runaway) stand_runaway = false;
 
     // ③ 워치독 — 명령 두절이면 limp. 전이를 반드시 출력한다(데드코드 방지).
     // ★★단 **하중 실린 hold 는 면제** (2026-09-03 실기 사고).
@@ -2139,6 +2160,27 @@ int main(int argc, char** argv){
       qcmd_ch = stand_ref; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
+      // ★stand 폭주 가드 (2026-09-03 · 상단 선언부 주석). 기준자세 이탈이
+      //   STAND_RUNAWAY_DEG 를 0.3s 지속하면 hold 로 강하 + 래치(off 재무장까지 거부).
+      if(mode=="stand"){
+        double emx=0; int ech=-1;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+          const double e = std::fabs((double)stand_ref[i]-(double)hs.q_deg[i]);
+          if(e>emx){ emx=e; ech=i; } }
+        if(emx > STAND_RUNAWAY_DEG){
+          if(runaway_t0 < 0) runaway_t0 = lt;
+          else if(lt - runaway_t0 > 0.3){
+            std::printf("[deploy] ⛔ **stand 폭주** — %s 이탈 %.1f° > %.1f° 가 0.3s 지속.\n"
+                        "         hold 로 강하(지지율 유지 — limp 아님) + 래치. off 재무장까지 stand 거부.\n",
+                        ech>=0?chname[ech].c_str():"-", emx, STAND_RUNAWAY_DEG);
+            std::fflush(stdout);
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            prev_mode = mode; mode = "hold"; mode_t0 = lt;
+            stand_runaway = true; runaway_t0 = -1.0;
+            // ⚠hold_fz_cur 는 **일부러 안 리셋** — 전방보상 연속(강하 순간 주저앉음 방지)
+          }
+        } else runaway_t0 = -1.0;
+      } else runaway_t0 = -1.0;
     }
 
     // ★트레이스 기록 — 무장 후 3초.

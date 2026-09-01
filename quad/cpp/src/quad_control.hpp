@@ -113,8 +113,11 @@ struct QuadControl {
     { const char* GN[4]={"hip","thigh","calf","foot"}; const char* GE[4]={"GEAR_HIP","GEAR_THIGH","GEAR_CALF","GEAR_FOOT"};
       double gear[4]={7.0,7.0,10.5,8.4};                             // 관절별 감속비 실값(hip/thigh7·calf10.5·foot8.4, Python 일치)
       bool gbx = !(getenv("GEARBOX") && !std::strcmp(getenv("GEARBOX"),"0"));   // ★기본 ON(반사관성=실제 물리). GEARBOX=0으로만 끔
-      double Irot=getenv("ROTOR_I")?atof(getenv("ROTOR_I")):1e-4;
-      double jdmp=getenv("JDAMP")?atof(getenv("JDAMP")):0.1, jfrc=getenv("JFRIC")?atof(getenv("JFRIC")):0.5;
+      // ★PACE 최종 실측(2026-08-14, biped/emb/pace/RESULTS.md=단일출처): ROTOR_I 7.327e-4·축별 damping/friction.
+      //   armature=Irot·N²(hip/thigh0.0359·calf0.0808·foot0.0517). foot 손실=실기선 tendon(모터축) — quad plant는
+      //   tendon 미이식이라 foot dof 근사(무릎회전→발목모터 마찰반력 누락, tendon 이식 시 해소). 지연 8.39ms 실측=ACT_LAT용.
+      double Irot=getenv("ROTOR_I")?atof(getenv("ROTOR_I")):7.327e-4;
+      const double dmpK[4]={0.090,0.0,0.0,0.110}, frcK[4]={0.724,0.604,0.871,0.639};   // hip,thigh,calf,foot(tendon값)
       for(int k=0;k<nu;k++){ int jid=m->actuator_trnid[k*2]; if(jid<0) continue;
         const char* jn=mj_id2name(m,mjOBJ_JOINT,jid); if(!jn) continue;
         int gi=0; for(int g=0;g<4;g++) if(std::strstr(jn,GN[g])) gi=g;   // ★FB_waist는 hip/thigh/calf/foot 어디에도 안 걸려 gi=0(hip)로 fallback → 감속비 7:1. ★실제 허리 감속비=7:1(사용자확인)이라 이 fallback이 정확함(의도됨, 삭제금지). 반사관성·w_limit·tau도 hip과 동일 처리
@@ -122,7 +125,8 @@ struct QuadControl {
         w_limit[k]=207.0/(gear[gi]*gmul);                            // ★관절속도한계=motor_noload/N (MOTOR_CURVE용)
         if(gmul!=1.0 && tau_peak[k]<1e7) tau_peak[k]*=gmul;          // ★재기어 토크한계(QP 부등식이 사용)
         if(gbx){ double N=gear[gi]*gmul; int dof=m->jnt_dofadr[jid];
-          m->dof_armature[dof]=Irot*N*N; m->dof_damping[dof]=jdmp; m->dof_frictionloss[dof]=jfrc; } }
+          double jd=getenv("JDAMP")?atof(getenv("JDAMP")):dmpK[gi], jf=getenv("JFRIC")?atof(getenv("JFRIC")):frcK[gi];
+          m->dof_armature[dof]=Irot*N*N; m->dof_damping[dof]=jd; m->dof_frictionloss[dof]=jf; } }
     }
     if(getenv("BASE_Z0")) base_z0=atof(getenv("BASE_Z0"));   // ★서기높이 기준 override(다른 로봇 이식 테스트용, 예 Go2=0.30). 02_Leg는 미설정→기본 유지
     q_home.resize(nu);

@@ -44,14 +44,14 @@ class D1MujocoHal {
     for (int g = 0; g < m_->ngeom; ++g) { m_->geom_solref[g * 2] = stiff; m_->geom_solref[g * 2 + 1] = 1.0; }
     const char* GN[4] = {"hip", "thigh", "calf", "foot"}; double gear[4] = {7.0, 7.0, 10.5, 8.4};
     bool gbx = !(std::getenv("GEARBOX") && !std::strcmp(std::getenv("GEARBOX"), "0"));
-    double Irot = std::getenv("ROTOR_I") ? atof(std::getenv("ROTOR_I")) : 7.4e-4;
-    double jdmp = std::getenv("JDAMP") ? atof(std::getenv("JDAMP")) : 0.099;
-    double jfrc = std::getenv("JFRIC") ? atof(std::getenv("JFRIC")) : 0.38;
+    double Irot = std::getenv("ROTOR_I") ? atof(std::getenv("ROTOR_I")) : 7.327e-4;  // PACE 최종(RESULTS.md)
+    const double dmpK[4] = {0.090, 0.0, 0.0, 0.110}, frcK[4] = {0.724, 0.604, 0.871, 0.639};
     if (gbx) for (int k = 0; k < m_->nu; ++k) { int jid = m_->actuator_trnid[k * 2]; if (jid < 0) continue;
       const char* jn = mj_id2name(m_, mjOBJ_JOINT, jid); if (!jn) continue;
       int gi = 0; for (int g = 0; g < 4; ++g) if (std::strstr(jn, GN[g])) gi = g;
       double N = gear[gi]; int dof = m_->jnt_dofadr[jid];
-      m_->dof_armature[dof] = Irot * N * N; m_->dof_damping[dof] = jdmp; m_->dof_frictionloss[dof] = jfrc; }
+      double jd = std::getenv("JDAMP") ? atof(std::getenv("JDAMP")) : dmpK[gi], jf = std::getenv("JFRIC") ? atof(std::getenv("JFRIC")) : frcK[gi];
+      m_->dof_armature[dof] = Irot * N * N; m_->dof_damping[dof] = jd; m_->dof_frictionloss[dof] = jf; }
   }
 
   // OCS2 관절순 매핑 + 발목/허리 홀드 + 발 geom.

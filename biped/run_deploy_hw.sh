@@ -96,6 +96,24 @@ export WALK_KD_FLOOR="${WALK_KD_FLOOR:-0.15}"
 export HOLD_FF_POINT="${HOLD_FF_POINT:-toe}"
 export HOLD_FF_FOOT="${HOLD_FF_FOOT:-1.0}"
 
+# ── ⑤stand-lite 레시피 (2026-09-03 설계 · **기본 꺼짐** — 명시로만 켠다) ─────
+#   hold(자립 성공) vs stand(8Hz 자려진동) 의 갈림 = 지연 낀 위치의존 피드백
+#   (CoM kp120/200 · 레벨링 kp150 — IMU 사망 중엔 유령오차). 그 루프를 다 끄면
+#   stand = "발 힘 분배만 QP 가 하는 hold" 가 되어 제어방식 A/B 가 성립한다:
+#     hold      : λ 고정(50:50·toe) + 드라이브 PD          ← 실증됨
+#     stand-lite: λ = QP 분배      + 드라이브 PD(전량)     ← 이걸 검증
+#     stand-full: + CoM/자세 피드백                        ← IMU 복구 후
+#   실행:
+#     STAND_LITE=1 ./run_deploy_hw.sh flat
+#   ⚠크레인 건 채 시작. 8Hz 떨림이 재발하면 즉시 hold 로 — 그 자체가 판정 데이터다.
+if [ "${STAND_LITE:-0}" = "1" ]; then
+    export STAND_COM_KP="0,0,0";  export STAND_COM_KD="0,0,0"
+    export STAND_ORI_KP="0";      export STAND_ORI_KD="0"
+    export STAND_KP_FLOOR="1.0"   # 드라이브 PD 전량(hold 와 동일) — WBIC 목표=Qflat8 라 안 싸움
+    export FRIC_COMP="0"          # 포화 tanh = 음의 감쇠 8~39% — 미시험 항 제거
+    echo "[run_deploy_hw] ★STAND_LITE — CoM/레벨링 OFF · kp floor 1.0 · FRIC_COMP 0 (posture 60/5 만)"
+fi
+
 echo "[run_deploy_hw] MJCF=$MJCF"
 echo "[run_deploy_hw] GRAV_SCALE_JOINT=$GRAV_SCALE_JOINT"
 echo "[run_deploy_hw] STAND_TAU_SCALE_JOINT=$STAND_TAU_SCALE_JOINT"

@@ -101,6 +101,14 @@ struct BipedControl {
   Vector3d com_i = Vector3d::Zero();  // 적분 누적 [m·s]
   bool     ki_frozen = false;         // 직전 틱에 얼렸는지(상태 발행용)
   void reset_com_i(){ com_i.setZero(); ki_frozen=false; }
+  // ★★stance 과제 게인 — env 조절 (2026-09-03, "stand-lite" 브링업용).
+  //   왜: hold 자립 성공 vs stand 실패(8Hz 자려진동)의 갈림이 **지연 낀 위치의존
+  //   피드백**(CoM kp120/200 · 레벨링 kp150, IMU 죽어 유령오차)으로 규명됐다.
+  //   이 게인들을 0 으로 내리면 stand = "QP 가 발 힘을 분배하는 hold" 가 되어,
+  //   hold(고정 50:50·toe) 와 **한 가지 차이만 남는 A/B** 가 성립한다.
+  //   기본값 = 종전 하드코딩 그대로 (미지정 시 동작 불변).
+  Vector3d COM_KP{120,120,200}, COM_KD{20,20,25};
+  double ORI_KP=150, ORI_KD=20, POST_KP=60, POST_KD=5;
   double MPC_DT=0.02, W_LAM=10, head_lead=0.15;
   int MPC_N=14, mpc_decim=10;
   // ★2026-08-06: 하드코딩 폐기 → init() 이 MJCF 에서 읽는다. 감속비를 바꾸면 토크한계도
@@ -263,6 +271,20 @@ struct BipedControl {
     //   imu_ok=false 면 여기서 켜도 런타임이 xy 를 다시 끈다(위 축 마스크).
     if(const char* a=getenv("STAND_KI_AXIS")){
       double v[3]={0,0,1}; if(sscanf(a,"%lf,%lf,%lf",&v[0],&v[1],&v[2])==3) KI_AXIS=Vector3d(v[0],v[1],v[2]); }
+    // ★stance 과제 게인 env (stand-lite 브링업 — 위 선언부 주석 참조)
+    { auto v3=[&](const char* k, Vector3d& dst){
+        if(const char* e=getenv(k)){ double v[3];
+          if(sscanf(e,"%lf,%lf,%lf",&v[0],&v[1],&v[2])==3) dst=Vector3d(v[0],v[1],v[2]); } };
+      v3("STAND_COM_KP", COM_KP); v3("STAND_COM_KD", COM_KD);
+      if(getenv("STAND_ORI_KP"))  ORI_KP =atof(getenv("STAND_ORI_KP"));
+      if(getenv("STAND_ORI_KD"))  ORI_KD =atof(getenv("STAND_ORI_KD"));
+      if(getenv("STAND_POST_KP")) POST_KP=atof(getenv("STAND_POST_KP"));
+      if(getenv("STAND_POST_KD")) POST_KD=atof(getenv("STAND_POST_KD"));
+      if(getenv("STAND_COM_KP")||getenv("STAND_ORI_KP")||getenv("STAND_POST_KP"))
+        std::printf("[stance] ★과제게인 override — CoM kp(%.0f,%.0f,%.0f)/kd(%.0f,%.0f,%.0f) · "
+                    "ori %.0f/%.0f · posture %.0f/%.0f\n",
+                    COM_KP[0],COM_KP[1],COM_KP[2], COM_KD[0],COM_KD[1],COM_KD[2],
+                    ORI_KP,ORI_KD, POST_KP,POST_KD); }
     // ★★2026-08-20 **좌우 발목 비대칭 주입**(진단 전용, 단위 = 도).
     //   실기 2점 stand 에서 두 밑창이 **반대로** 기울었다: HL −63.25 · HR −55.42
     //   (목표 −59.81). `Qflat8` 은 좌우 **완전 대칭**이라 시뮬에는 이 비대칭이 아예 없다
@@ -386,8 +408,8 @@ struct BipedControl {
     std::vector<MatrixXd> Js; for(auto&cp:cpts) Js.push_back(foot_jac_at(cp.first,cp.second));
     MatrixXd Jc=jac_com(); Vector3d c=com();
     MatrixXd P=MatrixXd::Zero(nz,nz); VectorXd g=VectorXd::Zero(nz);
-    // CoM task (xy+z)
-    Vector3d kp(120,120,200), kd(20,20,25), comref(com_ref_xy[0],com_ref_xy[1],com_ref_z);
+    // CoM task (xy+z) — 게인은 env 조절(STAND_COM_KP/KD · 선언부 주석)
+    Vector3d kp=COM_KP, kd=COM_KD; Vector3d comref(com_ref_xy[0],com_ref_xy[1],com_ref_z);
     Vector3d cerr = comref - c;
     // ★적분항(기본 0). 얼리는 조건은 **적분하기 전에** 판정한다 — 이번 틱 오차를 쌓을지 말지다.
     Vector3d a_i = Vector3d::Zero();
@@ -422,10 +444,10 @@ struct BipedControl {
                   ql_conj[0]*qc[3]+ql_conj[1]*qc[2]-ql_conj[2]*qc[1]+ql_conj[3]*qc[0]};
     Vector3d oerr; { double s=(dq[0]<0?-1:1); Vector3d v(dq[1],dq[2],dq[3]); double n=v.norm();
       oerr=(n<1e-12)?Vector3d(0,0,0):(2.0*std::atan2(n,std::abs(dq[0]))*s/n)*v; }
-    for(int j=0;j<3;j++){ double a=150*(-oerr[j])-20*qv[3+j]; P(3+j,3+j)+=W_ORI; g[3+j]-=W_ORI*a; }
+    for(int j=0;j<3;j++){ double a=ORI_KP*(-oerr[j])-ORI_KD*qv[3+j]; P(3+j,3+j)+=W_ORI; g[3+j]-=W_ORI*a; }
     // posture — ★thigh/calf는 약하게(CoM 높이 task가 다리 신전으로 높이 조절 가능하게), 발목/hip은 firm
     const double* Qh=Qcur();
-    for(int j=0;j<nu;j++){ double a=60*(Qh[j]-d->qpos[7+j])-5*qv[6+j];
+    for(int j=0;j<nu;j++){ double a=POST_KP*(Qh[j]-d->qpos[7+j])-POST_KD*qv[6+j];
       int lj=j%4; double w=(lj==3)?W_ANKLE : (lj==1||lj==2)?FLAT_WLEG : W_POST;
       P(6+j,6+j)+=w; g[6+j]-=w*a; }
     P.topLeftCorner(nv,nv)+=1e-4*MatrixXd::Identity(nv,nv);

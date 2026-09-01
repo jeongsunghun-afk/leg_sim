@@ -208,6 +208,14 @@ def main() -> int:
                 'push_fz': s.get('push_fz'),
                 'q_leg_deg': s.get('q_leg_deg'),
                 'tau_cmd_nm': s.get('tau_cmd_nm'),
+                # ★2026-09-02 추가 — **보고토크(fTorque)도 짝지어 기록한다.**
+                #   종전엔 "fTorque=명령 에코라 정보 없음" 전제로 뺐는데, RGA 08/31 슬라이드
+                #   (modLeg.c: MD80 MOTOR TORQUE[Nm] 필드를 그대로 실음)와 08-31 HL_calf 붕괴
+                #   (오차 22° 인데 보고토크 하락 = 에코로 불가능)로 그 전제가 뒤집혔다.
+                #   ⇒ 이 열이 있어야 { 명령토크 · 보고토크 · 저울 } 삼자대조가 된다:
+                #     보고≈명령·저울만 α 낮음 → α 는 kt 설정 오차(보고로는 α 못 봄)
+                #     보고≈저울(명령의 α 배)   → 보고가 실출력 = 상시 토크검증 수단 확보
+                'tau_rep_nm': s.get('tau_leg_nm'),
                 'mode': s.get('mode'),
                 'settled': settled,
             })

@@ -107,13 +107,17 @@ class Pub:
         #    env 로 주지 말고 여기 버튼으로 줄 것.)
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'hold', 'contact': '2pt',
                     'jog_deg': [0.0] * NJ, 'pos_kp_scale': 1.0, 'grav_scale': 1.0, 'seq': 0}
+        # ★발행 잠금 (2026-09-03) — 하트비트가 별도 스레드로 옮겨가면서(아래) 콜백(메인
+        #   스레드)과 동시에 cmd 를 만질 수 있다. dict 순회 중 변경은 예외로 터진다.
+        self._lk = threading.RLock()
         self._pub()
 
     def set_jog(self, i, val):
         self.cmd['jog_deg'][i] = float(val); self._pub()
 
     def set(self, **kw):
-        self.cmd.update(kw)
+        with self._lk:
+            self.cmd.update(kw)
         # ★스틱/슬라이더로 非零 속도가 들어오면 자동 walk 전환.
         #   (안 그러면 sim이 mode=stand를 보고 속도를 0으로 무시 → "명령이 안 먹는" 증상)
         # ★'off' 를 자동승격 대상에서 뺐다. off 는 "아직 무장 안 함" 상태이므로
@@ -128,10 +132,12 @@ class Pub:
         # ★seq 를 증가시킨다. emb 앱의 워치독은 "파일이 읽히는가" 가 아니라
         #   "명령 내용이 바뀌는가" 로 살아있음을 판정하므로(biped_emb.read_cmd_fresh),
         #   정적 파일은 통신두절과 구분되지 않는다. seq 가 그 구분을 만든다.
-        self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
+        with self._lk:
+            self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
+            body = json.dumps(self.cmd)
         tmp = self.path + '.tmp'
         with open(tmp, 'w') as f:
-            json.dump(self.cmd, f)
+            f.write(body)
         os.replace(tmp, self.path)
         if _udp_sock is not None:                      # ★Isaac Sim으로 UDP 발행
             try: _udp_sock.sendto(json.dumps(self.cmd).encode(), _udp_addr)
@@ -197,6 +203,24 @@ class JoyPad:
 
 
 pub = Pub()
+
+
+# ★★하트비트 스레드 (2026-09-03 — 자립 중 낙하 사고 방지).
+#   종전엔 파일 하트비트(20Hz)가 **렌더 루프 안**에 있었다. 실기에서 렌더가 1.16초
+#   멈추자(창 조작/스톨) 발행이 같이 멈췄고, 배포기 워치독(0.5s)이 **크레인 없이
+#   자립 중이던 로봇을 limp 로 떨궜다.** 발행 생존이 화면 프레임에 묶여 있으면 안 된다.
+#   ⇒ 데몬 스레드가 렌더와 무관하게 20Hz 로 발행한다. GUI 가 완전히 죽으면(프로세스
+#     종료) 스레드도 죽고 워치독이 잡는다 — 그건 의도된 동작이다.
+def _hb_thread():
+    while True:
+        try:
+            pub._pub()
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+
+threading.Thread(target=_hb_thread, daemon=True).start()
 _expo = lambda a: a * abs(a)          # 중앙 미세·끝 최대
 
 
@@ -1196,15 +1220,8 @@ while dpg.is_dearpygui_running():
     if _udp_sock is not None:
         try: _udp_sock.sendto(json.dumps(pub.cmd).encode(), _udp_addr)
         except Exception: pass
-    # ★파일 채널에도 동일한 하트비트(20Hz). 위 주석이 UDP 에 대해 지적한 문제
-    #   ("이벤트가 없으면 패킷이 끊긴다")가 **파일 경로에도 똑같이 있었는데 안 고쳐져
-    #   있었다.** emb 앱 워치독은 이 하트비트로 GUI 생존을 판정한다 — 없으면 워치독이
-    #   jog 램프 중(무이벤트 1.5s) 오작동한다.
-    _now = time.time()
-    if _now - _last_file_hb[0] > 0.05:
-        _last_file_hb[0] = _now
-        try: pub._pub()
-        except Exception: pass
+    # (파일 하트비트는 2026-09-03 에 **데몬 스레드로 이동** — Pub() 아래 _hb_thread 참조.
+    #  렌더 루프에 두면 프레임 스톨 = 발행 중단 = 워치독 limp = 자립 중 낙하였다.)
     dpg.render_dearpygui_frame()
 
 dpg.destroy_context()

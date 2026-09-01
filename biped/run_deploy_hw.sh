@@ -89,6 +89,13 @@ export WALK_VEL_TRIP_DPS="${WALK_VEL_TRIP_DPS:-900}"
 export WALK_TAU_TRIP_NM="${WALK_TAU_TRIP_NM:-25}"
 export WALK_KD_FLOOR="${WALK_KD_FLOOR:-0.15}"
 
+# ── ④hold 중력지지 — 자립 확정 설정 (2026-09-03 실기: 크레인 프리 25s+) ──────
+#   적용점 toe: 뒤꿈치는 발목축 위라 발목토크 기여 0 — 발끝 전량이 발목 FF ≈2배.
+#   배율 1.0: toe 적용이면 1.3(midfoot 보정)은 과보정이었다.
+#   그날의 배분은 GUI [배분(HL%)] 60 이었다(자세·크레인에 따라 재트림).
+export HOLD_FF_POINT="${HOLD_FF_POINT:-toe}"
+export HOLD_FF_FOOT="${HOLD_FF_FOOT:-1.0}"
+
 echo "[run_deploy_hw] MJCF=$MJCF"
 echo "[run_deploy_hw] GRAV_SCALE_JOINT=$GRAV_SCALE_JOINT"
 echo "[run_deploy_hw] STAND_TAU_SCALE_JOINT=$STAND_TAU_SCALE_JOINT"

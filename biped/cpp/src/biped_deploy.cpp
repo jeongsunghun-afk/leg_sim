@@ -1600,7 +1600,26 @@ int main(int argc, char** argv){
     }
 
     // ③ 워치독 — 명령 두절이면 limp. 전이를 반드시 출력한다(데드코드 방지).
-    bool wd = (mode!="off") && (lt - last_cmd_t) > watchdog_s;
+    // ★★단 **하중 실린 hold 는 면제** (2026-09-03 실기 사고).
+    //   크레인 없이 자립 중일 때 GUI 렌더가 1.16s 멈춰 발행이 끊겼고, 워치독이
+    //   로봇을 limp 로 떨궜다 — **자립 단계에서 limp = 낙하**다.
+    //   워치독의 존재 이유는 "폭주 방지"인데, hold 는 고정 목표 정적 PD 라 명령이
+    //   끊겨도 폭주할 것이 없다. 서서 기다리는 것이 떨어지는 것보다 안전하다.
+    //   ⇒ hold + 지지율>5% 면 limp 대신 **그 자리를 유지**하고 경고만 찍는다.
+    //     명령이 복귀하면 그대로 재개된다(모드가 안 바뀌었으므로 가드 우회도 없다).
+    //     GUI 를 영영 못 살리면: 크레인 걸고 배포기 Ctrl+C(=안전종료 시퀀스).
+    //   WD_HOLD_LIMP=1 로 종전 동작(무조건 limp)을 되돌릴 수 있다.
+    const bool wd_hold_immune = mode=="hold" && hold_ff_pct_cur > 5.0
+                             && !(getenv("WD_HOLD_LIMP") && atoi(getenv("WD_HOLD_LIMP")));
+    bool wd = (mode!="off") && (lt - last_cmd_t) > watchdog_s && !wd_hold_immune;
+    { static bool imm_warned = false;
+      const bool silent = (lt - last_cmd_t) > watchdog_s;
+      if(wd_hold_immune && silent && !imm_warned){
+        imm_warned = true;
+        std::printf("[deploy] ⚠명령 두절 %.2fs — **하중 hold 라 limp 하지 않는다**(자립 낙하 방지).\n"
+                    "         자세를 유지하며 명령 복귀를 기다린다. GUI 를 살릴 것.\n", lt-last_cmd_t);
+        std::fflush(stdout);
+      } else if(!silent) imm_warned = false; }
     if(wd != wd_tripped){
       wd_tripped = wd;
       if(wd || lt-last_cmd_t < watchdog_s)   // ★off 강하로 wd 가 꺼진 직후의 허위 '해제' 억제

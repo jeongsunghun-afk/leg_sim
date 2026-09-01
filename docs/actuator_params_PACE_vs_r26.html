@@ -1,0 +1,44 @@
+<meta charset="utf-8">
+<title>액추에이터 파라미터 — PACE(우리) vs r26(RL)</title>
+<style>
+:root{--bg:#17181d;--panel:#1e2026;--line:#33363f;--ink:#e6e8ee;--mut:#9aa0ad;--acc:#7fb4ff;--warn:#f0b429;--bad:#ef6a6a;--ok:#5fd38a;
+--mono:'JetBrains Mono','Noto Sans Mono',monospace}
+body{background:var(--bg);color:var(--ink);font-family:'Pretendard','Noto Sans KR',sans-serif;max-width:1080px;margin:24px auto;padding:0 16px;line-height:1.5}
+h1{font-size:1.25em}h2{font-size:1.05em;margin-top:26px;color:var(--acc)}
+table{border-collapse:collapse;width:100%;font-size:.92em;margin:10px 0}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left}
+th{background:var(--panel);font-family:var(--mono);font-size:.85em;color:var(--mut)}
+td:first-child{font-family:var(--mono)}
+.m{font-family:var(--mono)}.w{color:var(--warn)}.b{color:var(--bad)}.g{color:var(--ok)}.mut{color:var(--mut);font-size:.88em}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:.9em;margin:12px 0}
+</style>
+<h1>R.pet 뒷다리 8축 — PACE(우리 적용분) vs r26(RL/Isaac) 파라미터 비교</h1>
+<p class="mut">우리=biped/emb/pace/RESULTS.md 2026-08-14 최종(단일출처)·quad 적용 커밋 18d2464. r26=RL측 런 26_08_27_08-29-42. ⚠수치 재복사 금지 — 원본은 각 단일출처 문서.</p>
+
+<h2>① 우리 최종 (이미지 동일 양식 · kind별=좌우 공통 · foot 3항=tendon 모터축)</h2>
+<table>
+<tr><th>관절</th><th>armature [kg·m²]</th><th>점성 [N·m·s/rad]</th><th>정지마찰</th><th>운동마찰 [N·m]</th><th>bias [°]</th><th>지연 [ms]</th></tr>
+<tr><td>HL_hip</td><td>0.0359 ❄</td><td class="w">0.090 ⚠</td><td class="mut">모델 없음¹</td><td><b>0.724</b> ◇</td><td class="mut">—²</td><td rowspan="8" class="m">8.39<br><span class="mut">(전축 공통)</span></td></tr>
+<tr><td>HR_hip</td><td>0.0359 ❄</td><td class="w">0.090 ⚠</td><td class="mut">〃</td><td><b>0.724</b> ◇</td><td class="mut">—</td></tr>
+<tr><td>HL_thigh</td><td>0.0359 ❄</td><td><b>0</b></td><td class="mut">〃</td><td>0.604</td><td class="mut">—</td></tr>
+<tr><td>HR_thigh</td><td>0.0359 ❄</td><td><b>0</b></td><td class="mut">〃</td><td>0.604</td><td class="mut">—</td></tr>
+<tr><td>HL_calf</td><td>0.0808 ❄</td><td><b>0</b></td><td class="mut">〃</td><td><b>0.871</b></td><td class="mut">—</td></tr>
+<tr><td>HR_calf</td><td>0.0808 ❄</td><td><b>0</b></td><td class="mut">〃</td><td><b>0.871</b></td><td class="mut">—</td></tr>
+<tr><td>HL_foot</td><td><b>0.0517</b> →tendon</td><td><b>0.110</b> →tendon</td><td class="mut">〃</td><td><b>0.639</b> →tendon</td><td class="mut">—</td></tr>
+<tr><td>HR_foot</td><td>0.0517 →tendon</td><td>0.110 →tendon</td><td class="mut">〃</td><td>0.639 →tendon</td><td class="mut">—</td></tr>
+</table>
+<p class="mut">❄=ROTOR_I 7.327e-4×N²(hip/thigh N7·calf N10.5·foot N8.4 — 독립 2방법 0.17% 일치) · ⚠=약식별(자극 4%) · ◇=외삽+계통보정 0.876(RMS 검증통과) · ¹순수 Coulomb 모델(Dahl σ0/디더 없음) · ²bias=관측식(q_enc=q_true+q̃_b)로 분리, 동역학 모델엔 없음 · coef=1.0(calf-foot 커플).</p>
+
+<h2>② 차이 — 우리 vs r26 (핵심축=총손실@1 rad/s)</h2>
+<table>
+<tr><th>kind</th><th>armature 우리 / r26</th><th>점성 우리 / r26</th><th>운동마찰 우리 / r26(HL/HR)</th><th><b>총손실@1rad/s</b> 우리 / r26</th><th>판정</th></tr>
+<tr><td>hip</td><td>0.0359 / 0.030 <span class="mut">(+20%)</span></td><td class="b">0.090 / ~0.85 (−89%)</td><td class="b">0.724 / 0.25·0.90 <span class="w">(좌우 3.6×⚠)</span></td><td>0.81 / 1.10·1.75</td><td class="w">둘 다 저신뢰</td></tr>
+<tr><td>thigh</td><td>0.0359 / 0.0289 <span class="mut">(+24%)</span></td><td>0 / 0.109</td><td>0.604 / 0.47·0.54</td><td class="g"><b>0.60 / 0.61 ✓</b></td><td class="g">교차검증 일치</td></tr>
+<tr><td>calf</td><td class="b"><b>0.0808 / 0.0351 (2.3×)</b></td><td>0 / 0.143</td><td>0.871 / 0.65·0.75</td><td class="g"><b>0.87 / 0.84 ✓</b></td><td class="g">손실 일치·<span class="b">armature 쟁점</span></td></tr>
+<tr><td>foot</td><td>0.0517(tendon) / 0.0608 <span class="mut">(−15%)</span></td><td class="b">0.110 / 0.788</td><td>0.639 / 0.50·0.54</td><td>0.75 / 1.31</td><td class="w">좌표(tendon 커플) 차이 의심</td></tr>
+<tr><td>지연</td><td colspan="4" class="m">8.39ms(단일 실측) / 0.28~0.93(+hip g1 자세항)</td><td class="w">정의 확인 필요</td></tr>
+</table>
+
+<div class="note"><b>읽는 법</b> — 쿨롱마찰↔점성은 피팅서 상호 대체(우리 문서 r=+0.93 보고)라 개별값 비교는 오도. <b>운용속도 총손실</b>이 진짜 비교축이고 <b>thigh·calf가 5% 이내 일치=양측 교차검증 성립</b>.<br>
+<b>RL측과 동기화할 3건</b>: ① calf armature 2.3× 괴리(r26 동결값 출처?) ② foot을 tendon(q_calf+q_foot 모터축) 좌표로 피팅했는지(아니면 커플링이 점성 0.788로 흡수) ③ 지연 정의(버스+연산 vs 전기). r26서 배울 것=디더 κ(진동시 유효마찰 저감).<br>
+<span class="mut">감각 환산: calf 0.871Nm ÷ N10.5 = 모터축 0.083Nm = 12Nm피크의 0.7% — 기어 액추에이터 정상권(뻑뻑 기준은 관절측 2~3Nm+).</span></div>

@@ -34,6 +34,17 @@ start)
     if pgrep -f "biped_emb.py|RobotTestGait|mot_test" >/dev/null 2>&1; then
         echo "다른 writer(app/RobotTestGait/mot_test)가 실행 중 — 먼저 종료할 것."; exit 1
     fi
+    # ★★기동 전 capability 검사 (2026-09-02). ecx_init 은 eth0 **raw 소켓**이라
+    #   cap_net_raw 가 없으면 조용히 "[EtherCAT] ecx_init failed" 로 죽는다.
+    #   그런데 이 capability 는 **바이너리 파일에 붙는 것**이라, RGA 가 펌웨어를
+    #   갱신(=파일 교체)하거나 재빌드하면 소리 없이 사라진다 — 실제로 08/31 RGA
+    #   업데이트 후 첫 기동(09-02)이 그렇게 20초를 날리고 죽었다. 여기서 미리 잡는다.
+    if ! getcap "$EMB_BIN" 2>/dev/null | grep -q cap_net_raw; then
+        echo "✗ $EMB_BIN 에 cap_net_raw 가 없다 — EtherCAT raw 소켓을 못 열어 ecx_init 이 죽는다."
+        echo "  (바이너리가 교체/재빌드되면 capability 는 소리 없이 사라진다 — RGA 업데이트 후 필수)"
+        echo "  복구:  sudo setcap cap_net_admin,cap_net_raw+eip $EMB_BIN"
+        exit 1
+    fi
     echo "[emb_ctl] 기동 → $LOG"
     # ★배너 정정 (2026-08-26). 종전 문구는 "전 관절을 4.5초에 걸쳐 0°로 램프한다(Kp=20/Kd=5)"
     #   였는데 **목표자세도 게인도 둘 다 낡았다.** 운전자가 기동할 때마다 보는 줄이라 남겨 둔다.

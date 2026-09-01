@@ -77,9 +77,10 @@ export FOOT_COMP_NM="${FOOT_COMP_NM:-0.36}"
 # ── ②stand/walk 토크보정 — 같은 부족분을 WBIC 토크에 건다 ──────────────────
 #   1/g* = α·(G_CAD/G_real) 이므로 τ 에 g* 를 곱하면 실제 출력이 모델 의도값이 된다.
 #   ⚠HL_thigh 1.50 경고는 위와 동일 — 벨트 수리 전 walk 금지.
-#   ⚠calf/foot 은 측정 불가라 1.00 = 무보정. thigh 값으로 외삽하지 **않는다**
-#     (축퇴 원인이 기하로 밝혀진 이상, 안 잰 축에 배율을 지어내면 안 된다).
-export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
+#   ★foot 1.00 → **1.30** (2026-09-03). "안 잰 축은 무보정" 규칙이었는데 이제 쟀다:
+#     저울 r_foot(G) 포화 0.77 + hold 자립(발끝적용·1.30 등가)이 하중 대역에서 실증.
+#     stand-lite 1차에서 foot 만 1.00 이라 ±7.5° 처짐 — hold 초기와 같은 병리였다.
+export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.30,1.18,1.10,1.22,1.30"
 
 # ── ③walk 묶음 (2026-08-27 · sim 정량화 tools/walk_demand_check.py) ─────────
 #   walk 모드 **한정** 트립 상향(실측 플랜트 스윙 요구 calf 673dps·kd제동 41Nm — 고정
@@ -111,7 +112,12 @@ if [ "${STAND_LITE:-0}" = "1" ]; then
     export STAND_ORI_KP="0";      export STAND_ORI_KD="0"
     export STAND_KP_FLOOR="1.0"   # 드라이브 PD 전량(hold 와 동일) — WBIC 목표=Qflat8 라 안 싸움
     export FRIC_COMP="0"          # 포화 tanh = 음의 감쇠 8~39% — 미시험 항 제거
-    echo "[run_deploy_hw] ★STAND_LITE — CoM/레벨링 OFF · kp floor 1.0 · FRIC_COMP 0 (posture 60/5 만)"
+    # ★lite 1차 실기(09-03): 과제항을 0 으로 하자 QP code4(REDUNDANT_EQUALITIES)가
+    #   **41~50%** 로 폭발 — 과제항이 QP 를 정칙화해주고 있었다. 틱의 절반이 QP 해,
+    #   절반이 중력보상 폴백 = 두 토크 해 사이 채터링(떨림 유력 원인).
+    #   ⇒ lite 에서는 등식 프루닝을 켠다(sim 18.5%→0% 검증). lite 밖 기본은 여전히 OFF.
+    export WBIC_EQ_PRUNE="${WBIC_EQ_PRUNE:-1}"
+    echo "[run_deploy_hw] ★STAND_LITE — CoM/레벨링 OFF · kp floor 1.0 · FRIC_COMP 0 · EQ_PRUNE 1"
 fi
 
 echo "[run_deploy_hw] MJCF=$MJCF"

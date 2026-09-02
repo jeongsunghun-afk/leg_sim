@@ -496,7 +496,10 @@ int main(int argc, char** argv){
   //   램프는 **지지율[%/s]** 이다 — 힘[N/s]이 아니다. 중력항까지 같은 비율로 올려야
   //   계단이 안 생기기 때문이다(아래 hold 분기 주석). 기본 10 %/s = 0→100% 에 10초.
   const double HOLD_FF_RATE = getenv("HOLD_FF_RATE") ? atof(getenv("HOLD_FF_RATE")) : 10.0;
-  const double HOLD_FF_TAU_MAX = getenv("HOLD_FF_TAU_MAX") ? atof(getenv("HOLD_FF_TAU_MAX")) : 12.0;
+  // ★12→14 (2026-09-04 사용자 확정). 실기에서 HL_foot ff 가 11.72 Nm — 12 클램프에
+  //   붙어 있어 배분을 60 이상 밀면 소리 없이 잘렸다("올렸는데 안 변함"으로 보임).
+  //   토크트립 15 Nm(채널) 은 그대로라 보호는 유지된다.
+  const double HOLD_FF_TAU_MAX = getenv("HOLD_FF_TAU_MAX") ? atof(getenv("HOLD_FF_TAU_MAX")) : 14.0;
   //   적용점: 평발 2점 접지의 압력중심은 발바닥 어딘가다. 발끝에만 걸면 발목토크가
   //   과대평가되고, 발목원점(뒤꿈치 구)에만 걸면 발목토크가 0 이 되어 **정작 병목인
   //   foot 축을 하나도 안 도와준다.** 기본은 둘에 반반(=발바닥 중앙).
@@ -1814,8 +1817,41 @@ int main(int argc, char** argv){
             std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · 배분 HL%.0f:%.0fHR · tau_ff:",
                         hold_ff_pct_cur, hold_fz_cur, hold_split_cur, 100.0-hold_split_cur);
             for(int j=0;j<NJ;j++) std::printf(" %+.2f", tau_ctrl[j]);
-            std::printf("  최대오차 %s %+.2f°\n", ech>=0?chname[ech].c_str():"-", emx);
+            // ★축별 오차도 같이 (2026-09-04 사용자 요청) — 최대값 하나로는 좌우 비대칭·
+            //   CoM 역산·유격 서명을 터미널 로그만으로 분석할 수 없었다.
+            std::printf("  최대 %s %+.2f°\n       오차(ch):", ech>=0?chname[ech].c_str():"-", emx);
+            for(int i=0;i<NCH && i<8;i++)
+              std::printf(" %+5.1f", (double)hold_ch[i]-(double)hs.q_deg[i]);
+            std::printf("\n");
             std::fflush(stdout); } }
+        // ★★하중 hold 세션 로거 (2026-09-04) — 정착 구간 데이터가 어디에도 안 남던
+        //   구멍을 막는다: arm_trace 는 전환 3초뿐, 상태 JSON 은 아무도 저장 안 했다.
+        //   지지율 >5% 인 동안 10Hz 로 통짜 기록. 기동마다 새로 쓴다(truncate).
+        //   열: t · 지지% · 배분 · q(채널°)8 · cmd(채널°)8 · tau측정(채널Nm)8 · ff(관절Nm)8
+        { static FILE* hsf = nullptr; static double hs_last = 0; static bool hs_warn = false;
+          if(hold_ff_pct_cur > 5.0 && lt - hs_last > 0.1){
+            hs_last = lt;
+            if(!hsf){
+              hsf = std::fopen("/tmp/hold_session.csv", "w");
+              if(hsf){
+                std::fprintf(hsf, "t,pct,split");
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",q%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",cmd%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",tau%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",ff%d", i);
+                std::fprintf(hsf, "\n");
+                std::printf("[hold] 세션 로거 → /tmp/hold_session.csv (10Hz · 지지율>5%% 동안)\n");
+              } else if(!hs_warn){ hs_warn=true; std::printf("[hold] ⚠세션 로거 열기 실패\n"); }
+            }
+            if(hsf){
+              std::fprintf(hsf, "%.3f,%.1f,%.1f", lt, hold_ff_pct_cur, hold_split_cur);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hs.q_deg[i]);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hold_ch[i]);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hs.tau_nm[i]);
+              for(int i=0;i<8 && i<NJ;i++) std::fprintf(hsf, ",%.3f", tau_ctrl[i]);
+              std::fprintf(hsf, "\n"); std::fflush(hsf);
+            }
+          } }
       }
     } else if(mode=="soft_off"){
       double u = (soft_T>0) ? (lt-soft_t0)/soft_T : 1.0;

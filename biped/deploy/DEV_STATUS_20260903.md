@@ -1,0 +1,67 @@
+# 개발 현황 정리 — 2026-09-03 (자립 달성 주간)
+
+> 한 줄: **로봇이 크레인 없이 혼자 섰다** (hold 중력지지, 8/28 목표 달성).
+> stand(WBIC)는 QP 분배까지 검증됐고, 남은 결함이 "모델 CoM·자세 앵커 부재"로 확정됐다.
+
+## 1. 모드별 상태
+
+| 모드 | 상태 | 비고 |
+|---|---|---|
+| home · jog | ✅ 검증 | |
+| hold (지지 0%) | ✅ 검증 | 순수 위치 PD |
+| **hold (지지 >0%)** | ✅ **자립 실증** | toe 적용·FOOT 1.0·배분 트림. 25s+ 자립, 밀어도 복원 |
+| float · push | ✅ 검증 | g* 브래킷·발밑 저울 |
+| soft_off | ⚠ 목업만 | GUI [안전 종료] |
+| stand (2점) | ❌ 실패·기전 확정 | QP 분배는 hold 와 일치(Δτ≈0). 실물 CoM 전방+자세앵커 부재로 열린루프 폭주. **플럼라인→모델수정 or IMU 전까지 재시도 무의미** |
+| walk (1점) | 금지 | 벨트 수리 전 |
+
+## 2. 이번 주 개발 (코드)
+
+| 기능 | 커밋 | 내용 |
+|---|---|---|
+| hold 중력지지 | 6d08915→ | τ=지지율·[g*G(q)+Jᵀ(0,0,−F)], GUI 0/25/50/75/100%, 10%/s 램프, IMU 불필요 |
+| 좌우 배분 트림 | 6f548f9 | GUI [배분(HL%)] 40~60, 2%/s 램프 |
+| foot 하중배율 | 6f548f9 | HOLD_FF_FOOT (r_foot 비율부), toe 적용과 세트 |
+| **자립 확정 설정** | 0020d80 | run_deploy_hw.sh 기본화: HOLD_FF_POINT=toe · HOLD_FF_FOOT=1.0 |
+| 자립 낙하 2중 방지 | 0020d80 | GUI 하트비트 데몬스레드 분리 + **하중 hold 워치독 limp 면제** (실기 2회 발동 = 낙하 2회 방지) |
+| soft_off | 6801a8c | 5차 S-curve 복귀 후 무여자, 재무장 방지 래치 |
+| stand-lite | d06a692 | STAND_LITE=1 — CoM/레벨링 OFF·kp floor 1.0·FRIC_COMP 0·EQ_PRUNE 1. stance 과제게인 env 화(STAND_COM_KP 등) |
+| stand 토크보정 foot | c990e84 | STAND_TAU_SCALE_JOINT foot 1.00→1.30 (실증 근거 확보) |
+| **stand 폭주 가드** | 29b431b | 기준 이탈 12°/0.3s → hold 강하(지지 유지·limp 아님) + off 재무장 래치 |
+| 불응답 감지기 게이트 | d40ce9b | 중력지지 중 검사 보류(지면반력 오탐 수정) |
+| 브리지 aux/ack | aae9f19 | AUX_MODE(0x5A 출력축)·ACK 카운터(ucCommand 상위니블)·상태 JSON aux/ack_stale |
+| 트레이스 격식 수정 | 2108ec2 | cmd 열이 직전틱 측정각이던 결함 → qcmd/kp/kd 열 신설(τ_ff 직접 분해 가능) |
+| 진단 도구 | 03f5f62 등 | tau_residual.py(단위/에코 판별) · push_scale tau_rep 열 · slot_dump 빌드수정 · emb_ctl cap 검사 |
+
+## 3. 종결된 질문
+
+| 질문 | 답 | 근거 |
+|---|---|---|
+| **T4: fTorque 단위** | **Nm** (5배 정정 불필요) | 실기 비율 0.998~1.002 (n=600×2회) + 트레이스 a 0.96~0.99 |
+| fTorque 정체 | 드라이브측 총명령(α 비가시) · 폴트 시 깎인 값 | rhat 재해석 + HL_calf 붕괴 |
+| 8Hz 떨림 | WBIC τ_ff 자려진동 (백래쉬·PD·양자화 전부 기각) | 44 에이전트 상호반증, SHAKE_20260828.md |
+| stand-lite 떨림 | QP code4 채터링 → EQ_PRUNE 으로 소멸 확인 | rank 16/18 프루닝 발동 |
+| stand 실패 기전 | 실물 CoM 전방 + 자세앵커 부재 = 열린루프 폭주 (토크는 hold 보다 더 냈는데 14° 무너짐) | hold_vs_stand_lite2_0903.csv |
+| 지연 | 8.39±0.79ms (스텝응답 토크 onset), ack_lag 로 상시 감시 가능 | pace RESULTS ⑥ |
+
+## 4. 미해결 (우선순위순)
+
+1. **실물 CoM/중량 미측정** — 플럼라인 사진 2장(측면·정면, 매단 채 hold 0%) + 체중 → MJCF 질량 반영. stand 재도전의 전제이자 foot "약함"의 상당 몫
+2. **IMU 사망** — halIMU.cpp `[0]`→`[unDevID]` 4곳, Pi 앱 재컴파일. stand-full 하드 게이트
+3. **무릎 벨트 유격** — HL 7° 실측, **HR 도 신호**(트레이스 R² 0.61). 손측정(좌우) → 정적 오프셋(임시) / 재조임(근본, walk 전 필수)
+4. **전원 36V/20A 한계** — 동결 8차 carrier 0 + HL_calf 20.4Nm 스파이크. 배터리 or 증설+벌크캐패시터
+5. **냉각** — 동결 8/8 이 85~90°C. 세션 내내 그 대역
+6. hip 기움 ±3.5~4.4° — CoM 측정 후 HOME_DEG 트림 or 모델 반영
+7. RGA: modLeg `*1.0`→Kt 반영 시 공지 요청 · 진짜 i_q 노출
+8. 이연: swing 관절 PD 하이브리드(sim) · walk
+
+## 5. 확정 파라미터 (배포 기본값)
+
+```
+GRAV_SCALE_JOINT   = 1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00   (g*)
+STAND_TAU_SCALE    = 1.20,1.10,1.22,1.30,1.18,1.10,1.22,1.30   (foot 1.30 = r_foot)
+FOOT_COMP_NM       = 0.36   (상수결손, tanh)
+HOLD_FF_POINT      = toe    · HOLD_FF_FOOT = 1.0   (자립 실증)
+지연보상            = 8.4ms 운동학 외삽 (stand/walk 만)
+α ≈ 0.83~0.85 (세 경로 일치 · fTorque 로는 비가시 — 지상진실은 저울/자립뿐)
+```

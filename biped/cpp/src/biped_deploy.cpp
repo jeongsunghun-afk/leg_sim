@@ -1828,9 +1828,16 @@ int main(int argc, char** argv){
         //   구멍을 막는다: arm_trace 는 전환 3초뿐, 상태 JSON 은 아무도 저장 안 했다.
         //   지지율 >5% 인 동안 10Hz 로 통짜 기록. 기동마다 새로 쓴다(truncate).
         //   열: t · 지지% · 배분 · q(채널°)8 · cmd(채널°)8 · tau측정(채널Nm)8 · ff(관절Nm)8
+        //       [+ AUX_MODE 시 aux(출력축°)8] — 있을 때만 헤더/열이 붙는다.
+        //   ★aux 가 왜 여기 필요한가 (2026-09-04): 지금 미지수 = foot 전달비 열화(r 0.5~0.65).
+        //     aux 는 그걸 직접 가른다 — calf/foot 은 aux=벨트 앞단이라 (aux/gear_k − 링크각)이
+        //     벨트 유격, hip/thigh 는 aux=관절각이라 주엔코더와의 차 = 7:1 감속단 비틀림.
+        //     벨트 미끄러짐이면 aux 정상·링크만 처짐 / 드라이브 열화면 aux 도 같이 처진다.
         { static FILE* hsf = nullptr; static double hs_last = 0; static bool hs_warn = false;
           if(hold_ff_pct_cur > 5.0 && lt - hs_last > 0.1){
             hs_last = lt;
+            float aux_p[16], aux_v[16];
+            const bool aux_on = (hw->aux(aux_p, aux_v) == 1);   // 1=AUX_MODE 켜져 값 유효
             if(!hsf){
               hsf = std::fopen("/tmp/hold_session.csv", "w");
               if(hsf){
@@ -1839,8 +1846,10 @@ int main(int argc, char** argv){
                 for(int i=0;i<8;i++) std::fprintf(hsf, ",cmd%d", i);
                 for(int i=0;i<8;i++) std::fprintf(hsf, ",tau%d", i);
                 for(int i=0;i<8;i++) std::fprintf(hsf, ",ff%d", i);
+                if(aux_on) for(int i=0;i<8;i++) std::fprintf(hsf, ",aux%d", i);
                 std::fprintf(hsf, "\n");
-                std::printf("[hold] 세션 로거 → /tmp/hold_session.csv (10Hz · 지지율>5%% 동안)\n");
+                std::printf("[hold] 세션 로거 → /tmp/hold_session.csv (10Hz · 지지율>5%%%s)\n",
+                            aux_on ? " · aux 포함" : " · aux 없음(AUX_MODE=1 로 켤 것)");
               } else if(!hs_warn){ hs_warn=true; std::printf("[hold] ⚠세션 로거 열기 실패\n"); }
             }
             if(hsf){
@@ -1849,6 +1858,7 @@ int main(int argc, char** argv){
               for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hold_ch[i]);
               for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hs.tau_nm[i]);
               for(int i=0;i<8 && i<NJ;i++) std::fprintf(hsf, ",%.3f", tau_ctrl[i]);
+              if(aux_on) for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)aux_p[i]);
               std::fprintf(hsf, "\n"); std::fflush(hsf);
             }
           } }

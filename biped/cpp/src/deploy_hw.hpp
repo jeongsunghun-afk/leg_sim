@@ -499,6 +499,11 @@ struct Cmd {
   //        기체 질량이 바뀌면 절대힘은 틀리지만 % 는 그대로 맞다.
   //   0 = 전방보상 없음(종전 hold 와 동일). 음수는 0 으로 클램프한다.
   double hold_ff_pct = 0.0;
+  // ★좌우 하중배분 [% to HL] (2026-09-02). 실기 1차에서 HR_foot 이 **−3.3° 과보상**
+  //   = 실제 하중이 50:50 이 아니었다(HL 쏠림). 50 고정이면 가벼운 다리가 과보상으로
+  //   밀려 자세가 더 뒤틀린다 ⇒ 운전자가 양발 잔차가 대칭이 되게 트림한다.
+  //   50 = 종전 동작. [20,80] 클램프.
+  double hold_ff_split = 50.0;
   std::string raw;                       // 워치독: 내용 변화 판정용
 };
 
@@ -541,6 +546,7 @@ inline bool read_cmd(const std::string& path, Cmd& out){
   out.push_fz  = num("push_fz", 0.0);
   out.push_leg = (int)num("push_leg", 0);
   out.hold_ff_pct = num("hold_ff_pct", 0.0);
+  out.hold_ff_split = num("hold_ff_split", 50.0);
   return true;
 }
 

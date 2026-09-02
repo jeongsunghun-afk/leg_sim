@@ -1,0 +1,5 @@
+when	uptime_s	mode	in_mode_s	n_frozen	class	channels	emb_dcpu_jif	emb_state	nic_carrier	d_rx_crc	d_rx_err	pre_tau_max_nm	pre_tau_ch	pre_cur_max_a	loop_hz	stt_hex	stt_or	soc_temp_c	soc_mhz	throttled	pre_csv
+2026-09-01 18:35:31	118.9	hold	93.1	8	SPI/MCU	 ch0 ch1 ch2 ch3 ch4 ch5 ch6 ch7	14	R	0	0	0	10.03	HL_calf	10.03	500	00,00,00,00,00,00,00,00	0	85.3	2400	-1	/tmp/freeze_pre_1.csv
+2026-09-01 18:50:01	70.9	stand	3.1	8	SPI/MCU	 ch0 ch1 ch2 ch3 ch4 ch5 ch6 ch7	15	R	1	0	0	29.55	HL_calf	29.55	497	00,00,00,00,00,00,00,00	0	90.3	2400	-1	/tmp/freeze_pre_1.csv
+2026-09-01 18:53:18	20.0	hold	8.3	8	EtherCAT	 ch0 ch1 ch2 ch3 ch4 ch5 ch6 ch7	15	R	0	0	0	5.91	HR_hip	5.91	500	00,00,00,00,00,00,00,00	0	87.5	2400	-1	/tmp/freeze_pre_1.csv
+2026-09-01 18:59:49	72.8	off	1.0	8	SPI/MCU	 ch0 ch1 ch2 ch3 ch4 ch5 ch6 ch7	15	R	0	0	0	20.36	HL_calf	20.36	582	00,00,00,00,00,00,00,00	0	88.7	2400	-1	/tmp/freeze_pre_1.csv

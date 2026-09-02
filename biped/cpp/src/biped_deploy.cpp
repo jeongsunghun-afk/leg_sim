@@ -496,14 +496,24 @@ int main(int argc, char** argv){
   //   램프는 **지지율[%/s]** 이다 — 힘[N/s]이 아니다. 중력항까지 같은 비율로 올려야
   //   계단이 안 생기기 때문이다(아래 hold 분기 주석). 기본 10 %/s = 0→100% 에 10초.
   const double HOLD_FF_RATE = getenv("HOLD_FF_RATE") ? atof(getenv("HOLD_FF_RATE")) : 10.0;
-  const double HOLD_FF_TAU_MAX = getenv("HOLD_FF_TAU_MAX") ? atof(getenv("HOLD_FF_TAU_MAX")) : 12.0;
+  // ★12→14 (2026-09-04 사용자 확정). 실기에서 HL_foot ff 가 11.72 Nm — 12 클램프에
+  //   붙어 있어 배분을 60 이상 밀면 소리 없이 잘렸다("올렸는데 안 변함"으로 보임).
+  //   토크트립 15 Nm(채널) 은 그대로라 보호는 유지된다.
+  const double HOLD_FF_TAU_MAX = getenv("HOLD_FF_TAU_MAX") ? atof(getenv("HOLD_FF_TAU_MAX")) : 14.0;
   //   적용점: 평발 2점 접지의 압력중심은 발바닥 어딘가다. 발끝에만 걸면 발목토크가
   //   과대평가되고, 발목원점(뒤꿈치 구)에만 걸면 발목토크가 0 이 되어 **정작 병목인
   //   foot 축을 하나도 안 도와준다.** 기본은 둘에 반반(=발바닥 중앙).
   const bool   HOLD_FF_MID = !(getenv("HOLD_FF_POINT") && std::string(getenv("HOLD_FF_POINT"))=="toe");
   //   한 다리 100% = mg/2. 모델에서 뽑는다(기체가 바뀌면 자동으로 따라간다).
   const double HOLD_FF_FULL_N = 0.5 * mj_getTotalmass(m) * 9.81;
+  // ★foot 하중항 배율 (2026-09-02 실기 1차 반영). foot 은 g*(1.00)로 못 메운다 —
+  //   결손이 상수+비율 혼합(r_foot(G)=0.77−0.36/G)이라 저부하(float)에선 상수가 지배해
+  //   FOOT_COMP 몫이었지만, **체중 하중(G≈6~7Nm)에선 비율부 0.77 이 지배**한다.
+  //   실기 1차: HL_foot 잔차 +2.8° ≈ 결손 20%×6Nm/(α·kp_raw 36.7) + 마찰 1° — 정량 일치.
+  //   ⇒ foot 의 전방보상 전체에 1/0.77≈1.30 을 기본 적용(다른 축은 종전대로 g*).
+  const double HOLD_FF_FOOT = getenv("HOLD_FF_FOOT") ? atof(getenv("HOLD_FF_FOOT")) : 1.30;
   double hold_fz_cur = 0.0, hold_ff_pct_cur = 0.0;
+  double hold_split_cur = 50.0;            // 좌우 배분[% to HL] — 진입 시 50 으로 리셋·2%/s 램프
   std::printf("[deploy] hold 중력지지 — 모델 총질량 %.2f kg · **한 다리 100%% = %.1f N** ·"
               " 램프 %.1f %%/s · 적용점 %s\n"
               "         GUI [중력지지] 버튼(0~100%%)으로 올린다. 0%% 면 종전 hold(순수 위치 PD)와 같다.\n",
@@ -695,6 +705,13 @@ int main(int argc, char** argv){
   std::vector<double> q_hold(NCH,0.0),   q_stand(NCH,0.0);
   bool have_tau_hold=false, have_tau_stand=false;
   double mode_t0=0;                                     // 현재 모드 진입시각
+  // ★stand 폭주 가드 (2026-09-03 실기 — lite 2차에서 발이 14° 폭주하는 동안 **아무
+  //   가드도 안 걸렸다**: 속도가 느려 속도트립 미달, 토크도 15Nm 아래로 스침).
+  //   stand 는 기준자세(stand_ref)가 고정이므로 "기준 대비 큰 이탈 지속" 자체가 이상이다.
+  //   발동 시 limp 가 아니라 **hold 로 강하**한다 — hold 는 자립 실증된 안전 상태고,
+  //   지지율(hold_fz_cur)을 리셋하지 않아 전방보상이 연속으로 이어진다(주저앉음 방지).
+  const double STAND_RUNAWAY_DEG = getenv("STAND_RUNAWAY_DEG") ? atof(getenv("STAND_RUNAWAY_DEG")) : 12.0;
+  double runaway_t0 = -1.0; bool stand_runaway = false;
   // ★jog 램프 상태 (2026-08-21). **등속 램프**다 — home 의 S-curve 를 쓰지 않는다.
   //   S-curve 는 "A→B 1회 이동" 전제인데 jog 목표는 슬라이더를 끄는 동안 **매 틱 바뀐다.**
   //   그래서 살아 있는 목표를 속도클램프로 따라간다(biped_emb.py control/jog.py 와 같은 방식).
@@ -951,7 +968,7 @@ int main(int argc, char** argv){
           "!!  물리링크 %s    carrier %lld · rx_crc %+lld · rx_err %+lld → **%s**\n"
           "!!  모터 상태워드  [%s] → **%s**\n"
           "!!  SoC           %.1f°C · %.0fMHz · throttled %s%s\n"
-          "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I| %.2fA · 모드 %s(%.1fs째)\n"
+          "!!  직전 1초 최대  |τ| %.2fNm(%s) · |I|(=τ에코, 실측아님) %.2f · 모드 %s(%.1fs째)\n"
           "!!  직전 %.1fs 기록 → %s (%zu행)\n"
           "!!  사건로그(누적) → %s   ← **여기를 여러 번 모아 놓고 봐야 원인이 보인다**\n"
           "%s\n\n",
@@ -1224,7 +1241,7 @@ int main(int argc, char** argv){
           if(mode=="hold"){
             // ★중력지지는 **매 진입마다 0 에서 다시 램프**한다 — GUI 버튼이 눌린 채로
             //   남아 있어도 진입 순간 계단이 걸리지 않는다(push 와 같은 규약).
-            hold_fz_cur = 0.0; hold_ff_pct_cur = 0.0;
+            hold_fz_cur = 0.0; hold_ff_pct_cur = 0.0; hold_split_cur = 50.0;
             std::vector<float> raw = hs.q_deg;             // 클램프 전
             // ★★home → hold 는 **home 의 목표를 이어받는다** (2026-08-21, 사용자 요청).
             //   하려는 것: home 자세를 잡고 hold 로 굳힌 뒤 **크레인을 내려 중력을 걸어도
@@ -1512,6 +1529,16 @@ int main(int argc, char** argv){
           //   kd/kp 가 계단 점프, c.reset()·u_prev=0 이 지연보상 예측까지 오염한다.
           //   접지가드(위)와 같은 prev_mode 배제. 1점 gait 는 stand 도 제자리 스텝핑이라
           //   컨트롤러 연속이 곧 올바른 의미고, 2점 정적지지는 매 틱 자체 재무장한다.
+          // ★stand 폭주 래치 — off 재무장 전까지 stand 재진입 거부 (2026-09-03)
+          //   ⚠배너는 1s 로 솎는다 — GUI 가 20ms 재발행이라 안 그러면 초당 50줄 스팸.
+          if(mode=="stand" && stand_runaway){
+            static double rw_warn_t = -1e9;
+            if(lt - rw_warn_t > 1.0){ rw_warn_t = lt;
+              std::printf("[deploy] ⛔ STOP **stand 폭주 래치** — off 재무장 전까지 stand 거부, hold 유지.\n"
+                          "         (직전 stand 에서 기준자세 이탈 폭주 — 모델 CoM/IMU 문제를 먼저 볼 것)\n"); }
+            if(prev_mode!="hold"){ hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data()); }
+            nm = "hold"; mode = "hold";
+          }
           // ★토크 불응답 래치가 있으면 stand/walk 를 막는다 (2026-08-28)
           if((mode=="stand" || mode=="walk")){
             std::string bad;
@@ -1592,8 +1619,31 @@ int main(int argc, char** argv){
       }
     }
 
+    // ★stand 폭주 래치 해제 — off 재무장 규약. 전이 분기가 아니라 **매 틱** 본다
+    //   (전이 분기 안에 두면 off 처리 경로에 따라 안 타는 수가 있다 — sim 검증에서 발각).
+    if(mode=="off" && stand_runaway) stand_runaway = false;
+
     // ③ 워치독 — 명령 두절이면 limp. 전이를 반드시 출력한다(데드코드 방지).
-    bool wd = (mode!="off") && (lt - last_cmd_t) > watchdog_s;
+    // ★★단 **하중 실린 hold 는 면제** (2026-09-03 실기 사고).
+    //   크레인 없이 자립 중일 때 GUI 렌더가 1.16s 멈춰 발행이 끊겼고, 워치독이
+    //   로봇을 limp 로 떨궜다 — **자립 단계에서 limp = 낙하**다.
+    //   워치독의 존재 이유는 "폭주 방지"인데, hold 는 고정 목표 정적 PD 라 명령이
+    //   끊겨도 폭주할 것이 없다. 서서 기다리는 것이 떨어지는 것보다 안전하다.
+    //   ⇒ hold + 지지율>5% 면 limp 대신 **그 자리를 유지**하고 경고만 찍는다.
+    //     명령이 복귀하면 그대로 재개된다(모드가 안 바뀌었으므로 가드 우회도 없다).
+    //     GUI 를 영영 못 살리면: 크레인 걸고 배포기 Ctrl+C(=안전종료 시퀀스).
+    //   WD_HOLD_LIMP=1 로 종전 동작(무조건 limp)을 되돌릴 수 있다.
+    const bool wd_hold_immune = mode=="hold" && hold_ff_pct_cur > 5.0
+                             && !(getenv("WD_HOLD_LIMP") && atoi(getenv("WD_HOLD_LIMP")));
+    bool wd = (mode!="off") && (lt - last_cmd_t) > watchdog_s && !wd_hold_immune;
+    { static bool imm_warned = false;
+      const bool silent = (lt - last_cmd_t) > watchdog_s;
+      if(wd_hold_immune && silent && !imm_warned){
+        imm_warned = true;
+        std::printf("[deploy] ⚠명령 두절 %.2fs — **하중 hold 라 limp 하지 않는다**(자립 낙하 방지).\n"
+                    "         자세를 유지하며 명령 복귀를 기다린다. GUI 를 살릴 것.\n", lt-last_cmd_t);
+        std::fflush(stdout);
+      } else if(!silent) imm_warned = false; }
     if(wd != wd_tripped){
       wd_tripped = wd;
       if(wd || lt-last_cmd_t < watchdog_s)   // ★off 강하로 wd 가 꺼진 직후의 허위 '해제' 억제
@@ -1718,13 +1768,20 @@ int main(int argc, char** argv){
         d->qpos[3]=1; d->qpos[4]=d->qpos[5]=d->qpos[6]=0;
         for(int i=0;i<6;i++) d->qvel[i]=0.0;
         mj_forward(m,d);
-        for(int j=0;j<NJ;j++)
-          tau_ctrl[j] = (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE) * d->qfrc_bias[6+j];
+        for(int j=0;j<NJ;j++) tau_ctrl[j] = d->qfrc_bias[6+j];      // 중력항(무배율 — 아래서 일괄)
         // 몸무게를 **양 다리에** 건다 — push 와 달리 한쪽이 아니다.
         //   부호는 push 와 같다: τ = G + Jᵀ·(0,0,−F) 가 "발이 F 로 딛고 반작용 F↑ 를 받는다".
-        //   ⚠여기선 **전량**(HOLD_FF_FULL_N)을 넣는다 — 지지율은 아래에서 한 번만 곱한다.
+        //   ⚠여기선 **전량**을 넣는다 — 지지율은 아래에서 한 번만 곱한다.
+        // ★좌우 배분 (2026-09-02 실기 1차): 50:50 고정이었더니 HR_foot 이 −3.3° 과보상
+        //   = 실제 하중이 HL 쏠림. GUI 트림(hold_ff_split, % to HL)을 2%/s 로 램프해 따른다.
+        { const double tgt_sp = std::max(20.0, std::min(80.0, cmd.hold_ff_split));
+          const double stp = 2.0 * dt;
+          hold_split_cur += std::max(-stp, std::min(stp, tgt_sp - hold_split_cur)); }
         { static std::vector<mjtNum> jacp;
           for(int leg=0; leg<2; leg++){
+            // 총하중 mg = 2·FULL_N. HL 몫 = split%, HR 몫 = 100−split%.
+            const double frac = (leg==0) ? 0.01*hold_split_cur : 0.01*(100.0-hold_split_cur);
+            const double F_leg = 2.0 * HOLD_FF_FULL_N * frac;
             const int gs[2] = { c.sph[leg], (HOLD_FF_MID && c.has_heel) ? c.sph2[leg] : -1 };
             const double share = (gs[1] >= 0) ? 0.5 : 1.0;
             for(int k=0;k<2;k++){
@@ -1732,13 +1789,18 @@ int main(int argc, char** argv){
               jacp.assign(3*m->nv, 0.0);
               mj_jacGeom(m, d, jacp.data(), nullptr, gs[k]);
               for(int j=0;j<NJ;j++)
-                tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-HOLD_FF_FULL_N*share);
+                tau_ctrl[j] += jacp[2*m->nv + 6+j] * (-F_leg*share);
             }
           } }
-        // ★지지율을 **여기서** 곱한다 — 중력항까지 함께 램프되어야 계단이 안 생긴다.
+        // ★지지율 × **축별 배율**을 여기서 한 번에 곱한다 — 계단 금지(램프 hff)와
+        //   "명령 = 필요토크/전달비" 를 같은 자리에서 처리한다.
+        //   foot 만 g* 대신 HOLD_FF_FOOT(1.30) — 하중 대역에선 비율부 0.77 이 지배(상단 주석).
         const double hff = 0.01 * hold_ff_pct_cur;
-        for(int j=0;j<NJ;j++)
-          tau_ctrl[j] = std::max(-HOLD_FF_TAU_MAX, std::min(HOLD_FF_TAU_MAX, hff*tau_ctrl[j]));
+        for(int j=0;j<NJ;j++){
+          const double sc = (j % 4 == 3) ? HOLD_FF_FOOT
+                          : (grav_axis[j] >= 0.0 ? grav_axis[j] : GRAV_SCALE);
+          tau_ctrl[j] = std::max(-HOLD_FF_TAU_MAX, std::min(HOLD_FF_TAU_MAX, hff*sc*tau_ctrl[j]));
+        }
         jm.tau_ctrl_to_ch(tau_ctrl.data(), tau_ch.data());
         foot_comp(tau_ch);
         hw->write_mit(hold_ch.data(), zero.data(), tau_ch.data(),
@@ -1752,10 +1814,54 @@ int main(int argc, char** argv){
             for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
               const double e=(double)hold_ch[i]-(double)hs.q_deg[i];
               if(std::fabs(e)>std::fabs(emx)){ emx=e; ech=i; } }
-            std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · tau_ff:", hold_ff_pct_cur, hold_fz_cur);
+            std::printf("[hold] 지지 %.0f%%(%.1fN/다리) · 배분 HL%.0f:%.0fHR · tau_ff:",
+                        hold_ff_pct_cur, hold_fz_cur, hold_split_cur, 100.0-hold_split_cur);
             for(int j=0;j<NJ;j++) std::printf(" %+.2f", tau_ctrl[j]);
-            std::printf("  최대오차 %s %+.2f°\n", ech>=0?chname[ech].c_str():"-", emx);
+            // ★축별 오차도 같이 (2026-09-04 사용자 요청) — 최대값 하나로는 좌우 비대칭·
+            //   CoM 역산·유격 서명을 터미널 로그만으로 분석할 수 없었다.
+            std::printf("  최대 %s %+.2f°\n       오차(ch):", ech>=0?chname[ech].c_str():"-", emx);
+            for(int i=0;i<NCH && i<8;i++)
+              std::printf(" %+5.1f", (double)hold_ch[i]-(double)hs.q_deg[i]);
+            std::printf("\n");
             std::fflush(stdout); } }
+        // ★★하중 hold 세션 로거 (2026-09-04) — 정착 구간 데이터가 어디에도 안 남던
+        //   구멍을 막는다: arm_trace 는 전환 3초뿐, 상태 JSON 은 아무도 저장 안 했다.
+        //   지지율 >5% 인 동안 10Hz 로 통짜 기록. 기동마다 새로 쓴다(truncate).
+        //   열: t · 지지% · 배분 · q(채널°)8 · cmd(채널°)8 · tau측정(채널Nm)8 · ff(관절Nm)8
+        //       [+ AUX_MODE 시 aux(출력축°)8] — 있을 때만 헤더/열이 붙는다.
+        //   ★aux 가 왜 여기 필요한가 (2026-09-04): 지금 미지수 = foot 전달비 열화(r 0.5~0.65).
+        //     aux 는 그걸 직접 가른다 — calf/foot 은 aux=벨트 앞단이라 (aux/gear_k − 링크각)이
+        //     벨트 유격, hip/thigh 는 aux=관절각이라 주엔코더와의 차 = 7:1 감속단 비틀림.
+        //     벨트 미끄러짐이면 aux 정상·링크만 처짐 / 드라이브 열화면 aux 도 같이 처진다.
+        { static FILE* hsf = nullptr; static double hs_last = 0; static bool hs_warn = false;
+          if(hold_ff_pct_cur > 5.0 && lt - hs_last > 0.1){
+            hs_last = lt;
+            float aux_p[16], aux_v[16];
+            const bool aux_on = (hw->aux(aux_p, aux_v) == 1);   // 1=AUX_MODE 켜져 값 유효
+            if(!hsf){
+              hsf = std::fopen("/tmp/hold_session.csv", "w");
+              if(hsf){
+                std::fprintf(hsf, "t,pct,split");
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",q%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",cmd%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",tau%d", i);
+                for(int i=0;i<8;i++) std::fprintf(hsf, ",ff%d", i);
+                if(aux_on) for(int i=0;i<8;i++) std::fprintf(hsf, ",aux%d", i);
+                std::fprintf(hsf, "\n");
+                std::printf("[hold] 세션 로거 → /tmp/hold_session.csv (10Hz · 지지율>5%%%s)\n",
+                            aux_on ? " · aux 포함" : " · aux 없음(AUX_MODE=1 로 켤 것)");
+              } else if(!hs_warn){ hs_warn=true; std::printf("[hold] ⚠세션 로거 열기 실패\n"); }
+            }
+            if(hsf){
+              std::fprintf(hsf, "%.3f,%.1f,%.1f", lt, hold_ff_pct_cur, hold_split_cur);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hs.q_deg[i]);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hold_ch[i]);
+              for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)hs.tau_nm[i]);
+              for(int i=0;i<8 && i<NJ;i++) std::fprintf(hsf, ",%.3f", tau_ctrl[i]);
+              if(aux_on) for(int i=0;i<8;i++) std::fprintf(hsf, ",%.3f", (double)aux_p[i]);
+              std::fprintf(hsf, "\n"); std::fflush(hsf);
+            }
+          } }
       }
     } else if(mode=="soft_off"){
       double u = (soft_T>0) ? (lt-soft_t0)/soft_T : 1.0;
@@ -2100,6 +2206,27 @@ int main(int argc, char** argv){
       qcmd_ch = stand_ref; kpcmd_ch = kp_ch; kdcmd_ch = kd_ch;
       hw->write_mit(stand_ref.data(), zero.data(), tau_ch.data(),
                     kp_ch.data(), kd_ch.data(), NCH);
+      // ★stand 폭주 가드 (2026-09-03 · 상단 선언부 주석). 기준자세 이탈이
+      //   STAND_RUNAWAY_DEG 를 0.3s 지속하면 hold 로 강하 + 래치(off 재무장까지 거부).
+      if(mode=="stand"){
+        double emx=0; int ech=-1;
+        for(int i=0;i<NCH;i++) if(cfg.installed_has(i)){
+          const double e = std::fabs((double)stand_ref[i]-(double)hs.q_deg[i]);
+          if(e>emx){ emx=e; ech=i; } }
+        if(emx > STAND_RUNAWAY_DEG){
+          if(runaway_t0 < 0) runaway_t0 = lt;
+          else if(lt - runaway_t0 > 0.3){
+            std::printf("[deploy] ⛔ **stand 폭주** — %s 이탈 %.1f° > %.1f° 가 0.3s 지속.\n"
+                        "         hold 로 강하(지지율 유지 — limp 아님) + 래치. off 재무장까지 stand 거부.\n",
+                        ech>=0?chname[ech].c_str():"-", emx, STAND_RUNAWAY_DEG);
+            std::fflush(stdout);
+            hold_ch = hs.q_deg; jm.clamp_ch_via_joint(hold_ch.data());
+            prev_mode = mode; mode = "hold"; mode_t0 = lt;
+            stand_runaway = true; runaway_t0 = -1.0;
+            // ⚠hold_fz_cur 는 **일부러 안 리셋** — 전방보상 연속(강하 순간 주저앉음 방지)
+          }
+        } else runaway_t0 = -1.0;
+      } else runaway_t0 = -1.0;
     }
 
     // ★트레이스 기록 — 무장 후 3초.
@@ -2210,6 +2337,12 @@ int main(int argc, char** argv){
         for(int j=0;j<NJ;j++){ hang += std::fabs(gj[j]); meas += std::fabs(tm[j]); }
         if(hang>1e-6 && meas/hang > 1.25) goto unresp_skip;   // 접지 — 판정 보류
       }
+      // ★★중력지지 중에도 검사하지 않는다 (2026-09-02 실기 오탐 — HL_foot 에서 발화).
+      //   τ_ff 가 발을 지면에 밀어붙이므로 "kp 요구토크 vs 매달림 중력" 비교의 전제가
+      //   무너진다 — 오차 7° 를 붙잡던 건 드라이버 불응답이 아니라 **지면 반력**이었다.
+      //   위의 전역 접지 게이트(meas/hang)로는 못 거른다: 크레인이 체중 대부분을 들면
+      //   전신 합계는 "매달림" 으로 보이는데, **발끝만은 이미 눌려** 있었다.
+      if(mode=="hold" && hold_ff_pct_cur > 5.0) goto unresp_skip;
       for(int i=0;i<NCH;i++){
         if(!cfg.installed_has(i) || unresp[i]) continue;
         const double err  = (double)qcmd_ch[i] - (double)hs.q_deg[i];      // 채널 deg
@@ -2400,7 +2533,7 @@ int main(int argc, char** argv){
         "\"pos_kp_scale\":%.3f,\"pos_kp_target\":%.3f,\"pos_kd_scale\":%.3f,\"push_fz\":%.1f,"
         // ★hold 중력지지 — `hold_ff_pct` 는 **지금 실제로 나가는 값**(램프 중이면 중간값),
         //   `hold_ff_n` 은 그때의 한 다리 지지력[N]. 0 이면 순수 위치 PD(종전 hold).
-        "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,"
+        "\"hold_ff_pct\":%.1f,\"hold_ff_n\":%.1f,\"hold_ff_full_n\":%.1f,\"hold_ff_split\":%.1f,"
         "%s\"offset_deg\":%s}",
         mode.c_str(), hw->name(), qs.c_str(), qchs.c_str(),
         /* dq/tau/tau_cmd/kp/kd 는 다음 줄에서 이어진다 — 아래 5개 뒤에 창통계 4개 */
@@ -2416,7 +2549,8 @@ int main(int argc, char** argv){
         (mode=="home" && home_T>0) ? std::max(0.0,std::min(1.0,(lt-home_t0)/home_T)) : 0.0,
         (errs+"]").c_str(), qcmds.c_str(), dqcmds.c_str(), thold.c_str(), tstand.c_str(),
         POS_KP, kp_scale_tgt, POS_KD, push_fz_cur,
-        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, extra_json.c_str(), offs_json.c_str());
+        hold_ff_pct_cur, hold_fz_cur, HOLD_FF_FULL_N, hold_split_cur,
+        extra_json.c_str(), offs_json.c_str());
       write_state(stt_p, buf);
     }
 

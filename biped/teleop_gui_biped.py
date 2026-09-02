@@ -107,13 +107,17 @@ class Pub:
         #    env 로 주지 말고 여기 버튼으로 줄 것.)
         self.cmd = {'v': 0.0, 'vy': 0.0, 'w': 0.0, 'body_h': H_DEF, 'mode': 'hold', 'contact': '2pt',
                     'jog_deg': [0.0] * NJ, 'pos_kp_scale': 1.0, 'grav_scale': 1.0, 'seq': 0}
+        # ★발행 잠금 (2026-09-03) — 하트비트가 별도 스레드로 옮겨가면서(아래) 콜백(메인
+        #   스레드)과 동시에 cmd 를 만질 수 있다. dict 순회 중 변경은 예외로 터진다.
+        self._lk = threading.RLock()
         self._pub()
 
     def set_jog(self, i, val):
         self.cmd['jog_deg'][i] = float(val); self._pub()
 
     def set(self, **kw):
-        self.cmd.update(kw)
+        with self._lk:
+            self.cmd.update(kw)
         # ★스틱/슬라이더로 非零 속도가 들어오면 자동 walk 전환.
         #   (안 그러면 sim이 mode=stand를 보고 속도를 0으로 무시 → "명령이 안 먹는" 증상)
         # ★'off' 를 자동승격 대상에서 뺐다. off 는 "아직 무장 안 함" 상태이므로
@@ -128,11 +132,20 @@ class Pub:
         # ★seq 를 증가시킨다. emb 앱의 워치독은 "파일이 읽히는가" 가 아니라
         #   "명령 내용이 바뀌는가" 로 살아있음을 판정하므로(biped_emb.read_cmd_fresh),
         #   정적 파일은 통신두절과 구분되지 않는다. seq 가 그 구분을 만든다.
-        self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
-        tmp = self.path + '.tmp'
-        with open(tmp, 'w') as f:
-            json.dump(self.cmd, f)
-        os.replace(tmp, self.path)
+        # ★2026-09-04 경합 수정: 하트비트 데몬스레드와 콜백스레드가 **같은 .tmp 를 공유**해
+        #   A 가 쓴 tmp 를 B 가 replace 로 채가면 A 의 os.replace 가 FileNotFoundError 로
+        #   스레드를 죽였다(실기 GUI DEAD). ⇒ ①write+replace 를 락 안에서 원자적으로
+        #   ②스레드별 고유 tmp(pid+tid) ③replace 예외를 삼켜 어떤 경합도 GUI 를 안 죽인다.
+        try:
+            with self._lk:
+                self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
+                body = json.dumps(self.cmd)
+                tmp = '%s.%d.tmp' % (self.path, threading.get_ident())
+                with open(tmp, 'w') as f:
+                    f.write(body)
+                os.replace(tmp, self.path)
+        except Exception:
+            pass
         if _udp_sock is not None:                      # ★Isaac Sim으로 UDP 발행
             try: _udp_sock.sendto(json.dumps(self.cmd).encode(), _udp_addr)
             except Exception: pass
@@ -197,6 +210,24 @@ class JoyPad:
 
 
 pub = Pub()
+
+
+# ★★하트비트 스레드 (2026-09-03 — 자립 중 낙하 사고 방지).
+#   종전엔 파일 하트비트(20Hz)가 **렌더 루프 안**에 있었다. 실기에서 렌더가 1.16초
+#   멈추자(창 조작/스톨) 발행이 같이 멈췄고, 배포기 워치독(0.5s)이 **크레인 없이
+#   자립 중이던 로봇을 limp 로 떨궜다.** 발행 생존이 화면 프레임에 묶여 있으면 안 된다.
+#   ⇒ 데몬 스레드가 렌더와 무관하게 20Hz 로 발행한다. GUI 가 완전히 죽으면(프로세스
+#     종료) 스레드도 죽고 워치독이 잡는다 — 그건 의도된 동작이다.
+def _hb_thread():
+    while True:
+        try:
+            pub._pub()
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+
+threading.Thread(target=_hb_thread, daemon=True).start()
 _expo = lambda a: a * abs(a)          # 중앙 미세·끝 최대
 
 
@@ -311,15 +342,26 @@ def set_push_leg(l):
 #   총 명령토크는 그대로고(중력 요구량은 자세가 정한다) 오차만 0 으로 간다 —
 #   그래서 트립 여유가 나빠지지 않는다. 이게 강성 상향과 결정적으로 다른 점이다.
 HOLD_FF_STEPS = [0, 25, 50, 75, 100]
-_holdff = [0.0]
+# ★좌우 배분 (2026-09-02 실기 1차): 50:50 고정이었더니 HR_foot 이 −3.3° 과보상
+#   = 실제 하중이 HL 쏠림. 양발 잔차가 대칭이 되도록 운전자가 트림한다(2%/s 램프).
+HOLD_SPLIT_STEPS = [40, 45, 50, 55, 60]
+_holdff = [0.0, 50.0]                 # [지지%, HL배분%]
 
 
 def set_hold_ff(p):
     if p is None:
         print('[gui] set_hold_ff(None) — user_data 누락?'); return
     _holdff[0] = float(p)
-    pub.set(hold_ff_pct=float(p))
+    pub.set(hold_ff_pct=float(p), hold_ff_split=float(_holdff[1]))
     dpg.set_value('hff_lbl', f'목표 {p:g} % 로 램프 중…')
+
+
+def set_hold_split(sp):
+    if sp is None:
+        print('[gui] set_hold_split(None) — user_data 누락?'); return
+    _holdff[1] = float(sp)
+    pub.set(hold_ff_split=float(sp), hold_ff_pct=float(_holdff[0]))
+    dpg.set_value('hff_lbl', f'배분 목표 HL {sp:g} % 로 램프 중…')
 
 
 def jog_zero():                       # 전체 0(home)
@@ -409,10 +451,14 @@ def _refresh_mode_led(st):
         for k, v in enumerate(HOLD_FF_STEPS):
             try: dpg.bind_item_theme(f'hffbtn_{k}', _kp_on if abs(hp - v) < 1.0 else _kp_off)
             except Exception: pass
+        hsp = st.get('hold_ff_split', 50.0)
+        for k, v in enumerate(HOLD_SPLIT_STEPS):
+            try: dpg.bind_item_theme(f'hspbtn_{k}', _kp_on if abs(hsp - v) < 0.5 else _kp_off)
+            except Exception: pass
         try:
             tgt = pub.cmd.get('hold_ff_pct', 0.0)
             hn, hf = st.get('hold_ff_n', 0.0), st.get('hold_ff_full_n', 0.0)
-            dpg.set_value('hff_lbl', f'적용 {hp:.0f} % ({hn:.1f}/{hf:.1f} N·다리)'
+            dpg.set_value('hff_lbl', f'적용 {hp:.0f} % ({hn:.1f}/{hf:.1f} N·다리 · HL{hsp:.0f})'
                                      + (f' → 목표 {tgt:g} %' if abs(hp - tgt) > 1.0 else ''))
         except Exception: pass
 
@@ -1015,6 +1061,10 @@ with dpg.window(tag='main'):
         for _k, _p in enumerate(HOLD_FF_STEPS):
             dpg.add_button(label=f'{_p:g}%', width=48, tag=f'hffbtn_{_k}', user_data=_p,
                            callback=lambda _s_, _a_, _u_: set_hold_ff(_u_))
+        dpg.add_text('│ 배분(HL%)', color=(90, 95, 105))
+        for _k, _sp in enumerate(HOLD_SPLIT_STEPS):
+            dpg.add_button(label=f'{_sp:g}', width=36, tag=f'hspbtn_{_k}', user_data=_sp,
+                           callback=lambda _s_, _a_, _u_: set_hold_split(_u_))
         dpg.add_text('', tag='hff_lbl', color=(150, 155, 175))
     dpg.add_text('강성을 올리는 것과 다르다 — **총 명령토크는 그대로**고 kp·오차에 있던 몫이 '
                  'τ_ff 로 옮겨갈 뿐이라 처짐만 줄고 토크트립 여유는 안 나빠진다. '
@@ -1177,15 +1227,8 @@ while dpg.is_dearpygui_running():
     if _udp_sock is not None:
         try: _udp_sock.sendto(json.dumps(pub.cmd).encode(), _udp_addr)
         except Exception: pass
-    # ★파일 채널에도 동일한 하트비트(20Hz). 위 주석이 UDP 에 대해 지적한 문제
-    #   ("이벤트가 없으면 패킷이 끊긴다")가 **파일 경로에도 똑같이 있었는데 안 고쳐져
-    #   있었다.** emb 앱 워치독은 이 하트비트로 GUI 생존을 판정한다 — 없으면 워치독이
-    #   jog 램프 중(무이벤트 1.5s) 오작동한다.
-    _now = time.time()
-    if _now - _last_file_hb[0] > 0.05:
-        _last_file_hb[0] = _now
-        try: pub._pub()
-        except Exception: pass
+    # (파일 하트비트는 2026-09-03 에 **데몬 스레드로 이동** — Pub() 아래 _hb_thread 참조.
+    #  렌더 루프에 두면 프레임 스톨 = 발행 중단 = 워치독 limp = 자립 중 낙하였다.)
     dpg.render_dearpygui_frame()
 
 dpg.destroy_context()

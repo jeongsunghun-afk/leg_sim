@@ -77,9 +77,10 @@ export FOOT_COMP_NM="${FOOT_COMP_NM:-0.36}"
 # ── ②stand/walk 토크보정 — 같은 부족분을 WBIC 토크에 건다 ──────────────────
 #   1/g* = α·(G_CAD/G_real) 이므로 τ 에 g* 를 곱하면 실제 출력이 모델 의도값이 된다.
 #   ⚠HL_thigh 1.50 경고는 위와 동일 — 벨트 수리 전 walk 금지.
-#   ⚠calf/foot 은 측정 불가라 1.00 = 무보정. thigh 값으로 외삽하지 **않는다**
-#     (축퇴 원인이 기하로 밝혀진 이상, 안 잰 축에 배율을 지어내면 안 된다).
-export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
+#   ★foot 1.00 → **1.30** (2026-09-03). "안 잰 축은 무보정" 규칙이었는데 이제 쟀다:
+#     저울 r_foot(G) 포화 0.77 + hold 자립(발끝적용·1.30 등가)이 하중 대역에서 실증.
+#     stand-lite 1차에서 foot 만 1.00 이라 ±7.5° 처짐 — hold 초기와 같은 병리였다.
+export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.30,1.18,1.10,1.22,1.30"
 
 # ── ③walk 묶음 (2026-08-27 · sim 정량화 tools/walk_demand_check.py) ─────────
 #   walk 모드 **한정** 트립 상향(실측 플랜트 스윙 요구 calf 673dps·kd제동 41Nm — 고정
@@ -88,6 +89,36 @@ export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.00,1.18,1.10,1.22,1.00"
 export WALK_VEL_TRIP_DPS="${WALK_VEL_TRIP_DPS:-900}"
 export WALK_TAU_TRIP_NM="${WALK_TAU_TRIP_NM:-25}"
 export WALK_KD_FLOOR="${WALK_KD_FLOOR:-0.15}"
+
+# ── ④hold 중력지지 — 자립 확정 설정 (2026-09-03 실기: 크레인 프리 25s+) ──────
+#   적용점 toe: 뒤꿈치는 발목축 위라 발목토크 기여 0 — 발끝 전량이 발목 FF ≈2배.
+#   배율 1.0: toe 적용이면 1.3(midfoot 보정)은 과보정이었다.
+#   그날의 배분은 GUI [배분(HL%)] 60 이었다(자세·크레인에 따라 재트림).
+export HOLD_FF_POINT="${HOLD_FF_POINT:-toe}"
+export HOLD_FF_FOOT="${HOLD_FF_FOOT:-1.0}"
+
+# ── ⑤stand-lite 레시피 (2026-09-03 설계 · **기본 꺼짐** — 명시로만 켠다) ─────
+#   hold(자립 성공) vs stand(8Hz 자려진동) 의 갈림 = 지연 낀 위치의존 피드백
+#   (CoM kp120/200 · 레벨링 kp150 — IMU 사망 중엔 유령오차). 그 루프를 다 끄면
+#   stand = "발 힘 분배만 QP 가 하는 hold" 가 되어 제어방식 A/B 가 성립한다:
+#     hold      : λ 고정(50:50·toe) + 드라이브 PD          ← 실증됨
+#     stand-lite: λ = QP 분배      + 드라이브 PD(전량)     ← 이걸 검증
+#     stand-full: + CoM/자세 피드백                        ← IMU 복구 후
+#   실행:
+#     STAND_LITE=1 ./run_deploy_hw.sh flat
+#   ⚠크레인 건 채 시작. 8Hz 떨림이 재발하면 즉시 hold 로 — 그 자체가 판정 데이터다.
+if [ "${STAND_LITE:-0}" = "1" ]; then
+    export STAND_COM_KP="0,0,0";  export STAND_COM_KD="0,0,0"
+    export STAND_ORI_KP="0";      export STAND_ORI_KD="0"
+    export STAND_KP_FLOOR="1.0"   # 드라이브 PD 전량(hold 와 동일) — WBIC 목표=Qflat8 라 안 싸움
+    export FRIC_COMP="0"          # 포화 tanh = 음의 감쇠 8~39% — 미시험 항 제거
+    # ★lite 1차 실기(09-03): 과제항을 0 으로 하자 QP code4(REDUNDANT_EQUALITIES)가
+    #   **41~50%** 로 폭발 — 과제항이 QP 를 정칙화해주고 있었다. 틱의 절반이 QP 해,
+    #   절반이 중력보상 폴백 = 두 토크 해 사이 채터링(떨림 유력 원인).
+    #   ⇒ lite 에서는 등식 프루닝을 켠다(sim 18.5%→0% 검증). lite 밖 기본은 여전히 OFF.
+    export WBIC_EQ_PRUNE="${WBIC_EQ_PRUNE:-1}"
+    echo "[run_deploy_hw] ★STAND_LITE — CoM/레벨링 OFF · kp floor 1.0 · FRIC_COMP 0 · EQ_PRUNE 1"
+fi
 
 echo "[run_deploy_hw] MJCF=$MJCF"
 echo "[run_deploy_hw] GRAV_SCALE_JOINT=$GRAV_SCALE_JOINT"

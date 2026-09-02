@@ -1,0 +1,10 @@
+{
+  "kind": "stair", "n_vx": 3, "n_step_h": 8, "n_samp": 41,
+  "step_depth": 0.35, "dt": 0.02, "phase_dur": 0.2, "base_h": 0.52,
+  "vx_vals": [0.2, 0.3, 0.4],
+  "step_h_vals": [0, 0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.15],
+  "footholds_shape": [3, 8, 4, 3],
+  "base_shape": [3, 8, 41, 12],
+  "contacts_shape": [3, 8, 41, 4],
+  "frame": "local: base start origin, +x fwd, foot/base z RELATIVE to base tread z; world = base_pos + Rz(yaw)*local (z incl)"
+}

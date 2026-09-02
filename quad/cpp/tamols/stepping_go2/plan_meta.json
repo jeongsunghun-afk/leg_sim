@@ -1,0 +1,19 @@
+{
+  "kind": "stepping_stone_plan", "model": "go2", "gait": "walk(RR,FR,RL,FL)",
+  "frame": "lane-local: x=corridor coord(spawn x=0, strip[-0.75,0.75] top z=0.15, stones[0.75,4.25]); y rel lane center(world y=y+level*3.0); z absolute(void plane=0)",
+  "vadv": 0.3, "phase_dur": 0.2, "base_h": 0.34, "cell": 0.02, "N": 101, "sigma_cells": 2,
+  "y_band": [0.04, 0.34], "l_max": 0.45, "h_des": 0.34, "on_stone_tol": 0.02,
+  "naive_rule": "nearest stone center(Euclid) to per-leg touchdown nominal(base@swing-end + hip)",
+  "levels": [
+  {"level": 0, "n_solves": 16, "n_fail": 0, "n_snap_init": 0, "mean_iters": 32.9375, "n_field_footfalls": 52, "on_stone_pct": 100, "max_adj_dz_chosen": 0, "coverage_front_last_col": true, "max_foot_x": 3.9666, "n_both_stone": 51, "n_diff_vs_naive": 11, "diff_pct": 21.5686},
+  {"level": 1, "n_solves": 15, "n_fail": 0, "n_snap_init": 0, "mean_iters": 35.6, "n_field_footfalls": 48, "on_stone_pct": 100, "max_adj_dz_chosen": 0.0102773, "coverage_front_last_col": true, "max_foot_x": 3.72964, "n_both_stone": 47, "n_diff_vs_naive": 6, "diff_pct": 12.766},
+  {"level": 2, "n_solves": 16, "n_fail": 0, "n_snap_init": 1, "mean_iters": 43.1875, "n_field_footfalls": 48, "on_stone_pct": 100, "max_adj_dz_chosen": 0.00782982, "coverage_front_last_col": true, "max_foot_x": 3.70976, "n_both_stone": 47, "n_diff_vs_naive": 6, "diff_pct": 12.766},
+  {"level": 3, "n_solves": 16, "n_fail": 0, "n_snap_init": 0, "mean_iters": 48.8125, "n_field_footfalls": 52, "on_stone_pct": 100, "max_adj_dz_chosen": 0.016071, "coverage_front_last_col": true, "max_foot_x": 3.89361, "n_both_stone": 51, "n_diff_vs_naive": 12, "diff_pct": 23.5294},
+  {"level": 4, "n_solves": 16, "n_fail": 0, "n_snap_init": 0, "mean_iters": 45.75, "n_field_footfalls": 52, "on_stone_pct": 100, "max_adj_dz_chosen": 0.038833, "coverage_front_last_col": true, "max_foot_x": 3.86684, "n_both_stone": 52, "n_diff_vs_naive": 12, "diff_pct": 23.0769},
+  {"level": 5, "n_solves": 36, "n_fail": 0, "n_snap_init": 8, "mean_iters": 47.3056, "n_field_footfalls": 56, "on_stone_pct": 98.2143, "max_adj_dz_chosen": 0.0414624, "coverage_front_last_col": true, "max_foot_x": 4.09938, "n_both_stone": 55, "n_diff_vs_naive": 13, "diff_pct": 23.6364},
+  {"level": 6, "n_solves": 22, "n_fail": 0, "n_snap_init": 4, "mean_iters": 45.7727, "n_field_footfalls": 52, "on_stone_pct": 100, "max_adj_dz_chosen": 0.0523977, "coverage_front_last_col": true, "max_foot_x": 3.8791, "n_both_stone": 51, "n_diff_vs_naive": 10, "diff_pct": 19.6078},
+  {"level": 7, "n_solves": 25, "n_fail": 0, "n_snap_init": 6, "mean_iters": 48.2, "n_field_footfalls": 56, "on_stone_pct": 100, "max_adj_dz_chosen": 0.0711527, "coverage_front_last_col": true, "max_foot_x": 4.08001, "n_both_stone": 56, "n_diff_vs_naive": 10, "diff_pct": 17.8571},
+  {"level": 8, "n_solves": 27, "n_fail": 0, "n_snap_init": 8, "mean_iters": 46.8889, "n_field_footfalls": 52, "on_stone_pct": 100, "max_adj_dz_chosen": 0.0822258, "coverage_front_last_col": true, "max_foot_x": 3.83323, "n_both_stone": 52, "n_diff_vs_naive": 9, "diff_pct": 17.3077},
+  {"level": 9, "n_solves": 53, "n_fail": 0, "n_snap_init": 13, "mean_iters": 50.9623, "n_field_footfalls": 54, "on_stone_pct": 94.4444, "max_adj_dz_chosen": 0.0824516, "coverage_front_last_col": true, "max_foot_x": 4.06974, "n_both_stone": 51, "n_diff_vs_naive": 7, "diff_pct": 13.7255}
+  ]
+}

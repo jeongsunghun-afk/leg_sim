@@ -20,7 +20,11 @@ int main(int argc, char** argv) {
   std::vector<double> width_vals = {0.06, 0.10, 0.14, 0.18, 0.22, 0.26};  // env gap 폭 0.05~0.26 커버
   std::vector<double> gapd_vals; for (int j = 0; j < 41; ++j) gapd_vals.push_back(-0.2 + 0.025 * j);  // 로컬 gap_x0
   double dt = 0.02, phase_dur = 0.2, z0 = 0.52;
-  double fn = 0.51, rn = 0.06;   // nominal 발판 x(앞/뒤, 평지 solve) — foot-in-gap 게이트 기준
+  // ★foot-in-gap 게이트 공칭 발판 x. 배포된 quad17 gap 캐시(작동, terrain_level~9)와 일치시키려 하드코딩 유지.
+  //   ⚠️ 알려진 불일치(2026-08-20): 실제 flat-solve 공칭은 fn≈0.375·rn≈-0.185(sample_plan st.p 실측)로 아래 값과 다름.
+  //   게이트가 실제 공칭과 어긋나 있으나 RL이 robustify해 작동 중. 자동화(Go2판처럼 Fprobe)는 캐시를 바꾸므로
+  //   quad17 gap RL 재검증과 함께 별도 진행할 것(발판_표준_TAMOLS_방향.md #4). 블라인드 변경 금지.
+  double fn = 0.51, rn = 0.06;
   int n_vx = vx_vals.size(), n_w = width_vals.size(), n_gapd = gapd_vals.size();
 
   Grid h; double cell; int ms; flat_costmap(h, cell, ms);   // 평지 costmap(gap은 cfg로 주입)

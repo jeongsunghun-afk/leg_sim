@@ -1,0 +1,10 @@
+{
+  "kind": "per_footfall_swing_references", "model": "go2", "K": 11,
+  "files": "swing_L{0..9}.csv(safe varied, from footfalls_L*.csv per-cycle TAMOLS sweep), swing_trapv3_L{0..9}.csv(trap v3, from plan_astarv3_L*.csv A* chains)",
+  "columns": "level,leg(FL|FR|HL|HR),footfall_order(per-leg 0-based),s(swing phase 0..1, 11 pts),x,y,z",
+  "frame": "lane-local: x=corridor(spawn strip[-0.75,0.75] top z=0.15, stones x in[0.75,4.25]); y rel lane center; z absolute(void plane=0) — plan_meta.json과 동일",
+  "liftoff_rule": "footfall_order k의 liftoff=그 다리의 (k-1)번째 발판, k=0은 스폰 스탠스 hip(±0.1934,±0.142) z=0.15(strip)",
+  "native": "footholds+sequence(TAMOLS sweep/A* plan), h_s2 virtual floor(terrain_proc process_height_maps σ1=1 σ2=2 cells, cell 0.02), linear xy(tamols_track swing form)",
+  "approximated": "vertical profile: 2-seg cubic Hermite(zero-slope ends+apex), apex_z=max(liftoff,touchdown,path floor max)+0.08, apex phase 0.5-0.25*tanh(dz/0.10) snapped to 0.1 grid(step-up early/step-down late), interior samples clipped to max(exact terrain,h_s2)+0.025 — TAMOLS solver does NOT output swing splines(decision vars=base spline+footholds+eps only)",
+  "validation": "interior z>=exact terrain+0.02, apex>=max(liftoff,touchdown)+0.05 AND >=path exact-terrain max+0.05, endpoints exact(<1e-9), monotone horizontal progress"
+}

@@ -205,10 +205,18 @@ struct BipedControl {
   double cxr=0,vxr=0,cyr=0,vyr=0; int prev_ctr=0;                          // preview CoM ref
   double T_SS_Z=0.32; int PREV_DECIM=5; bool in_zmp_walk=false;            // 공칭 SS시간·preview 데시메이션
   long zlead=0;                                                            // ZMP 리드인 DS 잔여 틱
+  // ── 일관 footstep-계획 ZMP 보행 (정통 휴머노이드: 고정 게이트 클럭이 발판·ZMP·CoM을 함께 구동) ──
+  bool zw_started=false; double zw_t=0; long zw_i=0; int zw_sup=1;
+  double ZW_TSS=0.34, ZW_TDS=0.08, ZW_LEAD=0.35, ZW_STEPH=0.05;
+  double zw_x0=0, zw_yfoot[2]={0,0}; Vector2d zw_mid0=Vector2d::Zero();
+  bool zw_sw_lifted=false; Vector3d zw_sw_from=Vector3d::Zero();
+  bool in_zmp_walk2=false; int zw_pc=0;
+  bool zw_shift=true; double zw_shift_t=0;   // ★보행개시 측방 체중이동(도착 대기)
   // ── 오프라인 1점/2점 전환(toe-pivot 굴림 궤적) ──
   bool trans_on=false; double trans_t=0, T_TRANS=1.4; int trans_to=0;      // 전환중·타이머·목표모드
   double q_from[8], q_to[8], q_live[8], cz_from=0, cz_to=0;                // 자세·높이 보간
   Matrix<double,2,3> lam; bool have_liftoff[2]={false,false}; Vector3d liftoff[2];
+  Matrix<double,4,3> lam4=Matrix<double,4,3>::Zero();   // ★평발 MPC: [HL_heel,HL_toe,HR_heel,HR_toe] 점별 GRF(CoP)
   Matrix3d I_body; double mass;
   // ── WBIC QP 건강도 (접지 판정 지표) ──────────────────────────────────────
   //   qp_rate = **최근 200틱** 실패율. 접지 정상 ~0 · 발이 안 닿으면 ~1 로 붙는다.
@@ -709,6 +717,39 @@ struct BipedControl {
     return mpc_qp_plan(c,x0,cs,fp,xr);
   }
 
+  // ★평발 MPC: stance 발을 heel+toe 2점으로(총 4점 [HL_h,HL_t,HR_h,HR_t]) → heel/toe fz 분배=CoP=pitch 권한.
+  //   f_z≥0(마찰추 내장)이 CoP를 발 안(heel~toe)으로 자동 제약 = ZMP 제약. 단일지지 pitch를 MPC가 계획.
+  void mpc_grf_flat(int stanceLeg){
+    using namespace bipedmpc; MpcCfg c; c.N=MPC_N; c.DT=MPC_DT; c.TOTAL_MASS=mass; c.G_ACC=9.81;
+    c.MU=MU_EFF; c.LAMZ_MIN=LAMZ_MIN; c.LAMZ_MAX=2.0*mass*9.81; c.I_BODY=I_body;
+    double qd[13]={200,200,100,0,0,200,0,0,1,10,10,1,0}; for(int i=0;i<13;i++) c.Qdiag[i]=qd[i];
+    c.Rdiag=Vector3d(1e-6,1e-6,1e-6);
+    double Rm[9]; mju_quat2Mat(Rm,&d->qpos[3]); Map<Matrix<double,3,3,RowMajor>> R(Rm);
+    double pitch=std::asin(std::max(-1.0,std::min(1.0,-R(2,0))));
+    double roll=std::atan2(R(2,1),R(2,2)), yaw=std::atan2(R(1,0),R(0,0));
+    MatrixXd Jc=jac_com(); VectorXd qv=qvel(); Vector3d vcom=Jc*qv;
+    Vector3d wb(d->qvel[3],d->qvel[4],d->qvel[5]), ow=R*wb; Vector3d cc=com();
+    Matrix<double,13,1> x0; x0<<roll,pitch,yaw, cc[0],cc[1],cc[2], ow[0],ow[1],ow[2], vcom[0],vcom[1],vcom[2], -9.81;
+    // 4 접촉점: [HL_heel(sph2[0]), HL_toe(sph[0]), HR_heel(sph2[1]), HR_toe(sph[1])], CoM 상대
+    std::vector<Vector3d> pts={ gpos(sph2[0])-cc, gpos(sph[0])-cc, gpos(sph2[1])-cc, gpos(sph[1])-cc };
+    std::vector<int> cur(4,0); cur[stanceLeg*2]=1; cur[stanceLeg*2+1]=1;   // stance 발 heel+toe만 접촉
+    std::vector<std::vector<int>> cs(MPC_N,cur);
+    std::vector<std::vector<Vector3d>> fp(MPC_N,pts);
+    double ya=base_yaw(), cya=std::cos(ya),sya=std::sin(ya);
+    double vxw=cya*vx_cmd-sya*vy_cmd, vyw=sya*vx_cmd+cya*vy_cmd;
+    Matrix<double,13,1> xr; xr<<0,0,yaw_des, cc[0],cc[1],com_ref_z, 0,0,wz_cmd, vxw,vyw,0, -9.81;
+    MatrixXd l=mpc_qp_plan_n(c,4,x0,cs,fp,xr);
+    for(int i=0;i<4;i++) lam4.row(i)=l.row(i);
+    // ★heel 메인·toe 보조(사용자): stance 발 수직력을 heel로 편중 → CoP 뒤(heel)=뒤로발라당 저항+전진push.
+    static double HMAIN=getenv("HEEL_MAIN")?atof(getenv("HEEL_MAIN")):0.0;   // 0=균등·0.3=heel 80:20 등
+    if(HMAIN>0){ int h=stanceLeg*2,t=stanceLeg*2+1; double tot=lam4(h,2)+lam4(t,2);
+      double fh=tot*std::min(0.95,0.5+HMAIN), ft=std::max(0.0,tot-fh);
+      lam4(h,2)=fh; lam4(t,2)=ft; }   // heel에 하중 몰고 toe는 보조(경하중)
+    if(getenv("COP_DBG")){ int h=stanceLeg*2,t=stanceLeg*2+1;
+      double fh=lam4(h,2),ft=lam4(t,2), cop=(fh+ft>1)?(fh*(gpos(sph2[stanceLeg])[0]-cc[0])+ft*(gpos(sph[stanceLeg])[0]-cc[0]))/(fh+ft):0;
+      std::fprintf(stderr,"  [CoP] pitch%+.1f° heel_fz=%.0f toe_fz=%.0f CoP_x(CoM대비)=%+.3f\n",pitch*57.3,fh,ft,cop); }
+  }
+
   // ── WBIC (MPC lam 추종) ──
   void wbic(int stanceLeg,int sw,const Vector3d&ptgt,const Vector3d&vtgt){
     using namespace bipedwbic; WbicIn in; in.nv=nv; in.nu=nu; in.Kc=1;
@@ -722,7 +763,10 @@ struct BipedControl {
     if(cmode==1&&has_heel) scp=contact_pts({stanceLeg}); else scp={{sph[stanceLeg],fbody[stanceLeg]}};
     in.Kc=(int)scp.size(); in.contacts.clear(); in.cjac.clear(); in.lam.clear();
     for(auto&cp:scp){ in.contacts.push_back(stanceLeg); in.cjac.push_back(foot_jac_at(cp.first,cp.second));
-      in.lam.push_back(lam.row(stanceLeg).transpose()/(double)scp.size()); }   // MPC GRF 발당→접촉점 분배
+      if(in_zmp_walk2 && has_heel){   // ★평발 MPC=점별 CoP 힘(heel/toe 구분해 급전) → WBIC가 CoP realize
+        int idx = (cp.first==sph2[stanceLeg]) ? stanceLeg*2 : stanceLeg*2+1;  // heel=sph2 / toe=sph
+        in.lam.push_back(lam4.row(idx).transpose());
+      } else in.lam.push_back(lam.row(stanceLeg).transpose()/(double)scp.size()); }   // (기타)발당→점 균등분배
     in.has_swing=true; in.swing_leg=sw;
     in.Jsw=(cmode==1&&has_heel)?foot_jac_center(sw):foot_jac(sw);
     in.sw_pos=(cmode==1&&has_heel)?foot_center(sw):spos(sw);
@@ -736,7 +780,15 @@ struct BipedControl {
     }
     in.Qhome=Map<const VectorXd>(Qcur(),nu); in.drv_peak=Map<VectorXd>(drv_peak8,nu);   // ★모드별 자세(평발=Qflat)
     in.ankle_idx={ankle_idx[0],ankle_idx[1]};
-    if(in_zmp_walk){              // ★ZMP 프리뷰: 전후(x)만 CoM 추종(밑창 ZMP). 측방(y)은 capture 발배치(밑창 좁음).
+    if(in_zmp_walk2 && cmode==1 && has_heel && !getenv("NO_COP")){   // ★단일지지 발목ZMP: CoP를 CoM 밑에(후방토플 방지)
+      in.cop_reg=true; in.cop_comx=com()[0]; in.cop_cx.clear();
+      for(auto&cp:scp) in.cop_cx.push_back(gpos(cp.first)[0]);       // 각 접촉점 x
+      if(getenv("FLAT_WCOP")) in.W_COP=atof(getenv("FLAT_WCOP"));
+    }
+    if(in_zmp_walk2 && !getenv("NO_COMX")){   // ★일관 ZMP: 전후(x)만 preview CoM 추종(16cm 밑창=CoP권한). NO_COMX=끄고 MPC+capture만
+      in.com_x_track=true; in.com_x_ref=cxr; in.com_vx_ref=vxr;
+    } else if(in_zmp_walk2){ /* NO_COMX: com_x 규제 없이 MPC+capture 자연 전진 */
+    } else if(in_zmp_walk){       // (구)ZMP 프리뷰: 전후(x)만 CoM 추종(밑창 ZMP). 측방(y)은 capture 발배치.
       in.com_x_track=true; in.com_x_ref=cxr; in.com_vx_ref=vxr;
     } else if(cmode==1&&has_heel){ // (구)평발 보행: 전후 CoM을 com0에 규제
       in.com_x_track=true; in.com_x_ref=com0[0]; in.com_vx_ref=std::cos(base_yaw())*vx_cmd;
@@ -744,6 +796,8 @@ struct BipedControl {
     double wank=(cmode==1&&has_heel)?FLAT_WANK:W_ANKLE;   // ★평발=발목 강하게 flat 고정(밑창 유지, 안하면 발목 서서 토플)
     double wori=(cmode==1&&has_heel)?FLAT_WORI:W_ORI;     // ★평발=base pitch 레벨링↑(밑창 ZMP로 pitch 유지)
     in.SW_KP=SW_KP; in.SW_KD=SW_KD; in.W_ORI=wori; in.W_ANKLE=wank; in.W_POST=W_POST;
+    static double FLAT_LEAN=getenv("FLAT_LEAN")?atof(getenv("FLAT_LEAN")):0.0;   // ★본체 forward lean(rad)
+    in.lean=(in_zmp_walk2&&has_heel)?FLAT_LEAN:0.0;   // 평발 보행만 전방 기울임(뒤로 발라당 상쇄)
     in.W_LAM=(cmode==1&&has_heel)?FLAT_WLAM:W_LAM; in.STANCE_KD=STANCE_KD; in.MU_EFF=MU_EFF; in.LAMZ_MIN=LAMZ_MIN;   // 평발=MPC추종↓, WBIC task 지배
     set_ctrl_from_tau(wbic_track(in));   // ★전단(관절토크→드라이브)은 한 곳에서만
   }
@@ -811,6 +865,86 @@ struct BipedControl {
     yaw_hold=base_yaw(); yaw_hold_set=true; yaw_des=base_yaw();
   }
 
+  // ── 일관 footstep-계획 ZMP 보행 (정통 휴머노이드 파이프라인) ──
+  // 스텝 i의 지지발 목표(월드 xy). i=0=시작 지지발. 첫 스텝 반보 램프((i-0.5)).
+  Vector2d zw_foothold(long i){
+    double sl=vx_cmd*(ZW_TSS+ZW_TDS), sll=vy_cmd*(ZW_TSS+ZW_TDS);
+    int leg=(int)((zw_sup+i)&1);
+    double a=(i<=0)?0.0:((double)i-0.5);
+    return Vector2d(zw_x0+a*sl, zw_yfoot[leg]+a*sll);
+  }
+  // 현재로부터 te초 뒤 ZMP 레퍼런스(월드 xy). 리드인=중앙→첫지지발 램프, 이후 SS=지지발·DS=다음발판 램프.
+  Vector2d zw_zmp_future(double te){
+    double tt=zw_t+te;
+    if(tt<0){ double f=std::max(0.0,std::min(1.0,(tt+ZW_LEAD)/ZW_LEAD));
+      return zw_mid0*(1-f)+zw_foothold(0)*f; }
+    long i=zw_i; double T=ZW_TSS+ZW_TDS;
+    while(tt>=T){ tt-=T; i++; }
+    Vector2d Pi=zw_foothold(i);
+    if(tt<=ZW_TSS) return Pi;
+    double f=(tt-ZW_TSS)/ZW_TDS;
+    return Pi*(1-f)+zw_foothold(i+1)*f;
+  }
+  // ★검증된 point-foot 측방(step_gait 타이밍 + dcm_target 발배치) 그대로 + 전후만 ZMP preview 주입.
+  void zmp_walk2(double dt){
+    double ya=base_yaw();
+    if(!zw_started){                              // 개시: 상태 초기화 + 체중이동 준비
+      Vector3d c=com(); pv.reset(c[0],c[1]); cxr=c[0]; vxr=0;
+      zw_pc=0; zkk=0; zw_shift=true; zw_shift_t=0; zw_started=true;
+      stance=1; swing=0; t_ss=0; have_liftoff[0]=have_liftoff[1]=false; com0=c.head(2);
+    }
+    com_ref_z=(czwalk>0)?czwalk:std::min(std::max(com_ref_z,0.36),0.42);
+    if(zw_shift){                                 // 첫 지지발로 체중이동(도착 대기)=검증된 walk_init
+      Vector3d c=com(); double tgt_y=0.75*foot_center(stance)[1];
+      com_ref_xy<<foot_center(stance)[0],tgt_y; wbic_stance();
+      yaw_hold=ya; yaw_hold_set=true; yaw_des=ya; zw_shift_t+=dt;
+      if(std::abs(c[1]-tgt_y)<0.025 || zw_shift_t>1.0){
+        zw_shift=false; t_ss=0; com0=c.head(2); have_liftoff[0]=have_liftoff[1]=false;
+        pv.reset(c[0],c[1]); cxr=c[0]; vxr=0; }
+      return;
+    }
+    // ── heading hold(직진) + 복귀목표 이동(측방 dcm_target return항용) ──
+    if(std::abs(wz_cmd)>0.02){ yaw_des+=wz_cmd*dt;
+      double lag=std::atan2(std::sin(yaw_des-ya),std::cos(yaw_des-ya));
+      yaw_des=ya+std::min(std::max(lag,-head_lead),head_lead); yaw_hold_set=false;
+    } else { if(!yaw_hold_set){ yaw_hold=ya; yaw_hold_set=true; }
+      double err=std::atan2(std::sin(yaw_hold-ya),std::cos(yaw_hold-ya));
+      yaw_des=ya+std::min(std::max(err,-head_lead),head_lead); }
+    double cya=std::cos(ya),sya=std::sin(ya);
+    com0[0]+=(cya*vx_cmd-sya*vy_cmd)*dt; com0[1]+=(sya*vx_cmd+cya*vy_cmd)*dt;
+    // ── 전후 ZMP preview(★계획 전진위치 com0 앵커=드리프트 무관, 기준이 앞을 당김) → cxr,vxr ──
+    if(zw_pc==0){ int Np=pv.N; std::vector<double> px(Np),py(Np);
+      double vxw=cya*vx_cmd-sya*vy_cmd, vyw=sya*vx_cmd+cya*vy_cmd;
+      for(int j=0;j<Np;j++){ double tf=(double)j*PREV_DECIM*dt;
+        px[j]=com0[0]+vxw*tf; py[j]=com0[1]+vyw*tf; }
+      pv.step(px.data(),py.data(), cxr,vxr,cyr,vyr); }
+    zw_pc=(zw_pc+1)%PREV_DECIM;
+    // ── 검증된 event-DCM 타이밍 + base-frame 발배치 + swing 궤적 (측방 그대로) ──
+    int st,sw; double s;
+    step_gait(dt,st,sw,s);                            // preview는 계획 전진궤적을 독립 추종(resync 없음=전진 복원 유지)
+    if(_k%mpc_decim==0) mpc_grf_flat(st); _k++;       // ★평발 MPC(heel+toe 4점=CoP)=단일지지 pitch 계획
+    if(!have_liftoff[sw]){ liftoff[sw]=foot_center(sw); have_liftoff[sw]=true; }
+    Vector3d p,v; swing_traj(sw,s,p,v);
+    // ★전후 착지 override: capture(드리프트 CoM 추종) 대신 계획 전진위치(com0 앵커)로 심어 backward 악순환 차단.
+    { double vxw=cya*vx_cmd-sya*vy_cmd;
+      static double FWD=getenv("FLAT_FWD")?atof(getenv("FLAT_FWD")):0.5;   // 착지 전진량(스텝의 배수)
+      static double HREF=getenv("HEEL_REF")?atof(getenv("HEEL_REF")):0.0;  // ★heel 기준: 발을 앞으로 HREF만큼(heel이 계획위치=CoM 앞 마진)
+      double sw_x=com0[0]+vxw*FWD*T_STEP+HREF;               // 계획 전진 착지 x + heel-ref 전방오프셋
+      double ss=std::min(std::max(s,0.0),1.0);
+      double sm=10*ss*ss*ss-15*ss*ss*ss*ss+6*ss*ss*ss*ss*ss;
+      double dsm=(30*ss*ss-60*ss*ss*ss+30*ss*ss*ss*ss)/std::max(1e-6,T_STEP);
+      double x0=liftoff[sw][0];
+      p[0]=x0+(sw_x-x0)*sm; v[0]=(sw_x-x0)*dsm; }
+    in_zmp_walk2=true; wbic(st,sw,p,v); in_zmp_walk2=false;   // wbic 전후 CoM=cxr(preview)
+    if(getenv("ZMP_DBG")&&zkk%25==0){ Vector3d c=com();
+      double heelx=gpos(sph2[st])[0], toex=gpos(sph[st])[0];   // st 지지발 heel/toe x
+      double* q=&d->qpos[3]; double pitch=std::asin(std::max(-1.0,std::min(1.0,2*(q[0]*q[2]-q[3]*q[1]))))*57.3;
+      double cop_frac=(c[0]-std::min(heelx,toex))/std::max(1e-6,std::abs(toex-heelx));  // CoM 폴리곤내 위치(0=heel,1=toe)
+      std::fprintf(stderr,"  z2 t%.2f st%d com_x%.3f vx%+.2f pitch%+.1f° | CoM폴리곤위치%.2f(0heel~1toe)\n",
+        zkk*dt,st,c[0],d->qvel[0],pitch,cop_frac); }
+    zkk++;
+  }
+
   void control(double dt){
     dt_ctrl = dt;                     // ★적분항이 쓴다(wbic_stance 는 dt 를 안 받는다)
     double ya=base_yaw();
@@ -824,10 +958,10 @@ struct BipedControl {
         Vector3d fc=0.5*(foot_center(0)+foot_center(1)); com_ref_xy=fc.head(2);
         wbic_stance();
         t_ss=0; com0=com().head(2); have_liftoff[0]=have_liftoff[1]=false; yaw_hold=ya; yaw_hold_set=true;
-        walk_init=true; zkk=-1;                      // 다음 보행개시 재무장(reactive weight-shift · ZMP 재초기화)
+        walk_init=true; zkk=-1; zw_started=false;    // 다음 보행개시 재무장(reactive weight-shift · ZMP 재초기화)
         return;
       }
-      if(getenv("ZMP_WALK")){ zmp_walk(dt); return; }  // ★ZMP 프리뷰 평발 보행(실험)
+      if(getenv("ZMP_WALK")){ if(getenv("ZMP_OLD")) zmp_walk(dt); else zmp_walk2(dt); return; }  // ★ZMP 프리뷰 평발 보행
       if(walk_init){                                 // ★보행개시: 첫 스텝 전 CoM을 첫 stance 발쪽 측방 이동
         Vector3d sf=foot_center(stance);             // stance=1(HR) 쪽으로 체중 이동(지지면끝까지 못가니 75%)
         double tgt_y=0.75*sf[1];

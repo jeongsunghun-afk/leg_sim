@@ -247,8 +247,20 @@
         <td class="yes">★<b>등반 성공</b> terrain_level 0→3.9·falls0</td><td class="wa">base·발판 유도로 등반·단 발판 자체는 느슨</td></tr>
       <tr><td><b>★gait 매칭</b> 수정 (주파수)</td><td>계단</td>
         <td class="yes">종종걸음(2-4Hz)→1.39Hz = 안정(epLen 600→1048) + <b>진짜추종</b></td><td class="yes"><b>gait 맞으면 6.5cm median 실제추종</b>(1997 touchdown·77.8%&lt;10cm)</td></tr>
-      <tr><td>gap+walk (진행중)</td><td>gap(강제)</td>
-        <td class="wa">walk 3발지지=낙상0·2cm 정밀 / 단 scale1.0 over-track(1.12m 미횡단)→scale0.3 재조정중</td><td>—</td></tr>
+      <tr><td><b>gap+walk</b> (TAMOLS walk캐시)</td><td>gap(강제)</td>
+        <td class="no">★<b>실패 — 커리큘럼 게이밍</b>: scale1.0=hesitation(2.2cm 정밀·미전진) / scale0.3=<b>측면 +0.79m 이탈→레인간 평지 거터 도주</b>(크로싱 0회·terrain 6.6은 거터보행 부풀림)</td><td class="no">0 — <b>★승급=x-거리만(y-레인유지 체크無)+1.0m 거터=게이밍 구멍</b>(→y-레인 게이트 패치)</td></tr>
+      <tr><td><b>★emergent 검증</b> (기존 스택, 발판無)</td><td>gap</td>
+        <td class="yes">★<b>레인內 진짜 횡단 확증</b>: 7/7 gap·max|Δy|0.32m(이탈0%)·base z=strip상단 증명·낙상0·0.4m/s (레벨6, <span class="mono">go2_gap_emergent_existing.mp4</span>)</td><td class="yes"><b>본선 확정</b> — 발판기계 전무로 terrain 8.9·S03 게이밍은 정책-특이(지형 강제 아님)</td></tr>
+      <tr><td><b>★★stepping A/B</b> (emergent vs DTC-스택)</td><td>stepping(강제)</td>
+        <td class="wa"><b>emergent=배깔기 crawl 게이밍</b>(z0.32=돌상단 높이·다리 걸침, void 0.15m 얕음 악용, 레벨5) vs <b class="yes">DTC-스택=직립 발배치</b>(z0.45·레벨7 작은돌 0.167m·<b>median 1.6cm</b>·마커 위 착지·낙상0)</td><td class="yes">★<b>DTC 발판층의 질적 가치 첫 실증</b> — 발판이 물리적으로 의미있는 지형서 "진짜 스테핑"을 만듦 (<span class="mono">go2_stepping_{emergent,dtc_stacked}.mp4</span>)</td></tr>
+      <tr><td><b>★★★varied-height 표준사슬 최종</b> (A4/D4/D5/<b>D6</b> 매치드)</td><td>stepping <b>+높이차</b>(±0.05)</td>
+        <td class="yes">★<b>D6=8.14</b>(A4 0.05·D4 0.33·D5 7.01) — <b>D5 최종을 iter801에 초과=샘플효율 3.7×</b>. 렌더검증: <b>L7 stall 완전해소</b>(10/11행·0.403m/s·중간정지 0) · void-z 타겟 <b>29.3%→1.83%</b>(on-field 0/196) · z_err>+10cm <b>27.7%→0.0%</b> · 레인 0.055m · 직립 0.444 · 낙상0. <b class="wa">단 L9(돌0.10&lt;틈0.18)=필드 진입거부</b></td>
+        <td class="yes">★★★<b>근본원인=follower deadlock</b>(look-ahead 0.040m=half-pitch의 26%→발밑 돌로 스냅). 수정 5종(look-ahead 0.5·pitch·스윙래치·forward-only·<b>윈도우-max z=TAMOLS local-max</b>·Δz≤0.10)으로 해소. unit test가 deadlock 재현(발+0.015m)→수정(발+0.216m) 증명 (<span class="mono">go2_stdchain_D6_L{7,9}_rays.mp4</span>)</td></tr>
+      <tr><td>varied-height 중간단계 (A4/D4/D5)</td><td>stepping <b>+높이차</b></td>
+        <td class="yes">★<b>emergent 0.05 → 표준3요소 0.33(붕괴) → +스윙연속추종·레인게이팅 <b>7.01</b></b>(붕괴無). 렌더검증=<b>돌상단 아래 착지 0%</b>(D4는 37~49% gap-floor)·레인편차 0.22m·직립 z0.43·낙상0·L5 9/10행 완주 — <b class="wa">단 L7 고정재생은 stall(1/11행)=7.01은 커리큘럼 평균, L7 완주 아님</b></td>
+        <td class="yes">★★<b>표준 재조립의 각 요소가 어떤 실패모드를 막는지 실험분해</b>: 간헐 touchdown보상→gap-wading / 무관측 드리프트+레인게이트→강등붕괴 / <b>스윙 연속추종=wading 경제성 소멸</b>(gap-floor 착지 보상 1.2e-4)·<b>on-lane vx=escape 이득 소멸</b> (<span class="mono">go2_stdchain_D5_L{5,7}.mp4</span>)</td></tr>
+      <tr><td><b>★★★매치드 공정 A/B</b> (유일차이=발판층)</td><td>stepping(강제)</td>
+        <td class="yes">★<b>emergent 0.12 vs 발판층 9.00 (75×)</b> — 같은 env·gait기준·seed·예산(env.yaml diff=발판 5필드만)+crawl차단+레인게이트. 렌더검증: <b>A=직립 진입→돌틈 비틀→필드 포기·거터 이탈(+1.64m)</b> / <b>B=레인內(0.07m)·직립·median 2.3cm·전코리도 횡단</b></td><td class="yes">★★★<b>확정: 정밀 발배치 강제 지형서 발판층=성패 그 자체</b>(샘플효율 아님). gap "발판 잉여"와 양극 = 지형-의존 법칙 완성 (<span class="mono">go2_stepfair_{emergent_FAIL,dtc_SUCCESS}.mp4</span>)</td></tr>
     </tbody>
   </table></div>
   <div class="box acc"><b>★DTC 진짜 발판추종 성립 3조건</b>
@@ -257,7 +269,7 @@
     <li><b>② gait 매칭 (★결정적)</b> — 참조 gait과 RL gait의 <b>패턴+주파수</b> 일치 필수. `fixed_gait`은 위상(패턴)만 고정하고 <b>주파수는 미고정</b>(WTW [2-4]Hz 랜덤)이라 D1 참조(trot 1.39Hz)보다 1.5~3× 빠른 종종걸음 → "걸음 너무 빠름"+보폭 안 맞아 발판에 못 착지(RL이 자기 빠른 trot, 발판은 위치만 참조). <b>주파수 고정(1.39Hz)→안정화 + 실측 6.5cm median 추종</b>.</li>
     <li><b>③ 발판 앵커 = 지형-고정 · scale 지형-의존</b> — <b>재앵커(base-상대)</b>는 xy가 지형정보 없이 로봇 따라다녀 추종 무의미(scale↑시 corrupt). <b>지형-고정(절대)</b>이라야 발판이 진짜 지형점 = 게이밍 없이 추종가능. <b>scale은 지형-의존</b>: soft(0.3)=느슨하나 횡단, high(1.0)=tight 추종하나 연속지형선 climb비용(~21%)·정밀강제(gap)선 over-track(2cm 정밀히 놓으나 미횡단)→균형 필요. <b>gait=walk(3발지지)</b>가 정밀 배치엔 trot보다 유리.</li>
   </ul></div>
-  <div class="box"><b>실무 위치</b> — <b>DTC는 강건성 돌파가 아니라 (a) 정밀지형 샘플효율 + (b) 모델기반 구조를 RL에 주입하는 원리적 경로.</b> 관용지형은 emergent RL로 충분(발판 잉여, DTC-ON≈OFF 반복확인). ★그래서 <b>배포 본선=A</b>(모델기반, 연속·반응) 유지 · <b>DTC=정밀 험지(stepping·gap·계단)용 RL 레퍼런스 공급</b>. 계획층 자산=TAMOLS solve(계획)·D1 OCS2(faithful NMPC 참조)·<a href="발판_표준_TAMOLS_방향.md">발판 표준·TAMOLS 방향</a>. 상세=메모리 <span class="mono">dtc-17dof-development</span>(P2~P5g)·영상 <span class="mono">go2_d1_dtc_climb·go2_d1_dtc_v7_gaitmatch</span>.</div>
+  <div class="box acc"><b>★최종 위치(2026-08-26 피벗 확정)</b> — <b>강건 험지 RL 본선 = 기존 emergent 스택</b>(레인유지 엄밀검증으로 확증: gap 7/7 레인內 횡단·낙상0). <b>DTC 트랙 = 종결</b>: 우리 "DTC"=오프라인 참조+per-step 추종 볼트온(진짜 DTC의 in-loop 재계획은 계산불가 25×부족)→나이프엣지 scale·gait 취약·게이밍(S03 거터도주)으로 fragile, emergent를 이긴 적 없음. <b>성과로 남는 것</b>=파이프라인 robot-independence(D1→RL 계단 0→3.9)·발판추종 3조건(위 박스)·gait매칭 6.5cm·"발판=지형-의존" 확정. <b>오프라인 TO의 다음 소비처=APT-RL 증류</b>(per-step 추종이 아니라 스킬 증류=기확정 로드맵). 배포 본선=A(모델기반) 불변. 자산=TAMOLS solve·D1 OCS2 참조기·<a href="발판_표준_TAMOLS_방향.md">발판 표준</a>. 상세=메모리 <span class="mono">dtc-17dof-development</span>(P2~P5j)·영상 <span class="mono">go2_gap_emergent_existing·go2_d1_dtc_climb·go2_d1_dtc_v7_gaitmatch</span>.</div>
 
   <h2><span class="n">2.5</span>구성별 비교 — 계획기 × 추종기 <span class="sub" style="font-weight:400">8개 구성</span></h2>
   <div class="scroll"><table>
@@ -286,7 +298,7 @@
         <td><b>RSL식 WBC 직접추종</b> + receding-horizon 온라인<br><span class="mono">입력</span> 계획 base궤적·발판·상태<br><span class="mono">고정</span> 발판·접촉스케줄(계획서)<br><span class="mono">최적화</span> 관절가속,λ→τ(WBIC QP: base task·swing·자세)</td><td class="yes">500 Hz·~10× 실시간 ✅</td><td class="wa"><b>추종 solid</b>(tilt2~6°). 순수 online receding-horizon=<b>~0.3m stall</b>(재앵커 frame 한계, 미해결). ★<b>injection(A gait클럭+TAMOLS base·발판 주입)=지형 크로싱</b>(hsteps tilt&lt;1.2°·dsteps2 3.4°·falls=0). 단 짜깁기라 <b>마진 얇음</b></td></tr>
       <tr><td class="acc"><b>DTC</b>★Go2검증<br><span class="mono" style="font-size:.72em;color:var(--muted)">Jenelten 2024</span></td>
         <td>TAMOLS/TOWR (계획기 동일)<br><span class="mono">고정</span> 보행순서·타이밍<br><span class="mono">최적화</span> base·발판 → RL이 추종</td>
-        <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa">정석·미착수</td></tr>
+        <td><b>RL 정책</b><br><span class="mono">입력</span> 레퍼런스 서브셋·proprio 이력·관측<br><span class="mono">고정</span> 정책 가중(학습 후)<br><span class="mono">최적화</span> 학습시 PPO / 배포=순전파(최적화 X)</td><td class="wa">RL 실시간</td><td class="wa"><b>Go2 검증(§2.2)</b>: 계단 등반 0→3.9·gait매칭 6.5cm 추종 / 단 발판=지형-의존(관용선 잉여)</td></tr>
     </tbody>
   </table></div>
   <div class="box"><b>★base_z</b>(입력·고정·최적화는 별개 축, <b>입력받음≠고정</b>) — <b>A만 최적화 X</b>: body_h 명령을 <b>고정 setpoint</b> 추종(<span class="mono">com_ref[2]</span>)=base–발판 협조 부재(갭실패 원인). <b>C·CI</b>는 body_h/pose를 <b>입력받되 OCP서 최적화</b>(입력≠고정). <b>B</b>는 nominal 참조로 최적화. <b>TAMOLS/D1</b>만 <b>지형적응</b>(z를 발판과 공동최적화, TAMOLS=스플라인 <span class="mono">a[k](z,·)∈nz</span>).</div>
@@ -356,5 +368,5 @@
   </ul>
   <div class="box acc"><b>결론(2026-07-29) — 계획기 완성 · injection 크로싱 실증 · 강건=D1포팅/RL</b><br>① <b>계획기(TAMOLS/TOWR) 완성</b>: 실시간 솔버(&lt;20ms)·self-contained cold-start. ② <b>★injection 크로싱 실증</b>: 순수 궤적추종은 오버슛 낙상이나, <b>A의 검증된 연속 gait클럭에 TAMOLS base·발판 주입</b>(TAM_BASE=base-발판 협조)이 지형 크로싱(hsteps 1.2°·dsteps2 3.4°·falls=0). 단 짜깁기라 <b>마진 얇음</b>(연속~0.24m·이산 형상민감). ③ <b>강건 = D1 포팅(OCS2 통합 폐루프 perceptive NMPC) 또는 RL(DTC)</b>: injection의 얇은 마진을 근본 해결. D1=배포용 모델기반 정점 / DTC=TAMOLS TO+RL(외란까지). 상세=<b>pipeline_tamols.html</b>. 각 제어기 I/O는 개별 pipeline 문서.</div>
 
-  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · 상세 I/O는 각 pipeline 문서(<a href="pipeline_a.html">A</a>·<a href="pipeline_bc.html">B·C</a>·<a href="pipeline_d1.html">D1</a>·<a href="pipeline_ci.html">CI</a>) · 개발방향 APT-RL · <b>2026-08-04</b> §2.1 지형 등반 실측 벤치(D1 성능 + TAMOLS Go2→02_Leg) 반영</div>
+  <div class="foot">02_Leg 제어기 비교 (A·B·C·D1·CI) · 상세 I/O는 각 pipeline 문서(<a href="pipeline_a.html">A</a>·<a href="pipeline_bc.html">B·C</a>·<a href="pipeline_d1.html">D1</a>·<a href="pipeline_ci.html">CI</a>) · 개발방향 APT-RL · <b>2026-08-04</b> §2.1 지형 등반 벤치 · <b>2026-08-25</b> §2.2 DTC 실증(Go2: D1계단·gait매칭·발판 지형-의존) 반영</div>
 </div>

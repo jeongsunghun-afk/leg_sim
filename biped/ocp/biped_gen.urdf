@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<robot name="biped">
+  <link name="torso">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.050000" rpy="0 0 0"/>
+      <mass value="3.000000"/>
+      <inertia ixx="8.000000e-03" ixy="0.000000e+00" ixz="0.000000e+00" iyy="1.000000e-02" iyz="0.000000e+00" izz="6.000000e-03"/>
+    </inertial>
+  </link>
+  <link name="HL_hip_link">
+    <inertial>
+      <origin xyz="0.026196 0.039035 -0.000059" rpy="0 0 0"/>
+      <mass value="1.300000"/>
+      <inertia ixx="5.558999e-04" ixy="1.376711e-05" ixz="2.799702e-09" iyy="7.876701e-04" iyz="-1.433899e-09" izz="4.496600e-04"/>
+    </inertial>
+  </link>
+  <link name="HL_thigh_link">
+    <inertial>
+      <origin xyz="0.055149 0.000793 -0.077079" rpy="0 0 0"/>
+      <mass value="3.100000"/>
+      <inertia ixx="3.365199e-03" ixy="4.242288e-07" ixz="1.417697e-03" iyy="5.605000e-03" iyz="-4.816371e-07" izz="2.343901e-03"/>
+    </inertial>
+  </link>
+  <link name="HL_calf_link">
+    <inertial>
+      <origin xyz="-0.071593 0.000127 -0.063345" rpy="0 0 0"/>
+      <mass value="0.595204"/>
+      <inertia ixx="1.042704e-03" ixy="0.000000e+00" ixz="-1.074954e-03" iyy="2.432730e-03" iyz="0.000000e+00" izz="1.415897e-03"/>
+    </inertial>
+  </link>
+  <link name="HL_foot_link">
+    <inertial>
+      <origin xyz="0.010593 -0.000000 -0.060076" rpy="0 0 0"/>
+      <mass value="0.202619"/>
+      <inertia ixx="2.668823e-04" ixy="-7.226199e-11" ixz="4.171063e-05" iyy="3.006440e-04" iyz="-2.241808e-11" izz="3.768421e-05"/>
+    </inertial>
+  </link>
+  <link name="HL_foot_contact_link">
+    <inertial>
+      <origin xyz="-0.000131 0.000000 0.000744" rpy="0 0 0"/>
+      <mass value="0.037546"/>
+      <inertia ixx="7.274886e-06" ixy="2.064581e-21" ixz="-1.430658e-07" iyy="1.070220e-05" iyz="1.768233e-21" izz="8.061034e-06"/>
+    </inertial>
+  </link>
+  <link name="HR_hip_link">
+    <inertial>
+      <origin xyz="0.044964 -0.036640 0.000049" rpy="0 0 0"/>
+      <mass value="1.400000"/>
+      <inertia ixx="5.519798e-04" ixy="-2.236041e-06" ixz="-2.799695e-09" iyy="8.182702e-04" iyz="-1.433917e-09" izz="4.647300e-04"/>
+    </inertial>
+  </link>
+  <link name="HR_thigh_link">
+    <inertial>
+      <origin xyz="0.053568 -0.000793 -0.078186" rpy="0 0 0"/>
+      <mass value="3.100000"/>
+      <inertia ixx="3.374597e-03" ixy="-3.080546e-07" ixz="1.414298e-03" iyy="5.605000e-03" iyz="5.632457e-07" izz="2.334503e-03"/>
+    </inertial>
+  </link>
+  <link name="HR_calf_link">
+    <inertial>
+      <origin xyz="-0.071593 -0.000124 -0.063345" rpy="0 0 0"/>
+      <mass value="0.595204"/>
+      <inertia ixx="1.042704e-03" ixy="0.000000e+00" ixz="-1.074954e-03" iyy="2.432730e-03" iyz="0.000000e+00" izz="1.415897e-03"/>
+    </inertial>
+  </link>
+  <link name="HR_foot_link">
+    <inertial>
+      <origin xyz="0.010593 -0.000000 -0.060076" rpy="0 0 0"/>
+      <mass value="0.202619"/>
+      <inertia ixx="2.668823e-04" ixy="-7.226199e-11" ixz="4.171063e-05" iyy="3.006440e-04" iyz="-2.241808e-11" izz="3.768421e-05"/>
+    </inertial>
+  </link>
+  <link name="HR_foot_contact_link">
+    <inertial>
+      <origin xyz="-0.000131 0.000000 0.000744" rpy="0 0 0"/>
+      <mass value="0.037546"/>
+      <inertia ixx="7.274886e-06" ixy="2.064581e-21" ixz="-1.430658e-07" iyy="1.070220e-05" iyz="1.768233e-21" izz="8.061034e-06"/>
+    </inertial>
+  </link>
+  <joint name="HL_hip_joint" type="revolute">
+    <origin xyz="0.035000 0.022500 0.000000" rpy="0 0 0"/>
+    <parent link="torso"/>
+    <child link="HL_hip_link"/>
+    <axis xyz="1.0000 0.0000 0.0000"/>
+    <limit lower="-0.6109" upper="0.6109" effort="84.0" velocity="20.0"/>
+  </joint>
+  <joint name="HL_thigh_joint" type="revolute">
+    <origin xyz="0.000000 0.115000 0.000000" rpy="0 0 0"/>
+    <parent link="HL_hip_link"/>
+    <child link="HL_thigh_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-2.3560" upper="1.1340" effort="84.0" velocity="20.0"/>
+  </joint>
+  <joint name="HL_calf_joint" type="revolute">
+    <origin xyz="0.131920 0.000000 -0.188400" rpy="0 0 0"/>
+    <parent link="HL_thigh_link"/>
+    <child link="HL_calf_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-0.9590" upper="1.1340" effort="126.0" velocity="20.0"/>
+  </joint>
+  <joint name="HL_foot_joint" type="revolute">
+    <origin xyz="-0.187680 0.000000 -0.157480" rpy="0 0 0"/>
+    <parent link="HL_calf_link"/>
+    <child link="HL_foot_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-1.3960" upper="0.6980" effort="168.0" velocity="20.0"/>
+  </joint>
+  <joint name="HL_foot_contact_link_fixed" type="fixed">
+    <origin xyz="0.027784 0.000000 -0.157569" rpy="0 0 0"/>
+    <parent link="HL_foot_link"/>
+    <child link="HL_foot_contact_link"/>
+  </joint>
+  <joint name="HR_hip_joint" type="revolute">
+    <origin xyz="0.035000 -0.022500 0.000000" rpy="0 0 0"/>
+    <parent link="torso"/>
+    <child link="HR_hip_link"/>
+    <axis xyz="1.0000 0.0000 0.0000"/>
+    <limit lower="-0.6109" upper="0.6109" effort="84.0" velocity="20.0"/>
+  </joint>
+  <joint name="HR_thigh_joint" type="revolute">
+    <origin xyz="0.000000 -0.115000 0.000000" rpy="0 0 0"/>
+    <parent link="HR_hip_link"/>
+    <child link="HR_thigh_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-2.3560" upper="1.1340" effort="84.0" velocity="20.0"/>
+  </joint>
+  <joint name="HR_calf_joint" type="revolute">
+    <origin xyz="0.131920 0.000000 -0.188400" rpy="0 0 0"/>
+    <parent link="HR_thigh_link"/>
+    <child link="HR_calf_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-0.9590" upper="1.1340" effort="126.0" velocity="20.0"/>
+  </joint>
+  <joint name="HR_foot_joint" type="revolute">
+    <origin xyz="-0.187681 0.000000 -0.157483" rpy="0 0 0"/>
+    <parent link="HR_calf_link"/>
+    <child link="HR_foot_link"/>
+    <axis xyz="0.0000 1.0000 0.0000"/>
+    <limit lower="-1.3960" upper="0.6980" effort="168.0" velocity="20.0"/>
+  </joint>
+  <joint name="HR_foot_contact_link_fixed" type="fixed">
+    <origin xyz="0.027784 0.000000 -0.157569" rpy="0 0 0"/>
+    <parent link="HR_foot_link"/>
+    <child link="HR_foot_contact_link"/>
+  </joint>
+</robot>

@@ -45,6 +45,8 @@ struct WbicIn {
   MatrixXd Jsw_rot;               // 3×nv (swing 회전 jac)
   Vector3d sw_oerr;               // swing 발 방향오차(현재-목표수평)
   bool com_x_track=false; double com_x_ref=0, com_vx_ref=0;   // ★평발 보행 전후 CoM 규제(발목ZMP 활용)
+  double lean=0;   // ★본체 forward pitch lean(rad): 뒤로 발라당 상쇄(제어된 전방낙하). base 목표자세 앞으로 기울임
+  bool cop_reg=false; double cop_comx=0; std::vector<double> cop_cx; double W_COP=200;  // ★CoP를 CoM 밑에(Σλz(cx−comx)=0)=단일지지 발목ZMP(후방토플 방지)
   bool com_xy_track=false; double com_xr=0,com_yr=0,com_vxr=0,com_vyr=0; double W_COMXY=140;  // ★ZMP프리뷰 CoM xy 추종
   VectorXd Qhome;                 // nu
   VectorXd drv_peak;              // nu — ★**드라이브(모터)** 토크한계다. 관절토크 한계가 아니다
@@ -72,7 +74,9 @@ inline VectorXd wbic_track(const WbicIn& in){
   // 자세 레벨링(현재 yaw)
   const Vector4d& qc=in.qc;
   double yaw=std::atan2(2*(qc[0]*qc[3]+qc[1]*qc[2]),1-2*(qc[2]*qc[2]+qc[3]*qc[3]));
-  double qlev[4]={std::cos(yaw/2),0,0,std::sin(yaw/2)};
+  // ★목표자세 = yaw ⊗ pitch(lean): roll=0·pitch=lean(전방기울임)·yaw유지. lean=0이면 기존 수평.
+  double cy=std::cos(yaw/2), sy=std::sin(yaw/2), cp=std::cos(in.lean/2), sp=std::sin(in.lean/2);
+  double qlev[4]={cy*cp, -sy*sp, cy*sp, sy*cp};
   // subQuat(qc, qlev): oerr = 2*(qlev^-1 * qc)_xyz  (mju_subQuat)
   double ql_conj[4]={qlev[0],-qlev[1],-qlev[2],-qlev[3]};
   double dq[4]={ql_conj[0]*qc[0]-ql_conj[1]*qc[1]-ql_conj[2]*qc[2]-ql_conj[3]*qc[3],
@@ -97,6 +101,12 @@ inline VectorXd wbic_track(const WbicIn& in){
     double a_cy=90*(in.com_yr-in.com[1])+30*(in.com_vyr-Jcqv[1]);
     P.topLeftCorner(nv,nv)+=in.W_COMXY*(in.Jc.row(0).transpose()*in.Jc.row(0)+in.Jc.row(1).transpose()*in.Jc.row(1));
     g.head(nv)-=in.W_COMXY*(a_cx*in.Jc.row(0).transpose()+a_cy*in.Jc.row(1).transpose());
+  }
+  // ★CoP 조절(단일지지 발목ZMP): Σ λk_z·(cx_k−com_x)=0 → CoP를 CoM 밑에(toe로 쏠려 후방토플 방지). soft.
+  if(in.cop_reg && (int)in.cop_cx.size()==Kc){
+    for(int k=0;k<Kc;k++){ double ak=in.cop_cx[k]-in.cop_comx;
+      for(int j=0;j<Kc;j++){ double aj=in.cop_cx[j]-in.cop_comx;
+        P(sl(k)+2,sl(j)+2)+=in.W_COP*ak*aj; } }
   }
   // posture
   auto is_ankle=[&](int j){ for(int a:in.ankle_idx) if(a==j) return true; return false; };

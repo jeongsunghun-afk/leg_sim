@@ -1,0 +1,41 @@
+D1 (OCS2 perceptive NMPC) -> DTC reference for RL tracking  [UNITREE GO2, 12-DOF point-foot]
+=============================================================================================
+Same generator/mechanism as the 02_Leg refs, ROBOT MODEL = Go2 (16.1 kg, base_z~0.34).
+DYNAMICALLY-FEASIBLE: OCS2 NMPC open-loop rollout (rolloutPolicy) under the centroidal
+dynamics; MuJoCo physics NOT executed (no tumble). Base advance = absolute ramp VX=0.20 m/s.
+
+Go2 OCS2 config (simulation/quad/ocs2_go2/):
+  urdf/go2_ocs2.urdf   = example-robot-data go2_description, rear legs renamed RL->HL, RR->HR
+                         (to match quad_go2.mjcf convention FL/FR/HL/HR). mass=16.085 kg.
+  config/task.info     = 12-DOF, jointNames [FL,FR,HL,HR]x(hip,thigh,calf),
+                         contactNames3DoF [FL,FR,HL,HR]_foot, base_z=0.34,
+                         centroidalModelType=0 (FullCentroidal), a1-style Q/R weights.
+  config/reference.info= comHeight 0.34, defaultJointState hip0/thigh0.6466/calf-1.2932.
+  config/gait.info     = copied from 02_Leg (gait defs are robot-independent).
+Sim terrains: mjcf/go2_legstair_{0.06,0.10,0.14}.mjcf (Go2 robot + leg_stair steps, tread 0.35).
+
+FILES (RL curriculum; *_ref.csv human-readable, *_ref.npz for RL loading)
+  d1go2_legstair_0.06_ref.*  rise 0.06 m, 8 steps -> base 0.34..0.83  (falls=0)
+  d1go2_legstair_0.10_ref.*  rise 0.10 m, 8 steps -> base 0.34..1.15  (falls=0)
+  d1go2_legstair_0.14_ref.*  rise 0.14 m, 8 steps -> base 0.34..1.47  (falls=0)
+  make_dtc_ref.py            generator (raw PLAN_EXPORT csv -> *_ref.{csv,npz})
+
+SCHEMA — identical to the 02_Leg refs (see ../../ocs2_02leg/dtc_ref/SCHEMA.txt), with:
+  com_height = 0.34 (Go2 stand), base ref rises from ~0.34.
+NPZ arrays: base_{x,y,z,pitch,yaw} (N,), foot_world/foot_rel (N,4,3, PRIMARY = OCS2 FK foot),
+  fk_world/fk_rel, region_world/region_rel (terrain-snap sanity), foot_stance/foot_valid (N,4),
+  legs=[FL,FR,HL,HR], stair_rise, lane_y=0, com_height=0.34, primary_channel='fk', source='ocs2_rollout'.
+CSV: 3 '#' comment lines, then base_* + per leg L: L_w{xyz} (primary=FK,world) L_r{xyz} (base-rel yaw)
+  L_fk{xyz} (OCS2 FK) L_reg{xyz} (region tread target) L_st L_valid.
+
+VERIFIED: full-staircase coverage, footholds land on every ascending tread top in order
+  (stance FK foot within ~30 mm of tread), base_z monotonic on ascent (100%), falls=0, no divergence.
+
+REGENERATE (from repo simulation/quad, ROS+ocs2_ws sourced):
+  env -u PYTHONPATH WBC=1 WBC_LEGGED=1 PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1 SMOOTH_W=0.25 \
+      MPC_HZ=100 OMP_NUM_THREADS=1 OCS2_ROLLOUT=1 TERRAIN_CAP=0 VX=0.20 COM_HEIGHT=0.34 \
+      PLAN_EXPORT=/tmp/g2_0.10.csv \
+      ocs2_ws/build/ocs2_legged_robot/test02legMujoco \
+      ocs2_go2/config/task.info ocs2_go2/urdf/go2_ocs2.urdf ocs2_go2/config/reference.info \
+      mjcf/go2_legstair_0.10.mjcf trot 30
+  python make_dtc_ref.py /tmp/g2_0.10.csv d1go2_legstair_0.10 0.10 0.0 fk ocs2_rollout 0.34

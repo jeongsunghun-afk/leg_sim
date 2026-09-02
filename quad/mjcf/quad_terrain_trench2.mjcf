@@ -1,0 +1,13 @@
+<mujoco model="trench2">
+  <include file="quad_real_17dof_waist_sphere.mjcf"/>
+  <worldbody>
+    <geom name="tr_floor" type="box" group="2" size="10 5 0.05" pos="3 0 -0.21" rgba="0.30 0.33 0.38 1"/>
+    <geom name="tr_start" type="box" group="2" size="0.550 0.7 0.10" pos="-0.050 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr0" type="box" group="2" size="0.350 0.7 0.10" pos="1.170 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr1" type="box" group="2" size="0.350 0.7 0.10" pos="2.190 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr2" type="box" group="2" size="0.350 0.7 0.10" pos="3.210 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr3" type="box" group="2" size="0.350 0.7 0.10" pos="4.230 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr4" type="box" group="2" size="0.350 0.7 0.10" pos="5.250 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+    <geom name="tr5" type="box" group="2" size="0.350 0.7 0.10" pos="6.270 0 -0.10" rgba="0.48 0.54 0.64 1"/>
+  </worldbody>
+</mujoco>

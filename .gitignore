@@ -56,3 +56,5 @@ pace_fit_bundle.tar.gz
 biped/_master_tmp.mjcf
 biped/_simhw_fixed.xml
 biped/biped_*_w*.mjcf
+quad/towr/towr_ext/ifopt/
+quad/towr/towr_ext/towr/

@@ -1,0 +1,226 @@
+centroidalModelType             0      // 0: FullCentroidalDynamics, 1: Single Rigid Body Dynamics
+
+legged_robot_interface
+{
+  verbose                               false
+  useAnalyticalGradientsDynamics        false
+  useAnalyticalGradientsConstraints     false
+}
+
+model_settings
+{
+  positionErrorGain             0.0
+  phaseTransitionStanceTime     0.1
+
+  verboseCppAd                  true
+  recompileLibrariesCppAd       false
+  modelFolderCppAd              /tmp/ocs2_go2
+
+  ; Go2 12-DOF point-foot. pinocchio joint order = [FL,FR,HL,HR] x (hip,thigh,calf).
+  jointNames
+  {
+    [0]   FL_hip_joint
+    [1]   FL_thigh_joint
+    [2]   FL_calf_joint
+    [3]   FR_hip_joint
+    [4]   FR_thigh_joint
+    [5]   FR_calf_joint
+    [6]   HL_hip_joint
+    [7]   HL_thigh_joint
+    [8]   HL_calf_joint
+    [9]   HR_hip_joint
+    [10]  HR_thigh_joint
+    [11]  HR_calf_joint
+  }
+
+  contactNames3DoF
+  {
+    [0]   FL_foot
+    [1]   FR_foot
+    [2]   HL_foot
+    [3]   HR_foot
+  }
+}
+
+swing_trajectory_config
+{
+  liftOffVelocity               0.1
+  touchDownVelocity            -0.2
+  swingHeight                   0.08
+  touchdownAfterHorizon         0.2
+  swingTimeScale                0.15
+}
+
+sqp
+{
+  nThreads                              1
+  dt                                    0.015
+  sqpIteration                          1
+  deltaTol                              1e-4
+  g_max                                 1e-2
+  g_min                                 1e-6
+  inequalityConstraintMu                0.1
+  inequalityConstraintDelta             5.0
+  projectStateInputEqualityConstraints  true
+  printSolverStatistics                 true
+  printSolverStatus                     false
+  printLinesearch                       false
+  useFeedbackPolicy                     false
+  integratorType                        RK2
+  threadPriority                        50
+}
+
+ddp
+{
+  algorithm                       SLQ
+  nThreads                        1
+  threadPriority                  50
+  maxNumIterations                1
+  minRelCost                      1e-1
+  constraintTolerance             5e-3
+  displayInfo                     false
+  displayShortSummary             false
+  checkNumericalStability         false
+  debugPrintRollout               false
+  AbsTolODE                       1e-5
+  RelTolODE                       1e-3
+  maxNumStepsPerSecond            10000
+  timeStep                        0.015
+  backwardPassIntegratorType      ODE45
+  constraintPenaltyInitialValue   20.0
+  constraintPenaltyIncreaseRate   2.0
+  preComputeRiccatiTerms          true
+  useFeedbackPolicy               false
+  strategy                        LINE_SEARCH
+  lineSearch
+  {
+    minStepLength                 1e-2
+    maxStepLength                 1.0
+    hessianCorrectionStrategy     DIAGONAL_SHIFT
+    hessianCorrectionMultiple     1e-5
+  }
+}
+
+rollout
+{
+  AbsTolODE                       1e-5
+  RelTolODE                       1e-3
+  timeStep                        0.015
+  integratorType                  ODE45
+  maxNumStepsPerSecond            10000
+  checkNumericalStability         false
+}
+
+mpc
+{
+  timeHorizon                     1.0
+  solutionTimeWindow              -1
+  coldStart                       false
+  debugPrint                      false
+  mpcDesiredFrequency             100
+  mrtDesiredFrequency             400
+}
+
+initialState
+{
+   ;; Normalized Centroidal Momentum: [linear, angular] ;;
+   (0,0)  0.0
+   (1,0)  0.0
+   (2,0)  0.0
+   (3,0)  0.0
+   (4,0)  0.0
+   (5,0)  0.0
+
+   ;; Base Pose: [position, orientation] ;;
+   (6,0)  0.0     ; p_base_x
+   (7,0)  0.0     ; p_base_y
+   (8,0)  0.34    ; p_base_z   (Go2 standing, feet@ground; thigh0.6466 calf-1.2932)
+   (9,0)  0.0     ; theta_base_z
+   (10,0) 0.0     ; theta_base_y
+   (11,0) 0.0     ; theta_base_x
+
+   ;; Leg Joint Positions: [FL, FR, HL, HR] x (hip, thigh, calf) ;;
+   (12,0)  0.0000  ; FL_hip
+   (13,0)  0.6466  ; FL_thigh
+   (14,0) -1.2932  ; FL_calf
+   (15,0)  0.0000  ; FR_hip
+   (16,0)  0.6466  ; FR_thigh
+   (17,0) -1.2932  ; FR_calf
+   (18,0)  0.0000  ; HL_hip
+   (19,0)  0.6466  ; HL_thigh
+   (20,0) -1.2932  ; HL_calf
+   (21,0)  0.0000  ; HR_hip
+   (22,0)  0.6466  ; HR_thigh
+   (23,0) -1.2932  ; HR_calf
+}
+
+Q
+{
+  scaling 1e+0
+
+  (0,0)   15.0     ; vcom_x
+  (1,1)   15.0     ; vcom_y
+  (2,2)   100.0    ; vcom_z
+  (3,3)   10.0     ; L_x
+  (4,4)   30.0     ; L_y
+  (5,5)   30.0     ; L_z
+
+  (6,6)   1000.0   ; p_base_x
+  (7,7)   1000.0   ; p_base_y
+  (8,8)   1500.0   ; p_base_z
+  (9,9)   100.0    ; theta_base_z
+  (10,10) 300.0    ; theta_base_y
+  (11,11) 300.0    ; theta_base_x
+
+  (12,12) 5.0      ; FL_hip
+  (13,13) 5.0      ; FL_thigh
+  (14,14) 2.5      ; FL_calf
+  (15,15) 5.0      ; FR_hip
+  (16,16) 5.0      ; FR_thigh
+  (17,17) 2.5      ; FR_calf
+  (18,18) 5.0      ; HL_hip
+  (19,19) 5.0      ; HL_thigh
+  (20,20) 2.5      ; HL_calf
+  (21,21) 5.0      ; HR_hip
+  (22,22) 5.0      ; HR_thigh
+  (23,23) 2.5      ; HR_calf
+}
+
+
+R
+{
+  scaling 1e-3
+
+  (0,0)   1.0
+  (1,1)   1.0
+  (2,2)   1.0
+  (3,3)   1.0
+  (4,4)   1.0
+  (5,5)   1.0
+  (6,6)   1.0
+  (7,7)   1.0
+  (8,8)   1.0
+  (9,9)   1.0
+  (10,10) 1.0
+  (11,11) 1.0
+
+  (12,12) 5000.0   ; FL_hip
+  (13,13) 5000.0   ; FL_thigh
+  (14,14) 5000.0   ; FL_calf
+  (15,15) 5000.0   ; FR_hip
+  (16,16) 5000.0   ; FR_thigh
+  (17,17) 5000.0   ; FR_calf
+  (18,18) 5000.0   ; HL_hip
+  (19,19) 5000.0   ; HL_thigh
+  (20,20) 5000.0   ; HL_calf
+  (21,21) 5000.0   ; HR_hip
+  (22,22) 5000.0   ; HR_thigh
+  (23,23) 5000.0   ; HR_calf
+}
+
+frictionConeSoftConstraint
+{
+  frictionCoefficient    0.3
+  mu                     0.1
+  delta                  5.0
+}

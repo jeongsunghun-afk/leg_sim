@@ -1,0 +1,67 @@
+D1 (OCS2 perceptive NMPC) -> DTC reference for RL tracking  [02_Leg quadruped]
+==============================================================================
+DYNAMICALLY-FEASIBLE reference: built from the OCS2 NMPC's OWN predicted trajectory
+(open-loop rollout of the optimal policy under the centroidal dynamics), NOT a
+scripted kinematic base. The optimizer keeps momentum/forces/contacts consistent,
+so an RL policy can actually realize this climb. Generated headless via
+test02legMujoco  OCS2_ROLLOUT=1  (mrt.rolloutPolicy integrates the NMPC dynamics
+each dt; MPC re-solved at 100 Hz; MuJoCo physics NOT executed = no model-mismatch
+tumble). Base advance = absolute forward ramp at VX=0.20 m/s (TERRAIN_CAP=0).
+
+FILES (each = one staircase; *_ref.csv human-readable, *_ref.npz for RL loading)
+  d1_legstair_0.06_ref.*  uniform 0.06 m rise, 8 steps -> base 0.50..1.01 (curriculum: easy)
+  d1_legstair_0.10_ref.*  uniform 0.10 m rise, 8 steps -> base 0.50..1.33 (curriculum: medium)
+  d1_legstair_0.14_ref.*  uniform 0.14 m rise, 8 steps -> base 0.50..1.65 (curriculum: hard)
+  d1_course_0.05_ref.*    course line-D, 0.05 m rise, up+landing+down (lane y=-3.6)
+  d1_stairs_0.15_ref.*    quad_terrain_stairs, 0.15 m rise, up+landing+down (lane y=0)
+  make_dtc_ref.py         generator (raw PLAN_EXPORT csv -> *_ref.{csv,npz})
+
+FOOTHOLD CHANNELS (both always present)
+  fk_*     = OCS2-optimized FK foot = the NMPC's DYNAMIC foot trajectory (swing arc +
+             touchdown on tread). PRIMARY target for the RL (dynamically feasible).
+  region_* = region-snapped target = terrain-feasible tread-top center (geometric sanity).
+  foot_world/foot_rel alias the PRIMARY channel (= fk here; metadata primary_channel='fk').
+  Leg order = [FL, FR, HL, HR] (OCS2 contact order).
+
+FRAMES
+  world   : MuJoCo world, x = forward (drive dir), z = up.
+  base-rel: yaw-only base frame.  rel_xy = Rz(-yaw)*(foot_world_xy - base_xy),
+            rel_z = foot_world_z - base_z.   (RL usually tracks base-rel targets.)
+
+CSV columns (3 leading '#'-comment lines, then header):
+  base_x base_y base_z base_pitch base_yaw
+  then per leg L in {FL,FR,HL,HR}:
+    L_wx L_wy L_wz     (PRIMARY target = fk, world)
+    L_rx L_ry L_rz     (PRIMARY target = fk, base-rel yaw)
+    L_fkx L_fky L_fkz  (OCS2 FK foot, world)          [= primary here]
+    L_regx L_regy L_regz (region-snapped tread target, world)  [sanity]
+    L_st               (planned stance flag, 1=stance)
+    L_valid            (region valid; if 0, region_* falls back to fk)
+
+NPZ arrays:
+  base_x,base_y,base_z,base_pitch,base_yaw : (N,)
+  foot_world (N,4,3)  PRIMARY target, world        (= fk_world)
+  foot_rel   (N,4,3)  PRIMARY target, base-rel yaw (= fk_rel)
+  fk_world,fk_rel (N,4,3)      OCS2 FK foot (dynamic), world + base-rel
+  region_world,region_rel (N,4,3)  region-snapped tread target, world + base-rel
+  foot_stance(N,4) int8 ; foot_valid (N,4) int8
+  legs=['FL','FR','HL','HR'] ; stair_rise (m) ; lane_y (m) ; com_height=0.50
+  primary_channel='fk' ; source='ocs2_rollout'
+
+KEY (row index) : base_x monotonically increasing (~0.20 m/s NMPC advance).
+base_z is the NMPC's dynamically-feasible height (rises smoothly, gentler pitch than a
+kinematic ramp). base_pitch tracks the feasible climb attitude (up to ~-21 deg on 0.14).
+
+VERIFIED: footholds land on every ascending tread top in order; base_z monotonic on
+ascent (100% for uniform stairs); no tumble/divergence; covers full staircase.
+
+REGENERATE (from repo simulation/quad, ROS+ocs2_ws sourced):
+  # leg_stair / stairs (lane y=0):
+  env -u PYTHONPATH WBC=1 WBC_LEGGED=1 PERCEPTIVE=1 PLACEMENT=1 TERRAIN_Z=1 \
+      SMOOTH_W=0.25 MPC_HZ=100 OMP_NUM_THREADS=1 OCS2_ROLLOUT=1 TERRAIN_CAP=0 VX=0.20 \
+      PLAN_EXPORT=/tmp/roll_<name>.csv \
+      ocs2_ws/build/ocs2_legged_robot/test02legMujoco \
+      ocs2_02leg/config/task.info ocs2_02leg/urdf/02leg_ocs2.urdf \
+      ocs2_02leg/config/reference.info mjcf/leg_stair_0.10.mjcf trot 30
+  # course line-D adds:  LANE_Y=-3.6
+  python make_dtc_ref.py /tmp/roll_<name>.csv d1_<name> <rise> <lane_y> fk ocs2_rollout

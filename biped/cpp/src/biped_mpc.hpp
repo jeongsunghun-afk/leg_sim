@@ -33,12 +33,14 @@ inline Matrix3d _skew(const Vector3d&v){
   Matrix3d S; S<<0,-v[2],v[1], v[2],0,-v[0], -v[1],v[0],0; return S;
 }
 
+// ★일반화(런타임 nf 접촉점): flat 평발은 heel+toe를 별도 점으로 → heel/toe x차이로 pitch 모멘트,
+//   f_z≥0이 CoP를 발 안으로 자동 제약(발-wrench를 다점으로 표현). 점발은 nf=2(발당 tip 1).
 // x0,x_ref: 13 [roll,pitch,yaw, px,py,pz, wx,wy,wz(world), vx,vy,vz, g]
-// cs: N×2 접촉, fp: N×2×3 (발위치, CoM 상대, world). 반환: lam 2×3(첫스텝).
-inline Matrix<double,NF,3> mpc_qp_plan(const MpcCfg&c, const Matrix<double,13,1>&x0,
-    const std::vector<std::array<int,NF>>&cs, const std::vector<std::array<Vector3d,NF>>&fp,
+// cs: N×nf 접촉, fp: N×nf×3(접촉점 위치, CoM 상대 world). 반환: lam nf×3(첫스텝 점별 힘).
+inline MatrixXd mpc_qp_plan_n(const MpcCfg&c, int nf, const Matrix<double,13,1>&x0,
+    const std::vector<std::vector<int>>&cs, const std::vector<std::vector<Vector3d>>&fp,
     const Matrix<double,13,1>&x_ref){
-  const int nx=13,nu=NU,N=c.N;
+  const int nx=13,nu=3*nf,N=c.N;
   double roll0=x0[0],pitch0=x0[1],yaw0=x0[2];
   Matrix3d R_now=_euler_to_R(roll0,pitch0,yaw0);
   Matrix3d Iw_inv=(R_now*c.I_BODY*R_now.transpose()).inverse();
@@ -52,7 +54,7 @@ inline Matrix<double,NF,3> mpc_qp_plan(const MpcCfg&c, const Matrix<double,13,1>
   for(int k=0;k<N;k++) Adp[k+1]=Ad*Adp[k];
   std::vector<MatrixXd> Bc(N);
   for(int k=0;k<N;k++){ MatrixXd B=MatrixXd::Zero(13,nu);
-    for(int i=0;i<NF;i++) if(cs[k][i]){ const Vector3d&r=fp[k][i];
+    for(int i=0;i<nf;i++) if(cs[k][i]){ const Vector3d&r=fp[k][i];
       B.block<3,3>(6,i*3)=Iw_inv*_skew(r);
       B.block<3,3>(9,i*3)=Matrix3d::Identity()/c.TOTAL_MASS; }
     Bc[k]=c.DT*B; }
@@ -64,14 +66,14 @@ inline Matrix<double,NF,3> mpc_qp_plan(const MpcCfg&c, const Matrix<double,13,1>
   MatrixXd QBq(N*nx,N*nu); VectorXd Qerr(N*nx);
   for(int i=0;i<N;i++) for(int r=0;r<nx;r++){ QBq.row(i*nx+r)=c.Qdiag[r]*Bq.row(i*nx+r);
       Qerr[i*nx+r]=c.Qdiag[r]*err0[i*nx+r]; }
-  VectorXd Rbar(N*nu); for(int k=0;k<N;k++) for(int i=0;i<NF;i++) for(int d=0;d<3;d++) Rbar[k*nu+i*3+d]=c.Rdiag[d];
+  VectorXd Rbar(N*nu); for(int k=0;k<N;k++) for(int i=0;i<nf;i++) for(int d=0;d<3;d++) Rbar[k*nu+i*3+d]=c.Rdiag[d];
   MatrixXd H=2.0*(Bq.transpose()*QBq); H.diagonal()+=2.0*Rbar;
   VectorXd f=2.0*(Bq.transpose()*Qerr);
   H=(0.5*(H+H.transpose())).eval(); H.diagonal().array()+=1e-8;
   // 부등식 G u<=h(stance 마찰추+λz경계), 등식 A u=b(swing 힘=0)
   bool has_fmax=std::isfinite(c.LAMZ_MAX);
   std::vector<VectorXd> Gr; std::vector<double> hv; std::vector<VectorXd> Ar; std::vector<double> br;
-  for(int k=0;k<N;k++) for(int i=0;i<NF;i++){ int col=k*nu+i*3;
+  for(int k=0;k<N;k++) for(int i=0;i<nf;i++){ int col=k*nu+i*3;
     if(cs[k][i]){
       { VectorXd g=VectorXd::Zero(N*nu); g[col+2]=-1.0; Gr.push_back(g); hv.push_back(-c.LAMZ_MIN); }
       { VectorXd g=VectorXd::Zero(N*nu); g[col]=1.0; g[col+2]=-c.MU; Gr.push_back(g); hv.push_back(0.0);}
@@ -91,12 +93,23 @@ inline Matrix<double,NF,3> mpc_qp_plan(const MpcCfg&c, const Matrix<double,13,1>
   VectorXd u(nvv);
   eiquadprog::solvers::EiquadprogFast qp; qp.reset(nvv,neq,nci);
   auto st=qp.solve_quadprog(H,f,CE,ce0,CI,ci0,u);
-  Matrix<double,NF,3> lam=Matrix<double,NF,3>::Zero();
+  MatrixXd lam=MatrixXd::Zero(nf,3);
   if(st==eiquadprog::solvers::EIQUADPROG_FAST_OPTIMAL){
-    for(int i=0;i<NF;i++) lam.row(i)=u.segment(i*3,3).transpose();
-  } else { int ns=0; for(int i=0;i<NF;i++) ns+=cs[0][i];
-    if(ns>0){ double fz=c.TOTAL_MASS*c.G_ACC/ns; for(int i=0;i<NF;i++) if(cs[0][i]) lam(i,2)=fz; } }
+    for(int i=0;i<nf;i++) lam.row(i)=u.segment(i*3,3).transpose();
+  } else { int ns=0; for(int i=0;i<nf;i++) ns+=cs[0][i];
+    if(ns>0){ double fz=c.TOTAL_MASS*c.G_ACC/ns; for(int i=0;i<nf;i++) if(cs[0][i]) lam(i,2)=fz; } }
   return lam;
+}
+
+// 기존 2발판 래퍼(점발 경로 호환): NF=2 고정 인터페이스 유지.
+inline Matrix<double,NF,3> mpc_qp_plan(const MpcCfg&c, const Matrix<double,13,1>&x0,
+    const std::vector<std::array<int,NF>>&cs, const std::vector<std::array<Vector3d,NF>>&fp,
+    const Matrix<double,13,1>&x_ref){
+  std::vector<std::vector<int>> cn(cs.size(), std::vector<int>(NF));
+  std::vector<std::vector<Vector3d>> fn(fp.size(), std::vector<Vector3d>(NF));
+  for(size_t k=0;k<cs.size();k++) for(int i=0;i<NF;i++){ cn[k][i]=cs[k][i]; fn[k][i]=fp[k][i]; }
+  MatrixXd l=mpc_qp_plan_n(c,NF,x0,cn,fn,x_ref);
+  Matrix<double,NF,3> out; for(int i=0;i<NF;i++) out.row(i)=l.row(i); return out;
 }
 
 } // namespace bipedmpc

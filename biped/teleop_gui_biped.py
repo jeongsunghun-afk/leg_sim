@@ -132,13 +132,20 @@ class Pub:
         # ★seq 를 증가시킨다. emb 앱의 워치독은 "파일이 읽히는가" 가 아니라
         #   "명령 내용이 바뀌는가" 로 살아있음을 판정하므로(biped_emb.read_cmd_fresh),
         #   정적 파일은 통신두절과 구분되지 않는다. seq 가 그 구분을 만든다.
-        with self._lk:
-            self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
-            body = json.dumps(self.cmd)
-        tmp = self.path + '.tmp'
-        with open(tmp, 'w') as f:
-            f.write(body)
-        os.replace(tmp, self.path)
+        # ★2026-09-04 경합 수정: 하트비트 데몬스레드와 콜백스레드가 **같은 .tmp 를 공유**해
+        #   A 가 쓴 tmp 를 B 가 replace 로 채가면 A 의 os.replace 가 FileNotFoundError 로
+        #   스레드를 죽였다(실기 GUI DEAD). ⇒ ①write+replace 를 락 안에서 원자적으로
+        #   ②스레드별 고유 tmp(pid+tid) ③replace 예외를 삼켜 어떤 경합도 GUI 를 안 죽인다.
+        try:
+            with self._lk:
+                self.cmd['seq'] = int(self.cmd.get('seq', 0)) + 1
+                body = json.dumps(self.cmd)
+                tmp = '%s.%d.tmp' % (self.path, threading.get_ident())
+                with open(tmp, 'w') as f:
+                    f.write(body)
+                os.replace(tmp, self.path)
+        except Exception:
+            pass
         if _udp_sock is not None:                      # ★Isaac Sim으로 UDP 발행
             try: _udp_sock.sendto(json.dumps(self.cmd).encode(), _udp_addr)
             except Exception: pass

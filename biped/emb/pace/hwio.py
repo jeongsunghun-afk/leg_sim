@@ -1042,7 +1042,7 @@ class Hardware:
                 f"  복구: Emb 종료 → 모터 전원 OFF/ON → Emb 재기동.\n"
                 f"  ⚠복구 판정을 **기동 램프의 움직임으로 하지 말 것** (2026-08-26 정정).\n"
                 f"    여기 적혀 있던 '기동 직후 4.5초 램프에서 관절이 0°로 움직이면 성공' 은\n"
-                f"    halGait.cpp:627 패치(2026-08-10) **이전**의 서술이다. 지금은 램프 목표를\n"
+                f"    halGait.cpp:586 패치(2026-08-10) **이전**의 서술이다. 지금은 램프 목표를\n"
                 f"    **측정각**으로 덮어써(m_fGaitCmd_PositionInit = m_fGaitStt_Position)\n"
                 f"    half-sine 의 두 끝이 같아지므로 결과가 상수 = 부팅 당시 자세다 —\n"
                 f"    즉 램프는 돌지만 **아무것도 안 움직이는 것이 정상**이고, 저 문구를 믿으면\n"
@@ -1053,7 +1053,7 @@ class Hardware:
                 f"    ch{ch} 로 verify_driver_live 를 재실행해 spread 가 기준 {move_floor_deg}° 를\n"
                 f"    넘어(정상 ≈{2*abs(step_deg):.1f}°) 돌아오면 파워단이 살아난 것이다.\n"
                 f"    눈으로 볼 거면 자세가 아니라 **버티는 힘**을 봐라 — 램프 중에도 게인은 매 틱\n"
-                f"    걸리므로(halGait.cpp:804-820 · 채널 좌표 hip Kp100·thigh 50·calf 80·foot 30),\n"
+                f"    걸리므로(halGait.cpp:743-759 · 채널 좌표 hip Kp100·thigh 50·calf 80·foot 30),\n"
                 f"    살아난 축은 매단 다리를 그 자리에 붙들고 죽은 축은 중력에 계속 늘어진다.")
         return None
 
@@ -1245,7 +1245,7 @@ class Hardware:
           ⚠calf 는 **80 이다** — 여기 적혀 있던 50 은 2026-08-11 에 50→80 으로 올리기
             (공진 5.03→6.36Hz) 이전의 값이라 2026-08-26 에 고쳤다. 근거는 두 군데가
             같은 값을 말한다: spec.yaml:185 hold_kp 와 config/biped_emb.yaml 의 joints,
-            그리고 Emb 기동 램프도 같은 게인을 쓴다(halGait.cpp:804-820, 채널 좌표).
+            그리고 Emb 기동 램프도 같은 게인을 쓴다(halGait.cpp:743-759, 채널 좌표).
         """
         kp_v = np.zeros(self.n, np.float32); kd_v = np.zeros(self.n, np.float32)
         for c in range(self.n):

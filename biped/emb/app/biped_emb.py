@@ -233,8 +233,11 @@ def main():
         print("[biped_emb] 기구 커플링 보정 활성: "
               + ", ".join(f"{jm.names[d]} ← {jm.names[s]} × {c:+g}"
                           for d, s, c in zip(jm.cpl_dst, jm.cpl_src, jm.cpl_coef)))
-    # ★Emb 는 ±180 을 넘는 명령을 **클램프가 아니라 래핑**한다(halGait.cpp:666-671).
-    #   한계에서 멈추는 게 아니라 반대편으로 날아간다. jog 범위는 JointMap 이 기동 시
+    # ★★2026-09-02 정정 — 종전 "Emb 가 ±180 을 래핑한다" 는 **거짓**이었다.
+    #   래핑 코드는 삭제됐고, 살아 있는 클램프(halGait.cpp:716-717)는 벤더 자체 경로
+    #   전용이라 우리 MotCmd 경로(:782 memcpy)는 지나가지도 않는다 ⇒ **가드가 없다.**
+    #   우리 q_joint_to_ch 의 ±180 포화가 유일한 가드이고, 넘으면 **조용히 잘린다**
+    #   (점프가 아니다 — 그래서 더 안 보인다). jog 범위는 JointMap 이 기동 시
     #   예외로 막지만, 관절한계 박스까지 넓게 쓰면 넘는 축은 여기서 알린다.
     if getattr(jm, "wrap_warn", None):
         print("[biped_emb] ⚠ 관절한계 전 범위를 쓰면 채널각이 ±180 을 넘는 축이 있다 — "
@@ -292,7 +295,7 @@ def main():
     #   못 막는다.** ⇒ Emb 기동 후 5초는 기다렸다가 이 앱을 띄울 것.
     #
     #   ★그 4.5초 램프는 지금 **제자리 유지**다 — 즉 **로봇이 안 움직이는 것이 정상이다.**
-    #     halGait.cpp:627 이 2026-08-10 부터 목표를 **측정각**으로 덮어쓴다:
+    #     halGait.cpp:586 이 2026-08-10 부터 목표를 **측정각**으로 덮어쓴다:
     #         m_fGaitCmd_PositionInit[unMotID] = m_fGaitStt_Position[unMotID];
     #     half-sine 보간(Befo→Curr, 양 끝 속도 0)의 두 끝이 같아지므로 결과가 상수 = 현재 자세.
     #     ⚠종전 이 주석은 "4.5초 램프로 전 관절을 0°로 보낸다" 였다 — 그 패치 **이전**의
@@ -304,7 +307,7 @@ def main():
     #       (m_fGaitCmd_PositionInit[] 에 생성값이 아직 남아 있지만 :627 이 매 부팅 덮어쓰므로
     #        **죽은 코드**다 ⇒ 그 배열을 패치하는 emb/diag/gen_emb_init_pose.py 는 현재 무효과.)
     #
-    #   ★램프 중에도 축을 잡는 게인은 halGait.cpp:804-820 에서 매 틱 설정된다.
+    #   ★램프 중에도 축을 잡는 게인은 halGait.cpp:743-759 에서 매 틱 설정된다.
     #     ⚠단 **기동 최초 100틱(≈0.1초)은 무여자**다 — :611-612 가 그 구간엔
     #       m_stSettingCmdInit(:403-404 Kp=0·Kd=0)로 덮어쓴다(2026-08-26 실측).
     #     값은 **채널 좌표**다(config 의 kp/kd 와 같은 좌표):

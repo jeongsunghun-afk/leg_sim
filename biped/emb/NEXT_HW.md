@@ -56,7 +56,7 @@ cd ~/simulation/biped/emb && diag/emb_ctl.sh start      # ★로그로 남길 �
 > 그동안 `m_ucIsGaitInitialized = 0` 이라 **SHM 명령이 무시된다.** 소프트웨어로 못 막으니
 > 위 "5초 대기" 는 여전히 지켜야 한다. 램프 궤적도 그대로 half-sine 이다(양 끝 속도 0).
 >
-> **바뀐 것은 램프의 목표다.** 2026-08-10 부터 `halGait.cpp:627` 이
+> **바뀐 것은 램프의 목표다.** 2026-08-10 부터 `halGait.cpp:586` 이
 > `m_fGaitCmd_PositionInit[unMotID] = m_fGaitStt_Position[unMotID];` 로 목표를 **측정각**으로
 > 덮어쓴다. half-sine 의 시작(Befo)과 끝(Curr)이 같아지므로 궤적이 **현재 자세 상수**가 된다
 > ⇒ 4.5초 동안 **있던 자리를 잡고만 있는다. 로봇이 안 움직이는 것이 정상이다.**
@@ -66,7 +66,7 @@ cd ~/simulation/biped/emb && diag/emb_ctl.sh start      # ★로그로 남길 �
 > ℹ️ 블록 자체를 지우면 안 된다. 같은 경로 끝에서 `m_ucIsGaitInitialized = 1` 을 세우므로,
 >   지우면 **SHM 명령이 영원히 수용되지 않는다.** 초기화 시퀀스는 남기고 목표만 없앤 것이고,
 >   원복하려면 `:627` 한 줄을 지우면 된다.
->   ⚠벤더 주석(`halGait.cpp:625`)은 *"이 **두 줄**을 지우면 된다"* 라고 적혀 있는데 **부정확하다.**
+>   ⚠벤더 주석(`halGait.cpp:584`)은 *"이 **두 줄**을 지우면 된다"* 라고 적혀 있는데 **부정확하다.**
 >   짝처럼 보이는 `:614`(`Befo = Stt_Position` = 램프 시작점)와 `:629`(`Curr = PositionInit`)는
 >   **원본에도 있어야 하는 줄**이다. 실제 패치는 `:627` 하나뿐이다(2026-08-26 대조 확인).
 >   두 줄을 지우면 램프 시작점이 안 잡혀 오히려 망가진다.

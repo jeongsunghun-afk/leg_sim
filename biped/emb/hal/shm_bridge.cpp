@@ -117,22 +117,27 @@ int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
         if (status)    status[i]    = g_status[i];
     }
     // ── IMU (별도 채널) ──
-    if ((imu_rpy_deg || imu_acc || imu_gyro) && RobotMemGait_IsUpdatedIMU()){
+    // ★게이트 제거 (2026-09-04). RobotMemGait_IsUpdatedIMU() 는 **Gait 핸드셰이크를 유지하는
+    //   소비자**(모터명령 TX)에게만 1 로 온다 — 읽기전용(imu_peek)엔 늘 0 이라 IMU 를 통째로
+    //   놓쳤다(6주 미제의 정체). RobotEmbedded 가 ForeC 슬롯에 쓴 **최신값을 항상 읽고**,
+    //   유효성은 플래그가 아니라 **내용**으로 가린다(아래). RobotTestGait 이 같은 GetIMU 로
+    //   읽어 실값을 보였으므로, 게이트만 떼면 우리도 같은 데이터를 얻는다.
+    if (imu_rpy_deg || imu_acc || imu_gyro){
         float buf[LEN_OF_IMU_DATA] = {0};
         if (RobotMemGait_GetIMU(buf, IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA) == ENUM_RESULT_SUCCESS){
             if (imu_rpy_deg) for (int i=0;i<3;i++) imu_rpy_deg[i] = buf[IDX_OF_IMU_ARPY + i];
             if (imu_acc)     for (int i=0;i<3;i++) imu_acc[i]     = buf[IDX_OF_IMU_ACCL + i];
             if (imu_gyro)    for (int i=0;i<3;i++) imu_gyro[i]    = buf[IDX_OF_IMU_GYRO + i];
-            // ★"신선한 0" 방어. RobotMemGait_IsUpdatedIMU() 는 **내용을 검증하지 않는다** —
-            //   RobotSharedMem_Gait.cpp 의 SetIMU 가 검증 루프를 빈 채로 두고 memcpy 직후
-            //   무조건 ucIsUpdated_IMU=1 을 세운다. 그래서 Emb 이 0 배열을 써도 "신선함"으로 온다.
-            //   값이 0 인 것보다 이게 더 위험하다: freshness 검사로 못 걸러지므로 하류
-            //   tilt E-stop 이 "유효한 수평 자세"로 오해한다(tilt≡0 → 임계 영원히 미도달).
-            //   정상 IMU 는 정지 중에도 가속도계에 중력 ~9.81 m/s^2 가 반드시 잡히므로
-            //   가속도 3축 크기가 사실상 0 이면 센서가 죽은 것이다. 이때는 mask 를 세우지 않아
-            //   **상류가 IMU 없음을 인지**하게 한다(0 을 유효값으로 흘려보내지 않는다).
+            // ★유효성 = **내용 기반** (2026-09-04). 이 EBIMU(EBIMU-9DOFV6)는 **중력제거
+            //   선형가속**을 내므로 정지 시 |acc|≈0 이다 — 종전 |acc|>0.5 판정은 **살아있는
+            //   IMU 를 죽음으로 오판**했다(9-02 작동 로그도 ACC≈0). RPY(자세·헤딩)와 GYRO
+            //   (바이어스)는 정지 중에도 실값이라, 이 셋 중 하나라도 유의미하면 유효로 본다.
+            //   '신선한 0'(SetIMU 가 0 배열에도 플래그를 세우는 문제)은 전부 0 이므로 걸러진다.
+            const float rx=buf[IDX_OF_IMU_ARPY+0], ry=buf[IDX_OF_IMU_ARPY+1], rz=buf[IDX_OF_IMU_ARPY+2];
+            const float gx=buf[IDX_OF_IMU_GYRO+0], gy=buf[IDX_OF_IMU_GYRO+1], gz=buf[IDX_OF_IMU_GYRO+2];
             const float ax=buf[IDX_OF_IMU_ACCL+0], ay=buf[IDX_OF_IMU_ACCL+1], az=buf[IDX_OF_IMU_ACCL+2];
-            if (ax*ax + ay*ay + az*az > 0.25f) mask |= 0x10;   // |a| > 0.5 m/s^2 이어야 유효
+            if (rx*rx+ry*ry+rz*rz > 1e-6f || gx*gx+gy*gy+gz*gz > 1e-6f
+                || ax*ax+ay*ay+az*az > 0.25f) mask |= 0x10;   // 전부 0 이 아니면 유효
         }
     }
     return mask;

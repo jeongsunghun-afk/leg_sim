@@ -124,5 +124,10 @@ echo "[run_deploy_hw] MJCF=$MJCF"
 echo "[run_deploy_hw] GRAV_SCALE_JOINT=$GRAV_SCALE_JOINT"
 echo "[run_deploy_hw] STAND_TAU_SCALE_JOINT=$STAND_TAU_SCALE_JOINT"
 echo "[run_deploy_hw] ⚠walk 는 왼무릎 벨트 수리 전 금지 — 헤더 주석 참조"
+# ★중복 writer 방지 (2026-09-04) — 모터 명령 writer 는 하나여야 한다. 기존 deploy 를 죽인다.
+#   (run_hw.sh up + 수동 run_deploy_hw.sh 처럼 두 번 뜨면 둘이 SHM 을 다퉈 반응이 이상해진다.)
+if pgrep -f build/biped_deploy >/dev/null 2>&1; then
+    echo "[run_deploy_hw] 기존 biped_deploy 종료(중복 writer 방지)"; pkill -f build/biped_deploy; sleep 1
+fi
 cd "$HERE/cpp"
 exec ./build/biped_deploy --mjcf "$MJCF" --start-mode off

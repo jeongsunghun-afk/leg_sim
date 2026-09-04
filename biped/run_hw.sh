@@ -38,11 +38,24 @@ case "$1" in
     python3 - "$STATE" "${2:-30}" <<'PY' 2>/dev/null
 import json,sys,time
 path,n=sys.argv[1],int(sys.argv[2])
+NAMES=["HL_hip","HL_thigh","HL_calf","HL_foot","HR_hip","HR_thigh","HR_calf","HR_foot"]
+BITS=["과전류","과전압","저전압","모터과온","MOSFET과온","ADC오프셋"]  # ucStatus bit0..5
+def why(e):
+    e=int(e)
+    if e==0: return ""
+    w=[BITS[b] for b in range(6) if e&(1<<b)]
+    return "("+"·".join(w)+")" if w else "(0x%02x)"%e
 for _ in range(n):
     try:
         d=json.load(open(path)); r=d['rpy_deg']
-        print("mode %-5s  roll %+5.1f pitch %+5.1f tilt %4.1f  estop %s  tiltOK %s"
-              %(d['mode'], r[0], r[1], d['tilt_deg'], d['estop'], d['tilt_estop_ok']))
+        h=d.get('health',[]); er=d.get('err',[])
+        bad=[(NAMES[i] if i<len(NAMES) else "ch%d"%i, h[i], er[i] if i<len(er) else 0)
+             for i in range(len(h)) if h[i] not in ("ok","absent")]
+        # 정상=요약(8o/0f/0d), 이상=어느 채널이 왜(에러이름) 죽었는지
+        mot=("mot %do/%df/%dd"%(d.get('n_ok',0),d.get('n_fault',0),d.get('n_dead',0))
+             if not bad else "⚠ "+" ".join("%s=%s%s"%(nm,st,why(e)) for nm,st,e in bad))
+        print("mode %-5s roll %+5.1f pitch %+5.1f tilt %4.1f estop %s tiltOK %s | %s"
+              %(d['mode'], r[0], r[1], d['tilt_deg'], d['estop'], d['tilt_estop_ok'], mot))
     except Exception as e:
         print("state 못읽음(deploy 떠 있나?):", e)
     time.sleep(0.4)
@@ -74,8 +87,28 @@ PY
     python3 - "$STATE" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1])); r=d['rpy_deg']
+NAMES=["HL_hip","HL_thigh","HL_calf","HL_foot","HR_hip","HR_thigh","HR_calf","HR_foot"]
+BITS=["과전류","과전압","저전압","모터과온","MOSFET과온","ADC오프셋"]  # ucStatus bit0..5
+def why(e):
+    e=int(e)
+    if e==0: return "-"
+    w=[BITS[b] for b in range(6) if e&(1<<b)]
+    return "·".join(w) if w else "0x%02x(정의밖)"%e
 print("mode=%s  rpy=%s  tilt=%.1f  estop=%s  tiltOK(imu)=%s  loop_hz=%s"
       %(d['mode'],[round(x,1) for x in r],d['tilt_deg'],d['estop'],d['tilt_estop_ok'],d.get('loop_hz')))
+print("모터  ok=%d fault=%d dead=%d absent=%d  (설치 %d)"
+      %(d.get('n_ok',0),d.get('n_fault',0),d.get('n_dead',0),d.get('n_absent',0),d.get('n_installed',0)))
+h=d.get('health',[]); er=d.get('err',[]); tl=d.get('tau_leg_nm',[]); tc=d.get('tau_cmd_nm',[])
+print("  %-9s %-7s %-7s %8s %8s %s"%("ch","health","err","τ실측","τ명령","원인"))
+for i in range(len(h)):
+    nm=NAMES[i] if i<len(NAMES) else "ch%d"%i
+    e=er[i] if i<len(er) else 0
+    mk="  ⚠" if h[i] not in("ok","absent") else "   "
+    print("%s%-9s %-7s %-7s %8s %8s %s"%(mk,nm,h[i],
+          ("0x%02x"%int(e)) if e else "0",
+          ("%.1f"%tl[i]) if i<len(tl) else "-",
+          ("%.1f"%tc[i]) if i<len(tc) else "-",
+          why(e) if h[i]!="ok" else ""))
 PY
     ;;
   __pub)

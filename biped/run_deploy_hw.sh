@@ -129,5 +129,8 @@ echo "[run_deploy_hw] ⚠walk 는 왼무릎 벨트 수리 전 금지 — 헤더 
 if pgrep -f build/biped_deploy >/dev/null 2>&1; then
     echo "[run_deploy_hw] 기존 biped_deploy 종료(중복 writer 방지)"; pkill -f build/biped_deploy; sleep 1
 fi
+# ★기동 잔여명령 잠금(mode_locked) 방지 (2026-09-04) — cmd 파일에 off 아닌 모드가 남아 있으면
+#   deploy 가 그 모드를 잠그고 무시한다(같은 모드 재전송해도 안 풀림). run_emb.sh 처럼 off 로 비운다.
+echo '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}' > "${QUAD_CMD:-/tmp/biped_cmd.json}"
 cd "$HERE/cpp"
 exec ./build/biped_deploy --mjcf "$MJCF" --start-mode off

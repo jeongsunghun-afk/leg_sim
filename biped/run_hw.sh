@@ -23,9 +23,12 @@ usage(){ echo "사용: $0 {up|down|gui|off|hold|stand|home|float|jog|push|walk|l
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 set_mode(){
-  printf '{"mode":"%s","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}\n' "$1" > "$CMD"
+  # hold [pct] [split]:  중력지지 %(0~100) + 좌우트림 split(20~80, →HL). hold 외엔 무시됨.
+  local m="$1" pct="${2:-0}" split="${3:-50}"
+  printf '{"mode":"%s","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42,"hold_ff_pct":%s,"hold_ff_split":%s}\n' \
+         "$m" "$pct" "$split" > "$CMD"
   pgrep -f build/biped_deploy >/dev/null || echo "  ⚠ biped_deploy 안 떠 있음 — run_deploy_hw.sh 먼저"
-  echo "→ mode=$1  ($CMD)"
+  echo "→ mode=$m  중력지지=${pct}%  split=${split}(→HL)  ($CMD)"
 }
 
 case "$1" in
@@ -114,6 +117,6 @@ PY
     exec env QUAD_CMD="$CMD" QUAD_STATE="$STATE" "$GPY" "$HERE/teleop_gui_biped.py" ;;
   off|hold|stand|home|float|jog|push|walk)
     case "$1" in stand|walk) echo "⚠ $1 — 크레인 받친 채인지 확인!";; esac
-    set_mode "$1" ;;
+    set_mode "$@" ;;
   *) usage ;;
 esac

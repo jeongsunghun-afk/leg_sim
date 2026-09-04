@@ -125,14 +125,29 @@ int bridge_read(float* q_deg, float* dq_dps, float* tau_nm, float* cur_a,
     if (imu_rpy_deg || imu_acc || imu_gyro){
         float buf[LEN_OF_IMU_DATA] = {0};
         if (RobotMemGait_GetIMU(buf, IDX_OF_IMU_ForeC_START, LEN_OF_IMU_DATA) == ENUM_RESULT_SUCCESS){
+            // ★이상치 제거 (2026-09-04). RE 파서(interfaceIMU_Parse)의 체크섬 검증이 주석처리돼
+            //   손상 패킷이 <1% 통과한다 — RPY 217°·GYRO -2432dps·TEMP 1536 같은 물리불가값.
+            //   stand 에서 한 샘플만 튀어도 WBIC 가 홱 하므로, 물리한계 밖이면 **버리고 직전
+            //   유효값을 유지**한다(제어엔 연속 신호가 안전). 벤더가 체크섬을 살리면 근본 해결.
+            //   범위: rpy ±180° · gyro ±1500 dps · acc ±40 m/s².
+            {
+                const float* R=&buf[IDX_OF_IMU_ARPY]; const float* G=&buf[IDX_OF_IMU_GYRO];
+                const float* A=&buf[IDX_OF_IMU_ACCL];
+                bool sane = true;
+                for (int i=0;i<3;i++)
+                    if (R[i]>180.f||R[i]<-180.f || G[i]>1500.f||G[i]<-1500.f
+                        || A[i]>40.f||A[i]<-40.f) sane=false;
+                static float s_last[LEN_OF_IMU_DATA]; static bool s_have=false;
+                if (sane){ std::memcpy(s_last, buf, sizeof(float)*LEN_OF_IMU_DATA); s_have=true; }
+                else if (s_have){ std::memcpy(buf, s_last, sizeof(float)*LEN_OF_IMU_DATA); }  // 튐 → 직전값
+            }
             if (imu_rpy_deg) for (int i=0;i<3;i++) imu_rpy_deg[i] = buf[IDX_OF_IMU_ARPY + i];
             if (imu_acc)     for (int i=0;i<3;i++) imu_acc[i]     = buf[IDX_OF_IMU_ACCL + i];
             if (imu_gyro)    for (int i=0;i<3;i++) imu_gyro[i]    = buf[IDX_OF_IMU_GYRO + i];
             // ★유효성 = **내용 기반** (2026-09-04). 이 EBIMU(EBIMU-9DOFV6)는 **중력제거
             //   선형가속**을 내므로 정지 시 |acc|≈0 이다 — 종전 |acc|>0.5 판정은 **살아있는
-            //   IMU 를 죽음으로 오판**했다(9-02 작동 로그도 ACC≈0). RPY(자세·헤딩)와 GYRO
-            //   (바이어스)는 정지 중에도 실값이라, 이 셋 중 하나라도 유의미하면 유효로 본다.
-            //   '신선한 0'(SetIMU 가 0 배열에도 플래그를 세우는 문제)은 전부 0 이므로 걸러진다.
+            //   IMU 를 죽음으로 오판**했다. RPY·GYRO 는 정지 중에도 실값이라, 이 셋 중 하나라도
+            //   유의미하면 유효로 본다('신선한 0' 은 전부 0 이므로 걸러짐).
             const float rx=buf[IDX_OF_IMU_ARPY+0], ry=buf[IDX_OF_IMU_ARPY+1], rz=buf[IDX_OF_IMU_ARPY+2];
             const float gx=buf[IDX_OF_IMU_GYRO+0], gy=buf[IDX_OF_IMU_GYRO+1], gz=buf[IDX_OF_IMU_GYRO+2];
             const float ax=buf[IDX_OF_IMU_ACCL+0], ay=buf[IDX_OF_IMU_ACCL+1], az=buf[IDX_OF_IMU_ACCL+2];

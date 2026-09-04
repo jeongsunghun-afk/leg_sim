@@ -842,12 +842,17 @@ int main(int argc, char** argv){
       ts_n++;
     }
     const double D2R = JointMap::D2R;
-    double rpy[3] = { hs.rpy[0]*(cfg.imu_deg?D2R:1.0),
-                      hs.rpy[1]*(cfg.imu_deg?D2R:1.0),
-                      hs.rpy[2]*(cfg.imu_deg?D2R:1.0) };
-    double gyro[3]= { hs.gyr[0]*(cfg.imu_deg?D2R:1.0),
-                      hs.gyr[1]*(cfg.imu_deg?D2R:1.0),
-                      hs.gyr[2]*(cfg.imu_deg?D2R:1.0) };
+    const double u = cfg.imu_deg ? D2R : 1.0;
+    // ★IMU 프레임 정합 (2026-09-04) — EBIMU 오일러(ARPY)는 NED(전방·우·아래)라
+    //   우리 베이스(ENU: 전방·좌·위)로 imu_euler_flip=[1,-1,-1](pitch·yaw 반전)한다.
+    //   부호는 imu_peek 로 실측 확정. tilt(hypot)는 부호 무관이라 E-stop 영향 없음.
+    //   ⚠자이로는 원시(4-3,Z-up)가 이미 베이스 정렬 → flip 안 함(자세와 같은 프레임).
+    //   ⚠offset(imu_offset_m)은 강체라 자세·자이로엔 무영향 — 가속도 선형추정에만
+    //     필요한데 추정기는 quat+gyro 만 쓰므로 지금은 config 에 저장만(보정 미적용).
+    const auto& fl = cfg.imu_euler_flip;
+    const double f0=(fl.size()>=3?fl[0]:1.0), f1=(fl.size()>=3?fl[1]:-1.0), f2=(fl.size()>=3?fl[2]:-1.0);
+    double rpy[3] = { hs.rpy[0]*f0*u, hs.rpy[1]*f1*u, hs.rpy[2]*f2*u };
+    double gyro[3]= { hs.gyr[0]*u, hs.gyr[1]*u, hs.gyr[2]*u };
     double quat[4]; rpy_to_quat(rpy[0],rpy[1],rpy[2],quat);
     double tilt = std::hypot(rpy[0],rpy[1]) * JointMap::R2D;
 

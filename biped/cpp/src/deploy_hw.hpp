@@ -47,6 +47,12 @@ struct EmbCfg {
   std::string lib = "";
   int n_channel = 10, recv_wait_ms = 2000;
   bool imu_deg = true;
+  // ★IMU 프레임 정합 (2026-09-04). EBIMU 오일러(ARPY)=NED(전방·우·아래),
+  //   우리 베이스=ENU(전방·좌·위). pitch·yaw 반전([1,-1,-1])으로 베이스로 변환.
+  //   부호는 imu_peek 축별 기울임으로 **실측 확정**한다. 자이로는 원시(4-3,Z-up)가
+  //   이미 베이스 정렬이라 flip 안 함(둘 다 베이스라 일관). offset 은 강체라 자세엔 무영향.
+  std::vector<double> imu_euler_flip = {1,-1,-1};   // roll·pitch·yaw 부호
+  std::vector<double> imu_offset_m   = {0,0,0};     // 레버암[m] (가속도 보정용, 자세 무관)
   double ctrl_hz = 500;
   std::vector<JointCfg> joints;
   std::vector<int> installed;                 // meta.installed_channels
@@ -167,6 +173,8 @@ inline bool load_cfg(const std::string& path, EmbCfg& c, std::string& err){
       else if(key=="n_channel") c.n_channel = (int)num(10);
       else if(key=="recv_wait_ms") c.recv_wait_ms = (int)num(2000);
       else if(key=="imu_deg") c.imu_deg = (val=="true"||val=="True"||val=="1");
+      else if(key=="imu_euler_flip"){ auto v=parse_list(val); if(v.size()==3) c.imu_euler_flip=v; }
+      else if(key=="imu_offset_m"){ auto v=parse_list(val); if(v.size()==3) c.imu_offset_m=v; }
     } else if(section=="meta"){
       if(key=="ctrl_hz") c.ctrl_hz = num(500);
       else if(key=="installed_channels"){ for(double x : parse_list(val)) c.installed.push_back((int)x); }

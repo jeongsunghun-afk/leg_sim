@@ -33,6 +33,10 @@ shm:
   n_channel: 10                  # Gait 채널 수(MAX_GaitMOT_CHAN). 0~7=다리, 8~9=허리
   recv_wait_ms: 2000             # 모터 상태 첫 수신 대기(RobotEmbedded 기동 확인). 초과=에러
   imu_deg: true                  # IMU RPY 단위(true=deg). 컨트롤러용 quat 변환 시 사용
+  # ★IMU 프레임 정합 (2026-09-04, 4-3 기준 장착). EBIMU 오일러=NED(전방·우·아래) →
+  #   베이스 ENU(전방·좌·위)로 pitch·yaw 반전. ⚠부호는 imu_peek 축별 기울임으로 확정 후 잠글 것.
+  imu_euler_flip: [1, -1, -1]    # roll·pitch·yaw 부호 (NED→ENU). 자이로는 원시(Z-up) 그대로.
+  imu_offset_m: [0.018, 0.001, 0.0]  # IMU 장착 offset[m] (베이스 기준 x18·y1mm). 자세엔 무영향, 가속도 보정용
 
 # ── 관절 매핑: biped 컨트롤러 순서(0~7) → Gait 채널 ─────────────────────────
 #   name    : biped 관절명(= robot_interface.JOINT_NAMES 순서, 고정)

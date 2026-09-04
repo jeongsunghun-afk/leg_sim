@@ -131,6 +131,10 @@ if pgrep -f build/biped_deploy >/dev/null 2>&1; then
 fi
 # ★기동 잔여명령 잠금(mode_locked) 방지 (2026-09-04) — cmd 파일에 off 아닌 모드가 남아 있으면
 #   deploy 가 그 모드를 잠그고 무시한다(같은 모드 재전송해도 안 풀림). run_emb.sh 처럼 off 로 비운다.
+# ★단, 이전 run_hw.sh 의 백그라운드 __pub(home/hold/stand 를 100ms마다 재발행) 가 살아 있으면
+#   아래 off-쓰기를 곧바로 덮어써서 deploy 가 boot 에서 그 모드를 보고 잠긴다(mode=home 인데 계속
+#   off 로 강하되는 트랩). 그래서 off 로 비우기 **전에** 잔여 발행자를 먼저 죽인다. (2026-09-04)
+pkill -f "run_hw.sh __pub" 2>/dev/null; sleep 0.2
 echo '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}' > "${QUAD_CMD:-/tmp/biped_cmd.json}"
 cd "$HERE/cpp"
 exec ./build/biped_deploy --mjcf "$MJCF" --start-mode off

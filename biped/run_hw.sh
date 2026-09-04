@@ -83,7 +83,8 @@ PY
     sleep 4
     pgrep -f build/biped_deploy >/dev/null || { echo "✗ deploy 기동 실패 → tail /tmp/biped_deploy.log"; exit 1; }
     grep -m1 -E "\[deploy\] IMU" /tmp/biped_deploy.log 2>/dev/null || echo "  (IMU 줄 대기 중 — tail /tmp/biped_deploy.log)"
-    echo "③ GUI 기동…"; exec "$0" gui ;;
+    echo "③ GUI 기동(가능하면)…"
+    "$0" gui || echo "  → GUI 없이 진행. CLI 로 조작: ./run_hw.sh home | hold | stand | watch | log" ;;
   down)
     printf '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}\n' > "$CMD" 2>/dev/null; sleep 0.3
     pkill -f "$HERE/teleop_gui_biped.py" 2>/dev/null
@@ -91,13 +92,26 @@ PY
     ( cd "$HERE/emb" && diag/emb_ctl.sh stop )
     echo "→ 전체 종료(GUI·deploy·EMB)" ;;
   gui)
-    # teleop GUI — 모드버튼·중력지지 슬라이더·통신 LED. deploy 와 같은 cmd/state 를 공유.
-    #   GUI 는 cmd 만 쓴다(모터 writer 아님) → biped_deploy 와 동시 실행 안전.
-    #   ⚠ PY 가 GUI 라이브러리를 가진 인터프리터여야 함(run_emb.sh 와 동일). 필요시 PY 지정.
+    # teleop GUI(dearpygui) — 모드버튼·중력지지 슬라이더·LED. cmd 만 쓴다(모터 writer 아님).
+    #   ⚠ dearpygui + **DISPLAY** 필요. SSH(무화면)에선 못 뜬다 → 그땐 CLI 를 쓸 것.
+    GPY=""
+    for p in "${PY:-}" python3 /home/rpetubt/miniforge3/envs/*/bin/python \
+             /home/rpetubt/miniconda3/envs/*/bin/python /home/rpetubt/.venv/bin/python; do
+      [ -n "$p" ] || continue
+      { command -v "$p" >/dev/null 2>&1 || [ -x "$p" ]; } || continue
+      "$p" -c "import dearpygui" 2>/dev/null && { GPY="$p"; break; }
+    done
+    if [ -z "$GPY" ]; then
+      echo "✗ dearpygui 있는 python 없음 → GUI 불가. (설치: <python> -m pip install dearpygui)"
+      echo "   → CLI 로 조작: ./run_hw.sh home | hold | stand | watch | log"; exit 1
+    fi
+    if [ -z "${DISPLAY:-}" ]; then
+      echo "✗ DISPLAY 없음(SSH?) → dearpygui 창을 못 그림 → GUI 불가."
+      echo "   → Pi 모니터 세션에서 실행, 또는 CLI: ./run_hw.sh home|hold|stand|watch|log"; exit 1
+    fi
     pgrep -f build/biped_deploy >/dev/null || echo "  ⚠ biped_deploy 안 떠 있음 — run_deploy_hw.sh 먼저"
-    PY="${PY:-python3}"
-    echo "→ GUI 기동 ($PY · cmd=$CMD state=$STATE)"
-    exec env DISPLAY="${DISPLAY:-:0}" QUAD_CMD="$CMD" QUAD_STATE="$STATE" "$PY" "$HERE/teleop_gui_biped.py" ;;
+    echo "→ GUI 기동 ($GPY · DISPLAY=$DISPLAY)"
+    exec env QUAD_CMD="$CMD" QUAD_STATE="$STATE" "$GPY" "$HERE/teleop_gui_biped.py" ;;
   off|hold|stand|home|float|jog|push|walk)
     case "$1" in stand|walk) echo "⚠ $1 — 크레인 받친 채인지 확인!";; esac
     set_mode "$1" ;;

@@ -24,11 +24,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 set_mode(){
   # hold [pct] [split]:  중력지지 %(0~100) + 좌우트림 split(20~80, →HL). hold 외엔 무시됨.
+  # ★deploy 워치독(500ms) 때문에 **한 번만 쓰면 off 로 되돌아간다** — GUI 처럼 seq++ 로
+  #   계속 재발행해야 유지된다. 백그라운드 발행자(__pub)를 띄우고, 모드 바꿀 때 교체한다.
   local m="$1" pct="${2:-0}" split="${3:-50}"
-  printf '{"mode":"%s","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42,"hold_ff_pct":%s,"hold_ff_split":%s}\n' \
-         "$m" "$pct" "$split" > "$CMD"
+  pkill -f "run_hw.sh __pub" 2>/dev/null; sleep 0.05
+  setsid "$0" __pub "$m" "$pct" "$split" </dev/null >/dev/null 2>&1 &
   pgrep -f build/biped_deploy >/dev/null || echo "  ⚠ biped_deploy 안 떠 있음 — run_deploy_hw.sh 먼저"
-  echo "→ mode=$m  중력지지=${pct}%  split=${split}(→HL)  ($CMD)"
+  echo "→ mode=$m  중력지지=${pct}%  split=${split}(→HL)  [연속발행 중]"
 }
 
 case "$1" in
@@ -76,6 +78,14 @@ print("mode=%s  rpy=%s  tilt=%.1f  estop=%s  tiltOK(imu)=%s  loop_hz=%s"
       %(d['mode'],[round(x,1) for x in r],d['tilt_deg'],d['estop'],d['tilt_estop_ok'],d.get('loop_hz')))
 PY
     ;;
+  __pub)
+    # 내부용 — cmd 를 seq++ 로 100ms 마다 재발행(watchdog 만족). set_mode 가 백그라운드로 띄운다.
+    m="$2"; pct="${3:-0}"; split="${4:-50}"; sq=0
+    while :; do
+      printf '{"mode":"%s","seq":%d,"jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42,"hold_ff_pct":%s,"hold_ff_split":%s}\n' \
+             "$m" "$sq" "$pct" "$split" > "$CMD"
+      sq=$((sq+1)); sleep 0.1
+    done ;;
   up)
     # ★전체 스택 기동: EMB(producer) → deploy(RT루프) → GUI.  MJCF=flat|<경로> 로 모델 선택.
     echo "① EMB 기동…"; ( cd "$HERE/emb" && diag/emb_ctl.sh start ) || exit 1
@@ -89,6 +99,7 @@ PY
     echo "③ GUI 기동(가능하면)…"
     "$0" gui || echo "  → GUI 없이 진행. CLI 로 조작: ./run_hw.sh home | hold | stand | watch | log" ;;
   down)
+    pkill -f "run_hw.sh __pub" 2>/dev/null
     printf '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}\n' > "$CMD" 2>/dev/null; sleep 0.3
     pkill -f "$HERE/teleop_gui_biped.py" 2>/dev/null
     pkill -f build/biped_deploy 2>/dev/null

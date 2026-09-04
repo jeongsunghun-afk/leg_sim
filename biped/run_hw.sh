@@ -18,7 +18,7 @@ set -u
 CMD="${QUAD_CMD:-/tmp/biped_cmd.json}"
 STATE="${QUAD_STATE:-/tmp/biped_state.json}"
 
-usage(){ echo "사용: $0 {off|hold|stand|home|float|jog|push|walk|gui|watch [N]|status}"; exit 1; }
+usage(){ echo "사용: $0 {up|down|gui|off|hold|stand|home|float|jog|push|walk|log [file]|watch [N]|status}"; exit 1; }
 [ $# -ge 1 ] || usage
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -43,6 +43,28 @@ for _ in range(n):
     time.sleep(0.4)
 PY
     ;;
+  log)
+    # 균형 신호를 타임스탬프 CSV 로 기록(GUI 로 조작하며 다른 터미널에서 실행). Ctrl+C 종료.
+    OUT="${2:-/tmp/biped_hw_$(date +%Y%m%d_%H%M%S).csv}"
+    echo "→ 로깅: $OUT  (mode·rpy·tilt·estop·foot_tau, 10Hz · Ctrl+C 종료)"
+    echo "  (deploy 는 자체 세션로그도 /tmp/hold_session.csv 에 남긴다)"
+    python3 - "$STATE" "$OUT" <<'PY'
+import json,sys,time
+state,out=sys.argv[1],sys.argv[2]
+t0=time.time()
+with open(out,'w') as f:
+    f.write("t,mode,roll,pitch,yaw,tilt,estop,tiltOK,footL_tau,footR_tau\n")
+    while True:
+        try:
+            d=json.load(open(state)); r=d['rpy_deg']; tl=d.get('tau_leg_nm',[0]*8)
+            f.write("%.2f,%s,%.2f,%.2f,%.2f,%.2f,%s,%s,%.2f,%.2f\n"%(
+                time.time()-t0, d['mode'], r[0],r[1],r[2], d['tilt_deg'],
+                d['estop'], d['tilt_estop_ok'],
+                tl[3] if len(tl)>3 else 0.0, tl[7] if len(tl)>7 else 0.0)); f.flush()
+        except Exception: pass
+        time.sleep(0.1)
+PY
+    ;;
   status)
     python3 - "$STATE" <<'PY'
 import json,sys
@@ -51,6 +73,23 @@ print("mode=%s  rpy=%s  tilt=%.1f  estop=%s  tiltOK(imu)=%s  loop_hz=%s"
       %(d['mode'],[round(x,1) for x in r],d['tilt_deg'],d['estop'],d['tilt_estop_ok'],d.get('loop_hz')))
 PY
     ;;
+  up)
+    # ★전체 스택 기동: EMB(producer) → deploy(RT루프) → GUI.  MJCF=flat|<경로> 로 모델 선택.
+    echo "① EMB 기동…"; ( cd "$HERE/emb" && diag/emb_ctl.sh start ) || exit 1
+    sleep 6
+    pgrep -x RobotEmbedded >/dev/null || { echo "✗ EMB 기동 실패 → tail /tmp/emb.log"; exit 1; }
+    echo "② deploy 기동(${MJCF:-flat})…"
+    setsid bash -c "cd '$HERE'; exec bash run_deploy_hw.sh ${MJCF:-flat}" </dev/null >/tmp/biped_deploy.log 2>&1 &
+    sleep 4
+    pgrep -f build/biped_deploy >/dev/null || { echo "✗ deploy 기동 실패 → tail /tmp/biped_deploy.log"; exit 1; }
+    grep -m1 -E "\[deploy\] IMU" /tmp/biped_deploy.log 2>/dev/null || echo "  (IMU 줄 대기 중 — tail /tmp/biped_deploy.log)"
+    echo "③ GUI 기동…"; exec "$0" gui ;;
+  down)
+    printf '{"mode":"off","jog_deg":[0,0,0,0,0,0,0,0],"v":0,"vy":0,"w":0,"body_h":0.42}\n' > "$CMD" 2>/dev/null; sleep 0.3
+    pkill -f "$HERE/teleop_gui_biped.py" 2>/dev/null
+    pkill -f build/biped_deploy 2>/dev/null
+    ( cd "$HERE/emb" && diag/emb_ctl.sh stop )
+    echo "→ 전체 종료(GUI·deploy·EMB)" ;;
   gui)
     # teleop GUI — 모드버튼·중력지지 슬라이더·통신 LED. deploy 와 같은 cmd/state 를 공유.
     #   GUI 는 cmd 만 쓴다(모터 writer 아님) → biped_deploy 와 동시 실행 안전.

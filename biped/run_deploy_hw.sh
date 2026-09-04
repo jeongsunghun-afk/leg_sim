@@ -80,7 +80,7 @@ export FOOT_COMP_NM="${FOOT_COMP_NM:-0.36}"
 #   ★foot 1.00 → **1.30** (2026-09-03). "안 잰 축은 무보정" 규칙이었는데 이제 쟀다:
 #     저울 r_foot(G) 포화 0.77 + hold 자립(발끝적용·1.30 등가)이 하중 대역에서 실증.
 #     stand-lite 1차에서 foot 만 1.00 이라 ±7.5° 처짐 — hold 초기와 같은 병리였다.
-export STAND_TAU_SCALE_JOINT="1.20,1.10,1.22,1.30,1.18,1.10,1.22,1.30"
+export STAND_TAU_SCALE_JOINT="${STAND_TAU_SCALE_JOINT:-1.20,1.10,1.22,1.30,1.18,1.10,1.22,1.30}"
 
 # ── ③walk 묶음 (2026-08-27 · sim 정량화 tools/walk_demand_check.py) ─────────
 #   walk 모드 **한정** 트립 상향(실측 플랜트 스윙 요구 calf 673dps·kd제동 41Nm — 고정

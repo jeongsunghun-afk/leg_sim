@@ -11,6 +11,7 @@
 #     ./run_hw.sh gui                 # ★teleop GUI (모드버튼·중력지지 슬라이더·LED) — 테스트는 이걸로
 #     ./run_hw.sh watch [N]           # 상태 N회(기본30) 관찰(mode·rpy·tilt·estop)
 #     ./run_hw.sh status              # 1회 스냅샷
+#     ./run_hw.sh enc                 # 1차(q_ch) vs 2차(aux 출력축) 엔코더 — AUX_MODE=1 deploy 필요
 #
 #   ⚠ 순서: 터미널A RobotEmbedded → 터미널B run_deploy_hw.sh → (여기) run_hw.sh
 #   ⚠ stand/walk 는 **크레인** 받친 채. 불안정하면 즉시 `./run_hw.sh hold` 또는 off.
@@ -18,7 +19,7 @@ set -u
 CMD="${QUAD_CMD:-/tmp/biped_cmd.json}"
 STATE="${QUAD_STATE:-/tmp/biped_state.json}"
 
-usage(){ echo "사용: $0 {up|down|gui|off|hold|stand|home|float|jog|push|walk|log [file]|watch [N]|status}"; exit 1; }
+usage(){ echo "사용: $0 {up|down|gui|off|hold|stand|home|float|jog|push|walk|log [file]|watch [N]|status|enc}"; exit 1; }
 [ $# -ge 1 ] || usage
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -109,6 +110,30 @@ for i in range(len(h)):
           ("%.1f"%tl[i]) if i<len(tl) else "-",
           ("%.1f"%tc[i]) if i<len(tc) else "-",
           why(e) if h[i]!="ok" else ""))
+PY
+    ;;
+  enc)
+    # ★1차(모터측 q_ch) vs 2차(출력축 aux) 엔코더 비교 — deploy 를 AUX_MODE=1 로 띄웠을 때만 aux 유효.
+    #   aux_deg = 채널 원시각·자기 영점(q_ch 와 영점 다름) → 절대차엔 상수 오프셋 포함.
+    #   의미: (a) 무하중(float/off)↔home 사이 diff 의 **변화** = 감속단 비틀림/백래시
+    #         (b) hip/thigh 는 aux=관절각(진짜 링크) · calf/foot 은 aux=벨트 앞단 → 벨트 슬립은 안 보임.
+    #   ⚠AUX_MODE=1 은 **매달린 채만**(0x5A 프레임 영향 RGA 미확인). home 은 공중이라 적합.
+    python3 - "$STATE" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+NAMES=["HL_hip","HL_thigh","HL_calf","HL_foot","HR_hip","HR_thigh","HR_calf","HR_foot"]
+GEAR=[1,1,1.5,1.2,1,1,1.5,1.2]   # 벨트비(채널→관절). hip/thigh 1 = 직결
+q=d.get('q_ch_deg',[]); a=d.get('aux_deg'); on=d.get('aux_on')
+if a is None: print("aux 키 없음 — 구 .so/mock (bridge 미지원)"); sys.exit()
+if not on: print("⚠ aux_on=false — deploy 를 AUX_MODE=1 로 다시 띄울 것 (매달린 채!)")
+print("mode=%s  aux_on=%s   (단위 deg · 채널 원시각)"%(d.get('mode'),on))
+print("  %-9s %9s %9s %9s  %s"%("ch","1차 q_ch","2차 aux","aux-q_ch","비고"))
+for i in range(min(8,len(q))):
+    av=a[i] if i<len(a) else 0.0
+    if av==0: note="2차 없음/미채움"
+    elif GEAR[i]==1: note="aux=관절각(진짜 링크)"
+    else: note="aux=벨트앞단 (÷%.1f=명목링크, 벨트슬립 안보임)"%GEAR[i]
+    print("  %-9s %9.2f %9.2f %9.2f  %s"%(NAMES[i],q[i],av,av-q[i],note))
 PY
     ;;
   __pub)

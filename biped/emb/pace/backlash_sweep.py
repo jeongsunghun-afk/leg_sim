@@ -72,9 +72,12 @@ def analyze(t, q_cmd, q, tau, aux, f0, f1, T, amp):
         # 백래시 성분을 방향별로 제거한 뒤 회귀
         rr = r.copy(); rr[pos] -= np.median(r[pos]); rr[neg] -= np.median(r[neg])
         comp = float(np.polyfit(tau[moving], rr[moving], 1)[0])
+    tau_range = float(np.ptp(tau[moving])) if moving.any() else float("nan")   # 부하 수준(τ 진폭)
+    resid_p2p = float(np.percentile(r, 95) - np.percentile(r, 5))               # 잔차 폭(백래시+컴플+잡음)
     return dict(offset=float(a), scale_pct=float(b * 100), backlash_plateau=abs(bl_plateau),
                 backlash_reversal=bl_rev, compliance_deg_per_nm=comp, n_rev=int(len(jumps)),
-                moving_frac=float(moving.mean()), r=r, moving=moving, pos=pos, neg=neg, rev=rev)
+                moving_frac=float(moving.mean()), tau_range=tau_range, resid_p2p=resid_p2p,
+                r=r, moving=moving, pos=pos, neg=neg, rev=rev)
 
 
 def verdict(bl):
@@ -90,6 +93,8 @@ def report(name, res, log=print):
     log(f"  [{name}] 영점차 a={res['offset']:+.2f}°  스케일차 b={res['scale_pct']:+.2f}%  "
         f"백래시 평탄부={res['backlash_plateau']:.2f}° / 전환점={res['backlash_reversal']:.2f}° (n_rev={res['n_rev']})  "
         f"겉보기컴플라이언스={res['compliance_deg_per_nm']:+.3f}°/Nm  → **백래시≈{bl:.2f}° : {verdict(bl)}**")
+    log(f"           부하 τ범위={res['tau_range']:.2f} Nm · (aux−q_ch) 잔차폭={res['resid_p2p']:.2f}° "
+        f"[무부하와 비교: τ범위 커졌는데 잔차폭·컴플라이언스 그대로면 감속단은 하중에도 견고]")
     return bl
 
 
